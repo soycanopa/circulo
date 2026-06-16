@@ -1,0 +1,15 @@
+{
+	"$schema": "https://unpkg.com/@changesets/config@3.1.2/schema.json",
+	"changelog": ["@changesets/changelog-github", { "repo": "soycanopa/circulo" }],
+	"commit": false,
+	"fixed": [],
+	"linked": [["@circulo/desktop", "@circulo/ui", "@circulo/server", "@circulo/configconv", "configconv"]],
+	"access": "restricted",
+	"baseBranch": "main",
+	"updateInternalDependencies": "patch",
+	"ignore": [],
+	"privatePackages": {
+		"version": true,
+		"tag": true
+	}
+}

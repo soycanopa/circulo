@@ -1,0 +1,20 @@
+{
+	"$schema": "https://ui.shadcn.com/schema.json",
+	"style": "base-vega",
+	"rsc": false,
+	"tsx": true,
+	"tailwind": {
+		"config": "",
+		"css": "src/styles/globals.css",
+		"baseColor": "zinc",
+		"cssVariables": true
+	},
+	"iconLibrary": "lucide",
+	"aliases": {
+		"components": "@circulo/ui/components",
+		"hooks": "@circulo/ui/hooks",
+		"lib": "@circulo/ui/lib",
+		"utils": "@circulo/ui/lib/utils",
+		"ui": "@circulo/ui/components"
+	}
+}

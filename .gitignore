@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.next/
+out/
+
+# Turborepo
+.turbo/
+
+# Tauri
+src-tauri/target/
+
+# Electron Builder
+release/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Research (local only)
+research/
+
+# Private docs and notes (local only)
+.private/
+
+# Local agent instructions (private per-developer)
+AGENTS.local.md
+
+# Git worktrees
+.worktrees/
+
+# Local working directory
+.local/

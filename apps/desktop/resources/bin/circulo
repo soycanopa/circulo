@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+#
+# circulo — Open the installed Circulo desktop application.
+#
+# This script is bundled inside the Circulo.app package and symlinked
+# to /usr/local/bin/circulo by the "Install CLI Command" action.
+#
+# Usage:
+#   circulo              Open Circulo (or focus existing window)
+#   circulo /path/to/dir Open Circulo with a specific project directory
+
+set -euo pipefail
+
+case "$(uname -s)" in
+	Darwin)
+		# Resolve the .app bundle — this script lives at
+		# Circulo.app/Contents/Resources/bin/circulo
+		SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+		APP_BUNDLE="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+		if [ $# -gt 0 ]; then
+			open -a "$APP_BUNDLE" --args "$@"
+		else
+			open -a "$APP_BUNDLE"
+		fi
+		;;
+	Linux)
+		# On Linux the binary is typically at a known location
+		SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+		ELECTRON_BIN="$(cd "$SCRIPT_DIR/.." && pwd)/circulo"
+
+		if [ -x "$ELECTRON_BIN" ]; then
+			exec "$ELECTRON_BIN" "$@"
+		else
+			# Fallback: try system PATH
+			echo "Error: Could not find Circulo binary at $ELECTRON_BIN" >&2
+			echo "Try launching from your application menu instead." >&2
+			exit 1
+		fi
+		;;
+	*)
+		echo "Error: Unsupported platform $(uname -s)" >&2
+		echo "On Windows, use 'circulo.cmd' instead." >&2
+		exit 1
+		;;
+esac

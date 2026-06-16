@@ -1,0 +1,89 @@
+appId: com.circulo.desktop
+productName: Circulo
+copyright: Copyright (c) 2025 Circulo Contributors
+directories:
+  buildResources: resources
+  output: release
+
+files:
+  - "out/**/*"
+  # Native N-API addon for macOS liquid glass / vibrancy effects.
+  # Must be included because externalizeDepsPlugin keeps it external.
+  - "node_modules/electron-liquid-glass/**/*"
+
+# Bundle the CLI launcher script into the app package.
+# macOS: Contents/Resources/bin/circulo
+# Linux: resources/bin/circulo
+# Windows: resources/bin/circulo.cmd
+extraResources:
+  - from: resources/bin
+    to: bin
+    filter:
+      - "**/*"
+  # Tray icon assets — must be at the root of process.resourcesPath
+  # so tray.ts can find them via path.join(process.resourcesPath, "iconTemplate.png")
+  - from: resources/iconTemplate.png
+    to: iconTemplate.png
+  - from: resources/iconTemplate@2x.png
+    to: iconTemplate@2x.png
+  - from: resources/icon.png
+    to: icon.png
+  - from: resources/iconTray.png
+    to: iconTray.png
+
+# Rebuild native modules for Electron's Node.js ABI during packaging.
+npmRebuild: true
+
+artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+
+# Inject version from package.json into the built app
+extraMetadata:
+  main: ./out/main/index.js
+
+mac:
+  icon: resources/icon-macos.png
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # Notarization — uncomment when Apple credentials are configured
+  # notarize:
+  #   teamId: ${env.APPLE_TEAM_ID}
+
+win:
+  icon: resources/icon.ico
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+
+linux:
+  executableName: circulo
+  icon: resources/linux-icons
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+    - target: rpm
+      arch: [x64]
+  category: Development
+  maintainer: circulo
+  desktop:
+    entry:
+      Name: Circulo
+      Comment: AI-powered coding assistant
+      Categories: Development;IDE;
+      StartupWMClass: Circulo
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+publish:
+  provider: github
+  releaseType: draft
