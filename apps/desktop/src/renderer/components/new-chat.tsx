@@ -754,7 +754,7 @@ export function NewChat() {
 			<div className="shrink-0 px-0 pb-0 pt-0 sm:px-6 sm:pb-5 sm:pt-3">
 				<div className="mx-auto w-full max-w-4xl">
 					{/* Unified card — darker outer wrapper with nested lighter input */}
-					<div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden">
+					<div className="rounded-xl border border-border/40 bg-muted/20">
 						{/* Project selector header — sits in the darker top area */}
 						<div className="px-3 pt-2.5 pb-1.5">
 							<ProjectSelector
