@@ -20,9 +20,12 @@ import {
 	ChevronDownIcon,
 	CodeIcon,
 	FileTextIcon,
+	FolderIcon,
+	FolderPlusIcon,
 	GitForkIcon,
 	GitPullRequestIcon,
 	MonitorIcon,
+	SearchIcon,
 } from "lucide-react"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { projectModelsAtom, setProjectModelAtom } from "../atoms/preferences"
@@ -49,7 +52,9 @@ import {
 } from "../hooks/use-opencode-data"
 import { useAgentActions } from "../hooks/use-server"
 import { activeServerConfigAtom } from "../atoms/connection"
-import type { FileAttachment } from "../lib/types"
+import type { FileAttachment, SidebarProject } from "../lib/types"
+import { loadProjectSessions } from "../services/connection-manager"
+import { pickDirectory } from "../services/backend"
 import { createWorktree, randomWorktreeName } from "../services/worktree-service"
 import { useSetAppBarContent } from "./app-bar-context"
 import { BranchPicker } from "./branch-picker"
@@ -183,6 +188,118 @@ const SUGGESTIONS = [
 		text: "Review recent changes and suggest improvements.",
 	},
 ]
+// ============================================================
+// ProjectSelector — shown above the input on the new-thread screen.
+// ============================================================
+
+function ProjectSelector({
+	projects,
+	selectedDirectory,
+	isRemote,
+	onSelect,
+	onOpenFolder,
+}: {
+	projects: SidebarProject[]
+	selectedDirectory: string
+	isRemote: boolean
+	onSelect: (directory: string) => void
+	onOpenFolder: () => void
+}) {
+	const [open, setOpen] = useState(false)
+	const [search, setSearch] = useState("")
+
+	const selectedProject = useMemo(
+		() => projects.find((p) => p.directory === selectedDirectory),
+		[projects, selectedDirectory],
+	)
+
+	const label = selectedProject
+		? selectedProject.name
+		: selectedDirectory
+			? selectedDirectory.split("/").pop() ?? "Select project"
+			: "Select project"
+
+	const filtered = useMemo(() => {
+		if (!search.trim()) return projects
+		const q = search.toLowerCase()
+		return projects.filter(
+			(p) => p.name.toLowerCase().includes(q) || p.directory.toLowerCase().includes(q),
+		)
+	}, [projects, search])
+
+	return (
+		<Popover open={open} onOpenChange={setOpen}>
+			<PopoverTrigger
+				render={
+					<button
+						type="button"
+						className="mb-2 flex w-full items-center gap-2 rounded-lg border border-border/60 bg-background px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+					/>
+				}
+			>
+				<FolderIcon className="size-4 shrink-0" />
+				<span className="truncate">{label}</span>
+				<ChevronDownIcon className="ml-auto size-4 shrink-0" />
+			</PopoverTrigger>
+			<PopoverContent className="w-72 p-1" align="start">
+				<div className="flex items-center gap-2 border-b border-border/40 px-2 py-1.5">
+					<SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
+					<input
+						type="text"
+						placeholder="Filter projects..."
+						value={search}
+						onChange={(e) => setSearch(e.target.value)}
+						className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 outline-none"
+					/>
+				</div>
+				{!isRemote && (
+					<button
+						type="button"
+						onClick={() => {
+							setOpen(false)
+							onOpenFolder()
+						}}
+						className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+					>
+						<FolderPlusIcon className="size-4 shrink-0" />
+						<span>Open folder...</span>
+					</button>
+				)}
+				{filtered.length > 0 && (
+					<div className={!isRemote ? "border-t border-border/40" : ""}>
+						{filtered.map((p) => (
+							<button
+								key={p.directory}
+								type="button"
+								onClick={() => {
+									onSelect(p.directory)
+									setOpen(false)
+									setSearch("")
+								}}
+								className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted ${
+									p.directory === selectedDirectory
+										? "bg-muted text-foreground"
+										: "text-muted-foreground"
+								}`}
+							>
+								<FolderIcon className="size-4 shrink-0" />
+								<span className="truncate font-medium">{p.name}</span>
+								<span className="ml-auto text-xs text-muted-foreground/60">
+									{p.agentCount}
+								</span>
+							</button>
+						))}
+					</div>
+				)}
+				{filtered.length === 0 && search.trim() && (
+					<div className="px-3 py-2 text-xs text-muted-foreground">
+						No projects match &ldquo;{search}&rdquo;
+					</div>
+				)}
+			</PopoverContent>
+		</Popover>
+	)
+}
 
 /**
  * Syncs PromptInputProvider text to persisted drafts (debounced).
@@ -229,7 +346,6 @@ export function NewChat() {
 	// initialInput (consumed once on mount), so reactive tracking is unnecessary.
 	const draft = useDraftSnapshot(NEW_CHAT_DRAFT_KEY)
 	const { setDraft, clearDraft } = useDraftActions(NEW_CHAT_DRAFT_KEY)
-	const [projectPickerOpen, setProjectPickerOpen] = useState(false)
 
 	// Toolbar state
 	const [selectedModel, setSelectedModel] = useState<ModelRef | null>(null)
@@ -268,11 +384,6 @@ export function NewChat() {
 		setSelectedAgent(stored?.agent ?? null)
 	}, [selectedDirectory, projectModels])
 
-	const selectedProject = useMemo(
-		() => projects.find((p) => p.directory === selectedDirectory),
-		[projects, selectedDirectory],
-	)
-
 	const { data: providers } = useProviders(selectedDirectory || null)
 	const { data: config } = useConfig(selectedDirectory || null)
 	const { data: vcs, reload: reloadVcs } = useVcs(selectedDirectory || null)
@@ -310,6 +421,14 @@ export function NewChat() {
 		},
 		[reloadVcs],
 	)
+
+	// Open folder via native OS picker — adds the directory as a new project.
+	const handleOpenFolder = useCallback(async () => {
+		const directory = await pickDirectory()
+		if (!directory) return
+		setSelectedDirectory(directory)
+		loadProjectSessions(directory)
+	}, [])
 
 	// Insert a selected mention into the prompt textarea
 	const handleMentionSelect = useCallback((option: MentionOption) => {
@@ -386,18 +505,12 @@ export function NewChat() {
 		[effectiveModel, providers],
 	)
 
+	// Auto-select project from URL slug only — no automatic first-project fallback.
+	// The user must explicitly pick a project via the ProjectSelector above the input.
 	useEffect(() => {
-		if (projects.length === 0) return
-
-		if (projectSlug) {
-			const match = projects.find((p) => p.slug === projectSlug)
-			if (match) {
-				setSelectedDirectory(match.directory)
-				return
-			}
-		}
-
-		setSelectedDirectory(projects[0].directory)
+		if (!projectSlug || projects.length === 0) return
+		const match = projects.find((p) => p.slug === projectSlug)
+		if (match) setSelectedDirectory(match.directory)
 	}, [projectSlug, projects])
 
 	// ---
@@ -609,48 +722,9 @@ export function NewChat() {
 						<CirculoWordmark className="h-4 w-auto text-foreground" />
 					</div>
 
-					{/* "Build what's next" + project name */}
+					{/* "Build what's next" */}
 					<div className="text-center">
 						<h1 className="text-2xl font-semibold text-foreground">Build what's next</h1>
-						{projects.length > 1 ? (
-							<Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
-								<PopoverTrigger
-									render={
-										<button
-											type="button"
-											className="mt-1 inline-flex items-center gap-1 text-xl text-muted-foreground transition-colors hover:text-foreground"
-										/>
-									}
-								>
-									{selectedProject?.name ?? "select project"}
-									<ChevronDownIcon className="size-4" />
-								</PopoverTrigger>
-								<PopoverContent className="w-64 p-1" align="center">
-									{projects.map((p) => (
-										<button
-											key={p.directory}
-											type="button"
-											onClick={() => {
-												setSelectedDirectory(p.directory)
-												setProjectPickerOpen(false)
-											}}
-											className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted ${
-												p.directory === selectedDirectory
-													? "bg-muted text-foreground"
-													: "text-muted-foreground"
-											}`}
-										>
-											<span className="truncate font-medium">{p.name}</span>
-											<span className="ml-auto text-xs text-muted-foreground/60">
-												{p.agentCount}
-											</span>
-										</button>
-									))}
-								</PopoverContent>
-							</Popover>
-						) : (
-							<p className="mt-1 text-xl text-muted-foreground">{selectedProject?.name ?? ""}</p>
-						)}
 					</div>
 
 					{/* Suggestion cards — 3 column grid */}
@@ -679,6 +753,15 @@ export function NewChat() {
 			{/* Bottom-pinned input section */}
 			<div className="shrink-0 px-0 pb-0 pt-0 sm:px-6 sm:pb-5 sm:pt-3">
 				<div className="mx-auto w-full max-w-4xl">
+					{/* Project selector — pick where the new thread runs */}
+					<ProjectSelector
+						projects={projects}
+						selectedDirectory={selectedDirectory}
+						isRemote={!isLocal}
+						onSelect={setSelectedDirectory}
+						onOpenFolder={handleOpenFolder}
+					/>
+
 					{/* Input card */}
 					<PromptInputProvider key={NEW_CHAT_DRAFT_KEY} initialInput={draft}>
 						<DraftSync setDraft={setDraft} />

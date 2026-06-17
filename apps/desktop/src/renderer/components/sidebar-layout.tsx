@@ -35,7 +35,7 @@ const isMac =
 	typeof window !== "undefined" && "circulo" in window && window.circulo.platform === "darwin"
 const isElectronEnv = typeof window !== "undefined" && "circulo" in window
 
-/** Pixel offset from the left edge where window controls (toggle + new session) start */
+/** Pixel offset from the left edge where window controls (toggle + new thread) start */
 const WINDOW_CONTROLS_LEFT = isMac && isElectronEnv ? 93 : 8
 /** Total width reserved for traffic lights + window control buttons */
 const WINDOW_CONTROLS_INSET = isMac && isElectronEnv ? 160 : 72
@@ -85,7 +85,7 @@ function NarrowWindowCollapser() {
 // ============================================================
 
 /**
- * Absolutely positioned window controls (sidebar toggle + new session) that
+ * Absolutely positioned window controls (sidebar toggle + new thread) that
  * stay next to the macOS traffic lights regardless of sidebar state.
  * Must be rendered inside a SidebarProvider.
  */
@@ -131,7 +131,7 @@ function WindowControls() {
 				>
 					<PlusIcon className="size-3.5" />
 				</TooltipTrigger>
-				<TooltipContent>New session (&#8984;N)</TooltipContent>
+				<TooltipContent>New thread (&#8984;N)</TooltipContent>
 			</Tooltip>
 		</div>
 	)

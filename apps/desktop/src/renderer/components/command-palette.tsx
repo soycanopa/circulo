@@ -159,7 +159,7 @@ export function CommandPalette({ open, onOpenChange, agents, onForkSession }: Co
 						}}
 					>
 						<PlusIcon />
-						<span>New Session</span>
+						<span>New Thread</span>
 						<CommandShortcut>&#8984;N</CommandShortcut>
 					</CommandItem>
 					{hasSession && canUndo && (

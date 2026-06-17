@@ -197,18 +197,18 @@ export function AppSidebarContent({
 					</div>
 				)}
 
-			{/* New Session + Automations */}
+			{/* New Thread + Automations */}
 			<SidebarGroup>
 				<SidebarGroupContent>
 					<SidebarMenu>
 						<SidebarMenuItem>
 							<SidebarMenuButton
-								tooltip="New Session"
+								tooltip="New Thread"
 								onClick={() => navigate({ to: "/" })}
 								className="text-muted-foreground"
 							>
 								<PlusIcon className="size-4" />
-								<span>New Session</span>
+								<span>New Thread</span>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
 						{automationsEnabled && isLocalServer && (
