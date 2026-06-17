@@ -3,8 +3,6 @@ import { homedir } from "node:os"
 import path from "node:path"
 import { getOpencodeBinary } from "./settings-store"
 
-const log = console
-
 /**
  * Resolves the opencode binary to use.
  *

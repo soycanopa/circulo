@@ -223,7 +223,7 @@ export function BranchPicker({
 	if (!isLocal) {
 		return (
 			<Tooltip>
-				<TooltipTrigger asChild>
+				<TooltipTrigger>
 					<button
 						type="button"
 						className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground/60"

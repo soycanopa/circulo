@@ -8,6 +8,7 @@ import {
 } from "@circulo/ui/components/select"
 import { Switch } from "@circulo/ui/components/switch"
 import { useAtomValue, useSetAtom } from "jotai"
+import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { type DisplayMode, displayModeAtom, opaqueWindowsAtom } from "../../atoms/preferences"
 import { useColorScheme, useSetColorScheme } from "../../hooks/use-theme"
