@@ -787,7 +787,7 @@ export function NewChat() {
 								onClose={() => setMentionOpen(false)}
 							/>
 						<PromptInput
-							className="rounded-none border-t border-border/30"
+							className="rounded-b-xl border-t border-border/30"
 							accept="image/png,image/jpeg,image/gif,image/webp,application/pdf"
 							multiple
 							maxFileSize={10 * 1024 * 1024}
