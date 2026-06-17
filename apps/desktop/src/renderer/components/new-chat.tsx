@@ -804,7 +804,11 @@ export function NewChat() {
 								supportsPdf={modelCapabilities?.pdf}
 							/>
 							<PromptInputTextarea
-								placeholder="What should this session work on?"
+								placeholder={
+									selectedDirectory
+										? "What should this thread work on?"
+										: "Select a project to start a thread"
+								}
 								autoFocus
 								disabled={launching || !selectedDirectory || projects.length === 0}
 								className="min-h-[80px]"
