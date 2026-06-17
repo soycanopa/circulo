@@ -35,7 +35,7 @@ export function useSessionDiff(sessionId: string, directory: string) {
 			const client = getProjectClient(directory)
 			if (!client) return
 			const result = await getSessionDiff(client, sessionId)
-			setDiffs({ sessionId, diffs: result })
+			setDiffs({ sessionId, diffs: result as FileDiff[] })
 		} catch {
 			// Silently fail, diffs will update via SSE
 		} finally {
