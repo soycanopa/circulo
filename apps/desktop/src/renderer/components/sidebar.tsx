@@ -397,7 +397,7 @@ export function AppSidebarContent({
 				)}
 
 			</SidebarContent>
-			<SidebarFooter className="flex flex-row items-center p-2">
+			<SidebarFooter className="flex flex-row items-center justify-between p-2">
 				<SidebarMenuButton
 					tooltip="Settings"
 					onClick={() => navigate({ to: "/settings" })}
@@ -406,9 +406,7 @@ export function AppSidebarContent({
 					<SettingsIcon className="size-4" />
 					<span>Settings</span>
 				</SidebarMenuButton>
-				<div className="ml-auto shrink-0">
-					<ServerIndicator />
-				</div>
+				<ServerIndicator />
 			</SidebarFooter>
 		</>
 	)
