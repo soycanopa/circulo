@@ -574,6 +574,8 @@ interface ChatTurnProps {
 	onRevertToMessage?: (messageId: string) => Promise<void>
 	/** Interrupt the current work and send this queued message immediately */
 	onSendNow?: (turn: ChatTurnType) => Promise<void>
+	/** Dismiss/cancel a queued message without sending it */
+	onDismissQueued?: (turn: ChatTurnType) => Promise<void>
 	/** Fork the conversation from this turn boundary */
 	onForkFromTurn?: () => Promise<void>
 	/** Delete a specific part from a message (for error recovery) */
@@ -602,6 +604,7 @@ export const ChatTurnComponent = memo(
 		isWorking,
 		onRevertToMessage,
 		onSendNow,
+		onDismissQueued,
 		onForkFromTurn,
 		onDeletePart,
 	}: ChatTurnProps) {
@@ -711,16 +714,27 @@ export const ChatTurnComponent = memo(
 			}
 		}, [onForkFromTurn, forking])
 
-		const [sendingNow, setSendingNow] = useState(false)
-		const handleSendNow = useCallback(async () => {
-			if (!onSendNow || sendingNow) return
-			setSendingNow(true)
-			try {
-				await onSendNow(turn)
-			} finally {
-				setSendingNow(false)
-			}
-		}, [onSendNow, sendingNow, turn])
+	const [sendingNow, setSendingNow] = useState(false)
+	const handleSendNow = useCallback(async () => {
+		if (!onSendNow || sendingNow) return
+		setSendingNow(true)
+		try {
+			await onSendNow(turn)
+		} finally {
+			setSendingNow(false)
+		}
+	}, [onSendNow, sendingNow, turn])
+
+	const [dismissing, setDismissing] = useState(false)
+	const handleDismiss = useCallback(async () => {
+		if (!onDismissQueued || dismissing) return
+		setDismissing(true)
+		try {
+			await onDismissQueued(turn)
+		} finally {
+			setDismissing(false)
+		}
+	}, [onDismissQueued, dismissing, turn])
 
 		const handleDeleteFile = useCallback(
 			async (file: FilePart) => {
@@ -769,6 +783,17 @@ export const ChatTurnComponent = memo(
 										>
 											<SendIcon className="size-2.5" />
 											{sendingNow ? "Sending..." : "Send now"}
+										</button>
+									)}
+									{onDismissQueued && (
+										<button
+											type="button"
+											onClick={handleDismiss}
+											disabled={dismissing}
+											className="inline-flex items-center gap-0.5 rounded-full bg-muted/80 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+										>
+											<XIcon className="size-2.5" />
+											{dismissing ? "Removing..." : "Dismiss"}
 										</button>
 									)}
 								</span>

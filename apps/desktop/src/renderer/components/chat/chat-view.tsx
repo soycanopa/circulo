@@ -574,6 +574,16 @@ export function ChatView({
 		[onStop, onSendMessage, isWorking, agent],
 	)
 
+	const handleDismissQueued = useCallback(
+		async (turn: ChatTurn) => {
+			appStore.set(removeMessageAtom, {
+				sessionId: agent.sessionId,
+				messageId: turn.userMessage.info.id,
+			})
+		},
+		[agent.sessionId],
+	)
+
 	// Keyboard shortcuts for undo/redo
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
@@ -653,6 +663,7 @@ export function ChatView({
 									isWorking={isWorking}
 									onRevertToMessage={onRevertToMessage}
 									onSendNow={isWorking ? handleSendNow : undefined}
+									onDismissQueued={isWorking ? handleDismissQueued : undefined}
 									onForkFromTurn={
 										onForkFromTurn
 											? () => {

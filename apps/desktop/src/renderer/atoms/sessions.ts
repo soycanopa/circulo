@@ -55,6 +55,8 @@ export interface SessionEntry {
 	error?: SessionError
 	/** Worktree setup phase (shown in chat empty state while worktree is being created) */
 	setupPhase?: SessionSetupPhase
+	/** Timestamp of when the user last viewed this session (for unread dot indicator) */
+	lastViewedAt?: number
 }
 
 // ============================================================
@@ -97,6 +99,7 @@ export const upsertSessionAtom = atom(
 			worktreeBranch: existing?.worktreeBranch,
 			error: existing?.error,
 			setupPhase: existing?.setupPhase,
+			lastViewedAt: existing?.lastViewedAt,
 		})
 
 		// Add to index
@@ -213,6 +216,16 @@ export const setSessionSetupPhaseAtom = atom(
 		const entry = get(sessionFamily(args.sessionId))
 		if (!entry) return
 		set(sessionFamily(args.sessionId), { ...entry, setupPhase: args.setupPhase })
+	},
+)
+
+/** Marks a session as viewed, clearing the unread dot indicator. */
+export const markSessionViewedAtom = atom(
+	null,
+	(get, set, sessionId: string) => {
+		const entry = get(sessionFamily(sessionId))
+		if (!entry) return
+		set(sessionFamily(sessionId), { ...entry, lastViewedAt: Date.now() })
 	},
 )
 
@@ -339,6 +352,7 @@ export const setSessionsAtom = atom(
 				worktreeBranch: existing?.worktreeBranch,
 				error: existing?.error,
 				setupPhase: existing?.setupPhase,
+				lastViewedAt: existing?.lastViewedAt,
 			})
 			nextIds.add(session.id)
 		}

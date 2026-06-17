@@ -259,7 +259,9 @@
   :root.electron-transparent [data-slot="popover-content"],
   :root.electron-transparent [data-slot="context-menu-content"],
   :root.electron-transparent [data-slot="context-menu-sub-content"],
-  :root.electron-transparent [data-slot="select-content"] {
+  :root.electron-transparent [data-slot="select-content"],
+  :root.electron-transparent [data-slot="hover-card-content"],
+  :root.electron-transparent [data-slot="searchable-list-popover-content"] {
     background: color-mix(in srgb, var(--popover) var(--glass-elevated), transparent);
     -webkit-backdrop-filter: blur(var(--blur-lg));
     backdrop-filter: blur(var(--blur-lg));
@@ -348,6 +350,8 @@
   :root.electron-vibrancy [data-slot="context-menu-content"],
   :root.electron-vibrancy [data-slot="context-menu-sub-content"],
   :root.electron-vibrancy [data-slot="select-content"],
+  :root.electron-vibrancy [data-slot="hover-card-content"],
+  :root.electron-vibrancy [data-slot="searchable-list-popover-content"],
   :root.electron-vibrancy [data-slot="dialog-content"],
   :root.electron-vibrancy [data-slot="sheet-content"] {
     background: color-mix(in srgb, var(--popover) var(--glass-elevated), transparent);

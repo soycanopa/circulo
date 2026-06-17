@@ -137,6 +137,13 @@ contextBridge.exposeInMainWorld("circulo", {
 	/** Set the opaque windows preference and persist it in the main process. */
 	setOpaqueWindows: (value: boolean) => ipcRenderer.invoke("prefs:set-opaque-windows", value),
 
+	/** Get the custom opencode binary path (null if not configured — falls back to PATH). */
+	getOpencodeBinary: () => ipcRenderer.invoke("prefs:get-opencode-binary"),
+
+	/** Set the custom opencode binary path (null to clear and revert to PATH lookup). */
+	setOpencodeBinary: (value: string | null) =>
+		ipcRenderer.invoke("prefs:set-opencode-binary", value),
+
 	/** Relaunch the app (used after toggling transparency, which requires a restart). */
 	relaunch: () => ipcRenderer.invoke("app:relaunch"),
 

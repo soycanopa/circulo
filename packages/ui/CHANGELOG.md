@@ -1,5 +1,11 @@
 # @circulo/ui
 
+## 0.11.2
+
+### Patch Changes
+
+- Fix cross-referenced issues from palot: platform-aware local server name, hardcoded color fixes, hide opaque toggle on non-macOS, cancel queued chat messages, read-only branch display for remote projects, unread dot badge on sidebar sessions, and configurable opencode binary path
+
 ## 0.11.1
 
 ### Patch Changes

@@ -42,6 +42,7 @@ function agentEqual(prev: Agent | null, next: Agent | null): boolean {
 		prev.worktreeBranch === next.worktreeBranch &&
 		prev.createdAt === next.createdAt &&
 		prev.lastActiveAt === next.lastActiveAt &&
+		prev.lastViewedAt === next.lastViewedAt &&
 		prev.permissions.length === next.permissions.length &&
 		prev.questions.length === next.questions.length &&
 		prev.permissions[0] === next.permissions[0] &&
@@ -342,6 +343,7 @@ export const agentFamily = atomFamily((sessionId: string) => {
 			worktreeBranch: entry.worktreeBranch,
 			createdAt: created,
 			lastActiveAt,
+			lastViewedAt: entry.lastViewedAt,
 		}
 
 		// Return the previous reference if structurally equal to avoid

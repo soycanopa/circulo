@@ -161,4 +161,6 @@ export interface Agent {
 	createdAt: number
 	/** Timestamp (ms) of last activity — for sorting and relative time display */
 	lastActiveAt: number
+	/** Timestamp (ms) of when the user last viewed this session (for unread dot indicator) */
+	lastViewedAt?: number
 }

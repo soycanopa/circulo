@@ -212,6 +212,8 @@ export interface AppSettings {
 	opaqueWindows: boolean
 	/** Server connection configuration. */
 	servers: ServerSettings
+	/** Custom path or name for the opencode CLI binary. Falls back to PATH resolution if unset. */
+	opencodeBinary?: string
 }
 
 // ============================================================
@@ -478,6 +480,10 @@ export interface CirculoAPI {
 	getOpaqueWindows: () => Promise<boolean>
 	/** Set the opaque windows preference and persist it in the main process. */
 	setOpaqueWindows: (value: boolean) => Promise<{ success: boolean }>
+	/** Get the custom opencode binary path (null = use PATH lookup). */
+	getOpencodeBinary: () => Promise<string | null>
+	/** Set the custom opencode binary path (null to clear). */
+	setOpencodeBinary: (value: string | null) => Promise<{ success: boolean }>
 	/** Relaunch the app (used after toggling transparency). */
 	relaunch: () => Promise<void>
 

@@ -48,6 +48,7 @@ import {
 	useVcs,
 } from "../hooks/use-opencode-data"
 import { useAgentActions } from "../hooks/use-server"
+import { activeServerConfigAtom } from "../atoms/connection"
 import type { FileAttachment } from "../lib/types"
 import { createWorktree, randomWorktreeName } from "../services/worktree-service"
 import { useSetAppBarContent } from "./app-bar-context"
@@ -249,6 +250,8 @@ export function NewChat() {
 	// wins over config.model and global recent list — matching the user's expectation
 	// that the model they last used in this project sticks.
 	const projectModels = useAtomValue(projectModelsAtom)
+	const activeServerConfig = useAtomValue(activeServerConfigAtom)
+	const isLocal = activeServerConfig.type === "local"
 	const prevDirectoryRef = useRef<string>("")
 	useEffect(() => {
 		if (!selectedDirectory || selectedDirectory === prevDirectoryRef.current) return
@@ -757,6 +760,7 @@ export function NewChat() {
 										currentBranch={vcs?.branch}
 										onBranchChanged={handleBranchChanged}
 										activeSessionCount={activeSessionCount}
+										isLocal={isLocal}
 									/>
 								) : undefined
 							}

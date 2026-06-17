@@ -1,5 +1,10 @@
 import { Button } from "@circulo/ui/components/button"
 import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@circulo/ui/components/tooltip"
+import {
 	Dialog,
 	DialogContent,
 	DialogDescription,
@@ -55,6 +60,8 @@ interface BranchPickerProps {
 	onBranchChanged?: (branch: string) => void
 	/** Number of active sessions on this directory (for warnings) */
 	activeSessionCount?: number
+	/** Whether the project is on a local filesystem (defaults to true) */
+	isLocal?: boolean
 }
 
 // ============================================================
@@ -66,6 +73,7 @@ export function BranchPicker({
 	currentBranch,
 	onBranchChanged,
 	activeSessionCount = 0,
+	isLocal = true,
 }: BranchPickerProps) {
 	const [open, setOpen] = useState(false)
 	const [branches, setBranches] = useState<GitBranchInfo | null>(null)
@@ -210,6 +218,26 @@ export function BranchPicker({
 
 	// Don't render in browser mode
 	if (!isElectron) return null
+
+	// Read-only display for remote projects — branch switching requires local filesystem access
+	if (!isLocal) {
+		return (
+			<Tooltip>
+				<TooltipTrigger>
+					<button
+						type="button"
+						className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground/60"
+					>
+						<GitBranchIcon className="size-3" />
+						<span className="max-w-[140px] truncate">{currentBranch || "no branch"}</span>
+					</button>
+				</TooltipTrigger>
+				<TooltipContent side="top">
+					Branch switching is not available for remote projects
+				</TooltipContent>
+			</Tooltip>
+		)
+	}
 
 	return (
 		<>
