@@ -12,16 +12,15 @@ import {
 } from "@circulo/ui/components/sidebar"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@circulo/ui/components/tooltip"
 import { Outlet, useNavigate } from "@tanstack/react-router"
-import { useAtomValue } from "jotai"
-import { PanelLeftIcon, PlusIcon } from "lucide-react"
+import { useAtomValue, useSetAtom } from "jotai"
+import { MessageCirclePlusIcon, PanelLeftIcon } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { activeServerConfigAtom, serverConnectedAtom } from "../atoms/connection"
+import { serverConnectedAtom } from "../atoms/connection"
+import { chatInitDirectoryAtom } from "../atoms/chat"
 import { useAgents, useProjectList, useSetCommandPaletteOpen } from "../hooks/use-agents"
 import { useAgentActions } from "../hooks/use-server"
 import type { Agent } from "../lib/types"
-import { pickDirectory } from "../services/backend"
-import { loadProjectSessions } from "../services/connection-manager"
-import { AddProjectDialog } from "./add-project-dialog"
+import { getHomeDir } from "../services/backend"
 import { APP_BAR_HEIGHT, AppBar } from "./app-bar"
 import { AppSidebarContent } from "./sidebar"
 import { useSidebarSlot } from "./sidebar-slot-context"
@@ -85,12 +84,13 @@ function NarrowWindowCollapser() {
 // ============================================================
 
 /**
- * Absolutely positioned window controls (sidebar toggle + new thread) that
- * stay next to the macOS traffic lights regardless of sidebar state.
+ * Absolutely positioned window controls (sidebar toggle + conditional new thread)
+ * that stay next to the macOS traffic lights regardless of sidebar state.
+ * The new-thread button (chat-bubble-plus) only appears when the sidebar is collapsed.
  * Must be rendered inside a SidebarProvider.
  */
 function WindowControls() {
-	const { toggleSidebar } = useSidebar()
+	const { toggleSidebar, open } = useSidebar()
 	const navigate = useNavigate()
 
 	return (
@@ -118,21 +118,23 @@ function WindowControls() {
 				</TooltipTrigger>
 				<TooltipContent>Toggle sidebar (&#8984;B)</TooltipContent>
 			</Tooltip>
-			<Tooltip>
-				<TooltipTrigger
-					render={
-						<Button
-							variant="ghost"
-							size="icon"
-							className="size-7 shrink-0"
-							onClick={() => navigate({ to: "/" })}
-						/>
-					}
-				>
-					<PlusIcon className="size-3.5" />
-				</TooltipTrigger>
-				<TooltipContent>New thread (&#8984;N)</TooltipContent>
-			</Tooltip>
+			{!open && (
+				<Tooltip>
+					<TooltipTrigger
+						render={
+							<Button
+								variant="ghost"
+								size="icon"
+								className="size-7 shrink-0"
+								onClick={() => navigate({ to: "/" })}
+							/>
+						}
+					>
+						<MessageCirclePlusIcon className="size-3.5" />
+					</TooltipTrigger>
+					<TooltipContent>New thread (&#8984;N)</TooltipContent>
+				</Tooltip>
+			)}
 		</div>
 	)
 }
@@ -151,6 +153,14 @@ export function SidebarLayout() {
 	const setCommandPaletteOpen = useSetCommandPaletteOpen()
 	const { renameSession, deleteSession, forkSession } = useAgentActions()
 	const serverConnected = useAtomValue(serverConnectedAtom)
+
+	const setChatInitDirectory = useSetAtom(chatInitDirectoryAtom)
+
+	// Home directory for Chat feature
+	const [homeDirectory, setHomeDirectory] = useState<string | null>(null)
+	useEffect(() => {
+		getHomeDir().then((dir) => setHomeDirectory(dir))
+	}, [])
 
 	// Sub-agents are filtered at the API level (roots: true)
 	const visibleAgents = agents
@@ -186,29 +196,12 @@ export function SidebarLayout() {
 		setCommandPaletteOpen(true)
 	}, [setCommandPaletteOpen])
 
-	// Add project: local servers use native picker, remote servers use a dialog
-	const activeServer = useAtomValue(activeServerConfigAtom)
-	const [addProjectOpen, setAddProjectOpen] = useState(false)
-
-	const handleAddProject = useCallback(async () => {
-		if (activeServer.type === "local") {
-			// Local server: open native folder picker directly
-			const directory = await pickDirectory()
-			if (!directory) return
-			await loadProjectSessions(directory)
+	const handleNavigateChat = useCallback(() => {
+		if (homeDirectory) {
+			setChatInitDirectory(homeDirectory)
 			navigate({ to: "/" })
-		} else {
-			// Remote server: show dialog with text input
-			setAddProjectOpen(true)
 		}
-	}, [activeServer.type, navigate])
-
-	const handleProjectAdded = useCallback(
-		(_directory: string) => {
-			navigate({ to: "/" })
-		},
-		[navigate],
-	)
+	}, [navigate, homeDirectory, setChatInitDirectory])
 
 	return (
 		<div
@@ -222,54 +215,39 @@ export function SidebarLayout() {
 			<SidebarProvider embedded defaultOpen={true}>
 				<NarrowWindowCollapser />
 				<Sidebar collapsible="offcanvas" variant="sidebar">
-					{/* Sidebar header -- reserves space to match the app bar height so
-					 * sidebar content aligns with the main content area. Also clears
-					 * the traffic lights + the absolutely-positioned toggle button. */}
+					{/* Sidebar header */}
 					<SidebarHeader
 						className="flex-row items-center gap-1 shrink-0"
 						style={{
 							height: APP_BAR_HEIGHT,
-							// Make header draggable on Electron (acts as title bar above sidebar)
 							// @ts-expect-error -- vendor-prefixed CSS property
 							WebkitAppRegion: "drag",
 						}}
 					/>
 					{slotContent ?? (
-					<AppSidebarContent
-						agents={visibleAgents}
-						projects={projects}
-						onOpenCommandPalette={handleOpenCommandPalette}
-						onAddProject={handleAddProject}
-						onRenameSession={handleRenameSession}
-						onDeleteSession={handleDeleteSession}
-						onForkSession={handleForkSession}
-						serverConnected={serverConnected}
-					/>
+						<AppSidebarContent
+							agents={visibleAgents}
+							projects={projects}
+							onOpenCommandPalette={handleOpenCommandPalette}
+							onRenameSession={handleRenameSession}
+							onDeleteSession={handleDeleteSession}
+							onForkSession={handleForkSession}
+							serverConnected={serverConnected}
+							homeDirectory={homeDirectory}
+							onNavigateChat={handleNavigateChat}
+						/>
 					)}
-					{/* Footer: false = hide, ReactNode = render it, null = let default handle it.
-					 * When default sidebar is active, AppSidebarContent renders its own footer. */}
 					{slotFooter !== false && slotFooter}
 				</Sidebar>
 				<SidebarInset>
 					<UpdateBanner />
 					<AppBar />
-					{/* Flex-1 + min-h-0 wrapper: pages use h-full which would
-					    resolve to 100% of SidebarInset, ignoring AppBar height.
-					    This container takes remaining space after AppBar and
-					    constrains page content correctly. */}
 					<div data-slot="content-area" className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
 						<Outlet />
 					</div>
 				</SidebarInset>
-				{/* Rendered last so it paints on top of the sidebar and app bar,
-				    whose transition properties create stacking contexts. */}
 				<WindowControls />
 			</SidebarProvider>
-			<AddProjectDialog
-				open={addProjectOpen}
-				onOpenChange={setAddProjectOpen}
-				onAdded={handleProjectAdded}
-			/>
 		</div>
 	)
 }
