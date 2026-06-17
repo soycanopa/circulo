@@ -766,8 +766,7 @@ export function NewChat() {
 							/>
 						</div>
 
-						{/* Input body — nested lighter inner box */}
-						<div className="px-3 pb-3">
+						{/* Input body — nested lighter inner box, flush with wrapper edges */}
 						<PromptInputProvider key={NEW_CHAT_DRAFT_KEY} initialInput={draft}>
 						<DraftSync setDraft={setDraft} />
 						<MentionBridge controllerRef={controllerRef} />
@@ -788,7 +787,7 @@ export function NewChat() {
 								onClose={() => setMentionOpen(false)}
 							/>
 						<PromptInput
-							className="rounded-xl"
+							className="rounded-none border-t border-border/30"
 							accept="image/png,image/jpeg,image/gif,image/webp,application/pdf"
 							multiple
 							maxFileSize={10 * 1024 * 1024}
@@ -836,7 +835,6 @@ export function NewChat() {
 						</PromptInput>
 						</div>
 					</PromptInputProvider>
-						</div>
 					</div>
 
 					{/* Status bar — outside the card */}
