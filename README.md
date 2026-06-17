@@ -1,4 +1,6 @@
 <picture>
+    <source media="(prefers-color-scheme: light)" srcset="apps/desktop/resources/brand/lockup-light.png">
+    <img alt="circulo." src="apps/desktop/resources/brand/lockup-dark.png" width="420">
 </picture>
 
 ### A desktop GUI for [OpenCode](https://opencode.ai)
