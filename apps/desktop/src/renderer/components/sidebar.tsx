@@ -22,16 +22,17 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@circulo/ui/components/
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { useAtomValue, useSetAtom } from "jotai"
 import {
-	ArchiveIcon,
 	BotIcon,
 	ChevronDownIcon,
 	CommandIcon,
 	FolderGit2,
 	FolderIcon,
 	GitForkIcon,
+	GlobeIcon,
 	Loader2Icon,
 	MessageCircleIcon,
 	MessageCirclePlusIcon,
+	MonitorIcon,
 	PencilIcon,
 	SearchIcon,
 	SettingsIcon,
@@ -40,13 +41,13 @@ import {
 } from "lucide-react"
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { activeServerConfigAtom } from "../atoms/connection"
+import { chatInitDirectoryAtom } from "../atoms/chat"
 import { agentFamily, projectSessionIdsFamily, sandboxMappingsAtom } from "../atoms/derived/agents"
 import { automationsEnabledAtom } from "../atoms/feature-flags"
 import { projectPaginationFamily, markSessionViewedAtom } from "../atoms/sessions"
 import { appStore } from "../atoms/store"
 import type { Agent, AgentStatus, SidebarProject } from "../lib/types"
 import { loadMoreProjectSessions, loadProjectSessions } from "../services/connection-manager"
-import { ServerIndicator } from "./server-indicator"
 
 // ============================================================
 // Constants
@@ -123,8 +124,15 @@ export function AppSidebarContent({
 	const routeParams = useParams({ strict: false }) as { sessionId?: string }
 	const selectedSessionId = routeParams.sessionId ?? null
 	const automationsEnabled = useAtomValue(automationsEnabledAtom)
+	const setChatInitDir = useSetAtom(chatInitDirectoryAtom)
 	const activeServer = useAtomValue(activeServerConfigAtom)
-	const isLocalServer = activeServer.type === "local"
+	const isLocal = activeServer.type === "local"
+	const ServerIcon = isLocal ? MonitorIcon : GlobeIcon
+
+	const clearChatAndNavigate = useCallback(() => {
+		setChatInitDir("")
+		navigate({ to: "/" })
+	}, [navigate, setChatInitDir])
 
 	// --- Project search state ---
 	const [projectSearch, setProjectSearch] = useState("")
@@ -230,7 +238,7 @@ export function AppSidebarContent({
 						<SidebarMenuItem>
 							<SidebarMenuButton
 								tooltip="New Thread"
-								onClick={() => navigate({ to: "/" })}
+								onClick={clearChatAndNavigate}
 								className="text-muted-foreground"
 							>
 								<MessageCirclePlusIcon className="size-4" />
@@ -247,7 +255,7 @@ export function AppSidebarContent({
 							<span>New Chat</span>
 						</SidebarMenuButton>
 					</SidebarMenuItem>
-					{automationsEnabled && isLocalServer && (
+					{automationsEnabled && isLocal && (
 							<SidebarMenuItem>
 								<SidebarMenuButton
 									tooltip="Automations"
@@ -406,7 +414,23 @@ export function AppSidebarContent({
 					<SettingsIcon className="size-4" />
 					<span>Settings</span>
 				</SidebarMenuButton>
-				<ServerIndicator />
+				<SidebarMenu className="shrink-0">
+					<SidebarMenuItem>
+						<SidebarMenuButton
+							tooltip={serverConnected ? `Server: ${activeServer.name}` : `Server offline: ${activeServer.name}`}
+							className="text-muted-foreground hover:bg-transparent active:bg-transparent"
+						>
+							<div className="relative">
+								<ServerIcon aria-hidden="true" className="size-4" />
+								<span
+									className={`absolute -right-0.5 -bottom-0.5 size-2 rounded-full border border-sidebar-background ${
+										serverConnected ? "bg-green-500" : "bg-red-500"
+									}`}
+								/>
+							</div>
+						</SidebarMenuButton>
+					</SidebarMenuItem>
+				</SidebarMenu>
 			</SidebarFooter>
 		</>
 	)
@@ -543,11 +567,17 @@ const ProjectFolder = memo(function ProjectFolder({
 					{onArchive && !isChatsFolder && (
 						<button
 							type="button"
-							onClick={(e) => onArchive(e, project)}
+							onClick={(e) => {
+								e.stopPropagation()
+								navigate({
+									to: "/project/$projectSlug",
+									params: { projectSlug: project.slug },
+								})
+							}}
 							className="opacity-0 group-hover/project:opacity-100 shrink-0 mr-1 text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex aspect-square w-5 items-center justify-center rounded-md p-0 transition-all"
 						>
-							<ArchiveIcon className="size-3.5" />
-							<span className="sr-only">Archive {project.name}</span>
+							<MessageCirclePlusIcon className="size-3.5" />
+							<span className="sr-only">New thread in {project.name}</span>
 						</button>
 					)}
 				</div>
@@ -702,13 +732,15 @@ const SessionItem = memo(function SessionItem({
 	const tooltipLabel = showProject ? agent.project : agent.name
 
 	const btn = (
-		<SidebarMenuItem>
-			<SidebarMenuButton
-				isActive={isSelected}
-				tooltip={tooltipLabel}
-				size={compact ? "sm" : "default"}
-				onClick={isEditing ? undefined : onSelect}
-			>
+		<SidebarMenuItem className="group/session">
+			<div className="flex items-center">
+				<SidebarMenuButton
+					isActive={isSelected}
+					tooltip={tooltipLabel}
+					size={compact ? "sm" : "default"}
+					onClick={isEditing ? undefined : onSelect}
+					className="flex-1 min-w-0"
+				>
 				{isWorktree ? (
 					<span className="relative shrink-0">
 						<GitForkIcon
@@ -767,6 +799,20 @@ const SessionItem = memo(function SessionItem({
 					<span className="shrink-0 text-xs tabular-nums text-muted-foreground">{lastActive}</span>
 				)}
 			</SidebarMenuButton>
+				{onDelete && (
+					<button
+						type="button"
+						onClick={(e) => {
+							e.stopPropagation()
+							onDelete(agent)
+						}}
+						className="opacity-0 group-hover/session:opacity-100 shrink-0 mr-1 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex aspect-square w-5 items-center justify-center rounded-md p-0 transition-all"
+					>
+						<TrashIcon className="size-3" />
+						<span className="sr-only">Delete {agent.name}</span>
+					</button>
+				)}
+			</div>
 		</SidebarMenuItem>
 	)
 

@@ -517,7 +517,7 @@ export function NewChat() {
 	// Auto-select directory when entering via Chat sidebar item
 	const chatInitDir = useAtomValue(chatInitDirectoryAtom)
 	useEffect(() => {
-		if (chatInitDir) {
+		if (chatInitDir !== null) {
 			setSelectedDirectory(chatInitDir)
 			appStore.set(chatInitDirectoryAtom, null)
 		}
