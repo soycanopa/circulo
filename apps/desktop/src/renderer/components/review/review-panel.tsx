@@ -731,7 +731,7 @@ const FileDiffSection = memo(function FileDiffSection({
 		[diff.file, diff.after],
 	)
 
-	const renderHoverUtility = useCallback(
+	const renderGutterUtility = useCallback(
 		(getHoveredLine: () => { lineNumber: number; side: "additions" | "deletions" } | undefined) => (
 			<DiffCommentButton
 				filePath={diff.file}
@@ -767,7 +767,7 @@ const FileDiffSection = memo(function FileDiffSection({
 						options={options}
 						oldFile={oldFile}
 						newFile={newFile}
-						renderHoverUtility={renderHoverUtility}
+						renderGutterUtility={renderGutterUtility}
 					/>
 				</div>
 			)

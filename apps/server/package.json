@@ -22,10 +22,10 @@
 	},
 	"dependencies": {
 		"@opencode-ai/sdk": "^1.2.1",
-		"hono": "4.11.9"
+		"hono": "4.12.25"
 	},
 	"devDependencies": {
 		"@types/bun": "^1.2.14",
-		"typescript": "^5.8.3"
+		"typescript": "^6.0.3"
 	}
 }

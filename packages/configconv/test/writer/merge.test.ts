@@ -6,7 +6,7 @@ describe("mergeConfigs", () => {
 	test("overwrite strategy replaces all top-level keys", () => {
 		const existing: Partial<OpenCodeConfig> = {
 			model: "anthropic/old-model",
-			theme: "dark",
+			small_model: "anthropic/small",
 		}
 		const incoming: Partial<OpenCodeConfig> = {
 			model: "anthropic/new-model",
@@ -15,7 +15,7 @@ describe("mergeConfigs", () => {
 
 		const result = mergeConfigs(existing, incoming, "overwrite")
 		expect(result.model).toBe("anthropic/new-model")
-		expect(result.theme).toBe("dark") // from existing spread
+		expect(result.small_model).toBe("anthropic/small") // from existing spread
 		expect(result.autoupdate).toBe(true)
 	})
 

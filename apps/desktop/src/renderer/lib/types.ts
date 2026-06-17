@@ -16,7 +16,6 @@ export type {
 	EventSessionError,
 	EventSessionStatus,
 	EventSessionUpdated,
-	FileDiff,
 	FilePart,
 	FilePartInput,
 	Message,
@@ -37,6 +36,18 @@ export type {
 	ToolStateCompleted,
 	UserMessage,
 } from "@opencode-ai/sdk/v2/client"
+
+// FileDiff — locally defined because the OpenCode server sends `before`/`after`
+// (full file contents) rather than the SDK v2's `SnapshotFileDiff` which uses
+// a `patch` field. Keep in sync with the v1 SDK shape.
+export interface FileDiff {
+	file: string
+	before: string
+	after: string
+	additions: number
+	deletions: number
+	status?: "added" | "deleted" | "modified"
+}
 
 // ============================================================
 // File attachment types
