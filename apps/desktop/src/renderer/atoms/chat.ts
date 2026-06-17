@@ -26,6 +26,13 @@ export const sessionSettingsAtom = atomFamily((_sessionId: string) =>
 )
 
 /**
+ * Directory to auto-select when entering the new-chat view.
+ * Set by the sidebar Chat button to bypass project selection.
+ * Cleared after consumption by NewChat.
+ */
+export const chatInitDirectoryAtom = atom<string | null>(null)
+
+/**
  * Global timer for live-updating UI (durations, elapsed time).
  * Updates once per second.
  */

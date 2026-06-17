@@ -28,6 +28,7 @@ import {
 	SearchIcon,
 } from "lucide-react"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { chatInitDirectoryAtom } from "../atoms/chat"
 import { projectModelsAtom, setProjectModelAtom } from "../atoms/preferences"
 import {
 	removeSessionAtom,
@@ -512,6 +513,15 @@ export function NewChat() {
 		const match = projects.find((p) => p.slug === projectSlug)
 		if (match) setSelectedDirectory(match.directory)
 	}, [projectSlug, projects])
+
+	// Auto-select directory when entering via Chat sidebar item
+	const chatInitDir = useAtomValue(chatInitDirectoryAtom)
+	useEffect(() => {
+		if (chatInitDir) {
+			setSelectedDirectory(chatInitDir)
+			appStore.set(chatInitDirectoryAtom, null)
+		}
+	}, [chatInitDir])
 
 	// ---
 	// Launch helpers
