@@ -233,7 +233,7 @@ function ProjectSelector({
 				render={
 					<button
 						type="button"
-						className="flex items-center gap-1.5 pt-2.5 px-3 text-xs text-muted-foreground/70 transition-colors hover:text-foreground w-full"
+						className="flex items-center gap-1.5 text-xs text-muted-foreground/70 transition-colors hover:text-foreground w-full"
 					/>
 				}
 			>
@@ -753,8 +753,22 @@ export function NewChat() {
 			{/* Bottom-pinned input section */}
 			<div className="shrink-0 px-0 pb-0 pt-0 sm:px-6 sm:pb-5 sm:pt-3">
 				<div className="mx-auto w-full max-w-4xl">
-					{/* Input card */}
-					<PromptInputProvider key={NEW_CHAT_DRAFT_KEY} initialInput={draft}>
+					{/* Unified card — darker outer wrapper with nested lighter input */}
+					<div className="rounded-xl border border-border/40 bg-muted/20 overflow-hidden">
+						{/* Project selector header — sits in the darker top area */}
+						<div className="px-3 pt-2.5 pb-1.5">
+							<ProjectSelector
+								projects={projects}
+								selectedDirectory={selectedDirectory}
+								isRemote={!isLocal}
+								onSelect={setSelectedDirectory}
+								onOpenFolder={handleOpenFolder}
+							/>
+						</div>
+
+						{/* Input body — nested lighter inner box */}
+						<div className="px-3 pb-3">
+						<PromptInputProvider key={NEW_CHAT_DRAFT_KEY} initialInput={draft}>
 						<DraftSync setDraft={setDraft} />
 						<MentionBridge controllerRef={controllerRef} />
 						<MentionTrigger
@@ -786,13 +800,6 @@ export function NewChat() {
 									)
 							}}
 						>
-							<ProjectSelector
-								projects={projects}
-								selectedDirectory={selectedDirectory}
-								isRemote={!isLocal}
-								onSelect={setSelectedDirectory}
-								onOpenFolder={handleOpenFolder}
-							/>
 							<PromptAttachmentPreview
 								supportsImages={modelCapabilities?.image}
 								supportsPdf={modelCapabilities?.pdf}
@@ -829,6 +836,8 @@ export function NewChat() {
 						</PromptInput>
 						</div>
 					</PromptInputProvider>
+						</div>
+					</div>
 
 					{/* Status bar — outside the card */}
 					{providers && (
