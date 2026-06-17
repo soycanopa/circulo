@@ -95,6 +95,22 @@ ${colorConfig
 
 const ChartTooltip = RechartsPrimitive.Tooltip
 
+interface ChartTooltipContentProps {
+	active?: boolean
+	payload?: RechartsPrimitive.DefaultTooltipContentProps<number, string>["payload"]
+	label?: RechartsPrimitive.DefaultTooltipContentProps<number, string>["label"]
+	labelFormatter?: RechartsPrimitive.DefaultTooltipContentProps<number, string>["labelFormatter"]
+	formatter?: RechartsPrimitive.DefaultTooltipContentProps<number, string>["formatter"]
+	className?: string
+	labelClassName?: string
+	color?: string
+	hideLabel?: boolean
+	hideIndicator?: boolean
+	indicator?: "line" | "dot" | "dashed"
+	nameKey?: string
+	labelKey?: string
+}
+
 function ChartTooltipContent({
 	active,
 	payload,
@@ -109,14 +125,7 @@ function ChartTooltipContent({
 	color,
 	nameKey,
 	labelKey,
-}: React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
-	React.ComponentProps<"div"> & {
-		hideLabel?: boolean
-		hideIndicator?: boolean
-		indicator?: "line" | "dot" | "dashed"
-		nameKey?: string
-		labelKey?: string
-	}) {
+}: ChartTooltipContentProps) {
 	const { config } = useChart()
 
 	const tooltipLabel = React.useMemo(() => {
@@ -169,7 +178,7 @@ function ChartTooltipContent({
 
 						return (
 							<div
-								key={item.dataKey}
+								key={item.dataKey?.toString() ?? index}
 								className={cn(
 									"[&>svg]:text-muted-foreground flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5",
 									indicator === "dot" && "items-center",
@@ -239,11 +248,12 @@ function ChartLegendContent({
 	payload,
 	verticalAlign = "bottom",
 	nameKey,
-}: React.ComponentProps<"div"> &
-	Pick<RechartsPrimitive.LegendProps, "payload" | "verticalAlign"> & {
-		hideIcon?: boolean
-		nameKey?: string
-	}) {
+}: React.ComponentProps<"div"> & {
+	payload?: RechartsPrimitive.DefaultLegendContentProps["payload"]
+	verticalAlign?: RechartsPrimitive.DefaultLegendContentProps["verticalAlign"]
+	hideIcon?: boolean
+	nameKey?: string
+}) {
 	const { config } = useChart()
 
 	if (!payload?.length) {
