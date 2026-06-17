@@ -47,3 +47,4 @@ AGENTS.local.md
 
 # Local working directory
 .local/
+.opencode/plugins/emdash-notifications.js
