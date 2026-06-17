@@ -1,3 +1,5 @@
+declare module "*.css" {}
+
 /** Vite-specific extensions to ImportMeta (renderer process only). */
 interface ImportMetaEnv {
 	readonly DEV: boolean
