@@ -1,5 +1,15 @@
 # @circulo/desktop
 
+## 0.11.1
+
+### Patch Changes
+
+- Bump dependencies: 14 Dependabot PRs including major updates (electron 42, recharts 3, shadcn 4, zod 4, shiki 4, lucide-react 1, react-day-picker 10) and minor updates (hono, dev-tools, changelog-github, CI actions). Fixed breaking changes in react-day-picker (classNames table→month_grid) and recharts (Tooltip/Legend v3 types).
+
+- Updated dependencies []:
+  - @circulo/ui@0.11.1
+  - @circulo/configconv@0.11.1
+
 ## 0.11.0
 
 ### Minor Changes

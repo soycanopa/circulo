@@ -1,6 +1,6 @@
 {
 	"name": "@circulo/configconv",
-	"version": "0.5.2",
+	"version": "0.11.1",
 	"private": true,
 	"license": "MIT",
 	"type": "module",
