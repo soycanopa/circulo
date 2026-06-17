@@ -484,7 +484,10 @@ export interface CirculoAPI {
 	getOpencodeBinary: () => Promise<string | null>
 	/** Set the custom opencode binary path (null to clear). */
 	setOpencodeBinary: (value: string | null) => Promise<{ success: boolean }>
-	/** Relaunch the app (used after toggling transparency). */
+	/** Returns the user's home directory path. */
+	getHomeDir: () => Promise<string>
+
+	/** Relaunch the app (used after toggling transparency, which requires a restart). */
 	relaunch: () => Promise<void>
 
 	// CLI install

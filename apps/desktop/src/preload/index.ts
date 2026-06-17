@@ -144,6 +144,9 @@ contextBridge.exposeInMainWorld("circulo", {
 	setOpencodeBinary: (value: string | null) =>
 		ipcRenderer.invoke("prefs:set-opencode-binary", value),
 
+	/** Returns the user's home directory path. */
+	getHomeDir: () => ipcRenderer.invoke("app:home-dir"),
+
 	/** Relaunch the app (used after toggling transparency, which requires a restart). */
 	relaunch: () => ipcRenderer.invoke("app:relaunch"),
 

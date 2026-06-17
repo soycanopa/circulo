@@ -167,6 +167,17 @@ export async function pickDirectory(): Promise<string | null> {
 	throw new Error("Directory picker is only available in Electron mode")
 }
 
+/**
+ * Returns the user's home directory path.
+ * In Electron, resolved via IPC. In browser mode, not supported.
+ */
+export async function getHomeDir(): Promise<string | null> {
+	if (isElectron) {
+		return window.circulo.getHomeDir()
+	}
+	return null
+}
+
 // ============================================================
 // Git operations — Electron-only (main process via IPC)
 // In browser mode, these are not available (OpenCode server

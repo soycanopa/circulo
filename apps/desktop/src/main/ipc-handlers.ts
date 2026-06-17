@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, net, systemPreferences } from "electron"
+import { homedir } from "node:os"
 import {
 	acceptRun,
 	archiveRun,
@@ -377,6 +378,8 @@ export function registerIpcHandlers(): void {
 		app.relaunch()
 		app.exit(0)
 	})
+
+	ipcMain.handle("app:home-dir", () => homedir())
 
 	// --- Notifications ---
 
