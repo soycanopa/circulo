@@ -244,10 +244,10 @@ export function AppSidebarContent({
 								className="text-muted-foreground"
 							>
 								<MessageCircleIcon className="size-4" />
-								<span>Chat</span>
-							</SidebarMenuButton>
-						</SidebarMenuItem>
-						{automationsEnabled && isLocalServer && (
+							<span>New Chat</span>
+						</SidebarMenuButton>
+					</SidebarMenuItem>
+					{automationsEnabled && isLocalServer && (
 							<SidebarMenuItem>
 								<SidebarMenuButton
 									tooltip="Automations"
@@ -397,20 +397,18 @@ export function AppSidebarContent({
 				)}
 
 			</SidebarContent>
-			<SidebarFooter className="flex flex-row items-center p-2 gap-2">
-				<SidebarMenu className="flex-1 min-w-0">
-					<SidebarMenuItem>
-						<SidebarMenuButton
-							tooltip="Settings"
-							onClick={() => navigate({ to: "/settings" })}
-							className="text-muted-foreground"
-						>
-							<SettingsIcon className="size-4" />
-							<span>Settings</span>
-						</SidebarMenuButton>
-					</SidebarMenuItem>
-				</SidebarMenu>
-				<ServerIndicator />
+			<SidebarFooter className="flex flex-row items-center p-2">
+				<SidebarMenuButton
+					tooltip="Settings"
+					onClick={() => navigate({ to: "/settings" })}
+					className="text-muted-foreground shrink-0"
+				>
+					<SettingsIcon className="size-4" />
+					<span>Settings</span>
+				</SidebarMenuButton>
+				<div className="ml-auto shrink-0">
+					<ServerIndicator />
+				</div>
 			</SidebarFooter>
 		</>
 	)
