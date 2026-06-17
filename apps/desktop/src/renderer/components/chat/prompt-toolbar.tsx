@@ -19,19 +19,22 @@ import {
 import { Separator } from "@circulo/ui/components/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@circulo/ui/components/tooltip"
 import { cn } from "@circulo/ui/lib/utils"
-import { useAtomValue } from "jotai"
+import { useAtomValue, useSetAtom } from "jotai"
 import {
-	CheckIcon,
+	BrainIcon,
 	ChevronDownIcon,
+	CircleIcon,
 	GitBranchIcon,
 	ListIcon,
 	MaximizeIcon,
 	MonitorIcon,
 	SparklesIcon,
+	StarIcon,
 } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 import { messagesFamily } from "../../atoms/messages"
 import type { DisplayMode } from "../../atoms/preferences"
+import { favoriteModelsAtom } from "../../atoms/preferences"
 import { useDisplayMode, useSetDisplayMode } from "../../hooks/use-agents"
 import type {
 	CompactionConfig,
@@ -187,6 +190,8 @@ interface ModelSelectorProps {
 	onSelectModel: (model: ModelRef | null) => void
 	/** Recent models from model.json (most recently used first) */
 	recentModels?: ModelRef[]
+	/** Current project directory for per-project favorites persistence */
+	projectDirectory?: string
 	disabled?: boolean
 }
 
@@ -195,6 +200,7 @@ export function ModelSelector({
 	effectiveModel,
 	onSelectModel,
 	recentModels,
+	projectDirectory,
 	disabled,
 }: ModelSelectorProps) {
 	const models = useMemo(() => (providers ? flattenModels(providers.providers) : []), [providers])
@@ -219,6 +225,18 @@ export function ModelSelector({
 		[models, activeValue],
 	)
 
+	// Favorite models for the current project
+	const favoriteValues = useAtomValue(favoriteModelsAtom)
+	const setFavorites = useSetAtom(favoriteModelsAtom)
+
+	const favorites = useMemo(() => {
+		if (!projectDirectory) return []
+		const ids = favoriteValues[projectDirectory] ?? []
+		return ids
+			.map((id) => models.find((m) => m.value === id))
+			.filter((m): m is ModelOption => m != null)
+	}, [favoriteValues, models, projectDirectory])
+
 	const [open, setOpen] = useState(false)
 
 	const handleSelect = useCallback(
@@ -230,6 +248,22 @@ export function ModelSelector({
 			setOpen(false)
 		},
 		[onSelectModel],
+	)
+
+	const handleToggleFavorite = useCallback(
+		(value: string) => {
+			if (!projectDirectory) return
+			setFavorites((prev) => {
+				const list = prev[projectDirectory] ?? []
+				return {
+					...prev,
+					[projectDirectory]: list.includes(value)
+						? list.filter((v) => v !== value)
+						: [...list, value],
+				}
+			})
+		},
+		[setFavorites, projectDirectory],
 	)
 
 	if (!providers || models.length === 0) {
@@ -265,8 +299,10 @@ export function ModelSelector({
 				<ModelSelectorList
 					models={models}
 					lastUsedModels={lastUsedModels}
+					favorites={favorites}
 					activeValue={activeValue}
 					onSelect={handleSelect}
+					onToggleFavorite={handleToggleFavorite}
 				/>
 			</SearchableListPopoverContent>
 		</SearchableListPopover>
@@ -277,13 +313,17 @@ export function ModelSelector({
 function ModelSelectorList({
 	models,
 	lastUsedModels,
+	favorites,
 	activeValue,
 	onSelect,
+	onToggleFavorite,
 }: {
 	models: ModelOption[]
 	lastUsedModels: ModelOption[]
+	favorites: ModelOption[]
 	activeValue: string | null
 	onSelect: (value: string) => void
+	onToggleFavorite: (value: string) => void
 }) {
 	const search = useSearchableListPopoverSearch()
 
@@ -300,12 +340,56 @@ function ModelSelectorList({
 
 	const grouped = useMemo(() => groupByProvider(filteredModels), [filteredModels])
 
+	const favoriteSet = useMemo(
+		() => new Set(favorites.map((m) => m.value)),
+		[favorites],
+	)
+
 	return (
 		<SearchableListPopoverList>
-			{filteredModels.length === 0 ? (
+			{filteredModels.length === 0 && favorites.length === 0 ? (
 				<SearchableListPopoverEmpty>No models found</SearchableListPopoverEmpty>
 			) : (
 				<>
+					{/* Favorites group — only shown when not searching */}
+					{!search && favorites.length > 0 && (
+						<SearchableListPopoverGroup label="Favorites">
+							{favorites.map((model) => (
+								<SearchableListPopoverItem
+									key={`fav-${model.value}`}
+									onSelect={() => onSelect(model.value)}
+								>
+									{model.value === activeValue ? (
+										<CircleIcon className="size-3 shrink-0 fill-current text-primary" />
+									) : (
+										<span className="size-3 shrink-0" />
+									)}
+									<div className="min-w-0 flex-1">
+										<div className="truncate">{model.displayName}</div>
+										<div className="truncate text-[10px] text-muted-foreground/40">
+											{model.providerName}
+										</div>
+									</div>
+									{model.reasoning && (
+										<span className="shrink-0 rounded bg-muted p-0.5" aria-label="Reasoning">
+											<BrainIcon className="size-3.5" />
+										</span>
+									)}
+									<button
+										type="button"
+										className="shrink-0 p-1 -mr-1"
+										onClick={(e) => {
+											e.stopPropagation()
+											onToggleFavorite(model.value)
+										}}
+									>
+										<StarIcon className="size-3.5 fill-current" />
+									</button>
+								</SearchableListPopoverItem>
+							))}
+						</SearchableListPopoverGroup>
+					)}
+
 					{/* Last used group — only shown when not searching */}
 					{!search && lastUsedModels.length > 0 && (
 						<SearchableListPopoverGroup label="Last used">
@@ -314,6 +398,11 @@ function ModelSelectorList({
 									key={`recent-${model.value}`}
 									onSelect={() => onSelect(model.value)}
 								>
+									{model.value === activeValue ? (
+										<CircleIcon className="size-3 shrink-0 fill-current text-primary" />
+									) : (
+										<span className="size-3 shrink-0" />
+									)}
 									<div className="min-w-0 flex-1">
 										<div className="truncate">{model.displayName}</div>
 										<div className="truncate text-[10px] text-muted-foreground/40">
@@ -321,13 +410,24 @@ function ModelSelectorList({
 										</div>
 									</div>
 									{model.reasoning && (
-										<span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground/60">
-											reasoning
+										<span className="shrink-0 rounded bg-muted p-0.5" aria-label="Reasoning">
+											<BrainIcon className="size-3.5" />
 										</span>
 									)}
-									{model.value === activeValue && (
-										<CheckIcon className="size-3.5 shrink-0 text-primary" />
-									)}
+									<button
+										type="button"
+										className="shrink-0 p-1 -mr-1"
+										onClick={(e) => {
+											e.stopPropagation()
+											onToggleFavorite(model.value)
+										}}
+									>
+										{favoriteSet.has(model.value) ? (
+											<StarIcon className="size-3.5 fill-current" />
+										) : (
+											<StarIcon className="size-3.5" />
+										)}
+									</button>
 								</SearchableListPopoverItem>
 							))}
 						</SearchableListPopoverGroup>
@@ -335,8 +435,11 @@ function ModelSelectorList({
 
 					{/* Provider-grouped models */}
 					{Array.from(grouped.entries()).map(([providerName, providerModels]) => {
-						// Get the provider ID from the first model in the group to look up the icon
 						const providerId = providerModels[0]?.providerID
+						const visibleModels = search
+							? providerModels
+							: providerModels.filter((m) => !favoriteSet.has(m.value))
+						if (visibleModels.length === 0) return null
 						return (
 							<SearchableListPopoverGroup
 								key={providerName}
@@ -347,20 +450,36 @@ function ModelSelectorList({
 									</>
 								}
 							>
-								{providerModels.map((model) => (
+								{visibleModels.map((model) => (
 									<SearchableListPopoverItem
 										key={model.value}
 										onSelect={() => onSelect(model.value)}
 									>
+										{model.value === activeValue ? (
+											<CircleIcon className="size-3 shrink-0 fill-current text-primary" />
+										) : (
+											<span className="size-3 shrink-0" />
+										)}
 										<span className="min-w-0 flex-1 truncate">{model.displayName}</span>
 										{model.reasoning && (
-											<span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground/60">
-												reasoning
+											<span className="shrink-0 rounded bg-muted p-0.5" aria-label="Reasoning">
+												<BrainIcon className="size-3.5" />
 											</span>
 										)}
-										{model.value === activeValue && (
-											<CheckIcon className="size-3.5 shrink-0 text-primary" />
-										)}
+										<button
+											type="button"
+											className="shrink-0 p-1 -mr-1"
+											onClick={(e) => {
+												e.stopPropagation()
+												onToggleFavorite(model.value)
+											}}
+										>
+											{favoriteSet.has(model.value) ? (
+												<StarIcon className="size-3.5 fill-current" />
+											) : (
+												<StarIcon className="size-3.5" />
+											)}
+										</button>
 									</SearchableListPopoverItem>
 								))}
 							</SearchableListPopoverGroup>
@@ -462,6 +581,9 @@ export interface PromptToolbarProps {
 	/** Recent models from model.json */
 	recentModels?: ModelRef[]
 
+	/** Current project directory for per-project favorites persistence */
+	projectDirectory?: string
+
 	/** Currently selected variant */
 	selectedVariant: string | undefined
 	onSelectVariant: (variant: string | undefined) => void
@@ -483,6 +605,7 @@ export function PromptToolbar({
 	hasModelOverride,
 	onSelectModel,
 	recentModels,
+	projectDirectory,
 	selectedVariant,
 	onSelectVariant,
 	disabled,
@@ -516,6 +639,7 @@ export function PromptToolbar({
 				hasOverride={hasModelOverride}
 				onSelectModel={onSelectModel}
 				recentModels={recentModels}
+				projectDirectory={projectDirectory}
 				disabled={disabled}
 			/>
 

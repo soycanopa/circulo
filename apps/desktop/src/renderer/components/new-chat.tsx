@@ -738,6 +738,7 @@ export function NewChat() {
 											hasModelOverride={!!selectedModel}
 											onSelectModel={handleModelSelect}
 											recentModels={recentModels}
+											projectDirectory={selectedDirectory}
 											selectedVariant={selectedVariant}
 											onSelectVariant={setSelectedVariant}
 										/>

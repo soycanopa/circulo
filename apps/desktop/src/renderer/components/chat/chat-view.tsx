@@ -1433,6 +1433,7 @@ function ChatInputSection({
 												hasModelOverride={!!selectedModel}
 												onSelectModel={handleModelSelect}
 												recentModels={recentModels}
+												projectDirectory={agent.directory}
 												selectedVariant={selectedVariant}
 												onSelectVariant={setSelectedVariant}
 												disabled={!isConnected}

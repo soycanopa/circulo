@@ -397,6 +397,7 @@ export function ChatInput({
 									})
 								}
 								recentModels={recentModels}
+								projectDirectory={agent.directory}
 								selectedVariant={selectedVariant}
 								onSelectVariant={(v) => startTransition(() => setSelectedVariant(v))}
 								disabled={!isConnected}
