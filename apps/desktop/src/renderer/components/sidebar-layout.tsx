@@ -140,6 +140,85 @@ function WindowControls() {
 }
 
 // ============================================================
+// SidebarResizeHandle
+// ============================================================
+
+const SIDEBAR_RESIZE_KEY = "circulo-sidebar-width"
+const SIDEBAR_MIN_WIDTH = 200
+const SIDEBAR_MAX_WIDTH = 500
+
+function getPersistedSidebarWidth(): number | null {
+	try {
+		const raw = localStorage.getItem(SIDEBAR_RESIZE_KEY)
+		if (!raw) return null
+		const val = Number(raw)
+		return Number.isFinite(val) ? Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, val)) : null
+	} catch {
+		return null
+	}
+}
+
+function SidebarResizeHandle({ sidebarWidth, onWidthChange }: { sidebarWidth: number; onWidthChange: (w: number) => void }) {
+	const draggingRef = useRef(false)
+	const startXRef = useRef(0)
+	const startWidthRef = useRef(0)
+	const [isDragging, setIsDragging] = useState(false)
+
+	const handleMouseDown = useCallback((e: React.MouseEvent) => {
+		e.preventDefault()
+		draggingRef.current = true
+		startXRef.current = e.clientX
+		startWidthRef.current = sidebarWidth
+		setIsDragging(true)
+	}, [sidebarWidth])
+
+	useEffect(() => {
+		if (!isDragging) return
+
+		const handleMouseMove = (e: MouseEvent) => {
+			if (!draggingRef.current) return
+			const delta = e.clientX - startXRef.current
+			const newWidth = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, startWidthRef.current + delta))
+			onWidthChange(newWidth)
+		}
+
+		const handleMouseUp = () => {
+			draggingRef.current = false
+			setIsDragging(false)
+			localStorage.setItem(SIDEBAR_RESIZE_KEY, String(sidebarWidth))
+		}
+
+		window.addEventListener("mousemove", handleMouseMove)
+		window.addEventListener("mouseup", handleMouseUp)
+		return () => {
+			window.removeEventListener("mousemove", handleMouseMove)
+			window.removeEventListener("mouseup", handleMouseUp)
+		}
+	}, [isDragging, sidebarWidth, onWidthChange])
+
+	const { state } = useSidebar()
+	if (state === "collapsed") return null
+
+	return (
+		<div
+			data-slot="sidebar-resize-handle"
+			onMouseDown={handleMouseDown}
+			className="relative z-20 shrink-0 cursor-col-resize select-none"
+			style={{ width: isDragging ? 4 : 2 }}
+		>
+			{isDragging && (
+				<div
+					className="absolute inset-y-0 left-0 right-0"
+					style={{
+						background: "linear-gradient(to right, rgba(0,0,0,0), rgba(111,203,243,0.4) 50%, rgba(0,0,0,0))",
+					}}
+				/>
+			)}
+		</div>
+	)
+}
+
+// ============================================================
 // SidebarLayout
 // ============================================================
 
@@ -161,6 +240,9 @@ export function SidebarLayout() {
 	useEffect(() => {
 		getHomeDir().then((dir) => setHomeDirectory(dir))
 	}, [])
+
+	const [sidebarWidth, setSidebarWidth] = useState(() => getPersistedSidebarWidth() ?? 280)
+	const handleSidebarWidthChange = useCallback((w: number) => setSidebarWidth(w), [])
 
 	// Sub-agents are filtered at the API level (roots: true)
 	const visibleAgents = agents
@@ -212,7 +294,7 @@ export function SidebarLayout() {
 				} as React.CSSProperties
 			}
 		>
-			<SidebarProvider embedded defaultOpen={true}>
+			<SidebarProvider embedded defaultOpen={true} style={{ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}>
 				<NarrowWindowCollapser />
 				<Sidebar collapsible="offcanvas" variant="sidebar">
 					{/* Sidebar header */}
@@ -239,6 +321,7 @@ export function SidebarLayout() {
 					)}
 					{slotFooter !== false && slotFooter}
 				</Sidebar>
+				<SidebarResizeHandle sidebarWidth={sidebarWidth} onWidthChange={handleSidebarWidthChange} />
 				<SidebarInset>
 					<UpdateBanner />
 					<AppBar />
