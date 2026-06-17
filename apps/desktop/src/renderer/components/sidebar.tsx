@@ -22,20 +22,19 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@circulo/ui/components/
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { useAtomValue, useSetAtom } from "jotai"
 import {
-	AlertCircleIcon,
+	ArchiveIcon,
 	BotIcon,
-	CheckCircle2Icon,
 	ChevronDownIcon,
-	ChevronRightIcon,
-	CircleDotIcon,
 	CommandIcon,
+	FolderGit2,
+	FolderIcon,
 	GitForkIcon,
 	Loader2Icon,
+	MessageCircleIcon,
+	MessageCirclePlusIcon,
 	PencilIcon,
-	PlusIcon,
 	SearchIcon,
 	SettingsIcon,
-	TimerIcon,
 	TrashIcon,
 	XIcon,
 } from "lucide-react"
@@ -53,18 +52,6 @@ import { ServerIndicator } from "./server-indicator"
 // Constants
 // ============================================================
 
-/** How many recent sessions to show in the top-level "Recent" section */
-const RECENT_COUNT = 5
-
-const STATUS_ICON: Record<AgentStatus, typeof Loader2Icon> = {
-	running: Loader2Icon,
-	waiting: TimerIcon,
-	paused: CircleDotIcon,
-	completed: CheckCircle2Icon,
-	failed: AlertCircleIcon,
-	idle: CircleDotIcon,
-}
-
 const STATUS_COLOR: Record<AgentStatus, string> = {
 	running: "text-green-500",
 	waiting: "text-yellow-500",
@@ -72,6 +59,29 @@ const STATUS_COLOR: Record<AgentStatus, string> = {
 	completed: "text-muted-foreground",
 	failed: "text-red-500",
 	idle: "text-muted-foreground",
+}
+
+const ARCHIVED_PROJECTS_KEY = "circulo-archived-projects"
+
+function getArchivedProjectIds(): Set<string> {
+	try {
+		const raw = localStorage.getItem(ARCHIVED_PROJECTS_KEY)
+		if (!raw) return new Set()
+		return new Set(JSON.parse(raw) as string[])
+	} catch {
+		return new Set()
+	}
+}
+
+function archiveProject(id: string) {
+	const archived = getArchivedProjectIds()
+	archived.add(id)
+	localStorage.setItem(ARCHIVED_PROJECTS_KEY, JSON.stringify([...archived]))
+}
+
+/** Detect if a project ID looks like a git commit hash (pure hex, 40 chars) */
+function isGitProjectId(id: string): boolean {
+	return /^[a-f0-9]{40}$/.test(id)
 }
 
 // ============================================================
@@ -82,11 +92,12 @@ interface AppSidebarContentProps {
 	agents: Agent[]
 	projects: SidebarProject[]
 	onOpenCommandPalette: () => void
-	onAddProject?: () => void
 	onRenameSession?: (agent: Agent, title: string) => Promise<void>
 	onDeleteSession?: (agent: Agent) => Promise<void>
 	onForkSession?: (agent: Agent) => Promise<void>
 	serverConnected: boolean
+	homeDirectory?: string | null
+	onNavigateChat?: () => void
 }
 
 // ============================================================
@@ -94,18 +105,19 @@ interface AppSidebarContentProps {
 // ============================================================
 
 /**
- * Default sidebar content: Active Now, Recent, Projects groups + Settings footer.
+ * Default sidebar content: Active Now, Threads (projects + sessions), Chat + Settings footer.
  * Rendered inside the `<Sidebar>` shell provided by `SidebarLayout`.
  */
 export function AppSidebarContent({
 	agents,
 	projects,
 	onOpenCommandPalette,
-	onAddProject,
 	onRenameSession,
 	onDeleteSession,
 	onForkSession,
 	serverConnected,
+	homeDirectory,
+	onNavigateChat,
 }: AppSidebarContentProps) {
 	const navigate = useNavigate()
 	const routeParams = useParams({ strict: false }) as { sessionId?: string }
@@ -119,14 +131,21 @@ export function AppSidebarContent({
 	const [projectSearchActive, setProjectSearchActive] = useState(false)
 	const projectSearchRef = useRef<HTMLInputElement>(null)
 
+	// Filter out archived projects
+	const archivedIds = useMemo(() => getArchivedProjectIds(), [])
+	const visibleProjects = useMemo(
+		() => projects.filter((p) => !archivedIds.has(p.id)),
+		[projects, archivedIds],
+	)
+
 	// Filter projects by search query (client-side, case-insensitive)
 	const filteredProjects = useMemo(() => {
-		if (!projectSearch.trim()) return projects
+		if (!projectSearch.trim()) return visibleProjects
 		const q = projectSearch.toLowerCase()
-		return projects.filter(
+		return visibleProjects.filter(
 			(p) => p.name.toLowerCase().includes(q) || p.directory.toLowerCase().includes(q),
 		)
-	}, [projects, projectSearch])
+	}, [visibleProjects, projectSearch])
 
 	const toggleProjectSearch = useCallback(() => {
 		setProjectSearchActive((prev) => {
@@ -145,32 +164,39 @@ export function AppSidebarContent({
 		}
 	}, [projectSearchActive])
 
-	// Derive sections — filter out sub-agents (parentId) from sidebar display
+	// Chat sessions: agents whose directory equals homeDirectory
+	const chatSessionIds = useMemo(() => {
+		if (!homeDirectory) return new Set<string>()
+		return new Set(
+			agents.filter((a) => !a.parentId && a.directory === homeDirectory).map((a) => a.id),
+		)
+	}, [agents, homeDirectory])
+
+	// Active sessions: non-parent, non-chat, running/waiting/failed
 	const activeSessions = useMemo(
 		() =>
 			agents
 				.filter(
 					(a) =>
 						!a.parentId &&
+						!chatSessionIds.has(a.id) &&
 						(a.status === "running" || a.status === "waiting" || a.status === "failed"),
 				)
 				.sort((a, b) => b.createdAt - a.createdAt),
-		[agents],
+		[agents, chatSessionIds],
 	)
 
-	const activeIds = useMemo(() => new Set(activeSessions.map((a) => a.id)), [activeSessions])
-
-	const recentSessions = useMemo(
-		() =>
-			agents
-				.filter((a) => !a.parentId && !activeIds.has(a.id))
-				.sort((a, b) => b.lastActiveAt - a.lastActiveAt)
-				.slice(0, RECENT_COUNT),
-		[agents, activeIds],
-	)
-
-	const hasContent = agents.length > 0 || projects.length > 0
+	const hasThreads = visibleProjects.length > 0 || chatSessionIds.size > 0
+	const hasContent = agents.length > 0 || hasThreads
 	const showEmptyState = !hasContent
+
+	const handleArchive = useCallback(
+		(e: React.MouseEvent, project: SidebarProject) => {
+			e.stopPropagation()
+			archiveProject(project.id)
+		},
+		[],
+	)
 
 	return (
 		<>
@@ -189,7 +215,7 @@ export function AppSidebarContent({
 								</>
 							) : (
 								<>
-									<p className="text-sm text-muted-foreground">No projects yet</p>
+									<p className="text-sm text-muted-foreground">No threads yet</p>
 									<p className="text-xs text-muted-foreground/60">Add a project to get started</p>
 								</>
 							)}
@@ -197,7 +223,7 @@ export function AppSidebarContent({
 					</div>
 				)}
 
-			{/* New Thread + Automations */}
+			{/* New Thread + Chat + Automations */}
 			<SidebarGroup>
 				<SidebarGroupContent>
 					<SidebarMenu>
@@ -207,8 +233,18 @@ export function AppSidebarContent({
 								onClick={() => navigate({ to: "/" })}
 								className="text-muted-foreground"
 							>
-								<PlusIcon className="size-4" />
+								<MessageCirclePlusIcon className="size-4" />
 								<span>New Thread</span>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								tooltip="Chat"
+								onClick={onNavigateChat}
+								className="text-muted-foreground"
+							>
+								<MessageCircleIcon className="size-4" />
+								<span>Chat</span>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
 						{automationsEnabled && isLocalServer && (
@@ -233,51 +269,29 @@ export function AppSidebarContent({
 						<SidebarGroupLabel>Active Now</SidebarGroupLabel>
 						<SidebarGroupContent>
 							<SidebarMenu>
-							{activeSessions.map((agent) => (
-								<SessionItem
-									key={agent.id}
-									agent={agent}
-									isSelected={agent.id === selectedSessionId}
-									onRename={onRenameSession}
-									onDelete={onDeleteSession}
-									onFork={onForkSession}
-									showProject
-								/>
-							))}
+								{activeSessions.map((agent) => (
+									<SessionItem
+										key={agent.id}
+										agent={agent}
+										isSelected={agent.id === selectedSessionId}
+										onRename={onRenameSession}
+										onDelete={onDeleteSession}
+										onFork={onForkSession}
+										showProject
+									/>
+								))}
 							</SidebarMenu>
 						</SidebarGroupContent>
 					</SidebarGroup>
 				)}
 
-				{/* Recent */}
-				{recentSessions.length > 0 && (
-					<SidebarGroup>
-						<SidebarGroupLabel>Recent</SidebarGroupLabel>
-						<SidebarGroupContent>
-							<SidebarMenu>
-							{recentSessions.map((agent) => (
-								<SessionItem
-									key={agent.id}
-									agent={agent}
-									isSelected={agent.id === selectedSessionId}
-									onRename={onRenameSession}
-									onDelete={onDeleteSession}
-									onFork={onForkSession}
-									showProject
-								/>
-							))}
-							</SidebarMenu>
-						</SidebarGroupContent>
-					</SidebarGroup>
-				)}
-
-				{/* Projects */}
-				{hasContent && (activeSessions.length > 0 || recentSessions.length > 0) && (
+				{/* Threads */}
+				{activeSessions.length > 0 && hasThreads && (
 					<SidebarSeparator className="bg-sidebar-border/5" />
 				)}
-				{hasContent && (
+				{hasThreads && (
 					<SidebarGroup>
-						<SidebarGroupLabel>Projects</SidebarGroupLabel>
+						<SidebarGroupLabel>Threads</SidebarGroupLabel>
 						{/* Action buttons row */}
 						<div className="absolute top-3.5 right-3 flex max-w-[calc(100%-4rem)] items-center gap-0.5 overflow-hidden">
 							<Tooltip>
@@ -299,10 +313,10 @@ export function AppSidebarContent({
 									) : (
 										<SearchIcon className="size-4 shrink-0" />
 									)}
-									<span className="sr-only">Search projects</span>
+									<span className="sr-only">Search threads</span>
 								</TooltipTrigger>
 								<TooltipContent side="bottom">
-									{projectSearchActive ? "Close search" : "Search projects"}
+									{projectSearchActive ? "Close search" : "Search threads"}
 								</TooltipContent>
 							</Tooltip>
 							<Tooltip>
@@ -320,23 +334,6 @@ export function AppSidebarContent({
 								</TooltipTrigger>
 								<TooltipContent side="bottom">Command palette (&#8984;K)</TooltipContent>
 							</Tooltip>
-							{onAddProject && (
-								<Tooltip>
-									<TooltipTrigger
-										render={
-											<button
-												type="button"
-												onClick={onAddProject}
-												className="text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex aspect-square w-5 shrink-0 items-center justify-center rounded-md p-0 transition-colors"
-											/>
-										}
-									>
-										<PlusIcon className="size-4 shrink-0" />
-										<span className="sr-only">Add Project</span>
-									</TooltipTrigger>
-									<TooltipContent side="bottom">Add project</TooltipContent>
-								</Tooltip>
-							)}
 						</div>
 
 						{/* Inline project search */}
@@ -351,7 +348,7 @@ export function AppSidebarContent({
 											toggleProjectSearch()
 										}
 									}}
-									placeholder="Filter projects..."
+									placeholder="Filter threads..."
 									className="h-7 text-xs"
 								/>
 							</div>
@@ -359,29 +356,49 @@ export function AppSidebarContent({
 
 						<SidebarGroupContent>
 							<SidebarMenu>
-							{filteredProjects.map((project) => (
-								<ProjectFolder
-									key={project.id}
-									project={project}
-									selectedSessionId={selectedSessionId}
-									onRename={onRenameSession}
-									onDelete={onDeleteSession}
-									onFork={onForkSession}
-								/>
-							))}
+								{/* Chats group */}
+								{chatSessionIds.size > 0 && homeDirectory && (
+									<ProjectFolder
+										project={{
+											id: "chats",
+											slug: "chats",
+											name: "Chats",
+											directory: homeDirectory,
+											agentCount: chatSessionIds.size,
+											lastActiveAt: 0,
+											hasActiveAgent: false,
+										}}
+										selectedSessionId={selectedSessionId}
+										onRename={onRenameSession}
+										onDelete={onDeleteSession}
+										onFork={onForkSession}
+										isChatsFolder
+									/>
+								)}
+								{filteredProjects.map((project) => (
+									<ProjectFolder
+										key={project.id}
+										project={project}
+										selectedSessionId={selectedSessionId}
+										onRename={onRenameSession}
+										onDelete={onDeleteSession}
+										onFork={onForkSession}
+										onArchive={handleArchive}
+									/>
+								))}
 								{projectSearch && filteredProjects.length === 0 && (
 									<p className="px-2 py-1.5 text-xs text-muted-foreground/60">
-										No projects match &ldquo;{projectSearch}&rdquo;
+										No threads match &ldquo;{projectSearch}&rdquo;
 									</p>
 								)}
 							</SidebarMenu>
 						</SidebarGroupContent>
 					</SidebarGroup>
 				)}
+
 			</SidebarContent>
-			<SidebarFooter className="space-y-0 p-2">
-				<ServerIndicator />
-				<SidebarMenu>
+			<SidebarFooter className="flex flex-row items-center p-2 gap-2">
+				<SidebarMenu className="flex-1 min-w-0">
 					<SidebarMenuItem>
 						<SidebarMenuButton
 							tooltip="Settings"
@@ -393,6 +410,7 @@ export function AppSidebarContent({
 						</SidebarMenuButton>
 					</SidebarMenuItem>
 				</SidebarMenu>
+				<ServerIndicator />
 			</SidebarFooter>
 		</>
 	)
@@ -445,12 +463,16 @@ const ProjectFolder = memo(function ProjectFolder({
 	onRename,
 	onDelete,
 	onFork,
+	onArchive,
+	isChatsFolder = false,
 }: {
 	project: SidebarProject
 	selectedSessionId: string | null
 	onRename?: (agent: Agent, title: string) => Promise<void>
 	onDelete?: (agent: Agent) => Promise<void>
 	onFork?: (agent: Agent) => Promise<void>
+	onArchive?: (e: React.MouseEvent, project: SidebarProject) => void
+	isChatsFolder?: boolean
 }) {
 	const navigate = useNavigate()
 	const [expanded, setExpanded] = useState(false)
@@ -488,7 +510,6 @@ const ProjectFolder = memo(function ProjectFolder({
 			const aActive = a.status === "running" || a.status === "waiting" || a.status === "failed"
 			const bActive = b.status === "running" || b.status === "waiting" || b.status === "failed"
 			if (aActive !== bActive) return aActive ? -1 : 1
-			// Within same group, sort by lastActiveAt (matches server's time_updated DESC)
 			return b.lastActiveAt - a.lastActiveAt
 		})
 	}, [sessionIds])
@@ -501,25 +522,39 @@ const ProjectFolder = memo(function ProjectFolder({
 	const isInitialLoading = expanded && !pagination.loaded && !pagination.loading
 	const isLoading = pagination.loading || isInitialLoading
 
+	const ProjectIcon = isChatsFolder ? MessageCircleIcon : isGitProjectId(project.id) ? FolderGit2 : FolderIcon
+
 	return (
 		<SidebarMenuItem>
 			<Collapsible open={expanded} onOpenChange={setExpanded}>
-				<SidebarMenuButton
-					tooltip={project.name}
-					onClick={() => {
-						setExpanded(!expanded)
-						navigate({
-							to: "/project/$projectSlug",
-							params: { projectSlug: project.slug },
-						})
-					}}
-				>
-					<ChevronRightIcon
-						className="size-3 shrink-0 text-muted-foreground transition-transform duration-150 ease-out"
-						style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
-					/>
-					<span className="truncate font-medium">{project.name}</span>
-				</SidebarMenuButton>
+				<div className="group/project flex items-center">
+					<SidebarMenuButton
+						tooltip={project.name}
+						onClick={() => {
+							setExpanded(!expanded)
+							if (!isChatsFolder) {
+								navigate({
+									to: "/project/$projectSlug",
+									params: { projectSlug: project.slug },
+								})
+							}
+						}}
+						className="flex-1 min-w-0"
+					>
+						<ProjectIcon className="size-3 shrink-0 text-muted-foreground" />
+						<span className="truncate font-medium">{project.name}</span>
+					</SidebarMenuButton>
+					{onArchive && !isChatsFolder && (
+						<button
+							type="button"
+							onClick={(e) => onArchive(e, project)}
+							className="opacity-0 group-hover/project:opacity-100 shrink-0 mr-1 text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground flex aspect-square w-5 items-center justify-center rounded-md p-0 transition-all"
+						>
+							<ArchiveIcon className="size-3.5" />
+							<span className="sr-only">Archive {project.name}</span>
+						</button>
+					)}
+				</div>
 
 				<CollapsibleContent
 					keepMounted
@@ -535,16 +570,16 @@ const ProjectFolder = memo(function ProjectFolder({
 							<p className="px-2 py-1.5 text-xs text-muted-foreground/60">No sessions yet</p>
 						) : (
 							<SidebarMenu>
-							{projectSessions.map((agent) => (
-								<ProjectSessionItem
-									key={agent.id}
-									sessionId={agent.id}
-									selectedSessionId={selectedSessionId}
-									onRename={onRename}
-									onDelete={onDelete}
-									onFork={onFork}
-								/>
-							))}
+								{projectSessions.map((agent) => (
+									<ProjectSessionItem
+										key={agent.id}
+										sessionId={agent.id}
+										selectedSessionId={selectedSessionId}
+										onRename={onRename}
+										onDelete={onDelete}
+										onFork={onFork}
+									/>
+								))}
 								{pagination.loaded && pagination.hasMore && (
 									<button
 										type="button"
@@ -623,7 +658,6 @@ const SessionItem = memo(function SessionItem({
 	const navigate = useNavigate()
 	const [, startTransition] = useTransition()
 	const markViewed = useSetAtom(markSessionViewedAtom)
-	const StatusIcon = STATUS_ICON[agent.status]
 	const statusColor = STATUS_COLOR[agent.status]
 	const isWorktree = !!agent.worktreePath
 	const lastActive = useLiveLastActive(agent)
@@ -693,7 +727,7 @@ const SessionItem = memo(function SessionItem({
 					</span>
 				) : (
 					<span className="relative shrink-0">
-						<StatusIcon
+						<MessageCircleIcon
 							className={`${statusColor} ${agent.status === "running" ? "animate-spin" : ""}`}
 						/>
 						{hasNewActivity && (
