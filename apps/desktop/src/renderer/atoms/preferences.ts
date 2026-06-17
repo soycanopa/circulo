@@ -104,6 +104,16 @@ export const automationsBannerDismissedAtom = atomWithStorage<boolean>(
 	false,
 )
 
+/**
+ * Per-project favorite model IDs.
+ * Maps project directory → array of composite "providerID/modelID" strings.
+ * Persisted to localStorage under key "circulo:favoriteModels".
+ */
+export const favoriteModelsAtom = atomWithStorage<Record<string, string[]>>(
+	"circulo:favoriteModels",
+	{},
+)
+
 // ============================================================
 // Derived atoms for drafts
 // ============================================================
