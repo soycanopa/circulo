@@ -34,8 +34,8 @@ export interface DiscoveredMdnsServer {
 const discovered = new Map<string, DiscoveredMdnsServer>()
 
 // Dynamic import handle for bonjour-service (avoids top-level require issues)
-let bonjourInstance: import("bonjour-service").Bonjour | undefined
-let browser: import("bonjour-service").Browser | undefined
+let bonjourInstance: any
+let browser: any
 
 function makeId(host: string, port: number): string {
 	return `mdns-${host}:${port}`
@@ -59,7 +59,7 @@ export async function startMdnsScanner(): Promise<void> {
 		const { Bonjour } = await import("bonjour-service")
 		bonjourInstance = new Bonjour()
 
-		browser = bonjourInstance.find({ type: "http" }, (service) => {
+		browser = bonjourInstance.find({ type: "http" }, (service: any) => {
 			// Only interested in opencode services (published as "opencode-{port}")
 			if (!service.name.startsWith("opencode-")) return
 
@@ -83,7 +83,7 @@ export async function startMdnsScanner(): Promise<void> {
 		})
 
 		// Also listen for service removals (goodbye packets)
-		browser.on("down" as string, (service: { name: string; host: string; port: number }) => {
+		(browser as any).on("down", (service: { name: string; host: string; port: number }) => {
 			if (!service.name.startsWith("opencode-")) return
 			const host = service.host || "opencode.local"
 			const id = makeId(host, service.port)

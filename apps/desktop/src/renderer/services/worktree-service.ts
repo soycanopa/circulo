@@ -242,7 +242,7 @@ export async function createWorktree(
 		return {
 			worktreeRoot: data.directory,
 			worktreeWorkspace,
-			branchName: data.branch,
+			branchName: data.branch ?? "",
 		}
 	} catch (err) {
 		log.error("Worktree creation failed", err)
