@@ -20,7 +20,7 @@ import {
 } from "@circulo/ui/components/sidebar"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@circulo/ui/components/tooltip"
 import { useNavigate, useParams } from "@tanstack/react-router"
-import { useAtomValue } from "jotai"
+import { useAtomValue, useSetAtom } from "jotai"
 import {
 	AlertCircleIcon,
 	BotIcon,
@@ -43,7 +43,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, useTransition 
 import { activeServerConfigAtom } from "../atoms/connection"
 import { agentFamily, projectSessionIdsFamily, sandboxMappingsAtom } from "../atoms/derived/agents"
 import { automationsEnabledAtom } from "../atoms/feature-flags"
-import { projectPaginationFamily } from "../atoms/sessions"
+import { projectPaginationFamily, markSessionViewedAtom } from "../atoms/sessions"
 import { appStore } from "../atoms/store"
 import type { Agent, AgentStatus, SidebarProject } from "../lib/types"
 import { loadMoreProjectSessions, loadProjectSessions } from "../services/connection-manager"
@@ -622,23 +622,27 @@ const SessionItem = memo(function SessionItem({
 }) {
 	const navigate = useNavigate()
 	const [, startTransition] = useTransition()
+	const markViewed = useSetAtom(markSessionViewedAtom)
 	const StatusIcon = STATUS_ICON[agent.status]
 	const statusColor = STATUS_COLOR[agent.status]
 	const isWorktree = !!agent.worktreePath
 	const lastActive = useLiveLastActive(agent)
+	const hasNewActivity =
+		agent.lastActiveAt > (agent.lastViewedAt ?? 0) && agent.status !== "running"
 
 	const [isEditing, setIsEditing] = useState(false)
 	const [editValue, setEditValue] = useState(agent.name)
 	const inputRef = useRef<HTMLInputElement>(null)
 
 	const onSelect = useCallback(() => {
+		markViewed(agent.id)
 		startTransition(() => {
 			navigate({
 				to: "/project/$projectSlug/session/$sessionId",
 				params: { projectSlug: agent.projectSlug, sessionId: agent.id },
 			})
 		})
-	}, [navigate, agent.projectSlug, agent.id])
+	}, [navigate, agent.projectSlug, agent.id, markViewed])
 
 	const startEditing = useCallback(() => {
 		setEditValue(agent.name)
@@ -676,13 +680,29 @@ const SessionItem = memo(function SessionItem({
 				onClick={isEditing ? undefined : onSelect}
 			>
 				{isWorktree ? (
-					<GitForkIcon
-						className={`shrink-0 ${statusColor} ${agent.status === "running" ? "animate-pulse" : ""}`}
-					/>
+					<span className="relative shrink-0">
+						<GitForkIcon
+							className={`${statusColor} ${agent.status === "running" ? "animate-pulse" : ""}`}
+						/>
+						{hasNewActivity && (
+							<span
+								aria-hidden="true"
+								className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-blue-500 ring-1 ring-background"
+							/>
+						)}
+					</span>
 				) : (
-					<StatusIcon
-						className={`shrink-0 ${statusColor} ${agent.status === "running" ? "animate-spin" : ""}`}
-					/>
+					<span className="relative shrink-0">
+						<StatusIcon
+							className={`${statusColor} ${agent.status === "running" ? "animate-spin" : ""}`}
+						/>
+						{hasNewActivity && (
+							<span
+								aria-hidden="true"
+								className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-blue-500 ring-1 ring-background"
+							/>
+						)}
+					</span>
 				)}
 
 				{isEditing ? (

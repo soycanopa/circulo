@@ -94,6 +94,7 @@ export function CommandPalette({ open, onOpenChange, agents, onForkSession }: Co
 	const [reloading, setReloading] = useState(false)
 
 	const isElectron = typeof window !== "undefined" && "circulo" in window
+	const isMac = isElectron && window.circulo.platform === "darwin"
 
 	const handleToggleTransparency = useCallback(async () => {
 		const newValue = !opaqueWindows
@@ -235,19 +236,21 @@ export function CommandPalette({ open, onOpenChange, agents, onForkSession }: Co
 				</CommandGroup>
 
 				<CommandSeparator />
-				<CommandGroup heading="Window">
-					<CommandItem
-						onSelect={() => {
-							onOpenChange(false)
-							// Small delay so the palette closes before the confirm dialog appears
-							setTimeout(handleToggleTransparency, 100)
-						}}
-					>
-						{opaqueWindows ? <EyeIcon /> : <EyeOffIcon />}
-						<span>{opaqueWindows ? "Enable Transparency" : "Disable Transparency"}</span>
-						{!opaqueWindows && <CheckIcon className="ml-auto h-4 w-4" />}
-					</CommandItem>
-				</CommandGroup>
+				{isMac && (
+					<CommandGroup heading="Window">
+						<CommandItem
+							onSelect={() => {
+								onOpenChange(false)
+								// Small delay so the palette closes before the confirm dialog appears
+								setTimeout(handleToggleTransparency, 100)
+							}}
+						>
+							{opaqueWindows ? <EyeIcon /> : <EyeOffIcon />}
+							<span>{opaqueWindows ? "Enable Transparency" : "Disable Transparency"}</span>
+							{!opaqueWindows && <CheckIcon className="ml-auto h-4 w-4" />}
+						</CommandItem>
+					</CommandGroup>
+				)}
 
 				<CommandSeparator />
 				<CommandGroup heading="Color Scheme">

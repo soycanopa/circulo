@@ -1,3 +1,4 @@
+import { Input } from "@circulo/ui/components/input"
 import {
 	Select,
 	SelectContent,
@@ -7,7 +8,6 @@ import {
 } from "@circulo/ui/components/select"
 import { Switch } from "@circulo/ui/components/switch"
 import { useAtomValue, useSetAtom } from "jotai"
-import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { type DisplayMode, displayModeAtom, opaqueWindowsAtom } from "../../atoms/preferences"
 import { useColorScheme, useSetColorScheme } from "../../hooks/use-theme"
@@ -17,6 +17,7 @@ import { SettingsRow } from "./settings-row"
 import { SettingsSection } from "./settings-section"
 
 const isElectron = typeof window !== "undefined" && "circulo" in window
+const isMac = isElectron && window.circulo.platform === "darwin"
 
 export function GeneralSettings() {
 	return (
@@ -31,7 +32,8 @@ export function GeneralSettings() {
 
 			<SettingsSection title="Appearance">
 				<ThemeRow />
-				<OpaqueWindowsRow />
+				{isMac && <OpaqueWindowsRow />}
+				<OpencodeBinaryRow />
 				<DisplayModeRow />
 			</SettingsSection>
 		</div>
@@ -168,6 +170,45 @@ function DisplayModeRow() {
 					<SelectItem value="verbose">Verbose</SelectItem>
 				</SelectContent>
 			</Select>
+		</SettingsRow>
+	)
+}
+
+function OpencodeBinaryRow() {
+	const [binary, setBinary] = useState("")
+	const [loaded, setLoaded] = useState(false)
+
+	useEffect(() => {
+		if (!isElectron) return
+		window.circulo.getOpencodeBinary().then((val) => {
+			setBinary(val ?? "")
+			setLoaded(true)
+		})
+	}, [])
+
+	const handleChange = useCallback(
+		async (value: string) => {
+			setBinary(value)
+			if (!isElectron) return
+			const trimmed = value.trim()
+			await window.circulo.setOpencodeBinary(trimmed || null)
+		},
+		[],
+	)
+
+	if (!isElectron || !loaded) return null
+
+	return (
+		<SettingsRow
+			label="OpenCode binary"
+			description="Custom path or name for the opencode CLI binary. Leave empty to use auto-detection (opencode or opencode-cli on PATH)."
+		>
+			<Input
+				className="w-[260px]"
+				placeholder="opencode"
+				value={binary}
+				onChange={(e) => handleChange(e.target.value)}
+			/>
 		</SettingsRow>
 	)
 }

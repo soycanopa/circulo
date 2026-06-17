@@ -42,8 +42,9 @@ export async function ensureSingleServer(): Promise<OpenCodeServer> {
 	}
 
 	// Start a new one
+	const opencodeBinary = process.env.OPENCODE_BINARY || "opencode"
 	const proc = Bun.spawn({
-		cmd: ["opencode", "serve", `--hostname=${OPENCODE_HOSTNAME}`, `--port=${OPENCODE_PORT}`],
+		cmd: [opencodeBinary, "serve", `--hostname=${OPENCODE_HOSTNAME}`, `--port=${OPENCODE_PORT}`],
 		cwd: process.env.HOME, // arbitrary cwd — directory param overrides per-request
 		stdout: "pipe",
 		stderr: "pipe",

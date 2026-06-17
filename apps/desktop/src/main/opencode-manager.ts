@@ -1,6 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process"
 import { homedir } from "node:os"
-import path from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 import { dialog } from "electron"
 import type { LocalServerConfig } from "../preload/api"
@@ -10,7 +9,9 @@ import { createLogger } from "./logger"
 import { startNotificationWatcher, stopNotificationWatcher } from "./notification-watcher"
 import { getListeningProcessOwner, isCurrentUser, isProcessAlive } from "./process-owner"
 import { readLockfile, removeLockfile, writeLockfile } from "./server-lockfile"
+import { getDefaultLocalServer } from "../shared/server-config"
 import { getSettings } from "./settings-store"
+import { getAugmentedPath, resolveOpencodeBinary } from "./opencode-binary"
 import { waitForEnv } from "./shell-env"
 
 const log = createLogger("opencode-manager")
@@ -51,7 +52,7 @@ const DEFAULT_HOSTNAME = "127.0.0.1"
 function getLocalServerConfig(): LocalServerConfig {
 	const settings = getSettings()
 	const local = settings.servers.servers.find((s) => s.id === "local")
-	return (local as LocalServerConfig) ?? { id: "local", name: "This Mac", type: "local" }
+	return (local as LocalServerConfig) ?? getDefaultLocalServer(process.platform)
 }
 
 /**
@@ -305,9 +306,8 @@ async function spawnServer(
 	config: LocalServerConfig,
 ): Promise<OpenCodeServer> {
 	// Build PATH with ~/.opencode/bin prepended so we find the opencode binary
-	const opencodeBinDir = path.join(homedir(), ".opencode", "bin")
-	const sep = process.platform === "win32" ? ";" : ":"
-	const augmentedPath = `${opencodeBinDir}${sep}${process.env.PATH ?? ""}`
+	const augmentedPath = getAugmentedPath()
+	const opencodeBinary = resolveOpencodeBinary()
 
 	// Build CLI args
 	const args = ["serve", `--hostname=${hostname}`, `--port=${port}`]
@@ -333,10 +333,10 @@ async function spawnServer(
 		port,
 		hasPassword: !!config.hasPassword,
 		mdns: !!config.mdns,
-		binDir: opencodeBinDir,
+		opencodeBinary,
 	})
 
-	const proc = spawn("opencode", args, {
+	const proc = spawn(opencodeBinary, args, {
 		cwd: homedir(),
 		stdio: "pipe",
 		env: { ...process.env, PATH: augmentedPath },

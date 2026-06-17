@@ -105,6 +105,11 @@ export function getOpaqueWindows(): boolean {
 	return settings.opaqueWindows
 }
 
+/** Get the custom opencode binary path (or undefined if not configured). */
+export function getOpencodeBinary(): string | undefined {
+	return settings.opencodeBinary
+}
+
 /** Update settings with a partial object. Deep-merges and persists to disk. */
 export function updateSettings(partial: DeepPartial<AppSettings>): AppSettings {
 	settings = deepMerge(settings, partial)

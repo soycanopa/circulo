@@ -48,7 +48,7 @@ import {
 } from "./onboarding"
 import { getOpenInTargets, openInTarget, setPreferredTarget } from "./open-in-targets"
 import { ensureServer, getServerUrl, restartServer, stopServer } from "./opencode-manager"
-import { getOpaqueWindows, getSettings, onSettingsChanged, updateSettings } from "./settings-store"
+import { getOpencodeBinary, getOpaqueWindows, getSettings, onSettingsChanged, updateSettings } from "./settings-store"
 import {
 	checkForUpdates,
 	downloadUpdate,
@@ -361,6 +361,15 @@ export function registerIpcHandlers(): void {
 
 	ipcMain.handle("prefs:set-opaque-windows", (_, value: boolean) => {
 		updateSettings({ opaqueWindows: value })
+		return { success: true }
+	})
+
+	ipcMain.handle("prefs:get-opencode-binary", () => {
+		return getOpencodeBinary() ?? null
+	})
+
+	ipcMain.handle("prefs:set-opencode-binary", (_, value: string | null) => {
+		updateSettings({ opencodeBinary: value ?? undefined })
 		return { success: true }
 	})
 
