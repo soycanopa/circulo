@@ -233,13 +233,13 @@ function ProjectSelector({
 				render={
 					<button
 						type="button"
-						className="mb-2 flex w-full items-center gap-2 rounded-lg border border-border/60 bg-background px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+						className="flex items-center gap-1.5 pt-2.5 px-3 text-xs text-muted-foreground/70 transition-colors hover:text-foreground w-full"
 					/>
 				}
 			>
-				<FolderIcon className="size-4 shrink-0" />
+				<FolderIcon className="size-3.5 shrink-0" />
 				<span className="truncate">{label}</span>
-				<ChevronDownIcon className="ml-auto size-4 shrink-0" />
+				<ChevronDownIcon className="size-3 shrink-0" />
 			</PopoverTrigger>
 			<PopoverContent className="w-72 p-1" align="start">
 				<div className="flex items-center gap-2 border-b border-border/40 px-2 py-1.5">
@@ -753,15 +753,6 @@ export function NewChat() {
 			{/* Bottom-pinned input section */}
 			<div className="shrink-0 px-0 pb-0 pt-0 sm:px-6 sm:pb-5 sm:pt-3">
 				<div className="mx-auto w-full max-w-4xl">
-					{/* Project selector — pick where the new thread runs */}
-					<ProjectSelector
-						projects={projects}
-						selectedDirectory={selectedDirectory}
-						isRemote={!isLocal}
-						onSelect={setSelectedDirectory}
-						onOpenFolder={handleOpenFolder}
-					/>
-
 					{/* Input card */}
 					<PromptInputProvider key={NEW_CHAT_DRAFT_KEY} initialInput={draft}>
 						<DraftSync setDraft={setDraft} />
@@ -795,6 +786,13 @@ export function NewChat() {
 									)
 							}}
 						>
+							<ProjectSelector
+								projects={projects}
+								selectedDirectory={selectedDirectory}
+								isRemote={!isLocal}
+								onSelect={setSelectedDirectory}
+								onOpenFolder={handleOpenFolder}
+							/>
 							<PromptAttachmentPreview
 								supportsImages={modelCapabilities?.image}
 								supportsPdf={modelCapabilities?.pdf}
