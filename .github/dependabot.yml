@@ -1,7 +1,7 @@
 version: 2
 updates:
-  # Root and workspace dependencies (Bun/npm ecosystem)
-  - package-ecosystem: "npm"
+  # Root and workspace dependencies (Bun ecosystem)
+  - package-ecosystem: "bun"
     directory: "/"
     schedule:
       interval: "weekly"
