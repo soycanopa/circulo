@@ -30,6 +30,8 @@ interface Skill {
 	name: string
 	description: string
 	location: string
+	slash?: boolean
+	content?: string
 }
 
 interface SkillPickerDialogProps {

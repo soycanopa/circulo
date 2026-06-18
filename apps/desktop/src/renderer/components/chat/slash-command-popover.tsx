@@ -41,7 +41,7 @@ import { useServerCommands } from "../../hooks/use-opencode-data"
 // Types
 // ============================================================
 
-interface SlashCommand {
+export interface SlashCommand {
 	name: string
 	description: string
 	icon: LucideIcon
@@ -52,6 +52,10 @@ interface SlashCommand {
 	shortcut?: string
 	/** Special action instead of regular command execution */
 	action?: "skills" | "fork"
+	/** Agent override from SDK command definition */
+	agent?: string
+	/** Model override from SDK command definition */
+	model?: string
 }
 
 export interface SlashCommandPopoverHandle {
@@ -69,7 +73,7 @@ interface SlashCommandPopoverProps {
 	/** Directory for fetching server commands */
 	directory: string | null
 	/** Callback when a command is selected */
-	onSelect: (command: string) => void
+	onSelect: (command: SlashCommand) => void
 	/** Called when the /skills entry is selected — opens the skills picker */
 	onSkillsOpen?: () => void
 	/** Called when the /fork entry is selected — forks the session */
@@ -146,18 +150,19 @@ export const SlashCommandPopover = memo(
 		const [activeIndex, setActiveIndex] = useState(0)
 		const listRef = useRef<HTMLDivElement>(null)
 
-		// --- Server commands (skills excluded, matching TUI pattern) ---
+		// --- Server commands (skills included when slash:true, matching TUI pattern) ---
 		const rawServerCommands = useServerCommands(directory)
 		const serverCommands = useMemo<SlashCommand[]>(
 			() =>
 				rawServerCommands
-					.filter((c) => c.source !== "skill")
 					.map((c) => ({
 						name: c.name,
 						description: c.description ?? `Run /${c.name}`,
 						icon: getCommandIcon(c.name),
 						source: "server" as const,
 						serverSource: c.source,
+						agent: c.agent,
+						model: c.model,
 					})),
 			[rawServerCommands],
 		)
@@ -202,7 +207,7 @@ export const SlashCommandPopover = memo(
 					onClose()
 					onFork?.()
 				} else {
-					onSelect(`/${cmd.name}`)
+					onSelect(cmd)
 				}
 			},
 			[onSelect, onClose, onSkillsOpen, onFork],
@@ -323,6 +328,11 @@ const CommandItem = memo(function CommandItem({
 				{command.serverSource === "mcp" && (
 					<span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
 						mcp
+					</span>
+				)}
+				{command.serverSource === "skill" && (
+					<span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">
+						skill
 					</span>
 				)}
 				{command.shortcut && (

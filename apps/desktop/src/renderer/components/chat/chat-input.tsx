@@ -320,22 +320,16 @@ export function ChatInput({
 					directory={agent.directory}
 					onSelect={(cmd) => {
 						setSlashOpen(false)
-						// Use the command string directly instead of setText + setTimeout
-						// round-trip, which races with React's async state batching.
-						if (cmd.startsWith("/")) {
-							handleSlashCommand(cmd).then((handled) => {
-								if (handled) {
-									slashCommandRef.current?.setText("")
-									clearDraft()
-									setMentions([])
-								} else {
-									// Not recognized — leave it in input for normal send
-									slashCommandRef.current?.setText(cmd)
-								}
-							})
-						} else {
-							slashCommandRef.current?.setText(cmd)
-						}
+						const command = `/${cmd.name}`
+						handleSlashCommand(command).then((handled) => {
+							if (handled) {
+								slashCommandRef.current?.setText("")
+								clearDraft()
+								setMentions([])
+							} else {
+								slashCommandRef.current?.setText(command)
+							}
+						})
 					}}
 					onSkillsOpen={onSkillsOpen}
 					onClose={() => setSlashOpen(false)}
