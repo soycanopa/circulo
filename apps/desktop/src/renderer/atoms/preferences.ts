@@ -114,6 +114,12 @@ export const favoriteModelsAtom = atomWithStorage<Record<string, string[]>>(
 	{},
 )
 
+/**
+ * Whether RTK token optimization is enabled.
+ * When true, Circulo manages the OpenCode RTK plugin and restarts the server.
+ */
+export const rtkEnabledAtom = atomWithStorage<boolean>("circulo:rtkEnabled", false)
+
 // ============================================================
 // Derived atoms for drafts
 // ============================================================

@@ -23,6 +23,7 @@ import type {
 	GitStatusInfo,
 	ModelState,
 	OpenInTargetsResult,
+	RtkCheckResult,
 	UpdateAutomationInput,
 } from "../../preload/api"
 import { createLogger } from "../lib/logger"
@@ -463,4 +464,39 @@ export async function previewAutomationSchedule(
 		return window.circulo.automation.previewSchedule(rrule, timezone)
 	}
 	throw new Error("Automations are only available in Electron mode")
+}
+
+// ============================================================
+// RTK integration — Electron-only
+// ============================================================
+
+/** Check if RTK is installed, its version, and whether the plugin is active. */
+export async function checkRtk(): Promise<RtkCheckResult> {
+	if (isElectron) {
+		return window.circulo.rtk.check()
+	}
+	return { installed: false, version: null, pluginActive: false, enabled: false }
+}
+
+/** Enable RTK: install the OpenCode plugin and restart the server. */
+export async function enableRtk(): Promise<{ success: boolean; error?: string }> {
+	if (isElectron) {
+		return window.circulo.rtk.enable()
+	}
+	return { success: false, error: "RTK is only available in Electron mode" }
+}
+
+/** Disable RTK: remove the OpenCode plugin and restart the server. */
+export async function disableRtk(): Promise<{ success: boolean }> {
+	if (isElectron) {
+		return window.circulo.rtk.disable()
+	}
+	return { success: false }
+}
+
+/** Open terminal to install RTK. */
+export async function installRtk(): Promise<void> {
+	if (isElectron) {
+		await window.circulo.rtk.install()
+	}
 }
