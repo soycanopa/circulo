@@ -246,6 +246,19 @@ contextBridge.exposeInMainWorld("circulo", {
 		}
 	},
 
+	// --- RTK integration ---
+
+	rtk: {
+		/** Check if RTK is installed and the plugin is active. */
+		check: () => ipcRenderer.invoke("rtk:check"),
+		/** Enable RTK: install plugin + restart server. */
+		enable: () => ipcRenderer.invoke("rtk:enable"),
+		/** Disable RTK: remove plugin + restart server. */
+		disable: () => ipcRenderer.invoke("rtk:disable"),
+		/** Open terminal with RTK install command. */
+		install: () => ipcRenderer.invoke("rtk:install"),
+	},
+
 	// --- Automations ---
 
 	automation: {
