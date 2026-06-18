@@ -39,6 +39,7 @@ import {
 	Loader2Icon,
 	MessageCircleIcon,
 	MessageCirclePlusIcon,
+	OptionIcon,
 	PencilIcon,
 	SearchIcon,
 	SettingsIcon,
@@ -167,10 +168,8 @@ export function AppSidebarContent({
 	// localStorage writes aren't observable by React, so we bump a version counter
 	// on each archive to force re-computation.
 	const [archiveVersion, setArchiveVersion] = useState(0);
-	const archivedIds = useMemo(
-		() => getArchivedProjectIds(),
-		[archiveVersion],
-	);
+	const prevChatCountRef = useRef<number | null>(null);
+	const archivedIds = useMemo(() => getArchivedProjectIds(), [archiveVersion]);
 	const visibleProjects = useMemo(
 		() => projects.filter((p) => !archivedIds.has(p.id)),
 		[projects, archivedIds],
@@ -213,6 +212,31 @@ export function AppSidebarContent({
 				.map((a) => a.id),
 		);
 	}, [agents, homeDirectory]);
+
+	// Auto-unarchive Chats only when a new chat session is created (count goes up).
+	// Archiving stores "chats" in localStorage; creating a new chat should
+	// clear that flag so the folder reappears. Don't react to archive events.
+	useEffect(() => {
+		const prev = prevChatCountRef.current;
+		const curr = chatSessionIds.size;
+
+		if (prev === null) {
+			prevChatCountRef.current = curr;
+			return;
+		}
+
+		prevChatCountRef.current = curr;
+
+		if (curr > prev && curr > 0 && archivedIds.has("chats")) {
+			const archived = getArchivedProjectIds();
+			archived.delete("chats");
+			localStorage.setItem(
+				ARCHIVED_PROJECTS_KEY,
+				JSON.stringify([...archived]),
+			);
+			setArchiveVersion((v) => v + 1);
+		}
+	}, [chatSessionIds.size, archivedIds]);
 
 	// Active sessions: non-parent, non-chat, running/waiting/failed
 	const activeSessions = useMemo(
@@ -280,22 +304,35 @@ export function AppSidebarContent({
 						<SidebarMenu>
 							<SidebarMenuItem>
 								<SidebarMenuButton
-									tooltip="New Thread"
+									tooltip="New Thread (⌘N)"
 									onClick={clearChatAndNavigate}
 									className="text-muted-foreground"
 								>
 									<MessageCirclePlusIcon className="size-4" />
 									<span>New Thread</span>
+									<span className="ml-auto flex items-center gap-0.5 text-muted-foreground/50">
+										<CommandIcon aria-hidden="true" style={{ width: 9, height: 9 }} />
+										<span className="font-mono text-xs leading-none">
+											N
+										</span>
+									</span>
 								</SidebarMenuButton>
 							</SidebarMenuItem>
 							<SidebarMenuItem>
 								<SidebarMenuButton
-									tooltip="Chat"
+									tooltip="New Chat (⌥⌘N)"
 									onClick={onNavigateChat}
 									className="text-muted-foreground"
 								>
 									<MessageCircleIcon className="size-4" />
 									<span>New Chat</span>
+									<span className="ml-auto flex items-center gap-0.5 text-muted-foreground/50">
+										<OptionIcon aria-hidden="true" style={{ width: 9, height: 9 }} />
+										<CommandIcon aria-hidden="true" style={{ width: 9, height: 9 }} />
+										<span className="font-mono text-xs leading-none">
+											N
+										</span>
+									</span>
 								</SidebarMenuButton>
 							</SidebarMenuItem>
 							{automationsEnabled && isLocal && (
@@ -597,19 +634,13 @@ const ProjectFolder = memo(function ProjectFolder({
 				<div className="group/project flex items-center">
 					<SidebarMenuButton
 						tooltip={project.name}
-						onClick={() => {
-							setExpanded(!expanded);
-							if (!isChatsFolder) {
-								navigate({
-									to: "/project/$projectSlug",
-									params: { projectSlug: project.slug },
-								});
-							}
-						}}
+						onClick={() => setExpanded(!expanded)}
 						className="flex-1 min-w-0"
 					>
 						<ProjectIcon className="size-3 shrink-0 text-muted-foreground" />
-						<span className="truncate font-medium">{project.name}</span>
+						<span className="truncate font-medium text-muted-foreground">
+							{project.name}
+						</span>
 					</SidebarMenuButton>
 					{onArchive && !isChatsFolder && (
 						<>
