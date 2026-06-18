@@ -1,10 +1,9 @@
 /**
  * Slash command popover — appears when the user types `/` in the input.
  *
- * Matches the OpenCode TUI pattern:
- * - Flat command list with fuzzy search
- * - Skills are excluded (accessible via /skills → opens a dedicated picker)
- * - MCP commands show a `:mcp` badge
+ * - Skills, MCP commands, and server commands are shown alongside built-in commands
+ * - Filter chips below search bar narrow by type (Skills, Globales, Locales, CMD, MCP)
+ * - CMD badge for built-in, MCP badge for MCP, skill + global/local badges for skills
  * - Keyboard navigation (Arrow keys, Enter/Tab, Escape)
  */
 
@@ -348,15 +347,32 @@ const CommandItem = memo(function CommandItem({
 				)}
 			</div>
 			<div className="flex shrink-0 items-center gap-2">
+				{command.source === "client" && (
+					<span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+						CMD
+					</span>
+				)}
 				{command.serverSource === "mcp" && (
 					<span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-						mcp
+						MCP
 					</span>
 				)}
 				{command.serverSource === "skill" && (
-					<span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">
-						skill
-					</span>
+					<>
+						<span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">
+							skill
+						</span>
+						{command.location === "global" && (
+							<span className="rounded bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-medium text-purple-500">
+								global
+							</span>
+						)}
+						{command.location === "project" && (
+							<span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-500">
+								local
+							</span>
+						)}
+					</>
 				)}
 				{command.shortcut && (
 					<span className="text-xs text-muted-foreground">{command.shortcut}</span>
