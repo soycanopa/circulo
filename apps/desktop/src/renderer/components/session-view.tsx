@@ -23,6 +23,7 @@ import { useAgentActions } from "../hooks/use-server"
 import { useSessionChat } from "../hooks/use-session-chat"
 import { createLogger } from "../lib/logger"
 import type { Agent, FileAttachment, QuestionAnswer } from "../lib/types"
+import type { PromptMention } from "./chat/prompt-mentions"
 import { fetchSessionById } from "../services/connection-manager"
 import { AgentDetail } from "./agent-detail"
 
@@ -228,6 +229,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 				agentName?: string
 				variant?: string
 				files?: FileAttachment[]
+				mentions?: PromptMention[]
 			},
 		) => {
 			log.debug("handleSendMessage", {
@@ -244,6 +246,7 @@ export function SessionView({ sessionId }: SessionViewProps) {
 					agent: options?.agentName || undefined,
 					variant: options?.variant,
 					files: options?.files,
+					mentions: options?.mentions,
 				})
 				log.debug("handleSendMessage completed", { sessionId: agent.sessionId })
 			} catch (err) {

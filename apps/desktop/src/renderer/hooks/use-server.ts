@@ -15,6 +15,7 @@ import type {
 	TextPart,
 	UserMessage,
 } from "../lib/types"
+import type { PromptMention } from "../components/chat/prompt-mentions"
 import { getProjectClient } from "../services/connection-manager"
 
 const log = createLogger("use-server")
@@ -56,6 +57,7 @@ export function useAgentActions() {
 				agent?: string
 				variant?: string
 				files?: FileAttachment[]
+				mentions?: PromptMention[]
 			},
 		) => {
 			log.debug("sendPrompt called", {
@@ -126,6 +128,18 @@ export function useAgentActions() {
 					filename: file.filename,
 					url: file.url,
 				})
+			}
+			// Add structured file references from @mentions
+			const mentions = options?.mentions ?? []
+			for (const mention of mentions) {
+				if (mention.type === "file") {
+					parts.push({
+						type: "file",
+						mime: "text/plain",
+						filename: mention.path,
+						url: mention.path,
+					})
+				}
 			}
 
 			log.debug("sendPrompt: calling promptAsync", {

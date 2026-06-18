@@ -11,6 +11,7 @@ import {
 	createAgentMention,
 	createFileMention,
 	insertMentionIntoText,
+	type PromptMention,
 } from "./chat/prompt-mentions"
 import { Popover, PopoverContent, PopoverTrigger } from "@circulo/ui/components/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@circulo/ui/components/tooltip"
@@ -56,11 +57,19 @@ import { activeServerConfigAtom } from "../atoms/connection"
 import type { FileAttachment, SidebarProject } from "../lib/types"
 import { loadProjectSessions } from "../services/connection-manager"
 import { pickDirectory } from "../services/backend"
+import { getProjectClient } from "../services/connection-manager"
 import { createWorktree, randomWorktreeName } from "../services/worktree-service"
 import { useSetAppBarContent } from "./app-bar-context"
 import { BranchPicker } from "./branch-picker"
+import { AttachButton, ACCEPTED_FILE_TYPES } from "./chat/attach-button"
 import { PromptAttachmentPreview } from "./chat/prompt-attachments"
 import { PromptToolbar, StatusBar } from "./chat/prompt-toolbar"
+import { SkillPickerDialog } from "./chat/skill-picker-dialog"
+import {
+	SlashCommandPopover,
+	type SlashCommandPopoverHandle,
+	type SlashCommand,
+} from "./chat/slash-command-popover"
 import { CirculoWordmark } from "./circulo-wordmark"
 
 // ============================================================
@@ -150,14 +159,38 @@ function MentionBridge({
 	return null
 }
 
+function SlashCommandBridge({
+	controllerRef,
+}: {
+	controllerRef: React.RefObject<{ setText: (text: string) => void; getText: () => string } | null>
+}) {
+	const controller = usePromptInputController()
+	useEffect(() => {
+		if (controllerRef && "current" in controllerRef) {
+			;(controllerRef as React.MutableRefObject<typeof controllerRef.current>).current = {
+				setText: (text: string) => controller.textInput.setInput(text),
+				getText: () => controller.textInput.value,
+			}
+		}
+		return () => {
+			if (controllerRef && "current" in controllerRef) {
+				;(controllerRef as React.MutableRefObject<typeof controllerRef.current>).current = null
+			}
+		}
+	}, [controller, controllerRef])
+	return null
+}
+
 /**
- * Detects `@` trigger patterns in the prompt textarea and notifies the parent
- * so the MentionPopover can open/close and filter results.
+ * Detects `/` and `@` trigger patterns in the prompt textarea
+ * and notifies the parent so popovers can open/close and filter results.
  */
-function MentionTrigger({
+function TriggerDetector({
 	onMentionChange,
+	onSlashChange,
 }: {
 	onMentionChange: (open: boolean, query: string) => void
+	onSlashChange: (open: boolean, query: string) => void
 }) {
 	const controller = usePromptInputController()
 	const inputText = controller.textInput.value
@@ -165,13 +198,23 @@ function MentionTrigger({
 		const textarea = document.querySelector<HTMLTextAreaElement>("textarea[data-prompt-input]")
 		const cursorPos = textarea?.selectionStart ?? inputText.length
 		const textBeforeCursor = inputText.slice(0, cursorPos)
+
+		const slashMatch = inputText.match(/^\/(\S*)$/)
+		if (slashMatch) {
+			onSlashChange(true, slashMatch[1])
+			onMentionChange(false, "")
+			return
+		}
+
 		const atMatch = textBeforeCursor.match(/@(\S*)$/)
 		if (atMatch) {
 			onMentionChange(true, atMatch[1])
+			onSlashChange(false, "")
 			return
 		}
 		onMentionChange(false, "")
-	}, [inputText, onMentionChange])
+		onSlashChange(false, "")
+	}, [inputText, onMentionChange, onSlashChange])
 	return null
 }
 
@@ -356,10 +399,24 @@ export function NewChat() {
 	// Mention popover state
 	const [mentionOpen, setMentionOpen] = useState(false)
 	const [mentionQuery, setMentionQuery] = useState("")
+
+	// Slash command state
+	const [slashOpen, setSlashOpen] = useState(false)
+	const [slashQuery, setSlashQuery] = useState("")
+
+	// Skills dialog state
+	const [skillsDialogOpen, setSkillsDialogOpen] = useState(false)
+
+	// Mentions state (tracked for chip display and structured parts)
+	const [mentions, setMentions] = useState<PromptMention[]>([])
 	const controllerRef = useRef<{ setText: (text: string) => void; getText: () => string } | null>(
 		null,
 	)
 	const mentionPopoverRef = useRef<MentionPopoverHandle>(null)
+	const slashPopoverRef = useRef<SlashCommandPopoverHandle>(null)
+	const slashRef = useRef<{ setText: (text: string) => void; getText: () => string } | null>(
+		null,
+	)
 
 	// Seed selectedModel, selectedVariant, and selectedAgent from the persisted
 	// per-project preferences on first mount / project switch.
@@ -431,6 +488,64 @@ export function NewChat() {
 		loadProjectSessions(directory)
 	}, [])
 
+	const handleSlashCommand = useCallback(
+		async (text: string, cmdAgent?: string, _cmdModel?: string): Promise<boolean> => {
+			const trimmed = text.trim()
+			if (!trimmed.startsWith("/") || !selectedDirectory) return false
+
+			const spaceIndex = trimmed.indexOf(" ")
+			const cmdName = spaceIndex === -1 ? trimmed.slice(1) : trimmed.slice(1, spaceIndex)
+			const cmdArgs = spaceIndex === -1 ? "" : trimmed.slice(spaceIndex + 1).trim()
+
+			if (cmdName.toLowerCase() === "skills") {
+				slashRef.current?.setText("")
+				setSkillsDialogOpen(true)
+				return true
+			}
+
+			if (["undo", "redo", "compact", "summarize"].includes(cmdName.toLowerCase())) {
+				setError(`${cmdName} requires an active session`)
+				return true
+			}
+
+			setLaunching(true)
+			setError(null)
+			try {
+				const session = await createSession(selectedDirectory)
+				if (!session) {
+					setLaunching(false)
+					return false
+				}
+
+				const client = getProjectClient(selectedDirectory)
+				if (client) {
+					await client.session.command({
+						sessionID: session.id,
+						command: cmdName,
+						arguments: cmdArgs,
+						agent: cmdAgent ?? selectedAgent ?? undefined,
+					})
+				}
+				clearDraft()
+				const project = projects.find((p) => p.directory === selectedDirectory)
+				navigate({
+					to: "/project/$projectSlug/session/$sessionId",
+					params: {
+						projectSlug: project?.slug ?? "unknown",
+						sessionId: session.id,
+					},
+				})
+				return true
+			} catch (_err) {
+				setError("Command failed")
+			} finally {
+				setLaunching(false)
+			}
+			return false
+		},
+		[selectedDirectory, createSession, selectedAgent, clearDraft, projects, navigate],
+	)
+
 	// Insert a selected mention into the prompt textarea
 	const handleMentionSelect = useCallback((option: MentionOption) => {
 		setMentionOpen(false)
@@ -447,6 +562,12 @@ export function NewChat() {
 			mention,
 		)
 		ctrl.setText(newText)
+		setMentions((prev) => {
+			const key = mention.type === "file" ? `file:${mention.path}` : `agent:${mention.name}`
+			if (prev.some((m) => (m.type === "file" ? `file:${m.path}` : `agent:${m.name}`) === key))
+				return prev
+			return [...prev, mention]
+		})
 		requestAnimationFrame(() => {
 			const ta = document.querySelector<HTMLTextAreaElement>("textarea[data-prompt-input]")
 			if (ta) {
@@ -456,9 +577,39 @@ export function NewChat() {
 		})
 	}, [])
 
+	const handleSlashSelect = useCallback(
+		(cmd: SlashCommand) => {
+			setSlashOpen(false)
+			const ctrl = slashRef.current
+			const command = `/${cmd.name}`
+			if (ctrl) {
+				handleSlashCommand(command, cmd.agent, cmd.model).then(() => {
+					// handled by handleSlashCommand
+				})
+			}
+		},
+		[handleSlashCommand],
+	)
+
+	const handleSkillSelect = useCallback((skillName: string) => {
+		const ctrl = slashRef.current
+		if (ctrl) {
+			ctrl.setText(`/${skillName} `)
+		}
+		requestAnimationFrame(() => {
+			const ta = document.querySelector<HTMLTextAreaElement>("textarea[data-prompt-input]")
+			if (ta) {
+				ta.focus()
+				const len = `/${skillName} `.length
+				ta.setSelectionRange(len, len)
+			}
+		})
+	}, [])
+
 	// Delegate keyboard events to the mention popover when it's open
 	const handleTextareaKeyDown = useCallback(
 		(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+			if (slashPopoverRef.current?.handleKeyDown(e)) return
 			if (mentionPopoverRef.current?.handleKeyDown(e)) return
 		},
 		[],
@@ -557,7 +708,7 @@ export function NewChat() {
 
 	/** Launch a session in local mode (no worktree). */
 	const launchLocal = useCallback(
-		async (promptText: string, files?: FileAttachment[]) => {
+		async (promptText: string, files?: FileAttachment[], promptMentions?: PromptMention[]) => {
 			const session = await createSession(selectedDirectory)
 			if (!session) return
 
@@ -573,6 +724,7 @@ export function NewChat() {
 				agent: selectedAgent ?? undefined,
 				variant: selectedVariant,
 				files,
+				mentions: promptMentions,
 			})
 			clearDraft()
 			navigateToSession(session.id)
@@ -600,7 +752,7 @@ export function NewChat() {
 	 * creation, and prompt sending happen in the background.
 	 */
 	const launchWorktree = useCallback(
-		(promptText: string, files?: FileAttachment[]) => {
+		(promptText: string, files?: FileAttachment[], promptMentions?: PromptMention[]) => {
 			const sessionSlug = randomWorktreeName()
 
 			// Create a stub session so the chat view can render immediately.
@@ -671,6 +823,7 @@ export function NewChat() {
 						agent: selectedAgent ?? undefined,
 						variant: selectedVariant,
 						files,
+						mentions: promptMentions,
 					})
 				} catch (err) {
 					console.error("Worktree launch failed:", err)
@@ -698,18 +851,16 @@ export function NewChat() {
 	)
 
 	const handleLaunch = useCallback(
-		async (promptText: string, files?: FileAttachment[]) => {
+		async (promptText: string, files?: FileAttachment[], promptMentions?: PromptMention[]) => {
 			if (!selectedDirectory || !promptText) return
 			setLaunching(true)
 			setError(null)
 			try {
 				if (worktreeMode === "worktree") {
-					// Worktree mode navigates immediately and runs setup in the background.
-					// The launching state is cleared right away since the chat view takes over.
-					launchWorktree(promptText, files)
+					launchWorktree(promptText, files, promptMentions)
 					setLaunching(false)
 				} else {
-					await launchLocal(promptText, files)
+					await launchLocal(promptText, files, promptMentions)
 				}
 			} catch (err) {
 				setError(err instanceof Error ? err.message : "Failed to create session")
@@ -779,14 +930,32 @@ export function NewChat() {
 						{/* Input body — nested lighter inner box, flush with wrapper edges */}
 						<PromptInputProvider key={NEW_CHAT_DRAFT_KEY} initialInput={draft}>
 						<DraftSync setDraft={setDraft} />
+						<SlashCommandBridge controllerRef={slashRef} />
 						<MentionBridge controllerRef={controllerRef} />
-						<MentionTrigger
+						<TriggerDetector
 							onMentionChange={(open, query) => {
 								setMentionOpen(open)
 								setMentionQuery(query)
 							}}
+							onSlashChange={(open, query) => {
+								setSlashOpen(open)
+								setSlashQuery(query)
+							}}
 						/>
 						<div className="relative">
+							<SlashCommandPopover
+								ref={slashPopoverRef}
+								query={slashQuery}
+								open={slashOpen}
+								enabled={!!selectedDirectory}
+								directory={selectedDirectory || null}
+								onSelect={handleSlashSelect}
+								onSkillsOpen={() => {
+									setSlashOpen(false)
+									setSkillsDialogOpen(true)
+								}}
+								onClose={() => setSlashOpen(false)}
+							/>
 							<MentionPopover
 								ref={mentionPopoverRef}
 								query={mentionQuery}
@@ -798,15 +967,25 @@ export function NewChat() {
 							/>
 						<PromptInput
 							className="rounded-b-xl border-t border-border/30"
-							accept="image/png,image/jpeg,image/gif,image/webp,application/pdf"
+							accept={ACCEPTED_FILE_TYPES}
 							multiple
-							maxFileSize={10 * 1024 * 1024}
+							maxFileSize={25 * 1024 * 1024}
 							onSubmit={(message) => {
-								if (message.text.trim())
+								if (message.text.trim()) {
+									if (message.text.trim().startsWith("/")) {
+										handleSlashCommand(message.text.trim()).then((handled) => {
+											if (handled) {
+												slashRef.current?.setText("")
+											}
+										})
+										return
+									}
 									handleLaunch(
 										message.text.trim(),
 										message.files.length > 0 ? message.files : undefined,
+										mentions.length > 0 ? mentions : undefined,
 									)
+								}
 							}}
 						>
 							<PromptAttachmentPreview
@@ -829,6 +1008,7 @@ export function NewChat() {
 							{hasToolbar && (
 								<PromptInputFooter>
 									<PromptInputTools>
+										<AttachButton />
 										<PromptToolbar
 											agents={openCodeAgents ?? []}
 											selectedAgent={selectedAgent}
@@ -890,6 +1070,12 @@ export function NewChat() {
 					)}
 				</div>
 			</div>
+			<SkillPickerDialog
+				open={skillsDialogOpen}
+				onOpenChange={setSkillsDialogOpen}
+				directory={selectedDirectory || null}
+				onSelect={handleSkillSelect}
+			/>
 		</div>
 	)
 }
