@@ -35,12 +35,12 @@
 		"clean": "rm -rf out release dist node_modules .turbo"
 	},
 	"dependencies": {
+		"@circulo/configconv": "workspace:*",
+		"@circulo/ui": "workspace:*",
 		"@fontsource-variable/inter": "^5.2.8",
 		"@fontsource/ibm-plex-mono": "^5.2.7",
 		"@libsql/client": "^0.17.0",
 		"@opencode-ai/sdk": "^1.2.1",
-		"@circulo/configconv": "workspace:*",
-		"@circulo/ui": "workspace:*",
 		"@pierre/diffs": "^1.0.10",
 		"@tanstack/react-query": "^5.90.20",
 		"@tanstack/react-router": "^1.170.16",
@@ -48,6 +48,7 @@
 		"bonjour-service": "^1.3.0",
 		"drizzle-orm": "^1.0.0-rc.4-273829f",
 		"electron-updater": "^6.7.3",
+		"file-icons-js": "^1.1.0",
 		"fuzzysort": "^3.1.0",
 		"hono": "4.12.25",
 		"jotai": "^2.17.1",
