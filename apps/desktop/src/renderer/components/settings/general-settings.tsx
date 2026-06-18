@@ -236,6 +236,7 @@ function RtkRow() {
 		error: null,
 	})
 	const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+	const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
 	useEffect(() => {
 		if (!isElectron) {
@@ -268,6 +269,9 @@ function RtkRow() {
 		return () => {
 			if (pollRef.current) {
 				clearInterval(pollRef.current)
+			}
+			if (pollTimeoutRef.current) {
+				clearTimeout(pollTimeoutRef.current)
 			}
 		}
 	}, [])
@@ -317,6 +321,10 @@ function RtkRow() {
 					clearInterval(pollRef.current)
 					pollRef.current = null
 				}
+				if (pollTimeoutRef.current) {
+					clearTimeout(pollTimeoutRef.current)
+					pollTimeoutRef.current = null
+				}
 				setState({
 					checking: false,
 					installed: true,
@@ -327,11 +335,12 @@ function RtkRow() {
 				})
 			}
 		}, 2000)
-		setTimeout(() => {
+		pollTimeoutRef.current = setTimeout(() => {
 			if (pollRef.current) {
 				clearInterval(pollRef.current)
 				pollRef.current = null
 			}
+			pollTimeoutRef.current = null
 			setState((s) => ({ ...s, checking: false, error: "Installation timeout" }))
 		}, 60_000)
 	}, [])
@@ -372,6 +381,11 @@ function RtkRow() {
 					>
 						Install RTK
 					</button>
+				)}
+				{!isLoading && !state.installed && enabled && (
+					<span className="text-xs text-amber-500">
+						RTK not found — toggle disabled until reinstalled
+					</span>
 				)}
 				{state.error && (
 					<span className="text-xs text-destructive">{state.error}</span>
