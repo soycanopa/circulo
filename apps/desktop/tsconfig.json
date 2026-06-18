@@ -13,6 +13,7 @@
 		"noUnusedLocals": true,
 		"noUnusedParameters": true,
 		"noEmit": true,
+		"types": ["bun"],
 		"paths": {
 			"@/*": ["./src/renderer/*"],
 			"@circulo/ui/*": ["../../packages/ui/src/*"]
