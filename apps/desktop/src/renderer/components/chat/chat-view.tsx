@@ -6,13 +6,11 @@ import {
 } from "@circulo/ui/components/ai-elements/conversation"
 import {
 	PromptInput,
-	PromptInputButton,
 	PromptInputFooter,
 	PromptInputProvider,
 	PromptInputSubmit,
 	PromptInputTextarea,
 	PromptInputTools,
-	usePromptInputAttachments,
 	usePromptInputController,
 } from "@circulo/ui/components/ai-elements/prompt-input"
 import { cn } from "@circulo/ui/lib/utils"
@@ -23,7 +21,6 @@ import {
 	GitForkIcon,
 	Loader2Icon,
 	MonitorIcon,
-	PlusIcon,
 	Redo2Icon,
 	SquareIcon,
 	Undo2Icon,
@@ -66,6 +63,7 @@ import { createLogger } from "../../lib/logger"
 import { computeTurnWorkTimeSplit, formatWorkDuration } from "../../lib/session-metrics"
 import type { Agent, FileAttachment, FilePart, QuestionAnswer, TextPart } from "../../lib/types"
 import { getProjectClient } from "../../services/connection-manager"
+import { useSlashCommand } from "../../hooks/use-slash-command"
 
 const log = createLogger("chat-view")
 
@@ -92,24 +90,8 @@ import {
 import { PromptToolbar, StatusBar } from "./prompt-toolbar"
 import { SessionTaskList } from "./session-task-list"
 import { SkillPickerDialog } from "./skill-picker-dialog"
-import { SlashCommandPopover, type SlashCommandPopoverHandle } from "./slash-command-popover"
-
-/**
- * Small "+" button that opens the file picker for attachments.
- * Must be rendered inside a <PromptInput> so the attachments context is available.
- */
-function AttachButton({ disabled }: { disabled?: boolean }) {
-	const attachments = usePromptInputAttachments()
-	return (
-		<PromptInputButton
-			tooltip="Attach files"
-			onClick={() => attachments.openFileDialog()}
-			disabled={disabled}
-		>
-			<PlusIcon className="size-4" />
-		</PromptInputButton>
-	)
-}
+import { SlashCommandPopover, type SlashCommandPopoverHandle, type SlashCommand } from "./slash-command-popover"
+import { AttachButton, ACCEPTED_FILE_TYPES } from "./attach-button"
 
 /**
  * Instant-scroll when session content finishes loading.
@@ -391,7 +373,7 @@ interface ChatViewProps {
 	onSendMessage?: (
 		agent: Agent,
 		message: string,
-		options?: { model?: ModelRef; agentName?: string; variant?: string; files?: FileAttachment[] },
+		options?: { model?: ModelRef; agentName?: string; variant?: string; files?: FileAttachment[]; mentions?: PromptMention[] },
 	) => Promise<void>
 	/** Callback to stop/abort the running session */
 	onStop?: (agent: Agent) => Promise<void>
@@ -971,63 +953,37 @@ function ChatInputSection({
 		getText: () => string
 	} | null>(null)
 
+	const handleSkillsOpen = useCallback(() => {
+		const ctrl = slashCommandRef.current
+		if (ctrl) ctrl.setText("")
+		setSkillsDialogOpen(true)
+	}, [])
+
+	const { executeSlashCommand } = useSlashCommand()
+
 	const handleSlashCommand = useCallback(
-		async (text: string): Promise<boolean> => {
-			const trimmed = text.trim()
-			if (!trimmed.startsWith("/")) return false
-
-			const spaceIndex = trimmed.indexOf(" ")
-			const cmdName = spaceIndex === -1 ? trimmed.slice(1) : trimmed.slice(1, spaceIndex)
-			const cmdArgs = spaceIndex === -1 ? "" : trimmed.slice(spaceIndex + 1).trim()
-
-			// Client-only commands that don't go through the server
-			switch (cmdName.toLowerCase()) {
-				case "undo":
-					if (onUndo) await onUndo()
-					return true
-				case "redo":
-					if (onRedo) await onRedo()
-					return true
-				case "compact":
-				case "summarize":
-					if (agent.directory && effectiveModel) {
-						const client = getProjectClient(agent.directory)
-						if (client) {
-							try {
-								await client.session.summarize({
-									sessionID: agent.sessionId,
-									providerID: effectiveModel.providerID,
-									modelID: effectiveModel.modelID,
-								})
-							} catch (err) {
-								log.error("session.summarize failed", { sessionId: agent.sessionId }, err)
-							}
-						}
-					}
-					return true
-				default:
-					break
-			}
-
-			if (agent.directory) {
-				const client = getProjectClient(agent.directory)
-				if (client) {
-					try {
-						await client.session.command({
-							sessionID: agent.sessionId,
-							command: cmdName,
-							arguments: cmdArgs,
-						})
-						return true
-					} catch {
-						// Not a recognized server command
-					}
-				}
-			}
-
-			return false
+		async (
+			text: string,
+			cmdAgent?: string,
+		): Promise<boolean> => {
+			const client = agent.directory ? getProjectClient(agent.directory) : null
+			const result = await executeSlashCommand(
+				text,
+				{
+					client,
+					sessionID: agent.sessionId,
+					model: effectiveModel ?? undefined,
+					agent: selectedAgent || undefined,
+					onUndo,
+					onRedo,
+					onFork: onForkFromTurn ? async () => { void (await onForkFromTurn()) } : undefined,
+					onSkillsOpen: handleSkillsOpen,
+				},
+				cmdAgent,
+			)
+			return result.handled
 		},
-		[agent, onUndo, onRedo, effectiveModel],
+		[agent, effectiveModel, selectedAgent, onUndo, onRedo, onForkFromTurn, handleSkillsOpen, executeSlashCommand],
 	)
 
 	const handleSend = useCallback(
@@ -1088,6 +1044,7 @@ function ChatInputSection({
 					agentName: selectedAgent || undefined,
 					variant: selectedVariant,
 					files,
+					mentions,
 				})
 				log.debug("handleSend onSendMessage completed", { sessionId: agent.sessionId })
 				clearDraft()
@@ -1159,12 +1116,6 @@ function ChatInputSection({
 		await onForkFromTurn?.()
 	}, [onForkFromTurn])
 
-	const handleSkillsOpen = useCallback(() => {
-		const ctrl = slashCommandRef.current
-		if (ctrl) ctrl.setText("")
-		setSkillsDialogOpen(true)
-	}, [])
-
 	const handleSkillSelect = useCallback((skillName: string) => {
 		const ctrl = slashCommandRef.current
 		if (ctrl) {
@@ -1204,24 +1155,19 @@ function ChatInputSection({
 	}, [])
 
 	const handleSlashSelect = useCallback(
-		(command: string) => {
+		(cmd: SlashCommand) => {
 			handleSlashClose()
 			const ctrl = slashCommandRef.current
-			// Use the command string directly instead of setText + getText round-trip,
-			// which races with React's asynchronous state batching and sometimes reads
-			// stale text (e.g. "/un" instead of "/undo").
-			if (command.startsWith("/")) {
-				handleSlashCommand(command).then((handled) => {
+			const command = `/${cmd.name}`
+			if (ctrl) {
+				handleSlashCommand(command, cmd.agent).then((handled) => {
 					if (handled) {
 						if (ctrl) ctrl.setText("")
 						clearDraft()
 					} else if (ctrl) {
-						// Not a recognized command — leave it in the input for the user
 						ctrl.setText(command)
 					}
 				})
-			} else if (ctrl) {
-				ctrl.setText(command)
 			}
 		},
 		[handleSlashClose, handleSlashCommand, clearDraft],
@@ -1389,9 +1335,9 @@ function ChatInputSection({
 								/>
 								<PromptInput
 									className="rounded-xl"
-									accept="image/png,image/jpeg,image/gif,image/webp,application/pdf"
+									accept={ACCEPTED_FILE_TYPES}
 									multiple
-									maxFileSize={10 * 1024 * 1024}
+									maxFileSize={25 * 1024 * 1024}
 									onSubmit={(message) => {
 										if (message.text.trim() && canSend)
 											handleSend(message.text, message.files.length > 0 ? message.files : undefined)
