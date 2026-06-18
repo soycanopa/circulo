@@ -1,5 +1,11 @@
 # @circulo/server
 
+## 0.12.0
+
+### Minor Changes
+
+- Minor bump: sidebar redesign with archive and hover buttons, chat persistence, keyboard shortcuts (Cmd+N, Opt+Cmd+N), slash commands and skills dialog, frosted glass effect, interactive server indicator, new wordmark, project selector redesign, and settings keyboard shortcuts page.
+
 ## 0.11.2
 
 ### Patch Changes
