@@ -35,7 +35,7 @@ import {
 	useRef,
 	useState,
 } from "react"
-import { useServerCommands } from "../../hooks/use-opencode-data"
+import { useServerCommands, useSkills } from "../../hooks/use-opencode-data"
 
 // ============================================================
 // Types
@@ -56,6 +56,8 @@ export interface SlashCommand {
 	agent?: string
 	/** Model override from SDK command definition */
 	model?: string
+	/** For skills: the skill location from the SDK */
+	location?: "global" | "project"
 }
 
 export interface SlashCommandPopoverHandle {
@@ -150,7 +152,10 @@ export const SlashCommandPopover = memo(
 		const [activeIndex, setActiveIndex] = useState(0)
 		const listRef = useRef<HTMLDivElement>(null)
 
-		// --- Server commands (skills included when slash:true, matching TUI pattern) ---
+		// --- Skills (both global and local, including those without slash:true) ---
+		const { skills: rawSkills } = useSkills(directory, open)
+
+		// --- Server commands (skills with slash:true included by server) ---
 		const rawServerCommands = useServerCommands(directory)
 		const serverCommands = useMemo<SlashCommand[]>(
 			() =>
@@ -167,8 +172,26 @@ export const SlashCommandPopover = memo(
 			[rawServerCommands],
 		)
 
-		// --- Merge: server commands first, then built-in (matching TUI ordering) ---
-		const allCommands = useMemo(() => [...serverCommands, ...CLIENT_COMMANDS], [serverCommands])
+		// --- Map skills to SlashCommand, dedup against server commands ---
+		const skillCommands = useMemo<SlashCommand[]>(() => {
+			const commandNames = new Set(serverCommands.map((c) => c.name))
+			return rawSkills
+				.filter((s) => !commandNames.has(s.name))
+				.map((s) => ({
+					name: s.name,
+					description: s.description ?? `Run /${s.name}`,
+					icon: BookOpenIcon,
+					source: "server" as const,
+					serverSource: "skill" as const,
+					location: s.location as "global" | "project",
+				}))
+		}, [rawSkills, serverCommands])
+
+		// --- Merge: skills first, then server commands, then built-in ---
+		const allCommands = useMemo(
+			() => [...skillCommands, ...serverCommands, ...CLIENT_COMMANDS],
+			[skillCommands, serverCommands],
+		)
 
 		// --- Fuzzy filter ---
 		const flatList = useMemo<SlashCommand[]>(() => {
