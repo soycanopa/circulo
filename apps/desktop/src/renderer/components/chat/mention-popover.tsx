@@ -9,7 +9,7 @@
 import { ScrollArea } from "@circulo/ui/components/scroll-area"
 import { cn } from "@circulo/ui/lib/utils"
 import fuzzysort from "fuzzysort"
-import { BrainIcon, FileIcon, FolderIcon, SearchIcon } from "lucide-react"
+import { BrainIcon, SearchIcon } from "lucide-react"
 import {
 	forwardRef,
 	memo,
@@ -21,6 +21,7 @@ import {
 	useState,
 } from "react"
 import { useFileSearch } from "../../hooks/use-file-search"
+import { getFileIconClass } from "../../lib/file-icons"
 import type { SdkAgent } from "../../hooks/use-opencode-data"
 
 // ============================================================
@@ -71,6 +72,23 @@ function isDirectory(path: string): boolean {
 }
 
 // ============================================================
+// Filter types
+// ============================================================
+
+type MentionFilterKey = "agents" | "files" | "folders"
+
+interface MentionFilterChip {
+	key: MentionFilterKey
+	label: string
+}
+
+const MENTION_FILTER_CHIPS: MentionFilterChip[] = [
+	{ key: "agents", label: "Agents" },
+	{ key: "files", label: "Files" },
+	{ key: "folders", label: "Folders" },
+]
+
+// ============================================================
 // MentionPopover
 // ============================================================
 
@@ -80,6 +98,11 @@ export const MentionPopover = memo(
 		ref,
 	) {
 		const [activeIndex, setActiveIndex] = useState(0)
+		const [filters, setFilters] = useState<Record<MentionFilterKey, boolean>>({
+			agents: false,
+			files: false,
+			folders: false,
+		})
 		const listRef = useRef<HTMLDivElement>(null)
 
 		// --- Data: agents ---
@@ -100,25 +123,34 @@ export const MentionPopover = memo(
 
 		// --- Merge and filter ---
 		const allOptions = useMemo<MentionOption[]>(() => {
+			let options: MentionOption[]
 			if (!query) {
-				// No query — show agents + initial files from the server
-				return [...agentOptions, ...fileOptions]
+				options = [...agentOptions, ...fileOptions]
+			} else {
+				const agentResults = fuzzysort
+					.go(query, agentOptions, { key: "display", threshold: 0.3 })
+					.map((r) => r.obj)
+				options = [...agentResults, ...fileOptions]
 			}
 
-			// Fuzzy filter agents
-			const agentResults = fuzzysort
-				.go(query, agentOptions, { key: "display", threshold: 0.3 })
-				.map((r) => r.obj)
+			const hasAnyFilter = Object.values(filters).some(Boolean)
+			if (!hasAnyFilter) return options
 
-			// Files come pre-filtered from the server
-			return [...agentResults, ...fileOptions]
-		}, [query, agentOptions, fileOptions])
+			return options.filter((o) => {
+				if (o.type === "agent" && filters.agents) return true
+				if (o.type === "file") {
+					if (filters.files && !isDirectory(o.path)) return true
+					if (filters.folders && isDirectory(o.path)) return true
+				}
+				return false
+			})
+		}, [query, agentOptions, fileOptions, filters])
 
-		// Reset active index when options or query change
-		// biome-ignore lint/correctness/useExhaustiveDependencies: intentional — reset on options/query change
+		// Reset active index when options, query, or filters change
+		// biome-ignore lint/correctness/useExhaustiveDependencies: intentional — reset on change
 		useEffect(() => {
 			setActiveIndex(0)
-		}, [allOptions.length, query])
+		}, [allOptions.length, query, filters])
 
 		// Scroll active item into view
 		// biome-ignore lint/correctness/useExhaustiveDependencies: intentional — scroll when active index changes
@@ -168,6 +200,13 @@ export const MentionPopover = memo(
 
 		useImperativeHandle(ref, () => ({ handleKeyDown }), [handleKeyDown])
 
+		const toggleFilter = useCallback((key: MentionFilterKey) => {
+			setFilters((prev) => {
+				const isActive = prev[key]
+				return { ...prev, [key]: !isActive }
+			})
+		}, [])
+
 		if (!open) return null
 
 		// --- Group options ---
@@ -189,6 +228,25 @@ export const MentionPopover = memo(
 					<span className="text-sm text-muted-foreground">
 						{query ? `Searching for "${query}"` : "Mention files or agents"}
 					</span>
+				</div>
+
+				{/* Filter chips */}
+				<div className="flex items-center gap-1.5 border-b px-3 py-1.5">
+					{MENTION_FILTER_CHIPS.map((chip) => (
+						<button
+							key={chip.key}
+							type="button"
+							className={cn(
+								"rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors",
+								filters[chip.key]
+									? "bg-accent text-accent-foreground"
+									: "bg-muted text-muted-foreground hover:bg-accent/50",
+							)}
+							onClick={() => toggleFilter(chip.key)}
+						>
+							{chip.label}
+						</button>
+					))}
 				</div>
 
 				{/* Results */}
@@ -298,11 +356,7 @@ const MentionItem = memo(function MentionItem({
 			onClick={onSelect}
 			onMouseEnter={onHover}
 		>
-			{isDir ? (
-				<FolderIcon className="size-4 shrink-0 text-muted-foreground" />
-			) : (
-				<FileIcon className="size-4 shrink-0 text-muted-foreground" />
-			)}
+			<i className={getFileIconClass(path) + " text-base shrink-0"} />
 			<div className="flex min-w-0 items-center">
 				<span className="font-medium">{name}</span>
 				{dir && <span className="ml-1.5 truncate text-muted-foreground">{dir}</span>}
