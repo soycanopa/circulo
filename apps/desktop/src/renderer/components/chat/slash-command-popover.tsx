@@ -140,6 +140,25 @@ function getCommandIcon(name: string): LucideIcon {
 }
 
 // ============================================================
+// Filter types
+// ============================================================
+
+type FilterKey = "skills" | "global" | "local" | "cmd" | "mcp"
+
+interface FilterChip {
+	key: FilterKey
+	label: string
+}
+
+const FILTER_CHIPS: FilterChip[] = [
+	{ key: "skills", label: "Skills" },
+	{ key: "global", label: "Globales" },
+	{ key: "local", label: "Locales" },
+	{ key: "cmd", label: "CMD" },
+	{ key: "mcp", label: "MCP" },
+]
+
+// ============================================================
 // SlashCommandPopover
 // ============================================================
 
@@ -149,6 +168,13 @@ export const SlashCommandPopover = memo(
 		ref,
 	) {
 		const [activeIndex, setActiveIndex] = useState(0)
+		const [filters, setFilters] = useState<Record<FilterKey, boolean>>({
+			skills: false,
+			global: false,
+			local: false,
+			cmd: false,
+			mcp: false,
+		})
 		const listRef = useRef<HTMLDivElement>(null)
 
 		// --- Skills (both global and local, including those without slash:true) ---
@@ -192,21 +218,35 @@ export const SlashCommandPopover = memo(
 			[skillCommands, serverCommands],
 		)
 
-		// --- Fuzzy filter ---
+		// --- Apply filters, then fuzzy search ---
 		const flatList = useMemo<SlashCommand[]>(() => {
-			if (!query) return allCommands
-			const results = fuzzysort.go(query, allCommands, {
+			const hasAnyFilter = Object.values(filters).some(Boolean)
+			let list = allCommands
+			if (hasAnyFilter) {
+				list = allCommands.filter((cmd) => {
+					if (filters.cmd && cmd.source === "client") return true
+					if (filters.mcp && cmd.serverSource === "mcp") return true
+					if (cmd.serverSource === "skill") {
+						if (filters.skills) return true
+						if (filters.global && cmd.location === "global") return true
+						if (filters.local && cmd.location === "project") return true
+					}
+					return false
+				})
+			}
+			if (!query) return list
+			const results = fuzzysort.go(query, list, {
 				keys: ["name", "description"],
 				threshold: 0.3,
 			})
 			return results.map((r) => r.obj)
-		}, [allCommands, query])
+		}, [allCommands, query, filters])
 
-		// Reset active index when options or query change
-		// biome-ignore lint/correctness/useExhaustiveDependencies: intentional — reset on options/query change
+		// Reset active index when options, query, or filters change
+		// biome-ignore lint/correctness/useExhaustiveDependencies: intentional — reset on options/query/filter change
 		useEffect(() => {
 			setActiveIndex(0)
-		}, [flatList.length, query])
+		}, [flatList.length, query, filters])
 
 		// Scroll active item into view
 		// biome-ignore lint/correctness/useExhaustiveDependencies: intentional — scroll when active index changes
@@ -272,6 +312,20 @@ export const SlashCommandPopover = memo(
 
 		useImperativeHandle(ref, () => ({ handleKeyDown }), [handleKeyDown])
 
+		// --- Filter toggle: skills family (skills/global/local) vs atomic (cmd/mcp) ---
+		const toggleFilter = useCallback((key: FilterKey) => {
+			setFilters((prev) => {
+				const isActive = prev[key]
+				if (isActive) {
+					return { ...prev, [key]: false }
+				}
+				if (key === "cmd" || key === "mcp") {
+					return { skills: false, global: false, local: false, cmd: false, mcp: false, [key]: true }
+				}
+				return { ...prev, cmd: false, mcp: false, [key]: true }
+			})
+		}, [])
+
 		if (!open) return null
 
 		return (
@@ -284,6 +338,25 @@ export const SlashCommandPopover = memo(
 				<div className="flex items-center gap-2 border-b px-3 py-2">
 					<SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
 					<span className="text-sm text-muted-foreground">Search</span>
+				</div>
+
+				{/* Filter chips */}
+				<div className="flex items-center gap-1.5 border-b px-3 py-1.5">
+					{FILTER_CHIPS.map((chip) => (
+						<button
+							key={chip.key}
+							type="button"
+							className={cn(
+								"rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors",
+								filters[chip.key]
+									? "bg-accent text-accent-foreground"
+									: "bg-muted text-muted-foreground hover:bg-accent/50",
+							)}
+							onClick={() => toggleFilter(chip.key)}
+						>
+							{chip.label}
+						</button>
+					))}
 				</div>
 
 				{/* Results */}
