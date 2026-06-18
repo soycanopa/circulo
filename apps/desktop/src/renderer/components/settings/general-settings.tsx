@@ -8,12 +8,12 @@ import {
 } from "@circulo/ui/components/select"
 import { Switch } from "@circulo/ui/components/switch"
 import { useAtomValue, useSetAtom } from "jotai"
-import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react"
-import { useCallback, useEffect, useState } from "react"
-import { type DisplayMode, displayModeAtom, opaqueWindowsAtom } from "../../atoms/preferences"
+import { Loader2Icon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { type DisplayMode, displayModeAtom, opaqueWindowsAtom, rtkEnabledAtom } from "../../atoms/preferences"
 import { useColorScheme, useSetColorScheme } from "../../hooks/use-theme"
 import type { ColorScheme } from "../../lib/themes"
-import { fetchOpenInTargets, setOpenInPreferred } from "../../services/backend"
+import { checkRtk, disableRtk, enableRtk, fetchOpenInTargets, installRtk, setOpenInPreferred } from "../../services/backend"
 import { SettingsRow } from "./settings-row"
 import { SettingsSection } from "./settings-section"
 
@@ -34,6 +34,7 @@ export function GeneralSettings() {
 			<SettingsSection title="Appearance">
 				<ThemeRow />
 				{isMac && <OpaqueWindowsRow />}
+				<RtkRow />
 				<OpencodeBinaryRow />
 				<DisplayModeRow />
 			</SettingsSection>
@@ -210,6 +211,172 @@ function OpencodeBinaryRow() {
 				value={binary}
 				onChange={(e) => handleChange(e.target.value)}
 			/>
+		</SettingsRow>
+	)
+}
+
+interface RtkState {
+	checking: boolean
+	installed: boolean
+	version: string | null
+	pluginActive: boolean
+	enabling: boolean
+	error: string | null
+}
+
+function RtkRow() {
+	const enabled = useAtomValue(rtkEnabledAtom)
+	const setEnabled = useSetAtom(rtkEnabledAtom)
+	const [state, setState] = useState<RtkState>({
+		checking: true,
+		installed: false,
+		version: null,
+		pluginActive: false,
+		enabling: false,
+		error: null,
+	})
+	const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+	useEffect(() => {
+		if (!isElectron) {
+			setState((s) => ({ ...s, checking: false }))
+			return
+		}
+		checkRtk().then((result) => {
+			setState({
+				checking: false,
+				installed: result.installed,
+				version: result.version,
+				pluginActive: result.pluginActive,
+				enabling: false,
+				error: null,
+			})
+		})
+	}, [])
+
+	useEffect(() => {
+		if (!isElectron) return
+		return window.circulo.onSettingsChanged((settings) => {
+			const rtkSetting = (settings as { rtkEnabled?: boolean }).rtkEnabled
+			if (typeof rtkSetting === "boolean" && rtkSetting !== enabled) {
+				setEnabled(rtkSetting)
+			}
+		})
+	}, [enabled, setEnabled])
+
+	useEffect(() => {
+		return () => {
+			if (pollRef.current) {
+				clearInterval(pollRef.current)
+			}
+		}
+	}, [])
+
+	const handleToggle = useCallback(
+		async (checked: boolean) => {
+			setState((s) => ({ ...s, enabling: true, error: null }))
+			try {
+				if (checked) {
+					const result = await enableRtk()
+					if (result.success) {
+						setEnabled(true)
+						setState((s) => ({ ...s, enabling: false, pluginActive: true }))
+					} else {
+						setState((s) => ({
+							...s,
+							enabling: false,
+							error: result.error ?? "Failed to enable RTK",
+						}))
+					}
+				} else {
+					const result = await disableRtk()
+					if (result.success) {
+						setEnabled(false)
+						setState((s) => ({ ...s, enabling: false, pluginActive: false }))
+					} else {
+						setState((s) => ({ ...s, enabling: false, error: "Failed to disable RTK" }))
+					}
+				}
+			} catch (err) {
+				setState((s) => ({
+					...s,
+					enabling: false,
+					error: err instanceof Error ? err.message : "Unknown error",
+				}))
+			}
+		},
+		[setEnabled],
+	)
+
+	const handleInstall = useCallback(async () => {
+		await installRtk()
+		pollRef.current = setInterval(async () => {
+			const result = await checkRtk()
+			if (result.installed) {
+				if (pollRef.current) {
+					clearInterval(pollRef.current)
+					pollRef.current = null
+				}
+				setState({
+					checking: false,
+					installed: true,
+					version: result.version,
+					pluginActive: result.pluginActive,
+					enabling: false,
+					error: null,
+				})
+			}
+		}, 2000)
+		setTimeout(() => {
+			if (pollRef.current) {
+				clearInterval(pollRef.current)
+				pollRef.current = null
+			}
+			setState((s) => ({ ...s, checking: false, error: "Installation timeout" }))
+		}, 60_000)
+	}, [])
+
+	if (!isElectron) return null
+
+	const isLoading = state.checking || state.enabling
+
+	return (
+		<SettingsRow
+			label="RTK Token Optimization"
+			description="Reduce LLM token consumption by 60-90% by filtering command outputs before they reach the model. Requires the rtk CLI tool."
+		>
+			<div className="flex items-center gap-3">
+				<Switch
+					checked={enabled}
+					onCheckedChange={handleToggle}
+					disabled={!state.installed || isLoading}
+				/>
+				{isLoading && (
+					<span className="text-xs text-muted-foreground">
+						<Loader2Icon aria-hidden="true" className="inline size-3 animate-spin mr-1" />
+						{state.enabling ? "Restarting server..." : "Checking..."}
+					</span>
+				)}
+				{!isLoading && state.installed && (
+					<span className="text-xs text-muted-foreground">
+						{enabled
+							? `Active — rtk v${state.version ?? "?"}`
+							: `rtk v${state.version ?? "?"} detected`}
+					</span>
+				)}
+				{!isLoading && !state.installed && (
+					<button
+						type="button"
+						onClick={handleInstall}
+						className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+					>
+						Install RTK
+					</button>
+				)}
+				{state.error && (
+					<span className="text-xs text-destructive">{state.error}</span>
+				)}
+			</div>
 		</SettingsRow>
 	)
 }
