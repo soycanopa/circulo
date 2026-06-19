@@ -1,5 +1,5 @@
 import { exec } from "node:child_process"
-import { existsSync, readdirSync, readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs"
 import path from "node:path"
 import { homedir } from "node:os"
 import { createLogger } from "./logger"
@@ -26,6 +26,11 @@ export interface InstallSkillParams {
 }
 
 export interface InstallResult {
+	success: boolean
+	error?: string
+}
+
+export interface RemoveResult {
 	success: boolean
 	error?: string
 }
@@ -227,6 +232,24 @@ export function installSkill(params: InstallSkillParams): Promise<InstallResult>
 			return { success: false, error: msg }
 		}
 	})
+}
+
+/**
+ * Removes a skill directory from disk.
+ */
+export function removeSkill(skillPath: string): RemoveResult {
+	if (!existsSync(skillPath)) {
+		return { success: false, error: `Skill path not found: ${skillPath}` }
+	}
+	try {
+		rmSync(skillPath, { recursive: true })
+		log.info(`Removed skill at ${skillPath}`)
+		return { success: true }
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err)
+		log.error(`Failed to remove skill at ${skillPath}: ${msg}`)
+		return { success: false, error: msg }
+	}
 }
 
 /**

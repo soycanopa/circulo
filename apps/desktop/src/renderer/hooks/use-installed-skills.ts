@@ -56,10 +56,10 @@ export function useInstalledSkills() {
 			const projectDirs: string[] = projects
 				.filter(
 					(p) =>
-						"directory" in p &&
-						typeof (p as { directory: unknown }).directory === "string",
+						"worktree" in p &&
+						typeof (p as { worktree: unknown }).worktree === "string",
 				)
-				.map((p) => (p as { directory: string }).directory)
+				.map((p) => (p as { worktree: string }).worktree)
 			const uniqueDirs = [...new Set(projectDirs)]
 			console.info("[useInstalledSkills] calling skills.list", { projectDirs: uniqueDirs })
 			const result = await window.circulo.skills.list(uniqueDirs)

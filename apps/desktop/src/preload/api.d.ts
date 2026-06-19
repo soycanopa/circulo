@@ -629,6 +629,8 @@ export interface CirculoAPI {
 		install: (params: InstallSkillParams) => Promise<InstallResult>
 		/** Get registered project directories. */
 		getProjects: () => Promise<string[]>
+		/** Remove a skill by its directory path. */
+		remove: (path: string) => Promise<{ success: boolean; error?: string }>
 	}
 }
 

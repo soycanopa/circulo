@@ -315,5 +315,6 @@ contextBridge.exposeInMainWorld("circulo", {
 		install: (params: { ownerRepo: string; target?: string }) =>
 			ipcRenderer.invoke("skills:install", params),
 		getProjects: () => ipcRenderer.invoke("skills:projects"),
+		remove: (path: string) => ipcRenderer.invoke("skills:remove", path),
 	},
 })

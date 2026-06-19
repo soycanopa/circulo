@@ -34,7 +34,7 @@ import {
 import { getResolvedChromeTier } from "./liquid-glass"
 import { createLogger } from "./logger"
 import { getDiscoveredServers } from "./mdns-scanner"
-import { getRegisteredProjects, installSkill, scanSkills } from "./skills"
+import { getRegisteredProjects, installSkill, removeSkill, scanSkills } from "./skills"
 
 import { readModelState, updateModelRecent } from "./model-state"
 import { dismissNotification, updateBadgeCount } from "./notifications"
@@ -651,6 +651,14 @@ export function registerIpcHandlers(): void {
 	)
 
 	ipcMain.handle("skills:projects", () => getRegisteredProjects())
+
+	ipcMain.handle(
+		"skills:remove",
+		withLogging(
+			"skills:remove",
+			async (_event, skillPath: string) => removeSkill(skillPath),
+		),
+	)
 
 	// --- Settings push channel (main -> renderer) ---
 	// Notify all renderer windows when settings change so they can update reactively.

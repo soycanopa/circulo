@@ -1,5 +1,6 @@
 import { Badge } from "@circulo/ui/components/badge"
 import { Button } from "@circulo/ui/components/button"
+import { Dialog, DialogContent } from "@circulo/ui/components/dialog"
 import { Input } from "@circulo/ui/components/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@circulo/ui/components/select"
 import { Skeleton } from "@circulo/ui/components/skeleton"
@@ -14,11 +15,11 @@ import {
 	ExternalLinkIcon,
 	FolderIcon,
 	GlobeIcon,
-	LayersIcon,
 	LoaderCircleIcon,
 	RefreshCwIcon,
 	SearchIcon,
 	CheckIcon,
+	Trash2Icon,
 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { InstalledSkill } from "../../preload/api"
@@ -57,7 +58,7 @@ export function SkillSettings() {
 			<h2 className="text-xl font-semibold">Skills</h2>
 
 			<Tabs value={subTab} onValueChange={(v) => setSubTab(v as SkillSubTab)} orientation="horizontal">
-				<div className="sticky top-0 z-10 bg-background pt-2 pb-2">
+				<div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm pt-2 pb-2">
 					<TabsList variant="default">
 						<TabsTrigger value="installed">
 							<BookOpenIcon aria-hidden="true" className="size-4" />
@@ -101,7 +102,7 @@ function InstalledView() {
 	const projectScopes: ProjectScope[] = useMemo(() => {
 		const list: ProjectScope[] = []
 		for (const [dir, skills] of projectsMap) {
-			const proj = allProjects.find((p) => (p as { directory?: string }).directory === dir)
+			const proj = allProjects.find((p) => (p as { worktree?: string }).worktree === dir)
 			list.push({
 				label: proj ? (proj as { name?: string }).name ?? dir.split("/").pop() ?? dir : dir.split("/").pop() ?? dir,
 				dir,
@@ -244,7 +245,17 @@ function InstalledView() {
 						}
 						onSelect={setSelectedSkill}
 						renderItem={(skill) => (
-							<SkillRow skill={skill} projectLabel={projectScopes.find((s) => s.dir === skill.project)?.label} onSelect={setSelectedSkill} />
+							<SkillRow
+								skill={skill}
+								projectLabel={projectScopes.find((s) => s.dir === skill.project)?.label}
+								onSelect={setSelectedSkill}
+								onDelete={async (s) => {
+									if ("circulo" in window) {
+										await window.circulo.skills.remove(s.location)
+										refresh()
+									}
+								}}
+							/>
 						)}
 					/>
 				</div>
@@ -295,10 +306,12 @@ function SkillRow({
 	skill,
 	projectLabel,
 	onSelect,
+	onDelete,
 }: {
 	skill: InstalledSkill
 	projectLabel?: string
 	onSelect: (skill: InstalledSkill) => void
+	onDelete: (skill: InstalledSkill) => void
 }) {
 	return (
 		<div className="flex items-center justify-between gap-3 px-4 py-2.5">
@@ -309,9 +322,22 @@ function SkillRow({
 					{projectLabel && <span className="ml-1">· {projectLabel}</span>}
 				</p>
 			</div>
-			<Button variant="ghost" size="sm" onClick={() => onSelect(skill)}>
-				Details
-			</Button>
+			<div className="flex items-center gap-1 shrink-0">
+				<Button variant="ghost" size="sm" onClick={() => onSelect(skill)}>
+					Details
+				</Button>
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					onClick={() => {
+						if (confirm(`Delete "${skill.name}"? This removes the skill directory from disk.`)) {
+							onDelete(skill)
+						}
+					}}
+				>
+					<Trash2Icon aria-hidden="true" className="size-4 text-muted-foreground hover:text-destructive" />
+				</Button>
+			</div>
 		</div>
 	)
 }
@@ -398,17 +424,16 @@ function useProjectDirs(): { dir: string; label: string }[] {
 				projects
 					.filter(
 						(p) =>
-							"directory" in p &&
-							typeof (p as { directory: unknown }).directory === "string",
+							"worktree" in p &&
+							typeof (p as { worktree: unknown }).worktree === "string",
 					)
 					.map((p) => {
-						const d = (p as { directory: string }).directory
+						const d = (p as { worktree: string }).worktree
 						const n = (p as { name?: string }).name ?? d.split("/").pop() ?? d
 						return [d, { dir: d, label: n }] as const
 					}),
 			).values(),
 		]
-		console.info("[useProjectDirs]", { projectCount: projects.length, dirs: result })
 		return result
 	}, [projects])
 	return dirs
@@ -448,7 +473,7 @@ function DiscoverView() {
 
 	return (
 		<div className="space-y-4 pt-2">
-			<div className="sticky top-14 z-10 bg-background pb-2">
+			<div className="sticky top-14 z-10 bg-background/95 backdrop-blur-sm pb-2">
 				<form onSubmit={handleSearch} className="flex gap-2">
 					<Input
 						placeholder="Search skills.sh..."
@@ -511,6 +536,34 @@ function DiscoverView() {
 			) : (
 				<DiscoverSkillsList skills={skills} onSelect={setSelectedSkill} />
 			)}
+
+			<Dialog
+				open={selectedSkill !== null}
+				onOpenChange={(open) => {
+					if (!open) {
+						setSelectedSkill(null)
+						reset()
+					}
+				}}
+			>
+				{selectedSkill && (
+					<DialogContent showCloseButton={false}>
+						<SkillDetailPanel
+							skill={selectedSkill}
+							installState={state}
+							installError={installStateError}
+							installTarget={installTarget}
+							projectDirs={projectDirs}
+							onInstall={() => handleInstall(selectedSkill.source)}
+							onTargetChange={setInstallTarget}
+							onBack={() => {
+								setSelectedSkill(null)
+								reset()
+							}}
+						/>
+					</DialogContent>
+				)}
+			</Dialog>
 		</div>
 	)
 }
@@ -633,85 +686,84 @@ function SkillDetailPanel({
 	onBack: () => void
 }) {
 	return (
-		<SettingsSection title={skill.name}>
-			<div className="space-y-3 px-4 py-3">
-				<div>
-					<p className="text-sm font-medium">Source</p>
-					<p className="text-sm text-muted-foreground">{skill.source}</p>
-				</div>
-				<div>
-					<p className="text-sm font-medium">Installs</p>
-					<p className="text-sm text-muted-foreground">{formatInstalls(skill.installs)}</p>
-				</div>
-				<a
-					href={skill.url}
-					target="_blank"
-					rel="noopener noreferrer"
-					className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-				>
-					<ExternalLinkIcon aria-hidden="true" className="size-3" />
-					View on skills.sh
-				</a>
+		<div className="space-y-3">
+			<h3 className="text-lg font-semibold">{skill.name}</h3>
+			<div>
+				<p className="text-sm font-medium">Source</p>
+				<p className="text-sm text-muted-foreground">{skill.source}</p>
+			</div>
+			<div>
+				<p className="text-sm font-medium">Installs</p>
+				<p className="text-sm text-muted-foreground">{formatInstalls(skill.installs)}</p>
+			</div>
+			<a
+				href={skill.url}
+				target="_blank"
+				rel="noopener noreferrer"
+				className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+			>
+				<ExternalLinkIcon aria-hidden="true" className="size-3" />
+				View on skills.sh
+			</a>
 
-				<div className="space-y-2 pt-2">
-					<div>
-						<p className="text-sm font-medium mb-1">Install to</p>
-						<Select value={installTarget} onValueChange={(v) => v && onTargetChange(v)}>
-							<SelectTrigger className="w-full">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								<SelectItem value="global">
+			<div className="space-y-2 pt-2">
+				<div>
+					<p className="text-sm font-medium mb-1">Install to</p>
+					<Select value={installTarget} onValueChange={(v) => v && onTargetChange(v)}>
+						<SelectTrigger className="w-full">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="global">
+								<div className="flex items-center gap-2">
+									<GlobeIcon aria-hidden="true" className="size-3" />
+									Global (~/.config/opencode/skills/)
+								</div>
+							</SelectItem>
+							{projectDirs.map(({ dir, label }) => (
+								<SelectItem key={dir} value={dir}>
 									<div className="flex items-center gap-2">
-										<GlobeIcon aria-hidden="true" className="size-3" />
-										Global (~/.config/opencode/skills/)
+										<FolderIcon aria-hidden="true" className="size-3" />
+										{label}
 									</div>
 								</SelectItem>
-								{projectDirs.map(({ dir, label }) => (
-									<SelectItem key={dir} value={dir}>
-										<div className="flex items-center gap-2">
-											<FolderIcon aria-hidden="true" className="size-3" />
-											{label}
-										</div>
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
-
-					{installState === "idle" && (
-						<Button onClick={onInstall} className="w-full">
-							<DownloadIcon aria-hidden="true" className="size-4" />
-							Install
-						</Button>
-					)}
-					{installState === "installing" && (
-						<Button disabled className="w-full">
-							<LoaderCircleIcon aria-hidden="true" className="size-4 animate-spin" />
-							Installing...
-						</Button>
-					)}
-					{installState === "success" && (
-						<Button disabled className="w-full" variant="outline">
-							<CheckIcon aria-hidden="true" className="size-4" />
-							Installed
-						</Button>
-					)}
-					{installState === "error" && (
-						<div className="space-y-2">
-							<p className="text-sm text-destructive">{installError}</p>
-							<Button onClick={onInstall} className="w-full">
-								Retry
-							</Button>
-						</div>
-					)}
+							))}
+						</SelectContent>
+					</Select>
 				</div>
 
-				<Button variant="ghost" size="sm" onClick={onBack}>
-					← Back to results
-				</Button>
+				{installState === "idle" && (
+					<Button onClick={onInstall} className="w-full">
+						<DownloadIcon aria-hidden="true" className="size-4" />
+						Install
+					</Button>
+				)}
+				{installState === "installing" && (
+					<Button disabled className="w-full">
+						<LoaderCircleIcon aria-hidden="true" className="size-4 animate-spin" />
+						Installing...
+					</Button>
+				)}
+				{installState === "success" && (
+					<Button disabled className="w-full" variant="outline">
+						<CheckIcon aria-hidden="true" className="size-4" />
+						Installed
+					</Button>
+				)}
+				{installState === "error" && (
+					<div className="space-y-2">
+						<p className="text-sm text-destructive">{installError}</p>
+						<Button onClick={onInstall} className="w-full">
+							Retry
+						</Button>
+					</div>
+				)}
 			</div>
-		</SettingsSection>
+
+			<Button variant="ghost" size="sm" onClick={onBack}>
+				Cancel
+			</Button>
+		</div>
 	)
 }
 
