@@ -22,6 +22,7 @@ export interface InstalledSkill {
 
 export interface InstallSkillParams {
 	ownerRepo: string
+	skillName?: string
 	target?: string
 }
 
@@ -96,15 +97,39 @@ function scanDirectory(
 		for (const entry of entries) {
 			if (!entry.isDirectory()) continue
 			const skillDir = path.join(skillsDir, entry.name)
-			const { name, description } = extractSkillMetadata(skillDir, entry.name)
 
-			skills.push({
-				name,
-				description,
-				location: skillDir,
-				origin,
-				...(project ? { project } : {}),
-			})
+			// If this directory has a SKILL.md, it's a skill
+			if (existsSync(path.join(skillDir, "SKILL.md"))) {
+				const { name, description } = extractSkillMetadata(skillDir, entry.name)
+				skills.push({
+					name,
+					description,
+					location: skillDir,
+					origin,
+					...(project ? { project } : {}),
+				})
+			} else {
+				// No SKILL.md at this level — scan one level deeper for nested skills
+				try {
+					const nested = readdirSync(skillDir, { withFileTypes: true })
+					for (const nestedEntry of nested) {
+						if (!nestedEntry.isDirectory()) continue
+						const nestedDir = path.join(skillDir, nestedEntry.name)
+						if (existsSync(path.join(nestedDir, "SKILL.md"))) {
+							const { name, description } = extractSkillMetadata(nestedDir, nestedEntry.name)
+							skills.push({
+								name,
+								description,
+								location: nestedDir,
+								origin,
+								...(project ? { project } : {}),
+							})
+						}
+					}
+				} catch {
+					// Ignore nested scan errors
+				}
+			}
 		}
 
 		log.info(`  ${skillsDir}: ${skills.length} skills found`)
@@ -178,9 +203,13 @@ function enqueueInstall<T>(fn: () => Promise<T>): Promise<T> {
 // Skill installation
 // ============================================================
 
-function execCommand(command: string, timeoutMs: number): Promise<{ stdout: string; stderr: string }> {
+function execCommand(
+	command: string,
+	timeoutMs: number,
+	cwd?: string,
+): Promise<{ stdout: string; stderr: string }> {
 	return new Promise((resolve, reject) => {
-		exec(command, { timeout: timeoutMs }, (error, stdout, stderr) => {
+		exec(command, { timeout: timeoutMs, cwd }, (error, stdout, stderr) => {
 			if (error) {
 				reject(new Error(stderr || error.message))
 			} else {
@@ -192,24 +221,16 @@ function execCommand(command: string, timeoutMs: number): Promise<{ stdout: stri
 
 export function installSkill(params: InstallSkillParams): Promise<InstallResult> {
 	return enqueueInstall(async () => {
-		const { ownerRepo, target } = params
+		const { ownerRepo, skillName, target } = params
+
+		const skillFlag = skillName ? ` --skill "${skillName}"` : ""
+		const cmd = `npx skills add ${ownerRepo}${skillFlag}`
 
 		if (target) {
-			// Per-project install: clone into <target>/.agents/skills/<name>/
-			const skillName = ownerRepo.replace("/", "-")
-			const destDir = path.join(target, ".agents", "skills", skillName)
-
-			if (existsSync(destDir)) {
-				return { success: false, error: `Skill already installed at ${destDir}` }
-			}
-
+			// Per-project install: use cwd to install into the project directory
 			try {
-				await execCommand(`mkdir -p "${destDir}"`, 5000)
-				await execCommand(
-					`git clone --depth 1 "https://github.com/${ownerRepo}.git" "${destDir}"`,
-					30000,
-				)
-				log.info(`Installed skill ${ownerRepo} to ${destDir}`)
+				await execCommand(cmd, 30000, target)
+				log.info(`Installed skill ${skillName ?? ownerRepo} to project ${target}`)
 				return { success: true }
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err)
@@ -220,8 +241,8 @@ export function installSkill(params: InstallSkillParams): Promise<InstallResult>
 
 		// Global install via npx
 		try {
-			const { stderr } = await execCommand(`npx skills add ${ownerRepo}`, 30000)
-			log.info(`Installed skill ${ownerRepo} globally`)
+			const { stderr } = await execCommand(cmd, 30000)
+			log.info(`Installed skill ${skillName ?? ownerRepo} globally`)
 			if (stderr && !stderr.includes("WARN")) {
 				log.warn(`Install stderr: ${stderr}`)
 			}

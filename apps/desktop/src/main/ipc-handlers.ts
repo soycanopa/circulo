@@ -645,7 +645,7 @@ export function registerIpcHandlers(): void {
 		"skills:install",
 		withLogging(
 			"skills:install",
-			async (_event, params: { ownerRepo: string; target?: string }) =>
+			async (_event, params: { ownerRepo: string; skillName?: string; target?: string }) =>
 				installSkill(params),
 		),
 	)
