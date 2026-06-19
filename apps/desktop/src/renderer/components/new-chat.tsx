@@ -874,7 +874,7 @@ export function NewChat() {
 	const hasToolbar = providers
 
 	return (
-		<div className="relative flex h-full flex-col">
+		<div data-slot="content-panel-solid" className="relative flex h-full flex-col bg-background">
 			{/* Hero area — vertically centered */}
 			<div className="flex flex-1 flex-col items-center justify-center px-0 sm:px-6">
 				<div className="w-full max-w-4xl space-y-8">

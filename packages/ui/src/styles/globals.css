@@ -162,6 +162,12 @@
   --diff-addition-foreground: #40c977;
   --diff-deletion: #ff6764;
   --diff-deletion-foreground: #ff6764;
+
+  /* Glass frost — dark cool material + subtle highlight (not a gray wash) */
+  --glass-frost-tint: #2a2a32;
+  --glass-frost-weight: 14%;
+  --glass-frost-highlight: #ffffff;
+  --glass-frost-highlight-weight: 6%;
 }
 
 @layer base {
@@ -205,18 +211,38 @@
 @layer base {
   :root {
     /* Glass opacity scale (percentage for color-mix) */
-    --glass-body: 55%;
-    --glass-sidebar: 55%;
+    --glass-body: 68%;
+    --glass-sidebar: 74%;
     --glass-surface: 70%;
     --glass-elevated: 85%;
     --glass-card: 92%;
-    --glass-content: 85%;
+    --glass-content: 88%;
     --glass-sidebar-accent: 55%;
 
+    /* Frost material — dark cool tint + optional highlight before transparency */
+    --glass-frost-tint: #ffffff;
+    --glass-frost-weight: 0%;
+    --glass-frost-highlight: #ffffff;
+    --glass-frost-highlight-weight: 0%;
+
+    /* Pre-computed glass materials (base → frost tint → highlight) */
+    --glass-material-from-sidebar: color-mix(
+      in srgb,
+      color-mix(in srgb, var(--sidebar) calc(100% - var(--glass-frost-weight)), var(--glass-frost-tint) var(--glass-frost-weight))
+      calc(100% - var(--glass-frost-highlight-weight)),
+      var(--glass-frost-highlight) var(--glass-frost-highlight-weight)
+    );
+    --glass-material-from-background: color-mix(
+      in srgb,
+      color-mix(in srgb, var(--background) calc(100% - var(--glass-frost-weight)), var(--glass-frost-tint) var(--glass-frost-weight))
+      calc(100% - var(--glass-frost-highlight-weight)),
+      var(--glass-frost-highlight) var(--glass-frost-highlight-weight)
+    );
+
     /* Blur scale — backdrop-filter values */
-    --blur-sm: 12px;
-    --blur-md: 20px;
-    --blur-lg: 32px;
+    --blur-sm: 18px;
+    --blur-md: 32px;
+    --blur-lg: 48px;
     --blur-xl: 48px;
   }
 }
@@ -233,7 +259,7 @@
 
   /* --- Body background --- */
   :root.electron-transparent body {
-    background: color-mix(in srgb, var(--background) var(--glass-body), transparent);
+    background: color-mix(in srgb, var(--glass-material-from-background) var(--glass-body), transparent);
   }
 
   /* --- Sidebar (shadcn data-slot) ---
@@ -297,7 +323,9 @@
    * no raw glass bleeds through at the corner gaps. */
   :root.electron-transparent [data-slot="sidebar-wrapper"] {
     background-color: transparent !important;
-    background: color-mix(in srgb, var(--sidebar) var(--glass-sidebar), transparent) !important;
+    background: color-mix(in srgb, var(--glass-material-from-sidebar) var(--glass-sidebar), transparent) !important;
+    -webkit-backdrop-filter: saturate(200%) blur(var(--blur-lg));
+    backdrop-filter: saturate(200%) blur(var(--blur-lg));
   }
   :root.electron-transparent [data-slot="sidebar-inner"] {
     background-color: transparent !important;
@@ -330,7 +358,7 @@
 @layer components {
 
   :root.electron-vibrancy body {
-    background: color-mix(in srgb, var(--background) var(--glass-body), transparent);
+    background: color-mix(in srgb, var(--glass-material-from-background) var(--glass-body), transparent);
   }
 
   /* Sidebar transparent — wrapper carries the background (see Tier 1 comment) */
@@ -368,7 +396,7 @@
   /* --- Inset sidebar wrapper (vibrancy — see Tier 1 comment) --- */
   :root.electron-vibrancy [data-slot="sidebar-wrapper"] {
     background-color: transparent !important;
-    background: color-mix(in srgb, var(--sidebar) var(--glass-sidebar), transparent) !important;
+    background: color-mix(in srgb, var(--glass-material-from-sidebar) var(--glass-sidebar), transparent) !important;
   }
   :root.electron-vibrancy [data-slot="sidebar-inner"] {
     background-color: transparent !important;
@@ -521,7 +549,9 @@
   margin-left: 12px;
 }
 :root.electron-transparent [data-slot="content-area"] {
-  background: color-mix(in srgb, var(--background) var(--glass-content), transparent);
+  background: color-mix(in srgb, var(--glass-material-from-background) var(--glass-content), transparent);
+  -webkit-backdrop-filter: saturate(200%) blur(var(--blur-lg));
+  backdrop-filter: saturate(200%) blur(var(--blur-lg));
   border-top-left-radius: var(--radius-xl);
   border-top-right-radius: var(--radius-xl);
   overflow: clip;
@@ -540,7 +570,7 @@
   margin-left: 12px;
 }
 :root.electron-vibrancy [data-slot="content-area"] {
-  background: color-mix(in srgb, var(--background) var(--glass-content), transparent);
+  background: color-mix(in srgb, var(--glass-material-from-background) var(--glass-content), transparent);
   border-top-left-radius: var(--radius-xl);
   border-top-right-radius: var(--radius-xl);
   overflow: clip;
@@ -601,6 +631,32 @@
 :root.electron-transparent.theme-liquid-glass .bg-muted\/40,
 :root.electron-vibrancy.theme-liquid-glass .bg-muted\/40 {
   background-color: color-mix(in srgb, var(--muted) 10%, transparent) !important;
+}
+
+/* ============================================================
+ * Solid content panels — opaque surfaces on glass tiers
+ *
+ * New Chat / New Thread: the entire active panel (right of sidebar)
+ * uses a flat background so wallpaper does not bleed through.
+ * Chat sessions: only the bottom composer dock is solid; messages
+ * above keep the semi-transparent content-area glass.
+ * ============================================================ */
+
+:root.electron-transparent [data-slot="content-panel-solid"],
+:root.electron-vibrancy [data-slot="content-panel-solid"] {
+  background: var(--background) !important;
+}
+
+:root.electron-transparent [data-slot="composer-dock"],
+:root.electron-vibrancy [data-slot="composer-dock"] {
+  background: var(--background) !important;
+  border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+:root.electron-transparent [data-slot="composer-dock"] [data-slot="input-group"],
+:root.electron-vibrancy [data-slot="composer-dock"] [data-slot="input-group"] {
+  background: transparent !important;
+  border-color: color-mix(in srgb, var(--border) 40%, transparent);
 }
 
 /* ============================================================

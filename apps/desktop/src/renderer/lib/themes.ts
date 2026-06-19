@@ -130,11 +130,12 @@ export const cortexTheme: ThemeDefinition = {
 		},
 	},
 	glass: {
-		bodyOpacity: 38,
-		sidebarOpacity: 18,
+		bodyOpacity: 48,
+		sidebarOpacity: 50,
 		surfaceOpacity: 55,
 		elevatedOpacity: 55,
 		cardOpacity: 88,
+		contentOpacity: 90,
 	},
 }
 
@@ -158,8 +159,8 @@ export const liquidGlassTheme: ThemeDefinition = {
 	platforms: ["darwin"],
 	cssVars: {
 		light: {
-			"--glass-body": "12%",
-			"--glass-sidebar": "10%",
+			"--glass-body": "25%",
+			"--glass-sidebar": "22%",
 			"--glass-surface": "18%",
 			"--glass-elevated": "30%",
 			"--glass-card": "15%",
@@ -167,8 +168,8 @@ export const liquidGlassTheme: ThemeDefinition = {
 			"--sidebar-border": "rgba(0, 0, 0, 0.06)",
 		},
 		dark: {
-			"--glass-body": "10%",
-			"--glass-sidebar": "8%",
+			"--glass-body": "25%",
+			"--glass-sidebar": "30%",
 			"--glass-surface": "15%",
 			"--glass-elevated": "28%",
 			"--glass-card": "15%",
@@ -192,13 +193,13 @@ export const liquidGlassTheme: ThemeDefinition = {
 	},
 	radius: "0.75rem",
 	glass: {
-		bodyOpacity: 10,
-		sidebarOpacity: 8,
+		bodyOpacity: 25,
+		sidebarOpacity: 30,
 		surfaceOpacity: 15,
 		elevatedOpacity: 28,
 		cardOpacity: 15,
-		contentOpacity: 15,
-		blurScale: 2.0,
+		contentOpacity: 42,
+		blurScale: 2.5,
 	},
 }
 
@@ -234,11 +235,12 @@ export const systemTheme: ThemeDefinition = {
 		},
 	},
 	glass: {
-		bodyOpacity: 0,
-		sidebarOpacity: 18,
+		bodyOpacity: 48,
+		sidebarOpacity: 50,
 		surfaceOpacity: 55,
 		elevatedOpacity: 55,
 		cardOpacity: 88,
+		contentOpacity: 90,
 	},
 }
 
