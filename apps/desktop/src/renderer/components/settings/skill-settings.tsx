@@ -9,6 +9,7 @@ import { useAtomValue } from "jotai"
 import {
 	AlertCircleIcon,
 	BookOpenIcon,
+	ChevronRightIcon,
 	DownloadIcon,
 	ExternalLinkIcon,
 	FolderIcon,
