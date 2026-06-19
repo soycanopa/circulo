@@ -6,7 +6,7 @@ import { Switch } from "@circulo/ui/components/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@circulo/ui/components/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@circulo/ui/components/tooltip"
 import { useNavigate } from "@tanstack/react-router"
-import { BlocksIcon, KeyRoundIcon, MonitorIcon, RefreshCwIcon } from "lucide-react"
+import { BlocksIcon, ChevronLeftIcon, ChevronRightIcon, KeyRoundIcon, MonitorIcon, RefreshCwIcon } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
 import { serverConnectedAtom } from "../../atoms/connection"
@@ -65,6 +65,7 @@ function StatusIndicator({ status }: { status: McpStatus }) {
 	const dotClass = getStatusDotClass(status.status)
 	const label = getStatusLabel(status.status)
 	const errorMessage = "error" in status ? (status as { error: string }).error : null
+	const isConnected = status.status === "connected"
 
 	return (
 		<Tooltip>
@@ -73,11 +74,18 @@ function StatusIndicator({ status }: { status: McpStatus }) {
 					<span className="inline-flex items-center gap-1.5 shrink-0 cursor-default" />
 				}
 			>
+				{isConnected ? (
+					<span className="relative inline-flex size-2.5 shrink-0">
+						<span className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-70" />
+						<span className="relative size-2.5 rounded-full bg-green-500" />
+					</span>
+				) : (
+					<span
+						className={`size-2.5 rounded-full shrink-0 ${dotClass}`}
+						aria-hidden="true"
+					/>
+				)}
 				<MonitorIcon aria-hidden="true" className="size-4 text-muted-foreground" />
-				<span
-					className={`size-2.5 rounded-full ${dotClass}`}
-					aria-hidden="true"
-				/>
 			</TooltipTrigger>
 			<TooltipContent className="max-w-xs bg-zinc-800 text-zinc-100">
 				<p className="text-xs font-medium">{label}</p>
@@ -146,6 +154,7 @@ export function McpSettings() {
 	const [startingServer, setStartingServer] = useState(false)
 	const [togglingServers, setTogglingServers] = useState<Set<string>>(new Set())
 	const [activeTab, setActiveTab] = useState("servers")
+	const [installPage, setInstallPage] = useState(0)
 
 	const handleStartServer = async () => {
 		setStartingServer(true)
@@ -203,6 +212,13 @@ export function McpSettings() {
 	const servers = data ?? []
 	const installedNames = servers.map((s) => s.name)
 	const anyToggling = togglingServers.size > 0
+
+	const perPage = 6
+	const totalInstallPages = Math.ceil(MCP_TEMPLATES.length / perPage)
+	const visibleTemplates = MCP_TEMPLATES.slice(
+		installPage * perPage,
+		(installPage + 1) * perPage,
+	)
 
 	// --- Offline state
 	if (!connected) {
@@ -330,6 +346,10 @@ export function McpSettings() {
 														onClick={() => handleOAuth(server)}
 													/>
 													<StatusIndicator status={server.status} />
+													<span
+														className="mx-1 h-4 w-px shrink-0 bg-border"
+														aria-hidden="true"
+													/>
 													<Switch
 														id={`mcp-toggle-${server.name}`}
 														checked={isEnabled}
@@ -350,8 +370,8 @@ export function McpSettings() {
 
 				<TabsContent value="install">
 					<SettingsSection>
-						<div className="grid grid-cols-3 gap-2 p-4">
-							{MCP_TEMPLATES.map((template) => (
+						<div className="grid grid-cols-2 gap-2 p-4">
+							{visibleTemplates.map((template) => (
 								<McpTemplateCard
 									key={template.id}
 									template={template}
@@ -362,6 +382,31 @@ export function McpSettings() {
 								/>
 							))}
 						</div>
+						{totalInstallPages > 1 && (
+							<div className="flex items-center justify-center gap-1 pb-3">
+								<Button
+									size="sm"
+									variant="ghost"
+									className="h-7 w-7 p-0"
+									onClick={() => setInstallPage((p) => p - 1)}
+									disabled={installPage === 0}
+								>
+									<ChevronLeftIcon aria-hidden="true" className="size-4" />
+								</Button>
+								<span className="min-w-12 text-center text-xs text-muted-foreground tabular-nums">
+									{installPage + 1} / {totalInstallPages}
+								</span>
+								<Button
+									size="sm"
+									variant="ghost"
+									className="h-7 w-7 p-0"
+									onClick={() => setInstallPage((p) => p + 1)}
+									disabled={installPage === totalInstallPages - 1}
+								>
+									<ChevronRightIcon aria-hidden="true" className="size-4" />
+								</Button>
+							</div>
+						)}
 					</SettingsSection>
 				</TabsContent>
 			</Tabs>
