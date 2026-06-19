@@ -21,12 +21,11 @@ import {
 	Trash2Icon,
 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { InstalledSkill } from "../../preload/api"
+import type { InstalledSkill } from "../../../preload/api"
 import { discoveryProjectsAtom } from "../../atoms/discovery"
 import { useInstalledSkills } from "../../hooks/use-installed-skills"
 import { useSkillDiscovery, type DiscoveredSkill } from "../../hooks/use-skill-discovery"
 import { useSkillInstall } from "../../hooks/use-skill-install"
-import { SettingsRow } from "./settings-row"
 import { SettingsSection } from "./settings-section"
 
 // ============================================================
@@ -343,11 +342,9 @@ function SkillRow({
 
 function SkillsList<T>({
 	skills,
-	onSelect,
 	renderItem,
 }: {
 	skills: T[]
-	onSelect: (skill: T) => void
 	renderItem: (skill: T) => React.ReactNode
 }) {
 	return (
@@ -387,7 +384,6 @@ function ScopedSkillList({
 			</Button>
 			<SkillsList
 				skills={paginated}
-				onSelect={onSelect}
 				renderItem={(skill) => (
 					<SkillRow
 						skill={skill}
@@ -624,7 +620,7 @@ function DiscoverView() {
 					installError={installStateError}
 					installTarget={installTarget}
 					projectDirs={projectDirs}
-					onInstall={() => handleInstall(selectedSkill.source)}
+					onInstall={() => handleInstall(selectedSkill.source, selectedSkill.name)}
 					onTargetChange={setInstallTarget}
 					onBack={() => {
 						setSelectedSkill(null)
