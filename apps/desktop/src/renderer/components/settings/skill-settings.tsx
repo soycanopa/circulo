@@ -765,7 +765,7 @@ function SkillDetailPanel({
 			</div>
 
 			<Button variant="ghost" size="sm" onClick={onBack}>
-				Cancel
+				{installState === "success" ? "Close" : "Cancel"}
 			</Button>
 		</div>
 	)

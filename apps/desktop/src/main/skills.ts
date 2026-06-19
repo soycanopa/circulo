@@ -224,12 +224,12 @@ export function installSkill(params: InstallSkillParams): Promise<InstallResult>
 		const { ownerRepo, skillName, target } = params
 
 		const skillFlag = skillName ? ` --skill "${skillName}"` : ""
-		const cmd = `npx skills add ${ownerRepo}${skillFlag}`
 
 		if (target) {
-			// Per-project install: use cwd to install into the project directory
+			// Per-project install: run in project dir with -y (non-interactive)
+			const cmd = `npx skills add ${ownerRepo}${skillFlag} -y`
 			try {
-				await execCommand(cmd, 30000, target)
+				await execCommand(cmd, 60000, target)
 				log.info(`Installed skill ${skillName ?? ownerRepo} to project ${target}`)
 				return { success: true }
 			} catch (err) {
@@ -239,9 +239,10 @@ export function installSkill(params: InstallSkillParams): Promise<InstallResult>
 			}
 		}
 
-		// Global install via npx
+		// Global install via npx with -g -y (global, non-interactive)
+		const cmd = `npx skills add ${ownerRepo}${skillFlag} -g -y`
 		try {
-			const { stderr } = await execCommand(cmd, 30000)
+			const { stderr } = await execCommand(cmd, 60000)
 			log.info(`Installed skill ${skillName ?? ownerRepo} globally`)
 			if (stderr && !stderr.includes("WARN")) {
 				log.warn(`Install stderr: ${stderr}`)
