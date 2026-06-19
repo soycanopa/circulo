@@ -307,4 +307,13 @@ contextBridge.exposeInMainWorld("circulo", {
 		/** Restore the most recent migration backup. */
 		restoreBackup: () => ipcRenderer.invoke("onboarding:restore-backup"),
 	},
+
+	// --- Skills ---
+
+	skills: {
+		list: (projectDirs?: string[]) => ipcRenderer.invoke("skills:list", projectDirs),
+		install: (params: { ownerRepo: string; target?: string }) =>
+			ipcRenderer.invoke("skills:install", params),
+		getProjects: () => ipcRenderer.invoke("skills:projects"),
+	},
 })
