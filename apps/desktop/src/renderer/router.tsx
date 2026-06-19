@@ -19,6 +19,7 @@ import { GeneralSettings } from "./components/settings/general-settings";
 import { KeyboardShortcutsSettings } from "./components/settings/keyboard-shortcuts-settings";
 import { NotificationSettings } from "./components/settings/notification-settings";
 import { ProviderSettings } from "./components/settings/provider-settings";
+import { McpSettings } from "./components/settings/mcp-settings";
 import { ServerSettings } from "./components/settings/server-settings";
 import { SettingsPage } from "./components/settings/settings-page";
 import { SetupSettings } from "./components/settings/setup-settings";
@@ -45,6 +46,8 @@ const indexRoute = createRoute({
 	getParentRoute: () => sidebarLayout,
 	path: "/",
 	component: NewChat,
+	validateSearch: (input: Record<string, unknown>) =>
+		input as { mcpSetup?: string },
 });
 
 const projectRoute = createRoute({
@@ -106,6 +109,12 @@ const settingsProvidersRoute = createRoute({
 	getParentRoute: () => settingsRoute,
 	path: "providers",
 	component: ProviderSettings,
+});
+
+const settingsMcpRoute = createRoute({
+	getParentRoute: () => settingsRoute,
+	path: "mcp",
+	component: McpSettings,
 });
 
 const settingsWorktreesRoute = createRoute({
@@ -172,6 +181,7 @@ const routeTree = rootRoute.addChildren([
 			settingsServersRoute,
 			settingsNotificationsRoute,
 			settingsProvidersRoute,
+			settingsMcpRoute,
 			settingsWorktreesRoute,
 			settingsShortcutsRoute,
 			settingsSetupRoute,
