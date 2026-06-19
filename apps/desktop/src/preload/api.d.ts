@@ -407,6 +407,31 @@ export interface UpdateAutomationInput {
 	execution?: Partial<ExecutionConfig>
 }
 
+// ============================================================
+// Skill types
+// ============================================================
+
+export type SkillOrigin = "global" | "project" | "cursor"
+
+export interface InstalledSkill {
+	name: string
+	description: string
+	location: string
+	origin: SkillOrigin
+	project?: string
+}
+
+export interface InstallSkillParams {
+	ownerRepo: string
+	skillName?: string
+	target?: string
+}
+
+export interface InstallResult {
+	success: boolean
+	error?: string
+}
+
 export interface CirculoAPI {
 	/** The host platform: "darwin", "win32", or "linux". */
 	platform: NodeJS.Platform
@@ -595,6 +620,18 @@ export interface CirculoAPI {
 			removed: string[]
 			errors: string[]
 		}>
+	}
+
+	// Skills
+	skills: {
+		/** List all installed skills (global, project-local, Cursor-migrated). */
+		list: (projectDirs?: string[]) => Promise<InstalledSkill[]>
+		/** Install a skill globally or into a specific project directory. */
+		install: (params: InstallSkillParams) => Promise<InstallResult>
+		/** Get registered project directories. */
+		getProjects: () => Promise<string[]>
+		/** Remove a skill by its directory path. */
+		remove: (path: string) => Promise<{ success: boolean; error?: string }>
 	}
 }
 

@@ -34,6 +34,7 @@ import {
 import { getResolvedChromeTier } from "./liquid-glass"
 import { createLogger } from "./logger"
 import { getDiscoveredServers } from "./mdns-scanner"
+import { getRegisteredProjects, installSkill, removeSkill, scanSkills } from "./skills"
 
 import { readModelState, updateModelRecent } from "./model-state"
 import { dismissNotification, updateBadgeCount } from "./notifications"
@@ -624,6 +625,38 @@ export function registerIpcHandlers(): void {
 		"automation:preview-schedule",
 		withLogging("automation:preview-schedule", (_, rrule: string, timezone: string) =>
 			previewSchedule(rrule, timezone),
+		),
+	)
+
+	// --- Settings push channel (main -> renderer) ---
+
+	// --- Skills ---
+
+	ipcMain.handle(
+		"skills:list",
+		withLogging(
+			"skills:list",
+			async (_event, registeredProjectDirs?: string[]) =>
+				scanSkills(registeredProjectDirs ?? []),
+		),
+	)
+
+	ipcMain.handle(
+		"skills:install",
+		withLogging(
+			"skills:install",
+			async (_event, params: { ownerRepo: string; skillName?: string; target?: string }) =>
+				installSkill(params),
+		),
+	)
+
+	ipcMain.handle("skills:projects", () => getRegisteredProjects())
+
+	ipcMain.handle(
+		"skills:remove",
+		withLogging(
+			"skills:remove",
+			async (_event, skillPath: string) => removeSkill(skillPath),
 		),
 	)
 
