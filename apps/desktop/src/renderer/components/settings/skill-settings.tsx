@@ -54,11 +54,11 @@ export function SkillSettings() {
 	const [subTab, setSubTab] = useState<SkillSubTab>("installed")
 
 	return (
-		<div className="space-y-4">
+		<div className="h-full flex flex-col min-h-0 space-y-4">
 			<h2 className="text-xl font-semibold">Skills</h2>
 
 			<Tabs value={subTab} onValueChange={(v) => setSubTab(v as SkillSubTab)} orientation="horizontal">
-				<div className="sticky top-0 z-10 bg-card pt-2 pb-2">
+				<div className="shrink-0 pt-2 pb-2">
 					<TabsList variant="default">
 						<TabsTrigger value="installed">
 							<BookOpenIcon aria-hidden="true" className="size-4" />
@@ -70,10 +70,10 @@ export function SkillSettings() {
 						</TabsTrigger>
 					</TabsList>
 				</div>
-				<TabsContent value="installed">
+				<TabsContent value="installed" className="flex-1 min-h-0 overflow-y-auto">
 					<InstalledView />
 				</TabsContent>
-				<TabsContent value="discover">
+				<TabsContent value="discover" className="flex-1 min-h-0 overflow-y-auto">
 					<DiscoverView />
 				</TabsContent>
 			</Tabs>
@@ -140,7 +140,7 @@ function InstalledView() {
 	}
 
 	return (
-		<div className="space-y-4 pt-2">
+		<div className="space-y-4">
 			<div className="flex items-center justify-between">
 				<p className="text-sm text-muted-foreground">
 					{totalCount} skill{totalCount !== 1 ? "s" : ""} installed
@@ -480,8 +480,8 @@ function DiscoverView() {
 	}
 
 	return (
-		<div className="space-y-4 pt-2">
-			<div className="sticky top-14 z-10 bg-card pb-2">
+		<div className="space-y-4">
+			<div className="pb-2">
 				<form onSubmit={handleSearch} className="flex gap-2">
 					<Input
 						placeholder="Search skills.sh..."
