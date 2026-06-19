@@ -23,6 +23,7 @@ import { McpSettings } from "./components/settings/mcp-settings";
 import { ServerSettings } from "./components/settings/server-settings";
 import { SettingsPage } from "./components/settings/settings-page";
 import { SetupSettings } from "./components/settings/setup-settings";
+import { SkillSettings } from "./components/settings/skill-settings";
 import { WorktreeSettings } from "./components/settings/worktree-settings";
 import { SidebarLayout } from "./components/sidebar-layout";
 
@@ -129,6 +130,12 @@ const settingsShortcutsRoute = createRoute({
 	component: KeyboardShortcutsSettings,
 });
 
+const settingsSkillsRoute = createRoute({
+	getParentRoute: () => settingsRoute,
+	path: "skills",
+	component: SkillSettings,
+});
+
 const settingsAboutRoute = createRoute({
 	getParentRoute: () => settingsRoute,
 	path: "about",
@@ -184,6 +191,7 @@ const routeTree = rootRoute.addChildren([
 			settingsMcpRoute,
 			settingsWorktreesRoute,
 			settingsShortcutsRoute,
+			settingsSkillsRoute,
 			settingsSetupRoute,
 			settingsAboutRoute,
 		]),

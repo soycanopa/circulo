@@ -11,6 +11,7 @@ import {
 	ArrowLeftIcon,
 	BellIcon,
 	BlocksIcon,
+	BookOpenIcon,
 	CommandIcon,
 	GitForkIcon,
 	InfoIcon,
@@ -34,6 +35,7 @@ type SettingsTab =
 	| "mcp"
 	| "worktrees"
 	| "shortcuts"
+	| "skills"
 	| "setup"
 	| "about";
 
@@ -45,6 +47,7 @@ const tabs: { id: SettingsTab; label: string; icon: typeof SettingsIcon }[] = [
 	{ id: "mcp", label: "MCP", icon: BlocksIcon },
 	{ id: "worktrees", label: "Worktrees", icon: GitForkIcon },
 	{ id: "shortcuts", label: "Shortcuts", icon: CommandIcon },
+	{ id: "skills", label: "Skills", icon: BookOpenIcon },
 	{ id: "setup", label: "Setup", icon: WrenchIcon },
 	{ id: "about", label: "About", icon: InfoIcon },
 ];
