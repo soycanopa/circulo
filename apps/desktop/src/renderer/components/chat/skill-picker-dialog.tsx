@@ -16,23 +16,10 @@ import {
 import { Input } from "@circulo/ui/components/input"
 import { ScrollArea } from "@circulo/ui/components/scroll-area"
 import { cn } from "@circulo/ui/lib/utils"
-import { useQuery } from "@tanstack/react-query"
 import fuzzysort from "fuzzysort"
 import { BookOpenIcon, SearchIcon } from "lucide-react"
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { getProjectClient } from "../../services/connection-manager"
-
-// ============================================================
-// Types
-// ============================================================
-
-interface Skill {
-	name: string
-	description: string
-	location: string
-	slash?: boolean
-	content?: string
-}
+import { useSkills, type SdkSkill } from "../../hooks/use-opencode-data"
 
 interface SkillPickerDialogProps {
 	open: boolean
@@ -41,26 +28,6 @@ interface SkillPickerDialogProps {
 	directory: string | null
 	/** Called when a skill is selected — inserts `/skillname ` into input */
 	onSelect: (skillName: string) => void
-}
-
-// ============================================================
-// Hook: useSkills
-// ============================================================
-
-function useSkills(directory: string | null, enabled: boolean) {
-	const { data, isLoading } = useQuery({
-		queryKey: ["skills", directory],
-		queryFn: async () => {
-			const client = getProjectClient(directory!)
-			if (!client) return []
-			const result = await client.app.skills()
-			return (result.data ?? []) as Skill[]
-		},
-		enabled: !!directory && enabled,
-		staleTime: 30_000,
-	})
-
-	return { skills: data ?? [], isLoading }
 }
 
 // ============================================================
@@ -81,7 +48,7 @@ export const SkillPickerDialog = memo(function SkillPickerDialog({
 	const { skills, isLoading } = useSkills(directory, open)
 
 	// Fuzzy filter
-	const filtered = useMemo<Skill[]>(() => {
+	const filtered = useMemo<SdkSkill[]>(() => {
 		if (!search) return skills
 		const results = fuzzysort.go(search, skills, {
 			keys: ["name", "description"],
@@ -120,7 +87,7 @@ export const SkillPickerDialog = memo(function SkillPickerDialog({
 	}, [activeIndex])
 
 	const handleSelect = useCallback(
-		(skill: Skill) => {
+		(skill: SdkSkill) => {
 			onSelect(skill.name)
 			onOpenChange(false)
 		},
