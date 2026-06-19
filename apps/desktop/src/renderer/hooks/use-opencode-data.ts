@@ -2,11 +2,12 @@ import type {
 	Agent as SdkAgent,
 	Command as SdkCommand,
 	Config as SdkConfig,
+	McpStatus,
 	Model as SdkModel,
 	Provider as SdkProvider,
 	ProviderAuthMethod as SdkProviderAuthMethod,
 } from "@opencode-ai/sdk/v2/client"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useAtomValue } from "jotai"
 import { useCallback } from "react"
 import { serverConnectedAtom } from "../atoms/connection"
@@ -158,6 +159,7 @@ export const queryKeys = {
 	allProviders: ["allProviders"] as const,
 	connectedProviders: ["connectedProviders"] as const,
 	providerAuthMethods: ["providerAuthMethods"] as const,
+	mcpStatus: ["mcp", "status"] as const,
 }
 
 // ============================================================
@@ -432,6 +434,119 @@ export function useServerCommands(directory: string | null): SdkCommand[] {
 	})
 
 	return data ?? []
+}
+
+// ============================================================
+// MCP hooks
+// ============================================================
+
+export function useMcpStatus(): {
+	data: Record<string, McpStatus> | null
+	loading: boolean
+	error: string | null
+	reload: () => void
+} {
+	const connected = useAtomValue(serverConnectedAtom)
+	const isMockMode = useAtomValue(isMockModeAtom)
+	const queryClient = useQueryClient()
+
+	const { data, isLoading, error } = useQuery({
+		queryKey: queryKeys.mcpStatus,
+		queryFn: async (): Promise<Record<string, McpStatus>> => {
+			const client = getBaseClient()
+			if (!client) throw new Error("Not connected to server")
+			const result = await client.mcp.status()
+			return (result.data ?? {}) as Record<string, McpStatus>
+		},
+		enabled: connected && !isMockMode,
+		refetchInterval: 5000,
+	})
+
+	const reload = useCallback(() => {
+		queryClient.invalidateQueries({ queryKey: queryKeys.mcpStatus })
+	}, [queryClient])
+
+	return {
+		data: data ?? null,
+		loading: isLoading,
+		error: error ? (error instanceof Error ? error.message : "Failed to load MCP status") : null,
+		reload,
+	}
+}
+
+export function useMcpToggle(): {
+	toggleServer: (name: string, enabled: boolean) => Promise<void>
+} {
+	const queryClient = useQueryClient()
+
+	const mutation = useMutation({
+		mutationFn: async ({ name, enabled }: { name: string; enabled: boolean }) => {
+			const client = getBaseClient()
+			if (!client) throw new Error("Not connected to server")
+			if (enabled) {
+				await client.mcp.connect({ name })
+			} else {
+				await client.mcp.disconnect({ name })
+			}
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: queryKeys.mcpStatus })
+		},
+	})
+
+	const toggleServer = useCallback(
+		async (name: string, enabled: boolean) => {
+			await mutation.mutateAsync({ name, enabled })
+		},
+		[mutation],
+	)
+
+	return { toggleServer }
+}
+
+export function useMcpOAuth(): {
+	startAuth: (name: string) => Promise<void>
+	authenticate: (name: string) => Promise<void>
+} {
+	const queryClient = useQueryClient()
+
+	const startMutation = useMutation({
+		mutationFn: async (name: string) => {
+			const client = getBaseClient()
+			if (!client) throw new Error("Not connected to server")
+			await client.mcp.auth.start({ name })
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: queryKeys.mcpStatus })
+		},
+	})
+
+	const authMutation = useMutation({
+		mutationFn: async (name: string) => {
+			const client = getBaseClient()
+			if (!client) throw new Error("Not connected to server")
+			await client.mcp.auth.authenticate({ name })
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: queryKeys.mcpStatus })
+		},
+	})
+
+	const startAuth = useCallback(
+		async (name: string) => {
+			await startMutation.mutateAsync(name)
+		},
+		[startMutation],
+	)
+
+	const authenticate = useCallback(
+		async (name: string) => {
+			await authMutation.mutateAsync(name)
+		},
+		[authMutation],
+	)
+
+	return { startAuth, authenticate }
 }
 
 // ============================================================
