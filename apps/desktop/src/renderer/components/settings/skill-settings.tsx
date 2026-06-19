@@ -451,6 +451,13 @@ function DiscoverView() {
 	const [selectedSkill, setSelectedSkill] = useState<DiscoveredSkill | null>(null)
 	const [installTarget, setInstallTarget] = useState<string>("global")
 	const projectDirs = useProjectDirs()
+	const labelToDir = useMemo(() => {
+		const map = new Map<string, string>()
+		for (const { dir, label } of projectDirs) {
+			map.set(label, dir)
+		}
+		return map
+	}, [projectDirs])
 	const initialLoaded = useRef(false)
 
 	useEffect(() => {
@@ -468,8 +475,8 @@ function DiscoverView() {
 	}
 
 	const handleInstall = (ownerRepoSource: string) => {
-		const target = installTarget === "global" ? undefined : installTarget
-		install(ownerRepoSource, target)
+		const resolved = installTarget === "global" ? undefined : labelToDir.get(installTarget) ?? installTarget
+		install(ownerRepoSource, resolved)
 	}
 
 	return (
@@ -720,7 +727,7 @@ function SkillDetailPanel({
 									Global (~/.config/opencode/skills/)
 								</SelectItem>
 								{projectDirs.map(({ dir, label }) => (
-									<SelectItem key={dir} value={dir}>
+									<SelectItem key={dir} value={label}>
 										<FolderIcon aria-hidden="true" className="size-3 shrink-0" />
 										{label}
 									</SelectItem>
