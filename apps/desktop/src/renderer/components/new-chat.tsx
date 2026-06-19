@@ -15,7 +15,7 @@ import {
 } from "./chat/prompt-mentions"
 import { Popover, PopoverContent, PopoverTrigger } from "@circulo/ui/components/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@circulo/ui/components/tooltip"
-import { useNavigate, useParams } from "@tanstack/react-router"
+import { useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { useAtomValue } from "jotai"
 import {
 	ChevronDownIcon,
@@ -417,6 +417,21 @@ export function NewChat() {
 	const slashRef = useRef<{ setText: (text: string) => void; getText: () => string } | null>(
 		null,
 	)
+
+	// MCP setup flow: pre-fill prompt when arriving from MCP settings
+	const searchParams = useSearch({ strict: false }) as { mcpSetup?: string }
+	const mcpSetupConsumed = useRef(false)
+	useEffect(() => {
+		if (searchParams.mcpSetup === "true" && !mcpSetupConsumed.current) {
+			mcpSetupConsumed.current = true
+			if (!draft) {
+				const mcpPrompt =
+					"I want to add an MCP server to OpenCode. Please help me configure it. Ask me what type of MCP server I want (local or remote), its name, and the necessary configuration details."
+				controllerRef.current?.setText(mcpPrompt)
+				setDraft(mcpPrompt)
+			}
+		}
+	}, [searchParams.mcpSetup, draft, setDraft])
 
 	// Seed selectedModel, selectedVariant, and selectedAgent from the persisted
 	// per-project preferences on first mount / project switch.
