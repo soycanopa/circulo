@@ -2,6 +2,8 @@ import type {
 	Agent as SdkAgent,
 	Command as SdkCommand,
 	Config as SdkConfig,
+	McpLocalConfig,
+	McpRemoteConfig,
 	McpStatus,
 	Model as SdkModel,
 	Provider as SdkProvider,
@@ -52,6 +54,13 @@ export interface ConfigData {
 export interface ModelRef {
 	providerID: string
 	modelID: string
+}
+
+export interface McpServerInfo {
+	name: string
+	status: McpStatus
+	subtitle?: string
+	type?: "local" | "remote"
 }
 
 // ============================================================
@@ -441,7 +450,7 @@ export function useServerCommands(directory: string | null): SdkCommand[] {
 // ============================================================
 
 export function useMcpStatus(): {
-	data: Record<string, McpStatus> | null
+	data: McpServerInfo[] | null
 	loading: boolean
 	error: string | null
 	reload: () => void
@@ -452,11 +461,39 @@ export function useMcpStatus(): {
 
 	const { data, isLoading, error } = useQuery({
 		queryKey: queryKeys.mcpStatus,
-		queryFn: async (): Promise<Record<string, McpStatus>> => {
+		queryFn: async (): Promise<McpServerInfo[]> => {
 			const client = getBaseClient()
 			if (!client) throw new Error("Not connected to server")
-			const result = await client.mcp.status()
-			return (result.data ?? {}) as Record<string, McpStatus>
+
+			const [statusResult, configResult] = await Promise.all([
+				client.mcp.status(),
+				client.config.get(),
+			])
+
+			const statusData = (statusResult.data ?? {}) as Record<string, McpStatus>
+			const configData = configResult.data as SdkConfig
+			const mcpConfig = configData?.mcp ?? {}
+
+			const servers: McpServerInfo[] = []
+
+			for (const name of Object.keys(statusData)) {
+				const status = statusData[name]
+				const config = mcpConfig[name]
+				const info: McpServerInfo = { name, status }
+
+				if (config && "type" in config) {
+					info.type = config.type
+					if (config.type === "local" && "command" in config) {
+						info.subtitle = (config as McpLocalConfig).command.join(" ")
+					} else if (config.type === "remote" && "url" in config) {
+						info.subtitle = (config as McpRemoteConfig).url
+					}
+				}
+
+				servers.push(info)
+			}
+
+			return servers
 		},
 		enabled: connected && !isMockMode,
 		refetchInterval: 5000,
