@@ -16,14 +16,14 @@ export function useSkillInstall() {
 	const [error, setError] = useState<string | null>(null)
 	const [currentSkill, setCurrentSkill] = useState<string | null>(null)
 
-	const install = useCallback(async (ownerRepo: string, target?: string) => {
+	const install = useCallback(async (ownerRepo: string, skillName?: string, target?: string) => {
 		if (!("circulo" in window)) return
 		setState("installing")
 		setCurrentSkill(ownerRepo)
 		setError(null)
 
 		try {
-			const result: InstallResult = await window.circulo.skills.install({ ownerRepo, target })
+			const result: InstallResult = await window.circulo.skills.install({ ownerRepo, skillName, target })
 			if (result.success) {
 				setState("success")
 			} else {

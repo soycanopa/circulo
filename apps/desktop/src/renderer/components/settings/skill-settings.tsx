@@ -58,7 +58,7 @@ export function SkillSettings() {
 			<h2 className="text-xl font-semibold">Skills</h2>
 
 			<Tabs value={subTab} onValueChange={(v) => setSubTab(v as SkillSubTab)} orientation="horizontal">
-				<div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm pt-2 pb-2">
+				<div className="sticky top-0 z-10 bg-card pt-2 pb-2">
 					<TabsList variant="default">
 						<TabsTrigger value="installed">
 							<BookOpenIcon aria-hidden="true" className="size-4" />
@@ -474,14 +474,14 @@ function DiscoverView() {
 		}
 	}
 
-	const handleInstall = (ownerRepoSource: string) => {
+	const handleInstall = (ownerRepoSource: string, skillName: string) => {
 		const resolved = installTarget === "global" ? undefined : labelToDir.get(installTarget) ?? installTarget
-		install(ownerRepoSource, resolved)
+		install(ownerRepoSource, skillName, resolved)
 	}
 
 	return (
 		<div className="space-y-4 pt-2">
-			<div className="sticky top-14 z-10 bg-background/95 backdrop-blur-sm pb-2">
+			<div className="sticky top-14 z-10 bg-card pb-2">
 				<form onSubmit={handleSearch} className="flex gap-2">
 					<Input
 						placeholder="Search skills.sh..."
@@ -562,7 +562,7 @@ function DiscoverView() {
 							installError={installStateError}
 							installTarget={installTarget}
 							projectDirs={projectDirs}
-							onInstall={() => handleInstall(selectedSkill.source)}
+							onInstall={() => handleInstall(selectedSkill.source, selectedSkill.name)}
 							onTargetChange={setInstallTarget}
 							onBack={() => {
 								setSelectedSkill(null)

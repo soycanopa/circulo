@@ -423,6 +423,7 @@ export interface InstalledSkill {
 
 export interface InstallSkillParams {
 	ownerRepo: string
+	skillName?: string
 	target?: string
 }
 
