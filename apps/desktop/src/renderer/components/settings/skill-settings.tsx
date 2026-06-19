@@ -429,7 +429,8 @@ function useProjectDirs(): { dir: string; label: string }[] {
 					)
 					.map((p) => {
 						const d = (p as { worktree: string }).worktree
-						const n = (p as { name?: string }).name ?? d.split("/").pop() ?? d
+						const rawName = (p as { name?: string }).name
+						const n = rawName?.trim() || d.split("/").pop() || d
 						return [d, { dir: d, label: n }] as const
 					}),
 			).values(),
@@ -715,17 +716,13 @@ function SkillDetailPanel({
 							</SelectTrigger>
 							<SelectContent>
 								<SelectItem value="global">
-									<span className="flex items-center gap-2">
-										<GlobeIcon aria-hidden="true" className="size-3 shrink-0" />
-										<span className="truncate">Global (~/.config/opencode/skills/)</span>
-									</span>
+									<GlobeIcon aria-hidden="true" className="size-3 shrink-0" />
+									Global (~/.config/opencode/skills/)
 								</SelectItem>
 								{projectDirs.map(({ dir, label }) => (
 									<SelectItem key={dir} value={dir}>
-										<span className="flex items-center gap-2">
-											<FolderIcon aria-hidden="true" className="size-3 shrink-0" />
-											<span className="truncate">{label}</span>
-										</span>
+										<FolderIcon aria-hidden="true" className="size-3 shrink-0" />
+										{label}
 									</SelectItem>
 								))}
 							</SelectContent>
