@@ -20,7 +20,7 @@ import {
 	CheckIcon,
 	Trash2Icon,
 } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { InstalledSkill } from "../../preload/api"
 import { discoveryProjectsAtom } from "../../atoms/discovery"
 import { useInstalledSkills } from "../../hooks/use-installed-skills"
