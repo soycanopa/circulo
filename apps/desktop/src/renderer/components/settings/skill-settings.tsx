@@ -709,27 +709,27 @@ function SkillDetailPanel({
 			<div className="space-y-2 pt-2">
 				<div>
 					<p className="text-sm font-medium mb-1">Install to</p>
-					<Select value={installTarget} onValueChange={(v) => v && onTargetChange(v)}>
-						<SelectTrigger className="w-full">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem value="global">
-								<div className="flex items-center gap-2">
-									<GlobeIcon aria-hidden="true" className="size-3" />
-									Global (~/.config/opencode/skills/)
-								</div>
-							</SelectItem>
-							{projectDirs.map(({ dir, label }) => (
-								<SelectItem key={dir} value={dir}>
-									<div className="flex items-center gap-2">
-										<FolderIcon aria-hidden="true" className="size-3" />
-										{label}
-									</div>
+						<Select value={installTarget} onValueChange={(v) => v && onTargetChange(v)}>
+							<SelectTrigger className="w-full truncate">
+								<SelectValue placeholder="Select destination..." />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="global">
+									<span className="flex items-center gap-2">
+										<GlobeIcon aria-hidden="true" className="size-3 shrink-0" />
+										<span className="truncate">Global (~/.config/opencode/skills/)</span>
+									</span>
 								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
+								{projectDirs.map(({ dir, label }) => (
+									<SelectItem key={dir} value={dir}>
+										<span className="flex items-center gap-2">
+											<FolderIcon aria-hidden="true" className="size-3 shrink-0" />
+											<span className="truncate">{label}</span>
+										</span>
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 				</div>
 
 				{installState === "idle" && (
