@@ -3,15 +3,26 @@ import { Input } from "@circulo/ui/components/input"
 import { Progress } from "@circulo/ui/components/progress"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@circulo/ui/components/tooltip"
 import {
+	BookOpenIcon,
+	BoxIcon,
 	CheckCircle2Icon,
 	DatabaseIcon,
+	FileTextIcon,
 	FolderGitIcon,
 	FolderTreeIcon,
+	GlobeIcon,
+	Grid2x2Icon,
+	ImageIcon,
 	LayoutIcon,
+	Link2Icon,
 	LoaderCircleIcon,
 	PaintbrushIcon,
+	PaletteIcon,
 	PencilRulerIcon,
+	PenToolIcon,
+	PlayIcon,
 	TriangleIcon,
+	UsersIcon,
 	WandIcon,
 	XCircleIcon,
 	type LucideIcon,
@@ -33,6 +44,17 @@ const iconMap: Record<string, LucideIcon> = {
 	"pencil-ruler": PencilRulerIcon,
 	database: DatabaseIcon,
 	triangle: TriangleIcon,
+	"pen-tool": PenToolIcon,
+	"file-text": FileTextIcon,
+	"book-open": BookOpenIcon,
+	users: UsersIcon,
+	"grid-2x2": Grid2x2Icon,
+	globe: GlobeIcon,
+	"link-2": Link2Icon,
+	palette: PaletteIcon,
+	box: BoxIcon,
+	image: ImageIcon,
+	play: PlayIcon,
 }
 
 function getIcon(name: string): LucideIcon {
@@ -178,8 +200,8 @@ export function McpTemplateCard({
 									className="size-3.5 shrink-0 text-destructive"
 								/>
 							</TooltipTrigger>
-							<TooltipContent className="max-w-xs">
-								<p className="text-xs text-destructive">{errorMessage}</p>
+							<TooltipContent className="max-w-xs bg-zinc-800 text-zinc-100">
+								<p className="text-xs text-red-400">{errorMessage}</p>
 							</TooltipContent>
 						</Tooltip>
 					)}
@@ -210,7 +232,7 @@ export function McpTemplateCard({
 										+{hiddenLines.length} more...
 									</TooltipTrigger>
 									<TooltipContent
-										className="max-w-xs space-y-0.5"
+										className="max-w-xs space-y-0.5 bg-zinc-800 text-zinc-100"
 										side="bottom"
 									>
 										{hiddenLines.map((msg, i) => (

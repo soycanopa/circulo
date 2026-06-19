@@ -70,19 +70,19 @@ function StatusIndicator({ status }: { status: McpStatus }) {
 		<Tooltip>
 			<TooltipTrigger
 				render={
-					<span className="relative inline-flex shrink-0 cursor-default" />
+					<span className="inline-flex items-center gap-1.5 shrink-0 cursor-default" />
 				}
 			>
 				<MonitorIcon aria-hidden="true" className="size-4 text-muted-foreground" />
 				<span
-					className={`absolute -bottom-0.5 -right-0.5 size-2 rounded-full border-2 border-background ${dotClass}`}
+					className={`size-2.5 rounded-full ${dotClass}`}
 					aria-hidden="true"
 				/>
 			</TooltipTrigger>
-			<TooltipContent className="max-w-xs">
+			<TooltipContent className="max-w-xs bg-zinc-800 text-zinc-100">
 				<p className="text-xs font-medium">{label}</p>
 				{errorMessage && (
-					<p className="mt-1 text-xs text-muted-foreground">{errorMessage}</p>
+					<p className="mt-1 text-xs text-zinc-300">{errorMessage}</p>
 				)}
 			</TooltipContent>
 		</Tooltip>
@@ -124,7 +124,7 @@ function OAuthButton({
 			>
 				<KeyRoundIcon aria-hidden="true" className="size-3.5" />
 			</TooltipTrigger>
-			<TooltipContent side="top">
+			<TooltipContent side="top" className="bg-zinc-800 text-zinc-100">
 				<p className="text-xs">{label}</p>
 			</TooltipContent>
 		</Tooltip>
@@ -350,7 +350,7 @@ export function McpSettings() {
 
 				<TabsContent value="install">
 					<SettingsSection>
-						<div className="grid grid-cols-2 gap-3 p-4">
+						<div className="grid grid-cols-3 gap-2 p-4">
 							{MCP_TEMPLATES.map((template) => (
 								<McpTemplateCard
 									key={template.id}

@@ -140,4 +140,103 @@ export const MCP_TEMPLATES: McpTemplate[] = [
 		prompt:
 			"Please install the Vercel MCP server. Research the current installation method for Vercel's MCP integration, install it with the appropriate package manager, configure any required environment variables (VERCEL_TOKEN), and add it to OpenCode's MCP configuration so it shows up in `mcp.status()`. Make sure to verify the installation works.",
 	},
+	{
+		id: "sketch",
+		name: "Sketch MCP",
+		description: "Design tool for macOS",
+		icon: "pen-tool",
+		type: "agent",
+		prompt:
+			"Please install the Sketch MCP server. Research the current installation method for Sketch MCP, install it with the appropriate package manager, configure any required environment variables or authentication, and add it to OpenCode's MCP configuration so it shows up in `mcp.status()`. Make sure to verify the installation works.",
+	},
+	{
+		id: "craft",
+		name: "Craft MCP",
+		description: "Document & note-taking platform",
+		icon: "file-text",
+		type: "agent",
+		prompt:
+			"Please install the Craft MCP server (Craft.do). Research the current installation method for Craft MCP, install it with the appropriate package manager, configure any required environment variables or authentication, and add it to OpenCode's MCP configuration so it shows up in `mcp.status()`. Make sure to verify the installation works.",
+	},
+	{
+		id: "notion",
+		name: "Notion MCP",
+		description: "Knowledge base & project management",
+		icon: "book-open",
+		type: "agent",
+		prompt:
+			"Please install the Notion MCP server from @notionhq/notion-mcp-server. Research the current installation method, install it, configure any required environment variables or authentication, and add it to OpenCode's MCP configuration so it shows up in `mcp.status()`. Make sure to verify the installation works.",
+	},
+	{
+		id: "pixso",
+		name: "Pixso MCP",
+		description: "Collaborative design platform",
+		icon: "users",
+		type: "agent",
+		prompt:
+			"Please install the Pixso MCP server. Research the current installation method for Pixso MCP, install it with the appropriate package manager, configure any required environment variables or authentication, and add it to OpenCode's MCP configuration so it shows up in `mcp.status()`. Make sure to verify the installation works.",
+	},
+	{
+		id: "miro",
+		name: "Miro MCP",
+		description: "Collaborative whiteboard platform",
+		icon: "grid-2x2",
+		type: "agent",
+		prompt:
+			"Please install the Miro MCP server. Research the current installation method for Miro MCP, install it with the appropriate package manager, configure any required environment variables or authentication, and add it to OpenCode's MCP configuration so it shows up in `mcp.status()`. Make sure to verify the installation works.",
+	},
+	{
+		id: "webflow",
+		name: "Webflow MCP",
+		description: "Visual web design & CMS platform",
+		icon: "globe",
+		type: "agent",
+		prompt:
+			"Please install the Webflow MCP server. Research the current installation method for Webflow MCP, install it with the appropriate package manager, configure any required environment variables or authentication, and add it to OpenCode's MCP configuration so it shows up in `mcp.status()`. Make sure to verify the installation works.",
+	},
+	{
+		id: "zeplin",
+		name: "Zeplin MCP",
+		description: "Design handoff & collaboration",
+		icon: "link-2",
+		type: "agent",
+		prompt:
+			"Please install the Zeplin MCP server. Research the current installation method for Zeplin MCP, install it with the appropriate package manager, configure any required environment variables or authentication, and add it to OpenCode's MCP configuration so it shows up in `mcp.status()`. Make sure to verify the installation works.",
+	},
+	{
+		id: "penpot",
+		name: "Penpot MCP",
+		description: "Open-source design & prototyping",
+		icon: "palette",
+		type: "agent",
+		prompt:
+			"Please install the Penpot MCP server. Research the current installation method for Penpot MCP, install it with the appropriate package manager, configure any required environment variables or authentication, and add it to OpenCode's MCP configuration so it shows up in `mcp.status()`. Make sure to verify the installation works.",
+	},
+	{
+		id: "spline",
+		name: "Spline MCP",
+		description: "3D design & interactive experiences",
+		icon: "box",
+		type: "agent",
+		prompt:
+			"Please install the Spline MCP server. Research the current installation method for Spline MCP, install it with the appropriate package manager, configure any required environment variables or authentication, and add it to OpenCode's MCP configuration so it shows up in `mcp.status()`. Make sure to verify the installation works.",
+	},
+	{
+		id: "canva",
+		name: "Canva MCP",
+		description: "Online design & publishing platform",
+		icon: "image",
+		type: "agent",
+		prompt:
+			"Please install the Canva MCP server. Research the current installation method for Canva MCP, install it with the appropriate package manager, configure any required environment variables or authentication, and add it to OpenCode's MCP configuration so it shows up in `mcp.status()`. Make sure to verify the installation works.",
+	},
+	{
+		id: "rive",
+		name: "Rive MCP",
+		description: "Interactive animation runtime",
+		icon: "play",
+		type: "agent",
+		prompt:
+			"Please install the Rive MCP server. Research the current installation method for Rive MCP, install it with the appropriate package manager, configure any required environment variables or authentication, and add it to OpenCode's MCP configuration so it shows up in `mcp.status()`. Make sure to verify the installation works.",
+	},
 ]
