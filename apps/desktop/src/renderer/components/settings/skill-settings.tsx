@@ -8,9 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@circulo/ui/components
 import { useAtomValue } from "jotai"
 import {
 	AlertCircleIcon,
-	ArrowUpIcon,
 	BookOpenIcon,
-	ChevronRightIcon,
 	DownloadIcon,
 	ExternalLinkIcon,
 	FolderIcon,
@@ -21,7 +19,7 @@ import {
 	CheckIcon,
 	Trash2Icon,
 } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { InstalledSkill } from "../../preload/api"
 import { discoveryProjectsAtom } from "../../atoms/discovery"
 import { useInstalledSkills } from "../../hooks/use-installed-skills"
@@ -231,34 +229,24 @@ function InstalledView() {
 				</div>
 			) : (
 				/* Single scope detail view */
-				<div className="space-y-3">
-					<Button variant="ghost" size="sm" onClick={() => setScope("all")}>
-						← All scopes
-					</Button>
-					<SkillsList
-						skills={
-							scope === "global"
-								? grouped.global
-								: scope === "cursor"
-									? grouped.cursor
-									: projectsMap.get(scope) ?? []
+				<ScopedSkillList
+					skills={
+						scope === "global"
+							? grouped.global
+							: scope === "cursor"
+								? grouped.cursor
+								: projectsMap.get(scope) ?? []
+					}
+					projectScopes={projectScopes}
+					onSelect={setSelectedSkill}
+					onDelete={async (s) => {
+						if ("circulo" in window) {
+							await window.circulo.skills.remove(s.location)
+							refresh()
 						}
-						onSelect={setSelectedSkill}
-						renderItem={(skill) => (
-							<SkillRow
-								skill={skill}
-								projectLabel={projectScopes.find((s) => s.dir === skill.project)?.label}
-								onSelect={setSelectedSkill}
-								onDelete={async (s) => {
-									if ("circulo" in window) {
-										await window.circulo.skills.remove(s.location)
-										refresh()
-									}
-								}}
-							/>
-						)}
-					/>
-				</div>
+					}}
+					onBack={() => setScope("all")}
+				/>
 			)}
 		</div>
 	)
@@ -364,6 +352,101 @@ function SkillsList<T>({
 			))}
 		</div>
 	)
+}
+
+// ============================================================
+// Scoped skill list with pagination (Installed view)
+// ============================================================
+
+function ScopedSkillList({
+	skills,
+	projectScopes,
+	onSelect,
+	onDelete,
+	onBack,
+}: {
+	skills: InstalledSkill[]
+	projectScopes: ProjectScope[]
+	onSelect: (skill: InstalledSkill) => void
+	onDelete: (skill: InstalledSkill) => void
+	onBack: () => void
+}) {
+	const { page, setPage, paginated, totalPages } = usePagination(skills, 7)
+
+	return (
+		<div className="space-y-3">
+			<Button variant="ghost" size="sm" onClick={onBack}>
+				← All scopes
+			</Button>
+			<SkillsList
+				skills={paginated}
+				onSelect={onSelect}
+				renderItem={(skill) => (
+					<SkillRow
+						skill={skill}
+						projectLabel={projectScopes.find((s) => s.dir === skill.project)?.label}
+						onSelect={onSelect}
+						onDelete={onDelete}
+					/>
+				)}
+			/>
+			<Paginator page={page} totalPages={totalPages} onPageChange={setPage} />
+		</div>
+	)
+}
+
+// ============================================================
+// Paginator component
+// ============================================================
+
+function Paginator({
+	page,
+	totalPages,
+	onPageChange,
+}: {
+	page: number
+	totalPages: number
+	onPageChange: (page: number) => void
+}) {
+	if (totalPages <= 1) return null
+
+	return (
+		<div className="flex items-center justify-center gap-3 pt-3">
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={page <= 1}
+				onClick={() => onPageChange(page - 1)}
+			>
+				← Prev
+			</Button>
+			<span className="text-xs text-muted-foreground">
+				Page {page} of {totalPages}
+			</span>
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={page >= totalPages}
+				onClick={() => onPageChange(page + 1)}
+			>
+				Next →
+			</Button>
+		</div>
+	)
+}
+
+// ============================================================
+// Pagination hook
+// ============================================================
+
+function usePagination<T>(items: T[], perPage: number) {
+	const [page, setPage] = useState(1)
+	const totalPages = Math.max(1, Math.ceil(items.length / perPage))
+	const safePage = Math.min(page, totalPages)
+	const start = (safePage - 1) * perPage
+	const paginated = items.slice(start, start + perPage)
+
+	return { page: safePage, setPage, paginated, totalPages }
 }
 
 // ============================================================
@@ -577,7 +660,7 @@ function DiscoverView() {
 }
 
 // ============================================================
-// Discover skills list with redesigned cards + scroll-to-top
+// Discover skills list with paginator
 // ============================================================
 
 function DiscoverSkillsList({
@@ -587,36 +670,12 @@ function DiscoverSkillsList({
 	skills: DiscoveredSkill[]
 	onSelect: (skill: DiscoveredSkill) => void
 }) {
-	const [showScrollTop, setShowScrollTop] = useState(false)
-	const listRef = useRef<HTMLDivElement>(null)
-
-	useEffect(() => {
-		const el = listRef.current
-		if (!el) return
-		const parent = el.closest('[class*="overflow"]') as HTMLElement | null
-		const target = parent ?? window
-		const onScroll = () => {
-			const scrollY = parent ? parent.scrollTop : window.scrollY
-			setShowScrollTop(scrollY > 400)
-		}
-		target.addEventListener("scroll", onScroll, { passive: true })
-		onScroll()
-		return () => target.removeEventListener("scroll", onScroll)
-	}, [])
-
-	const scrollToTop = () => {
-		const parent = listRef.current?.closest('[class*="overflow"]') as HTMLElement | null
-		if (parent) {
-			parent.scrollTo({ top: 0, behavior: "smooth" })
-		} else {
-			window.scrollTo({ top: 0, behavior: "smooth" })
-		}
-	}
+	const { page, setPage, paginated, totalPages } = usePagination(skills, 7)
 
 	return (
-		<div ref={listRef} className="relative">
+		<div>
 			<div className="space-y-2">
-				{skills.map((skill) => (
+				{paginated.map((skill) => (
 					<div
 						key={skill.id}
 						className="rounded-lg border border-border p-4 hover:bg-accent/50 transition-colors"
@@ -655,17 +714,7 @@ function DiscoverSkillsList({
 					</div>
 				))}
 			</div>
-
-			{showScrollTop && (
-				<button
-					type="button"
-					onClick={scrollToTop}
-					className="fixed bottom-6 right-6 z-50 rounded-full bg-muted p-2 shadow-md border border-border hover:bg-accent transition-colors"
-					aria-label="Scroll to top"
-				>
-					<ArrowUpIcon aria-hidden="true" className="size-5" />
-				</button>
-			)}
+			<Paginator page={page} totalPages={totalPages} onPageChange={setPage} />
 		</div>
 	)
 }
