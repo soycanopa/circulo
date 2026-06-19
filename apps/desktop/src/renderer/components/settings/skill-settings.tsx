@@ -212,6 +212,12 @@ function InstalledView() {
 						/>
 					)}
 
+					{projectScopes.length > 0 && (grouped.global.length > 0 || grouped.cursor.length > 0) && (
+						<h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider pt-2">
+							Projects
+						</h3>
+					)}
+
 					{/* Per-project scope cards */}
 					{projectScopes.map((ps) => (
 						<ScopeCard
