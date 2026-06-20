@@ -12,7 +12,7 @@ Do NOT add one-time setup notes, general knowledge, or things discoverable from 
 - **`packages/ui`**: Shared shadcn/ui component library (`@circulo/ui`)
 - **`packages/configconv`**: Universal agent config converter library (`@circulo/configconv`) -- converts between Claude Code, OpenCode, and Cursor formats
 - **`packages/configconv-cli`**: Thin CLI wrapper (`configconv`) for the converter library
-- **`apps/desktop`**: Electron 40 + Vite + React 19 desktop app (via `electron-vite`)
+- **`apps/desktop`**: Electron 42 + Vite + React 19 desktop app (via `electron-vite`)
 - **`apps/server`**: Bun + Hono backend -- used only in browser-mode dev (`dev:web`), NOT bundled with Electron
 
 ### Desktop App Layout (`apps/desktop/src/`)
