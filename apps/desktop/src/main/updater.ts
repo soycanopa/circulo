@@ -95,7 +95,7 @@ function setState(next: Partial<UpdateState>): void {
 // GitHub release URL
 // ============================================================
 
-const GITHUB_REPO_URL = "https://github.com/ItsWendell/circulo"
+const GITHUB_REPO_URL = "https://github.com/soycanopa/circulo"
 
 /** Build the GitHub release URL for a specific version tag. */
 function getReleaseUrl(version?: string): string {
