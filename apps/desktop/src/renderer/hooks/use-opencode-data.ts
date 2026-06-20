@@ -2,12 +2,15 @@ import type {
 	Agent as SdkAgent,
 	Command as SdkCommand,
 	Config as SdkConfig,
+	McpLocalConfig,
+	McpRemoteConfig,
+	McpStatus,
 	Model as SdkModel,
 	Provider as SdkProvider,
 	ProviderAuthMethod as SdkProviderAuthMethod,
 	SkillV2Info as SdkSkill,
 } from "@opencode-ai/sdk/v2/client"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useAtomValue } from "jotai"
 import { useCallback } from "react"
 import { serverConnectedAtom } from "../atoms/connection"
@@ -52,6 +55,13 @@ export interface ConfigData {
 export interface ModelRef {
 	providerID: string
 	modelID: string
+}
+
+export interface McpServerInfo {
+	name: string
+	status: McpStatus
+	subtitle?: string
+	type?: "local" | "remote"
 }
 
 // ============================================================
@@ -160,6 +170,7 @@ export const queryKeys = {
 	allProviders: ["allProviders"] as const,
 	connectedProviders: ["connectedProviders"] as const,
 	providerAuthMethods: ["providerAuthMethods"] as const,
+	mcpStatus: ["mcp", "status"] as const,
 }
 
 // ============================================================
@@ -456,6 +467,147 @@ export function useSkills(
 	})
 
 	return { skills: data ?? [], isLoading }
+}
+
+// ============================================================
+// MCP hooks
+// ============================================================
+
+export function useMcpStatus(): {
+	data: McpServerInfo[] | null
+	loading: boolean
+	error: string | null
+	reload: () => void
+} {
+	const connected = useAtomValue(serverConnectedAtom)
+	const isMockMode = useAtomValue(isMockModeAtom)
+	const queryClient = useQueryClient()
+
+	const { data, isLoading, error } = useQuery({
+		queryKey: queryKeys.mcpStatus,
+		queryFn: async (): Promise<McpServerInfo[]> => {
+			const client = getBaseClient()
+			if (!client) throw new Error("Not connected to server")
+
+			const [statusResult, configResult] = await Promise.all([
+				client.mcp.status(),
+				client.config.get(),
+			])
+
+			const statusData = (statusResult.data ?? {}) as Record<string, McpStatus>
+			const configData = configResult.data as SdkConfig
+			const mcpConfig = configData?.mcp ?? {}
+
+			const servers: McpServerInfo[] = []
+
+			for (const name of Object.keys(statusData)) {
+				const status = statusData[name]
+				const config = mcpConfig[name]
+				const info: McpServerInfo = { name, status }
+
+				if (config && "type" in config) {
+					info.type = config.type
+					if (config.type === "local" && "command" in config) {
+						info.subtitle = (config as McpLocalConfig).command.join(" ")
+					} else if (config.type === "remote" && "url" in config) {
+						info.subtitle = (config as McpRemoteConfig).url
+					}
+				}
+
+				servers.push(info)
+			}
+
+			return servers
+		},
+		enabled: connected && !isMockMode,
+		refetchInterval: 5000,
+	})
+
+	const reload = useCallback(() => {
+		queryClient.invalidateQueries({ queryKey: queryKeys.mcpStatus })
+	}, [queryClient])
+
+	return {
+		data: data ?? null,
+		loading: isLoading,
+		error: error ? (error instanceof Error ? error.message : "Failed to load MCP status") : null,
+		reload,
+	}
+}
+
+export function useMcpToggle(): {
+	toggleServer: (name: string, enabled: boolean) => Promise<void>
+} {
+	const queryClient = useQueryClient()
+
+	const mutation = useMutation({
+		mutationFn: async ({ name, enabled }: { name: string; enabled: boolean }) => {
+			const client = getBaseClient()
+			if (!client) throw new Error("Not connected to server")
+			if (enabled) {
+				await client.mcp.connect({ name })
+			} else {
+				await client.mcp.disconnect({ name })
+			}
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: queryKeys.mcpStatus })
+		},
+	})
+
+	const toggleServer = useCallback(
+		async (name: string, enabled: boolean) => {
+			await mutation.mutateAsync({ name, enabled })
+		},
+		[mutation],
+	)
+
+	return { toggleServer }
+}
+
+export function useMcpOAuth(): {
+	startAuth: (name: string) => Promise<void>
+	authenticate: (name: string) => Promise<void>
+} {
+	const queryClient = useQueryClient()
+
+	const startMutation = useMutation({
+		mutationFn: async (name: string) => {
+			const client = getBaseClient()
+			if (!client) throw new Error("Not connected to server")
+			await client.mcp.auth.start({ name })
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: queryKeys.mcpStatus })
+		},
+	})
+
+	const authMutation = useMutation({
+		mutationFn: async (name: string) => {
+			const client = getBaseClient()
+			if (!client) throw new Error("Not connected to server")
+			await client.mcp.auth.authenticate({ name })
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: queryKeys.mcpStatus })
+		},
+	})
+
+	const startAuth = useCallback(
+		async (name: string) => {
+			await startMutation.mutateAsync(name)
+		},
+		[startMutation],
+	)
+
+	const authenticate = useCallback(
+		async (name: string) => {
+			await authMutation.mutateAsync(name)
+		},
+		[authMutation],
+	)
+
+	return { startAuth, authenticate }
 }
 
 // ============================================================
