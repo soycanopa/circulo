@@ -1,10 +1,9 @@
 /**
  * Slash command popover — appears when the user types `/` in the input.
  *
- * Matches the OpenCode TUI pattern:
- * - Flat command list with fuzzy search
- * - Skills are excluded (accessible via /skills → opens a dedicated picker)
- * - MCP commands show a `:mcp` badge
+ * - Skills, MCP commands, and server commands are shown alongside built-in commands
+ * - Filter chips below search bar narrow by type (Skills, Globales, Locales, CMD, MCP)
+ * - CMD badge for built-in, MCP badge for MCP, skill + global/local badges for skills
  * - Keyboard navigation (Arrow keys, Enter/Tab, Escape)
  */
 
@@ -35,7 +34,7 @@ import {
 	useRef,
 	useState,
 } from "react"
-import { useServerCommands } from "../../hooks/use-opencode-data"
+import { useServerCommands, useSkills } from "../../hooks/use-opencode-data"
 
 // ============================================================
 // Types
@@ -56,6 +55,8 @@ export interface SlashCommand {
 	agent?: string
 	/** Model override from SDK command definition */
 	model?: string
+	/** For skills: the skill location from the SDK */
+	location?: "global" | "project"
 }
 
 export interface SlashCommandPopoverHandle {
@@ -139,6 +140,25 @@ function getCommandIcon(name: string): LucideIcon {
 }
 
 // ============================================================
+// Filter types
+// ============================================================
+
+type FilterKey = "skills" | "global" | "local" | "cmd" | "mcp"
+
+interface FilterChip {
+	key: FilterKey
+	label: string
+}
+
+const FILTER_CHIPS: FilterChip[] = [
+	{ key: "skills", label: "Skills" },
+	{ key: "global", label: "Globales" },
+	{ key: "local", label: "Locales" },
+	{ key: "cmd", label: "CMD" },
+	{ key: "mcp", label: "MCP" },
+]
+
+// ============================================================
 // SlashCommandPopover
 // ============================================================
 
@@ -148,9 +168,19 @@ export const SlashCommandPopover = memo(
 		ref,
 	) {
 		const [activeIndex, setActiveIndex] = useState(0)
+		const [filters, setFilters] = useState<Record<FilterKey, boolean>>({
+			skills: false,
+			global: false,
+			local: false,
+			cmd: false,
+			mcp: false,
+		})
 		const listRef = useRef<HTMLDivElement>(null)
 
-		// --- Server commands (skills included when slash:true, matching TUI pattern) ---
+		// --- Skills (both global and local, including those without slash:true) ---
+		const { skills: rawSkills } = useSkills(directory, open)
+
+		// --- Server commands (skills with slash:true included by server) ---
 		const rawServerCommands = useServerCommands(directory)
 		const serverCommands = useMemo<SlashCommand[]>(
 			() =>
@@ -167,24 +197,56 @@ export const SlashCommandPopover = memo(
 			[rawServerCommands],
 		)
 
-		// --- Merge: server commands first, then built-in (matching TUI ordering) ---
-		const allCommands = useMemo(() => [...serverCommands, ...CLIENT_COMMANDS], [serverCommands])
+		// --- Map skills to SlashCommand, dedup against server commands ---
+		const skillCommands = useMemo<SlashCommand[]>(() => {
+			const commandNames = new Set(serverCommands.map((c) => c.name))
+			return rawSkills
+				.filter((s) => !commandNames.has(s.name))
+				.map((s) => ({
+					name: s.name,
+					description: s.description ?? `Run /${s.name}`,
+					icon: BookOpenIcon,
+					source: "server" as const,
+					serverSource: "skill" as const,
+					location: s.location as "global" | "project",
+				}))
+		}, [rawSkills, serverCommands])
 
-		// --- Fuzzy filter ---
+		// --- Merge: skills first, then server commands, then built-in ---
+		const allCommands = useMemo(
+			() => [...skillCommands, ...serverCommands, ...CLIENT_COMMANDS],
+			[skillCommands, serverCommands],
+		)
+
+		// --- Apply filters, then fuzzy search ---
 		const flatList = useMemo<SlashCommand[]>(() => {
-			if (!query) return allCommands
-			const results = fuzzysort.go(query, allCommands, {
+			const hasAnyFilter = Object.values(filters).some(Boolean)
+			let list = allCommands
+			if (hasAnyFilter) {
+				list = allCommands.filter((cmd) => {
+					if (filters.cmd && cmd.source === "client") return true
+					if (filters.mcp && cmd.serverSource === "mcp") return true
+					if (cmd.serverSource === "skill") {
+						if (filters.skills) return true
+						if (filters.global && cmd.location === "global") return true
+						if (filters.local && cmd.location === "project") return true
+					}
+					return false
+				})
+			}
+			if (!query) return list
+			const results = fuzzysort.go(query, list, {
 				keys: ["name", "description"],
 				threshold: 0.3,
 			})
 			return results.map((r) => r.obj)
-		}, [allCommands, query])
+		}, [allCommands, query, filters])
 
-		// Reset active index when options or query change
-		// biome-ignore lint/correctness/useExhaustiveDependencies: intentional — reset on options/query change
+		// Reset active index when options, query, or filters change
+		// biome-ignore lint/correctness/useExhaustiveDependencies: intentional — reset on options/query/filter change
 		useEffect(() => {
 			setActiveIndex(0)
-		}, [flatList.length, query])
+		}, [flatList.length, query, filters])
 
 		// Scroll active item into view
 		// biome-ignore lint/correctness/useExhaustiveDependencies: intentional — scroll when active index changes
@@ -250,6 +312,20 @@ export const SlashCommandPopover = memo(
 
 		useImperativeHandle(ref, () => ({ handleKeyDown }), [handleKeyDown])
 
+		// --- Filter toggle: skills family (skills/global/local) vs atomic (cmd/mcp) ---
+		const toggleFilter = useCallback((key: FilterKey) => {
+			setFilters((prev) => {
+				const isActive = prev[key]
+				if (isActive) {
+					return { ...prev, [key]: false }
+				}
+				if (key === "cmd" || key === "mcp") {
+					return { skills: false, global: false, local: false, cmd: false, mcp: false, [key]: true }
+				}
+				return { ...prev, cmd: false, mcp: false, [key]: true }
+			})
+		}, [])
+
 		if (!open) return null
 
 		return (
@@ -262,6 +338,25 @@ export const SlashCommandPopover = memo(
 				<div className="flex items-center gap-2 border-b px-3 py-2">
 					<SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
 					<span className="text-sm text-muted-foreground">Search</span>
+				</div>
+
+				{/* Filter chips */}
+				<div className="flex items-center gap-1.5 border-b px-3 py-1.5">
+					{FILTER_CHIPS.map((chip) => (
+						<button
+							key={chip.key}
+							type="button"
+							className={cn(
+								"rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors",
+								filters[chip.key]
+									? "bg-accent text-accent-foreground"
+									: "bg-muted text-muted-foreground hover:bg-accent/50",
+							)}
+							onClick={() => toggleFilter(chip.key)}
+						>
+							{chip.label}
+						</button>
+					))}
 				</div>
 
 				{/* Results */}
@@ -325,15 +420,32 @@ const CommandItem = memo(function CommandItem({
 				)}
 			</div>
 			<div className="flex shrink-0 items-center gap-2">
+				{command.source === "client" && (
+					<span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+						CMD
+					</span>
+				)}
 				{command.serverSource === "mcp" && (
 					<span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-						mcp
+						MCP
 					</span>
 				)}
 				{command.serverSource === "skill" && (
-					<span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">
-						skill
-					</span>
+					<>
+						<span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">
+							skill
+						</span>
+						{command.location === "global" && (
+							<span className="rounded bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-medium text-purple-500">
+								global
+							</span>
+						)}
+						{command.location === "project" && (
+							<span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-500">
+								local
+							</span>
+						)}
+					</>
 				)}
 				{command.shortcut && (
 					<span className="text-xs text-muted-foreground">{command.shortcut}</span>

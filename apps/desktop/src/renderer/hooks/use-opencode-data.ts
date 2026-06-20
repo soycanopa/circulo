@@ -5,6 +5,7 @@ import type {
 	Model as SdkModel,
 	Provider as SdkProvider,
 	ProviderAuthMethod as SdkProviderAuthMethod,
+	SkillV2Info as SdkSkill,
 } from "@opencode-ai/sdk/v2/client"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useAtomValue } from "jotai"
@@ -19,7 +20,7 @@ import { getBaseClient, getProjectClient } from "../services/connection-manager"
 // Re-exports — use SDK types directly
 // ============================================================
 
-export type { SdkAgent, SdkCommand, SdkConfig, SdkModel, SdkProvider, SdkProviderAuthMethod }
+export type { SdkAgent, SdkCommand, SdkConfig, SdkModel, SdkProvider, SdkProviderAuthMethod, SdkSkill }
 
 // ============================================================
 // Derived types for our UI layer
@@ -154,6 +155,7 @@ export const queryKeys = {
 	vcs: (directory: string) => ["vcs", directory] as const,
 	agents: (directory: string) => ["agents", directory] as const,
 	commands: (directory: string) => ["commands", directory] as const,
+	skills: (directory: string) => ["skills", directory] as const,
 	modelState: ["modelState"] as const,
 	allProviders: ["allProviders"] as const,
 	connectedProviders: ["connectedProviders"] as const,
@@ -432,6 +434,28 @@ export function useServerCommands(directory: string | null): SdkCommand[] {
 	})
 
 	return data ?? []
+}
+
+export function useSkills(
+	directory: string | null,
+	enabled = true,
+): { skills: SdkSkill[]; isLoading: boolean } {
+	const connected = useAtomValue(serverConnectedAtom)
+	const isMockMode = useAtomValue(isMockModeAtom)
+
+	const { data, isLoading } = useQuery({
+		queryKey: queryKeys.skills(directory ?? ""),
+		queryFn: async () => {
+			const client = getProjectClient(directory!)
+			if (!client) return []
+			const result = await client.app.skills()
+			return (result.data ?? []) as SdkSkill[]
+		},
+		enabled: !!directory && connected && !isMockMode && enabled,
+		staleTime: 30_000,
+	})
+
+	return { skills: data ?? [], isLoading }
 }
 
 // ============================================================

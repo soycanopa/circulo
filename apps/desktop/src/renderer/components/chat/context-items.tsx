@@ -5,8 +5,9 @@
  * Shows removable chips for each @-mentioned file or agent.
  */
 import { cn } from "@circulo/ui/lib/utils"
-import { BrainIcon, FileIcon, XIcon } from "lucide-react"
+import { BrainIcon, XIcon } from "lucide-react"
 import { memo } from "react"
+import { getFileIconClass } from "../../lib/file-icons"
 import type { PromptMention } from "./prompt-mentions"
 
 // ============================================================
@@ -75,7 +76,7 @@ const ContextChip = memo(function ContextChip({
 			{isAgent ? (
 				<BrainIcon className="size-3 shrink-0" />
 			) : (
-				<FileIcon className="size-3 shrink-0" />
+				<i className={getFileIconClass(mention.path) + " text-xs shrink-0"} />
 			)}
 			<span className="truncate">{label}</span>
 			<button
