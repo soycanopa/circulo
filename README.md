@@ -5,10 +5,10 @@
 
 ### A desktop GUI for [OpenCode](https://opencode.ai)
 
-[![CI](https://github.com/ItsWendell/circulo/actions/workflows/ci.yml/badge.svg)](https://github.com/ItsWendell/circulo/actions/workflows/ci.yml)
-[![Release](https://github.com/ItsWendell/circulo/actions/workflows/release.yml/badge.svg)](https://github.com/ItsWendell/circulo/actions/workflows/release.yml)
-[![GitHub release](https://img.shields.io/github/v/release/ItsWendell/circulo?include_prereleases&label=version)](https://github.com/ItsWendell/circulo/releases)
-[![GitHub Downloads](https://img.shields.io/github/downloads/ItsWendell/circulo/total?label=downloads)](https://github.com/ItsWendell/circulo/releases)
+[![CI](https://github.com/soycanopa/circulo/actions/workflows/ci.yml/badge.svg)](https://github.com/soycanopa/circulo/actions/workflows/ci.yml)
+[![Release](https://github.com/soycanopa/circulo/actions/workflows/release.yml/badge.svg)](https://github.com/soycanopa/circulo/actions/workflows/release.yml)
+[![GitHub release](https://img.shields.io/github/v/release/soycanopa/circulo?include_prereleases&label=version)](https://github.com/soycanopa/circulo/releases)
+[![GitHub Downloads](https://img.shields.io/github/downloads/soycanopa/circulo/total?label=downloads)](https://github.com/soycanopa/circulo/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 > **Alpha Software** -- Circulo is under active development. Expect breaking changes, missing features, and rough edges. Feedback and contributions are welcome!
@@ -37,7 +37,7 @@ Circulo spawns and manages the OpenCode server automatically, streams responses 
 
 - **Undo / redo** -- `Cmd+Z` to revert the agent's last turn (including file changes), `Shift+Cmd+Z` to redo.
 
-- **Slash commands** -- Type `/` to invoke server-side commands like `/compact` and `/help` directly from the chat input.
+- **Slash commands** -- Type `/` to invoke server-side commands like `/compact` and `/help`, plus locally installed skills exposed as slash-commands with filter chips (Skills, Globales, Locales, CMD, MCP), badges, and VS Code-style file icons.
 
 - **File and context mentions** -- Use `@` to reference files or specific context, giving the agent precise scope.
 
@@ -71,6 +71,8 @@ Circulo spawns and manages the OpenCode server automatically, streams responses 
 
 - **Smart diff gates** -- Auto-collapses generated files (lockfiles, etc.) and very large diffs to keep the review panel responsive.
 
+- **Worktree isolation** -- Dedicated worktree settings page to manage isolated git worktrees for parallel agent runs and branches, so automations and experiments don't touch your main checkout.
+
 ### Automations
 
 - **Scheduled agent runs** -- Define recurring tasks with RRule-based scheduling. Circulo runs the agent in the background and queues the results for your review.
@@ -80,6 +82,12 @@ Circulo spawns and manages the OpenCode server automatically, streams responses 
 - **Auto-archiving** -- Runs with no actionable changes are automatically archived to keep the list clean.
 
 - **Retry with backoff** -- Configurable execution retries with exponential backoff for flaky tasks.
+
+### MCP & Skills
+
+- **MCP server management** -- A dedicated settings page with one-click install templates for 19 popular MCP servers (Figma, GitHub, Filesystem, Supabase, Vercel, Notion, Miro, Webflow, and more). Supports `simple` (local or remote config) and `agent` (prompt-based) install types, OAuth status indicators, and per-server enable/disable toggles.
+
+- **Skills as slash-commands** -- Installed skills are exposed as slash-commands in the chat input, with locale badges, filter chips (Skills, Globales, Locales, CMD, MCP), and VS Code-style file icons. A Skills settings page provides **Installed** and **Discover** tabs to install, remove, and browse available skills.
 
 ### Migration & Onboarding
 
@@ -111,6 +119,8 @@ Circulo spawns and manages the OpenCode server automatically, streams responses 
 
 - **Auto-updates** -- Built-in update mechanism with download progress and one-click restart.
 
+- **RTK token optimization** -- Optional toggle in General Settings to enable [RTK](https://github.com/rtk-ai/rtk) token optimization, reducing token usage and cost on supported providers.
+
 <br>
 
 ## Download
@@ -121,7 +131,7 @@ Circulo spawns and manages the OpenCode server automatically, streams responses 
 | Windows | x64, ARM64 | NSIS installer |
 | Linux | x64 | AppImage, DEB, RPM |
 
-Download the latest release from the [Releases page](https://github.com/ItsWendell/circulo/releases).
+Download the latest release from the [Releases page](https://github.com/soycanopa/circulo/releases).
 
 ### macOS: unsigned app warning
 
@@ -143,7 +153,7 @@ This is expected behavior for unsigned apps and does not indicate malware.
 
 ### From a release (recommended)
 
-1. Download and install from the [Releases page](https://github.com/ItsWendell/circulo/releases)
+1. Download and install from the [Releases page](https://github.com/soycanopa/circulo/releases)
 2. Make sure [OpenCode CLI](https://opencode.ai) is installed (`~/.opencode/bin/opencode`)
 3. Circulo will automatically manage the OpenCode server
 
@@ -162,7 +172,7 @@ Circulo is a GUI layer on top of OpenCode, so core configuration like model prov
 **Prerequisites:** [Bun](https://bun.sh) 1.3.8+ and [OpenCode CLI](https://opencode.ai)
 
 ```bash
-git clone https://github.com/ItsWendell/circulo.git
+git clone https://github.com/soycanopa/circulo.git
 cd circulo
 bun install
 
@@ -188,7 +198,7 @@ cd apps/desktop && bun run dev:web  # port 1420
 
 ```
 apps/
-  desktop/       Electron 40 + Vite + React 19 desktop app
+  desktop/       Electron 42 + Vite + React 19 desktop app
   server/        Bun + Hono backend (browser-mode dev only)
 packages/
   ui/            Shared shadcn/ui component library (@circulo/ui)
@@ -208,8 +218,8 @@ The desktop app has three runtime contexts:
 
 | Layer | Technology |
 |-------|-----------|
-| Desktop shell | Electron 40, electron-vite |
-| Frontend | React 19, Vite 6, TypeScript |
+| Desktop shell | Electron 42, electron-vite |
+| Frontend | React 19, Vite 8, TypeScript |
 | Styling | Tailwind CSS v4 |
 | State | Jotai |
 | Routing | TanStack Router |
