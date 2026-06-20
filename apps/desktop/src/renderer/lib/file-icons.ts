@@ -5,6 +5,11 @@
  * for any file path based on extension matching.
  */
 
+declare module "file-icons-js" {
+	export function getClass(name: string): string | null
+	export function getClassWithColor(name: string): string | null
+}
+
 import "file-icons-js/css/style.css"
 import { getClassWithColor } from "file-icons-js"
 
