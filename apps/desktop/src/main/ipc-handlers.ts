@@ -50,7 +50,8 @@ import {
 } from "./onboarding"
 import { getOpenInTargets, openInTarget, setPreferredTarget } from "./open-in-targets"
 import { ensureServer, getServerUrl, restartServer, stopServer } from "./opencode-manager"
-import { getOpencodeBinary, getOpaqueWindows, getSettings, onSettingsChanged, updateSettings } from "./settings-store"
+import { getOpencodeBinary, getOpaqueWindows, getRtkEnabled, getSettings, onSettingsChanged, updateSettings } from "./settings-store"
+import { getRtkVersion, installPlugin, isPluginActive, isRtkInstalled, openTerminalForInstall, uninstallPlugin } from "./rtk/rtk-service"
 import {
 	checkForUpdates,
 	downloadUpdate,
@@ -667,5 +668,45 @@ export function registerIpcHandlers(): void {
 		for (const win of BrowserWindow.getAllWindows()) {
 			win.webContents.send("settings:changed", settings)
 		}
+	})
+
+	// --- RTK integration ---
+
+	ipcMain.handle("rtk:check", () => {
+		const installed = isRtkInstalled()
+		const version = getRtkVersion()
+		const pluginActive = isPluginActive()
+		const enabled = getRtkEnabled()
+		return { installed, version, pluginActive, enabled }
+	})
+
+	ipcMain.handle(
+		"rtk:enable",
+		withLogging("rtk:enable", async () => {
+			if (!isRtkInstalled()) {
+				return { success: false, error: "RTK is not installed" }
+			}
+			const ok = installPlugin()
+			if (!ok) {
+				return { success: false, error: "Failed to write RTK plugin file" }
+			}
+			updateSettings({ rtkEnabled: true })
+			await restartServer()
+			return { success: true }
+		}),
+	)
+
+	ipcMain.handle(
+		"rtk:disable",
+		withLogging("rtk:disable", async () => {
+			uninstallPlugin()
+			updateSettings({ rtkEnabled: false })
+			await restartServer()
+			return { success: true }
+		}),
+	)
+
+	ipcMain.handle("rtk:install", () => {
+		openTerminalForInstall()
 	})
 }

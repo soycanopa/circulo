@@ -22,6 +22,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 		dockBadge: true,
 	},
 	opaqueWindows: false,
+	rtkEnabled: false,
 	servers: DEFAULT_SERVER_SETTINGS,
 }
 
@@ -108,6 +109,11 @@ export function getOpaqueWindows(): boolean {
 /** Get the custom opencode binary path (or undefined if not configured). */
 export function getOpencodeBinary(): string | undefined {
 	return settings.opencodeBinary
+}
+
+/** Get the RTK enabled state. */
+export function getRtkEnabled(): boolean {
+	return settings.rtkEnabled === true
 }
 
 /** Update settings with a partial object. Deep-merges and persists to disk. */

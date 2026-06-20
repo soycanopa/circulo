@@ -214,6 +214,15 @@ export interface AppSettings {
 	servers: ServerSettings
 	/** Custom path or name for the opencode CLI binary. Falls back to PATH resolution if unset. */
 	opencodeBinary?: string
+	/** Whether RTK token optimization is enabled. When true, the OpenCode plugin is installed. */
+	rtkEnabled?: boolean
+}
+
+export interface RtkCheckResult {
+	installed: boolean
+	version: string | null
+	pluginActive: boolean
+	enabled: boolean
 }
 
 // ============================================================
@@ -570,6 +579,18 @@ export interface CirculoAPI {
 	updateSettings: (partial: Record<string, unknown>) => Promise<AppSettings>
 	/** Subscribe to settings changes pushed from the main process. */
 	onSettingsChanged: (callback: (settings: AppSettings) => void) => () => void
+
+	// RTK integration
+	rtk: {
+		/** Check if RTK is installed and the plugin is active. */
+		check: () => Promise<RtkCheckResult>
+		/** Enable RTK: install plugin + restart server. */
+		enable: () => Promise<{ success: boolean; error?: string }>
+		/** Disable RTK: remove plugin + restart server. */
+		disable: () => Promise<{ success: boolean }>
+		/** Open terminal with RTK install command. */
+		install: () => Promise<void>
+	}
 
 	// Onboarding
 	// Automations
