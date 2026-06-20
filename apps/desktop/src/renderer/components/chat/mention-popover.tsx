@@ -343,7 +343,6 @@ const MentionItem = memo(function MentionItem({
 	const path = option.path
 	const dir = getDirectory(path)
 	const name = getFileName(path)
-	const isDir = isDirectory(path)
 
 	return (
 		<button
