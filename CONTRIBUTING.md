@@ -28,7 +28,7 @@ cd apps/desktop && bun run dev:web  # port 1420
 
 ```
 apps/
-  desktop/       Electron 40 + Vite + React 19 desktop app
+  desktop/       Electron 42 + Vite + React 19 desktop app
   server/        Bun + Hono backend (browser-mode dev only)
 packages/
   ui/            Shared shadcn/ui component library (@circulo/ui)
@@ -99,7 +99,7 @@ This is used to generate changelogs and version bumps automatically.
 
 ## Reporting Bugs
 
-Open an issue on [GitHub](https://github.com/ItsWendell/circulo/issues) with:
+Open an issue on [GitHub](https://github.com/soycanopa/circulo/issues) with:
 
 - Steps to reproduce
 - Expected behavior
