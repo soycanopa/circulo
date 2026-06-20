@@ -5,12 +5,8 @@
  * for any file path based on extension matching.
  */
 
-declare module "file-icons-js" {
-	export function getClass(name: string): string | null
-	export function getClassWithColor(name: string): string | null
-}
-
 import "file-icons-js/css/style.css"
+// @ts-expect-error - file-icons-js has no TypeScript declarations
 import { getClassWithColor } from "file-icons-js"
 
 export function getFileIconClass(path: string): string {
