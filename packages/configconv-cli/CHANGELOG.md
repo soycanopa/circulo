@@ -1,5 +1,16 @@
 # configconv
 
+## 0.13.0
+
+### Minor Changes
+
+- Add MCP server management with Quick Install templates, Skills settings page, and Glass UI redesign
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @circulo/configconv@0.13.0
+
 ## 0.12.0
 
 ### Minor Changes

@@ -1,5 +1,11 @@
 # @circulo/server
 
+## 0.13.0
+
+### Minor Changes
+
+- Add MCP server management with Quick Install templates, Skills settings page, and Glass UI redesign
+
 ## 0.12.0
 
 ### Minor Changes
