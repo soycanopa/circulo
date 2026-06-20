@@ -16,7 +16,7 @@ vulnerability, please report it to us as described below.
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-Instead, please report them via email to [wendell@saber.app](mailto:wendell@saber.app).
+Instead, please report them via email to [carlos@circulo.dev](mailto:carlos@circulo.dev).
 
 You should receive a response within 48 hours. If for some reason you do not,
 please follow up via email to ensure we received your original message.
