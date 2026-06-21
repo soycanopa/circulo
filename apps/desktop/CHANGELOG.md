@@ -1,5 +1,20 @@
 # @circulo/desktop
 
+## 0.15.0
+
+### Minor Changes
+
+- [#32](https://github.com/soycanopa/circulo/pull/32) [`3c48a75`](https://github.com/soycanopa/circulo/commit/3c48a7594130b5502d0c4079b314c5a74101acc6) Thanks [@soycanopa](https://github.com/soycanopa)! - Mejora la instalación rápida de MCP con tipos remote/local-http y activa el code
+  signing + notarización de macOS en los releases de CI.
+
+  - MCP: la instalación rápida soporta plantillas `remote` y `local-http` con
+    `serverUrl` / `localUrl`. Simplifica el flujo de instalación y limpia la UI
+    del template card.
+  - macOS: los builds de release ahora se firman con Developer ID Application y se
+    notarizan automáticamente cuando los secrets `APPLE_*` / `MAC_CSC_*` están
+    configurados. Esto desbloquea el auto-update real (quitAndInstall) en macOS,
+    reemplazando el fallback de "descargar del navegador".
+
 ## 0.14.0
 
 ### Minor Changes
