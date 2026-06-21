@@ -203,13 +203,13 @@ jobs:
         run: bun run electron-builder ${{ matrix.eb-flags }} --config electron-builder.yml --publish never
         working-directory: apps/desktop
         env:
-          # Disable auto-discovery so local/unsigned CI builds don't pick up
-          # an unrelated keychain identity. On macOS, code signing + notarization
-          # is driven by CSC_LINK / CSC_KEY_PASSWORD / APPLE_* below — when those
-          # secrets are absent, electron-builder skips signing (no-op).
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # Enable code-sign identity auto-discovery so electron-builder picks up
+          # the CSC_LINK .p12 below. Setting this to "false" disables signing
+          # ENTIRELY even when CSC_LINK is present (that was the 0.15.0 bug —
+          # the .app shipped unsigned and macOS showed "damaged").
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
           # macOS code signing + notarization (only effective on the mac jobs;
-          # ignored on linux/windows). Add these as repo secrets to enable:
+          # ignored on linux/windows). Driven by the APPLE_* / MAC_CSC_* secrets:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
