@@ -19,7 +19,6 @@ import {
 	SidebarMenu,
 	SidebarMenuButton,
 	SidebarMenuItem,
-	SidebarSeparator,
 } from "@circulo/ui/components/sidebar";
 import {
 	Tooltip,
@@ -132,7 +131,8 @@ interface AppSidebarContentProps {
 // ============================================================
 
 /**
- * Default sidebar content: Active Now, Threads (projects + sessions), Chat + Settings footer.
+ * Default sidebar content: Threads (projects + sessions), Chat + Settings footer.
+ * Active sessions live inside their project folder, not in a separate section.
  * Rendered inside the `<Sidebar>` shell provided by `SidebarLayout`.
  */
 export function AppSidebarContent({
@@ -238,22 +238,6 @@ export function AppSidebarContent({
 		}
 	}, [chatSessionIds.size, archivedIds]);
 
-	// Active sessions: non-parent, non-chat, running/waiting/failed
-	const activeSessions = useMemo(
-		() =>
-			agents
-				.filter(
-					(a) =>
-						!a.parentId &&
-						!chatSessionIds.has(a.id) &&
-						(a.status === "running" ||
-							a.status === "waiting" ||
-							a.status === "failed"),
-				)
-				.sort((a, b) => b.createdAt - a.createdAt),
-		[agents, chatSessionIds],
-	);
-
 	const hasThreads = visibleProjects.length > 0 || chatSessionIds.size > 0;
 	const hasContent = agents.length > 0 || hasThreads;
 	const showEmptyState = !hasContent;
@@ -351,32 +335,7 @@ export function AppSidebarContent({
 					</SidebarGroupContent>
 				</SidebarGroup>
 
-				{/* Active Now */}
-				{activeSessions.length > 0 && (
-					<SidebarGroup>
-						<SidebarGroupLabel>Active Now</SidebarGroupLabel>
-						<SidebarGroupContent>
-							<SidebarMenu>
-								{activeSessions.map((agent) => (
-									<SessionItem
-										key={agent.id}
-										agent={agent}
-										isSelected={agent.id === selectedSessionId}
-										onRename={onRenameSession}
-										onDelete={onDeleteSession}
-										onFork={onForkSession}
-										showProject
-									/>
-								))}
-							</SidebarMenu>
-						</SidebarGroupContent>
-					</SidebarGroup>
-				)}
-
 				{/* Threads */}
-				{activeSessions.length > 0 && hasThreads && (
-					<SidebarSeparator className="bg-sidebar-border/5" />
-				)}
 				{hasThreads && (
 					<SidebarGroup>
 						<SidebarGroupLabel>Threads</SidebarGroupLabel>
@@ -568,6 +527,15 @@ const ProjectFolder = memo(function ProjectFolder({
 
 	// Subscribe to just this project's session IDs
 	const sessionIds = useAtomValue(projectSessionIdsFamily(project.directory));
+
+	// Auto-expand when a session of this project is selected (e.g. a new chat
+	// was just launched). Depends only on selectedSessionId so a manual
+	// collapse is not re-opened while staying on the same session.
+	useEffect(() => {
+		if (!selectedSessionId) return;
+		const ids = appStore.get(projectSessionIdsFamily(project.directory));
+		if (ids.includes(selectedSessionId)) setExpanded(true);
+	}, [selectedSessionId, project.directory]);
 
 	// Per-project pagination state from the server
 	const pagination = useAtomValue(projectPaginationFamily(project.directory));
