@@ -141,9 +141,10 @@ Biome v2 cannot parse Tailwind v4 syntax. CSS linting/formatting is disabled. Do
 
 All five workspace packages are **linked** (version together). When making user-facing changes, run `bun changeset` before opening a PR.
 
-### Packaging -- macOS without code signing
+### Packaging -- macOS code signing
 
-Always set `CSC_IDENTITY_AUTO_DISCOVERY=false` when building locally without an Apple Developer certificate.
+- **Local builds (no Apple certificate):** always set `CSC_IDENTITY_AUTO_DISCOVERY=false` (e.g. `CSC_IDENTITY_AUTO_DISCOVERY=false cd apps/desktop && bun run package:mac`). Otherwise electron-builder may pick up an unrelated keychain identity.
+- **CI releases:** the `release.yml` workflow signs + notarizes macOS builds automatically when the `APPLE_*` / `MAC_CSC_*` repo secrets are set. Without those secrets it produces unsigned builds (no-op). See `updater.ts`: `forceDevUpdateConfig` is `!canAutoInstall`, so unsigned builds still update via the GitHub-release fallback while signed builds enforce real signature verification.
 
 ### OpenCode SSE -- directory scoping
 
