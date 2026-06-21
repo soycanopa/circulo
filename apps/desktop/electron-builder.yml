@@ -50,9 +50,11 @@ mac:
   category: public.app-category.developer-tools
   hardenedRuntime: true
   gatekeeperAssess: false
-  # Notarization — uncomment when Apple credentials are configured
-  # notarize:
-  #   teamId: ${env.APPLE_TEAM_ID}
+  # Notarization is NOT declared here on purpose. electron-builder v26
+  # auto-notarizes when the APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD /
+  # APPLE_TEAM_ID env vars are present (set them as repo secrets in the
+  # release workflow). Declaring `notarize` with an empty teamId is a
+  # schema error, so we rely on env-var-driven auto-notarization instead.
 
 win:
   icon: resources/icon.ico

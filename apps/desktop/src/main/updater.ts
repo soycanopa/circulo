@@ -135,11 +135,12 @@ export async function initAutoUpdater(): Promise<void> {
 	// Install on quit by default (only effective when canAutoInstall is true)
 	autoUpdater.autoInstallOnAppQuit = canAutoInstall
 
-	// Skip code-signature verification on macOS. The CI builds are currently
-	// unsigned (CSC_IDENTITY_AUTO_DISCOVERY=false) so the Squirrel/ShipIt
-	// updater rejects the downloaded .app. Remove this once Apple Developer
-	// code signing is configured in the release workflow.
-	autoUpdater.forceDevUpdateConfig = true
+	// Skip code-signature verification on macOS ONLY for unsigned builds.
+	// Signed+notarized builds (canAutoInstall === true) must keep the real
+	// verification so the updater enforces signature checks on downloads.
+	// Once code signing is the default, the !canAutoInstall branch becomes
+	// dead code and can be removed.
+	autoUpdater.forceDevUpdateConfig = !canAutoInstall
 
 	// ── Events ──────────────────────────────────────────────────
 
