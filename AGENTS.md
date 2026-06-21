@@ -144,7 +144,7 @@ All five workspace packages are **linked** (version together). When making user-
 ### Packaging -- macOS code signing
 
 - **Local builds (no Apple certificate):** always set `CSC_IDENTITY_AUTO_DISCOVERY=false` (e.g. `CSC_IDENTITY_AUTO_DISCOVERY=false cd apps/desktop && bun run package:mac`). Otherwise electron-builder may pick up an unrelated keychain identity.
-- **CI releases:** the `release.yml` workflow signs + notarizes macOS builds automatically when the `APPLE_*` / `MAC_CSC_*` repo secrets are set. Without those secrets it produces unsigned builds (no-op). See `updater.ts`: `forceDevUpdateConfig` is `!canAutoInstall`, so unsigned builds still update via the GitHub-release fallback while signed builds enforce real signature verification.
+- **CI releases:** the `release.yml` workflow signs + notarizes macOS builds automatically when the `APPLE_*` / `MAC_CSC_*` repo secrets are set AND `CSC_IDENTITY_AUTO_DISCOVERY` is `"true"` (the default in `release.yml`). Note: `CSC_IDENTITY_AUTO_DISCOVERY: "false"` disables signing **entirely** even with `CSC_LINK` present — that caused the 0.15.0 "damaged app" bug. The `build.yml` workflow keeps it `false` because it only produces unsigned test builds. See `updater.ts`: `forceDevUpdateConfig` is `!canAutoInstall`, so unsigned builds still update via the GitHub-release fallback while signed builds enforce real signature verification.
 
 ### OpenCode SSE -- directory scoping
 
