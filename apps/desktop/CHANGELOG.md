@@ -1,5 +1,14 @@
 # @circulo/desktop
 
+## 0.15.1
+
+### Patch Changes
+
+- [#35](https://github.com/soycanopa/circulo/pull/35) [`8b5bfbe`](https://github.com/soycanopa/circulo/commit/8b5bfbe91da2ab7725e1d355ec5f143988ccbaa9) Thanks [@soycanopa](https://github.com/soycanopa)! - Corrige el code signing de macOS en CI: CSC_IDENTITY_AUTO_DISCOVERY vuelve a
+  "true" para que electron-builder use el CSC_LINK y firme+notarice los builds
+  de release. El 0.15.0 salió sin firma por este flag apagado y macOS mostraba
+  "Circulo is damaged and can't be opened".
+
 ## 0.15.0
 
 ### Minor Changes
