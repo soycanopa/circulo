@@ -1,4 +1,3 @@
-import type { McpServerInfo } from "../../hooks/use-opencode-data"
 import type { McpStatus } from "@opencode-ai/sdk/v2/client"
 import { Button } from "@circulo/ui/components/button"
 import { Skeleton } from "@circulo/ui/components/skeleton"
@@ -184,7 +183,7 @@ export function McpSettings() {
 		}
 	}
 
-	const handleOAuth = async (server: McpServerInfo) => {
+	const handleOAuth = async (server: { name: string; status: McpStatus }) => {
 		try {
 			if (server.status.status === "needs_auth") {
 				await startAuth(server.name)

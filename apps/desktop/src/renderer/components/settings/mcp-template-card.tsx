@@ -1,6 +1,6 @@
+import { Badge } from "@circulo/ui/components/badge"
 import { Button } from "@circulo/ui/components/button"
 import { Input } from "@circulo/ui/components/input"
-import { Progress } from "@circulo/ui/components/progress"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@circulo/ui/components/tooltip"
 import {
 	BookOpenIcon,
@@ -15,7 +15,6 @@ import {
 	ImageIcon,
 	LayoutIcon,
 	Link2Icon,
-	LoaderCircleIcon,
 	PaintbrushIcon,
 	PaletteIcon,
 	PencilRulerIcon,
@@ -25,6 +24,7 @@ import {
 	UsersIcon,
 	WandIcon,
 	XCircleIcon,
+	BotIcon,
 	type LucideIcon,
 } from "lucide-react"
 import { useState } from "react"
@@ -123,7 +123,7 @@ function EnvVarForm({
 }
 
 // ============================================================
-// Card component (compact)
+// Card component (clean, no progress bar)
 // ============================================================
 
 interface McpTemplateCardProps {
@@ -147,12 +147,6 @@ export function McpTemplateCard({
 	const isFailed = state.status === "failed"
 	const isDone = state.status === "connected" || installed
 
-	const progressPercent = isInstalling
-		? Math.min(10 + state.progressMessages.length * 15, 90)
-		: isDone
-			? 100
-			: 0
-
 	const handleInstallClick = () => {
 		if (template.envVars && template.envVars.length > 0 && template.type === "simple") {
 			setShowEnvForm(true)
@@ -168,17 +162,19 @@ export function McpTemplateCard({
 
 	const errorMessage = isFailed ? (state.error ?? "Installation failed") : null
 
-	// Truncate progress messages: show first 2, rest in tooltip
-	const progressLines = state.progressMessages
-	const visibleLines = progressLines.slice(-2)
-	const hiddenLines = progressLines.slice(0, -2)
-
 	return (
 		<div className="flex flex-col rounded-lg border p-2.5 transition-colors">
 			{/* Header row: icon + name + status */}
 			<div className="flex items-center gap-2">
 				<Icon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
 				<span className="truncate text-xs font-medium">{template.name}</span>
+
+				{template.type === "agent" && (
+					<Badge variant="secondary" className="h-4 gap-0.5 px-1 py-0 text-[10px]">
+						<BotIcon aria-hidden="true" className="size-2.5" />
+						Agent
+					</Badge>
+				)}
 
 				{/* Status icons (right-aligned) */}
 				<div className="ml-auto flex items-center gap-1">
@@ -207,49 +203,6 @@ export function McpTemplateCard({
 					)}
 				</div>
 			</div>
-
-			{/* Installing: progress bar + truncated messages */}
-			{isInstalling && (
-				<div className="mt-2 space-y-1.5">
-					<Progress value={progressPercent} className="h-1" />
-					{progressLines.length > 0 && (
-						<div className="space-y-0.5 rounded bg-muted/50 px-1.5 py-1">
-							{visibleLines.map((msg, i) => (
-								<p
-									key={`${msg.slice(0, 20)}-${i}`}
-									className="truncate text-[11px] text-muted-foreground leading-snug"
-								>
-									{msg}
-								</p>
-							))}
-							{hiddenLines.length > 0 && (
-								<Tooltip>
-									<TooltipTrigger
-										render={
-											<span className="cursor-default text-[11px] text-muted-foreground/60" />
-										}
-									>
-										+{hiddenLines.length} more...
-									</TooltipTrigger>
-									<TooltipContent
-										className="max-w-xs space-y-0.5 bg-zinc-800 text-zinc-100"
-										side="bottom"
-									>
-										{hiddenLines.map((msg, i) => (
-											<p
-												key={`full-${msg.slice(0, 20)}-${i}`}
-												className="text-xs text-muted-foreground leading-snug"
-											>
-												{msg}
-											</p>
-										))}
-									</TooltipContent>
-								</Tooltip>
-							)}
-						</div>
-					)}
-				</div>
-			)}
 
 			{/* Env var form */}
 			{showEnvForm && !isInstalling && (
@@ -280,7 +233,7 @@ export function McpTemplateCard({
 					</Button>
 				)}
 				{isFailed && (
-					<div className="flex gap-1.5">
+					<div className="space-y-1.5">
 						<Button
 							size="sm"
 							variant="outline"
@@ -301,10 +254,9 @@ export function McpTemplateCard({
 				)}
 				{isInstalling && (
 					<div className="flex items-center justify-between">
-						<LoaderCircleIcon
-							aria-hidden="true"
-							className="size-3 animate-spin text-muted-foreground"
-						/>
+						<span className="flex items-center gap-1 truncate text-[10px] text-muted-foreground">
+							Installing...
+						</span>
 						<Button
 							size="sm"
 							variant="ghost"
