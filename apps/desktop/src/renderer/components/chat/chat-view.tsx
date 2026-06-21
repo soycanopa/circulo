@@ -606,7 +606,10 @@ export function ChatView({
 	return (
 		<div className="flex h-full min-w-0 flex-col overflow-hidden">
 			{/* Chat messages -- constrained width for readability */}
-			<div className="relative min-h-0 min-w-0 flex-1">
+			<div
+				data-slot="chat-messages"
+				className="relative min-h-0 min-w-0 flex-1"
+			>
 				<Conversation key={agent.sessionId} className="h-full">
 					<ScrollOnLoad loading={loading} sessionId={agent.sessionId} />
 					<ScrollBridge scrollRef={scrollRef} />
@@ -681,13 +684,13 @@ export function ChatView({
 				<div
 					data-slot="scroll-fade"
 					aria-hidden="true"
-					className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-gradient-to-b from-background/30 to-transparent"
+					className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-gradient-to-b from-[var(--scroll-fade-color,theme(colors.background))]/30 to-transparent"
 				/>
 				{/* Bottom fade */}
 				<div
 					data-slot="scroll-fade"
 					aria-hidden="true"
-					className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-gradient-to-t from-background/30 to-transparent"
+					className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-gradient-to-t from-[var(--scroll-fade-color,theme(colors.background))]/30 to-transparent"
 				/>
 			</div>
 

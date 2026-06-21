@@ -576,9 +576,11 @@
   overflow: clip;
 }
 
-/* Glass: hide scroll-fade gradients — they look like smudges on transparent surfaces */
-:root.electron-transparent [data-slot="scroll-fade"],
-:root.electron-vibrancy [data-slot="scroll-fade"] {
+/* Glass: hide scroll-fade gradients in light theme — they look like smudges
+   on transparent surfaces. In dark theme the chat messages sit on a solid
+   #161616 backdrop, so the fades blend in and stay visible. */
+:root:where(:not(.dark)).electron-transparent [data-slot="scroll-fade"],
+:root:where(:not(.dark)).electron-vibrancy [data-slot="scroll-fade"] {
   display: none;
 }
 
@@ -638,8 +640,10 @@
  *
  * New Chat / New Thread: the entire active panel (right of sidebar)
  * uses a flat background so wallpaper does not bleed through.
- * Chat sessions: only the bottom composer dock is solid; messages
- * above keep the semi-transparent content-area glass.
+ * Chat sessions: the composer dock uses the same content-area glass
+ * material as the messages above it, so there is no color seam.
+ * In dark theme the chat messages area is given a solid #161616
+ * backdrop so message content stays readable on the glass surface.
  * ============================================================ */
 
 :root.electron-transparent [data-slot="content-panel-solid"],
@@ -649,7 +653,7 @@
 
 :root.electron-transparent [data-slot="composer-dock"],
 :root.electron-vibrancy [data-slot="composer-dock"] {
-  background: var(--background) !important;
+  background: color-mix(in srgb, var(--glass-material-from-background) var(--glass-content), transparent) !important;
   border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
 }
 
@@ -657,6 +661,33 @@
 :root.electron-vibrancy [data-slot="composer-dock"] [data-slot="input-group"] {
   background: transparent !important;
   border-color: color-mix(in srgb, var(--border) 40%, transparent);
+}
+
+/* Dark chat: solid backdrop so message content stands out on glass tiers.
+   #161616 matches the glass-composited background but is fully opaque, so
+   text and cards keep contrast instead of bleeding into the wallpaper.
+   Applied to the messages area AND the composer dock so there is no color
+   seam between them; the inner input-group keeps its own distinguishable
+   fill. The scroll-fade gradients blend into this same color. */
+.dark.electron-transparent [data-slot="chat-messages"],
+.dark.electron-vibrancy [data-slot="chat-messages"],
+.dark.electron-transparent [data-slot="composer-dock"],
+.dark.electron-vibrancy [data-slot="composer-dock"] {
+  background: #161616 !important;
+  /* No divider between messages and composer — both share the #161616 backdrop. */
+  border-top: none !important;
+}
+.dark.electron-transparent [data-slot="scroll-fade"],
+.dark.electron-vibrancy [data-slot="scroll-fade"] {
+  --scroll-fade-color: #161616;
+}
+
+/* Dark chat input-group: give the prompt box its own visible fill so it
+   reads as an input on top of the solid #161616 backdrop
+   (restores the original dark:bg-input/30). */
+.dark.electron-transparent [data-slot="composer-dock"] [data-slot="input-group"],
+.dark.electron-vibrancy [data-slot="composer-dock"] [data-slot="input-group"] {
+  background: color-mix(in srgb, var(--input) 30%, transparent) !important;
 }
 
 /* ============================================================
