@@ -17,7 +17,7 @@
 		"clean": "rm -rf dist node_modules .turbo"
 	},
 	"dependencies": {
-		"@base-ui/react": "^1.2.0",
+		"@base-ui/react": "^1.6.0",
 		"@hookform/resolvers": "^5.2.2",
 		"@pierre/diffs": "^1.0.10",
 		"@rive-app/react-webgl2": "^4.26.2",
