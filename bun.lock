@@ -17,7 +17,7 @@
     },
     "apps/desktop": {
       "name": "@circulo/desktop",
-      "version": "0.12.0",
+      "version": "0.15.1",
       "dependencies": {
         "@circulo/configconv": "workspace:*",
         "@circulo/ui": "workspace:*",
@@ -77,7 +77,7 @@
     },
     "apps/server": {
       "name": "@circulo/server",
-      "version": "0.12.0",
+      "version": "0.13.0",
       "dependencies": {
         "@opencode-ai/sdk": "^1.2.1",
         "hono": "4.12.25",
@@ -89,7 +89,7 @@
     },
     "packages/configconv": {
       "name": "@circulo/configconv",
-      "version": "0.12.0",
+      "version": "0.13.0",
       "dependencies": {
         "@opencode-ai/sdk": "^1.2.1",
         "jsonc-parser": "^3.3.1",
@@ -103,7 +103,7 @@
     },
     "packages/configconv-cli": {
       "name": "configconv",
-      "version": "0.12.0",
+      "version": "0.13.0",
       "bin": {
         "configconv": "./src/index.ts",
       },
@@ -119,7 +119,7 @@
     },
     "packages/ui": {
       "name": "@circulo/ui",
-      "version": "0.12.0",
+      "version": "0.14.0",
       "dependencies": {
         "@base-ui/react": "^1.2.0",
         "@hookform/resolvers": "^5.2.2",
@@ -130,7 +130,7 @@
         "@streamdown/math": "^1.0.2",
         "@streamdown/mermaid": "^1.0.2",
         "@xyflow/react": "^12.10.0",
-        "ai": "^6.0.207",
+        "ai": "^6.0.208",
         "ansi-to-react": "^6.2.6",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
@@ -957,7 +957,7 @@
 
     "agent-base": ["agent-base@7.1.4", "", {}, "sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ=="],
 
-    "ai": ["ai@6.0.207", "", { "dependencies": { "@ai-sdk/gateway": "3.0.133", "@ai-sdk/provider": "3.0.10", "@ai-sdk/provider-utils": "4.0.30", "@opentelemetry/api": "^1.9.0" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-9rAHnqU+AvxyqO6WgiWj7hQENX6AprHXZWZEdBWwgnA854D2Mje/PiTmbcFqO+2Cck1lII0NLRQJY9lmdSorMw=="],
+    "ai": ["ai@6.0.208", "", { "dependencies": { "@ai-sdk/gateway": "3.0.133", "@ai-sdk/provider": "3.0.10", "@ai-sdk/provider-utils": "4.0.30", "@opentelemetry/api": "^1.9.0" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-STz+AaZqJ4ZjH7UkpXkbHx+bjgIDOsE8fIUoZjkZ2whoZcfVmG9K/TqEKouJZ03SuZuD7lagntlU3zBhAEkRpQ=="],
 
     "ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
 
