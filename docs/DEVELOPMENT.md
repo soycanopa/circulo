@@ -90,3 +90,52 @@ El artefacto queda en `src-tauri/target/release/bundle/`.
 | Ventana en blanco | Verificar que Vite corre en puerto 1420 |
 | Permisos colgados | Confirmar que `PermissionCard` llama `respond_permission` |
 | Sin modelos en selector | Verificar proveedores en `~/.config/opencode/` |
+
+## Paper MCP (diseño visual)
+
+Paper Desktop expone un servidor MCP local al abrir un archivo.
+
+1. Instalar [Paper Desktop](https://paper.design/downloads)
+2. Abrir el mock de Forge en Paper
+3. Conectar el MCP en tu herramienta de agente
+
+### Grok CLI
+
+```bash
+grok mcp add --transport http paper http://127.0.0.1:29979/mcp
+grok mcp doctor paper
+```
+
+### Antigravity
+
+En `~/.gemini/antigravity/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "paper": {
+      "serverUrl": "http://127.0.0.1:29979/mcp"
+    }
+  }
+}
+```
+
+Docs: https://paper.design/docs/mcp
+
+**Nota:** Paper/Figma/Craft están deshabilitados dentro de Forge. El agente OpenCode que lanza Forge usa `OPENCODE_CONFIG_CONTENT` para bloquear MCPs de diseño; úsalos solo en Grok/Cursor/Antigravity, no en el chat de Forge.
+
+## Multi-sesión ACP
+
+Commands Tauri expuestos:
+
+- `list_sessions` — `session/list`
+- `create_session` — `session/new`
+- `load_session` — `session/load`
+- `close_session` — `session/close`
+
+Eventos:
+
+- `acp:sessions_updated` — lista de sesiones + sesión activa
+- `acp:session_ready` — cambio de sesión activa (limpia chat en frontend)
+
+Si OpenCode no anuncia `session/list`, el sidebar degrada a una sola sesión.

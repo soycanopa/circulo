@@ -6,6 +6,10 @@ Forge es una alternativa ligera a interfaces como Palot/Codex, construida con **
 
 ## Características (MVP)
 
+- UI estilo Palot: sidebar con Active Now / Recent / Projects
+- Composer integrado con selector de modelo en el footer del prompt
+- Multi-sesión ACP real (`session/list`, `session/new`, `session/load`)
+
 - Gestión del ciclo de vida del agente al abrir/cerrar un proyecto
 - Chat con streaming en tiempo real (eventos ACP → UI)
 - Gate de permisos **Aprobar / Denegar**

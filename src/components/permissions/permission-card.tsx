@@ -2,24 +2,22 @@ import { useAtom } from "jotai"
 import { ShieldAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { respondPermission } from "@/lib/tauri"
-import { activePermissionAtom, sessionStatusAtom } from "@/stores/atoms"
+import { activePermissionAtom, promptInFlightAtom, sessionStatusAtom } from "@/stores/atoms"
 
 export function PermissionCard() {
 	const [permission, setPermission] = useAtom(activePermissionAtom)
 	const [, setSessionStatus] = useAtom(sessionStatusAtom)
+	const [, setPromptInFlight] = useAtom(promptInFlightAtom)
 
 	if (!permission) return null
 
-	const allowOption = permission.options.find((option) =>
-		option.kind.includes("allow"),
-	)
-	const denyOption = permission.options.find((option) =>
-		option.kind.includes("reject"),
-	)
+	const allowOption = permission.options.find((option) => option.kind.includes("allow"))
+	const denyOption = permission.options.find((option) => option.kind.includes("reject"))
 
 	async function handleDecision(optionId: string) {
 		await respondPermission(permission!.requestId, optionId)
 		setPermission(null)
+		setPromptInFlight(true)
 		setSessionStatus("generating")
 	}
 
@@ -41,15 +39,10 @@ export function PermissionCard() {
 
 			<div className="flex gap-2">
 				{allowOption ? (
-					<Button onClick={() => handleDecision(allowOption.optionId)}>
-						Aprobar
-					</Button>
+					<Button onClick={() => handleDecision(allowOption.optionId)}>Aprobar</Button>
 				) : null}
 				{denyOption ? (
-					<Button
-						variant="destructive"
-						onClick={() => handleDecision(denyOption.optionId)}
-					>
+					<Button variant="destructive" onClick={() => handleDecision(denyOption.optionId)}>
 						Denegar
 					</Button>
 				) : null}
