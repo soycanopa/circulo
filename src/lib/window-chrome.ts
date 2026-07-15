@@ -9,7 +9,7 @@ export const APP_BAR_HEIGHT = 40
 export const APP_BAR_CONTROL_PADDING_TOP = 12
 
 /** Top offset for the floating session title (from app bar row start). */
-export const APP_BAR_TITLE_PADDING_TOP = 16
+export const APP_BAR_TITLE_PADDING_TOP = 14
 
 /** Top offset for native traffic lights (from app bar row start). */
 export const TRAFFIC_LIGHT_PADDING_TOP = 20
