@@ -61,11 +61,8 @@ export function SidebarResizeHandle({ width, onWidthChange }: SidebarResizeHandl
 			<div aria-hidden className="absolute inset-y-0 -left-2 -right-2" />
 			{dragging ? (
 				<div
+					data-slot="sidebar-resize-indicator"
 					className="pointer-events-none absolute inset-y-0 left-1/2 w-1 -translate-x-1/2"
-					style={{
-						background:
-							"linear-gradient(to bottom, rgba(0,0,0,0), rgba(111,203,243,0.45) 50%, rgba(0,0,0,0))",
-					}}
 				/>
 			) : null}
 		</div>

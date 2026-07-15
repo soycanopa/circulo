@@ -77,6 +77,7 @@
 	--chat-input: #2b2b2b;
 	--chat-input-border: #414141;
 	--chat-folder-bar: #222222;
+	--sidebar-resize-indicator: #5a44fa;
 }
 
 @layer base {
@@ -120,6 +121,15 @@
 	background: var(--chat-input);
 	border-color: var(--chat-input-border);
 }
+[data-slot="sidebar-resize-indicator"] {
+	background: linear-gradient(
+		to bottom,
+		transparent,
+		color-mix(in srgb, var(--sidebar-resize-indicator) 45%, transparent) 50%,
+		transparent
+	);
+}
+
 [data-slot="thread-selectors"] {
 	display: flex;
 	width: 100%;
