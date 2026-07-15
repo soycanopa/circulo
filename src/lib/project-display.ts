@@ -1,3 +1,4 @@
+import { getProjectSidebarLabel } from "@/lib/project-aliases"
 import { GENERAL_CHAT_PROJECT } from "@/lib/preferences"
 
 export function isGeneralChatProject(projectPath: string | null): boolean {
@@ -7,7 +8,7 @@ export function isGeneralChatProject(projectPath: string | null): boolean {
 export function getProjectDisplayName(projectPath: string | null): string {
 	if (!projectPath) return "Chats"
 	if (isGeneralChatProject(projectPath)) return "Chats"
-	return projectPath.split("/").pop() ?? "Proyecto"
+	return getProjectSidebarLabel(projectPath)
 }
 
 /** Last path segment for session title prefix (e.g. soycanopa/Sesión 1). */

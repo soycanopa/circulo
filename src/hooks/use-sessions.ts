@@ -87,6 +87,20 @@ export function useSessions() {
 		[syncStatus],
 	)
 
+	const newSessionInProject = useCallback(
+		async (path: string) => {
+			resetChatState()
+			setThreadFolderPickerSessionId(null)
+			if (projectPath !== path) {
+				const status = await openProject(path)
+				syncStatus(status)
+			}
+			const createStatus = await createSession()
+			syncStatus(createStatus)
+		},
+		[projectPath, resetChatState, setThreadFolderPickerSessionId, syncStatus],
+	)
+
 	const newChat = useCallback(async () => {
 		resetChatState()
 		setThreadFolderPickerSessionId(null)
@@ -154,6 +168,7 @@ export function useSessions() {
 		selectSession,
 		newThread,
 		newChat,
+		newSessionInProject,
 		openProjectForNewThread,
 		deleteSession,
 		archiveSession,

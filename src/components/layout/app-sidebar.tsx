@@ -11,7 +11,6 @@ import {
 	Pin,
 	Settings,
 	Timer,
-	Trash2,
 } from "lucide-react"
 import { useAtomValue } from "jotai"
 import { useMemo, useState, type ReactNode } from "react"
@@ -25,16 +24,18 @@ import {
 	SidebarMenuItem,
 } from "@/components/layout/sidebar-layout"
 import { ConnectionStatus } from "@/components/layout/connection-status"
+import { ProjectActionsMenu } from "@/components/layout/project-actions-menu"
 import { SessionActionsMenu } from "@/components/layout/session-actions-menu"
 import { useArchivedSessions } from "@/hooks/use-archived-sessions"
 import { usePinnedSessions } from "@/hooks/use-pinned-sessions"
 import { GENERAL_CHAT_PROJECT } from "@/lib/preferences"
 import { getProjectDisplayName, isGeneralChatProject } from "@/lib/project-display"
 import {
-	getRecentProjectLabel,
-	getRecentProjects,
-	removeRecentProject,
-} from "@/lib/recent-projects"
+	getProjectSidebarLabel,
+	removeProjectAlias,
+	setProjectAlias,
+} from "@/lib/project-aliases"
+import { getRecentProjects, removeRecentProject } from "@/lib/recent-projects"
 import { sessionTitle } from "@/lib/sessions"
 import { cn } from "@/lib/utils"
 import { useSessions } from "@/hooks/use-sessions"
@@ -151,43 +152,46 @@ function SessionItem({
 }
 
 function ProjectFolderRow({
-	path,
+	label,
 	isActive,
 	isExpanded,
 	onToggle,
+	onNewSession,
+	onRename,
 	onRemove,
 	children,
 }: {
-	path: string
+	label: string
 	isActive: boolean
 	isExpanded: boolean
 	onToggle: () => void
+	onNewSession: () => void
+	onRename: (alias: string) => void
 	onRemove: () => void
 	children?: ReactNode
 }) {
-	const label = getRecentProjectLabel(path)
-
 	return (
 		<>
 			<SidebarMenuItem>
 				<div className="group/menu-item relative">
-					<SidebarMenuButton isActive={isActive} onClick={onToggle} className="pr-8">
+					<SidebarMenuButton isActive={isActive} onClick={onToggle} className="pr-14">
 						<ChevronRight
 							className="size-3 text-muted-foreground transition-transform"
 							style={{ transform: isExpanded ? "rotate(90deg)" : undefined }}
 						/>
 						<span className="truncate font-medium">{label}</span>
 					</SidebarMenuButton>
+					<ProjectActionsMenu label={label} onRename={onRename} onDelete={onRemove} />
 					<button
 						type="button"
-						title="Eliminar proyecto"
+						title="Nueva sesión en este proyecto"
 						onClick={(event) => {
 							event.stopPropagation()
-							onRemove()
+							onNewSession()
 						}}
-						className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-sidebar-foreground/50 opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-destructive group-hover/menu-item:opacity-100"
+						className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-sidebar-foreground/50 opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover/menu-item:opacity-100"
 					>
-						<Trash2 className="size-3.5" />
+						<MessageSquarePlus className="size-3.5" />
 					</button>
 				</div>
 			</SidebarMenuItem>
@@ -204,14 +208,23 @@ export function AppSidebar({
 	onCloseProject,
 	loading,
 }: AppSidebarProps) {
-	const { sessions, activeSessionId, newThread, newChat, selectSession, archiveSession, deleteSession } =
-		useSessions()
+	const {
+		sessions,
+		activeSessionId,
+		newThread,
+		newChat,
+		newSessionInProject,
+		selectSession,
+		archiveSession,
+		deleteSession,
+	} = useSessions()
 	const { pinnedIds, togglePin, isPinned } = usePinnedSessions()
 	const { isArchived } = useArchivedSessions()
 	const promptInFlight = useAtomValue(promptInFlightAtom)
 	const [expandedChats, setExpandedChats] = useState(true)
 	const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({})
 	const [recentProjectsVersion, setRecentProjectsVersion] = useState(0)
+	const [projectAliasesVersion, setProjectAliasesVersion] = useState(0)
 	const [sessionPending, setSessionPending] = useState(false)
 
 	const visibleSessions = useMemo(
@@ -260,11 +273,28 @@ export function AppSidebar({
 		}))
 	}
 
+	function getSavedProjectLabel(path: string) {
+		void projectAliasesVersion
+		return getProjectSidebarLabel(path)
+	}
+
+	function handleRenameProject(path: string, alias: string) {
+		setProjectAlias(path, alias)
+		setProjectAliasesVersion((value) => value + 1)
+	}
+
+	async function handleNewSessionInProject(path: string) {
+		await runSessionAction(() => newSessionInProject(path))
+		setExpandedProjects((current) => ({ ...current, [path]: true }))
+	}
+
 	async function handleRemoveProject(path: string) {
-		const label = getRecentProjectLabel(path)
+		const label = getSavedProjectLabel(path)
 		if (!window.confirm(`¿Eliminar "${label}" del sidebar?`)) return
 		removeRecentProject(path)
+		removeProjectAlias(path)
 		setRecentProjectsVersion((value) => value + 1)
+		setProjectAliasesVersion((value) => value + 1)
 		if (projectPath !== path) return
 		await runSessionAction(async () => {
 			await onCloseProject()
@@ -405,7 +435,7 @@ export function AppSidebar({
 							return (
 								<ProjectFolderRow
 									key={path}
-									path={path}
+									label={getSavedProjectLabel(path)}
 									isActive={isActive}
 									isExpanded={isExpanded}
 									onToggle={() => {
@@ -418,6 +448,8 @@ export function AppSidebar({
 										}
 										toggleProjectExpanded(path)
 									}}
+									onNewSession={() => void handleNewSessionInProject(path)}
+									onRename={(alias) => handleRenameProject(path, alias)}
 									onRemove={() => void handleRemoveProject(path)}
 								>
 									<div className="ml-3 border-l border-sidebar-border/10 pl-1">
