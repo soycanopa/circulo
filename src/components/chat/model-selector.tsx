@@ -1,6 +1,7 @@
 import { useAtom } from "jotai"
 import { ChevronDown } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
+import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside"
 import { InputGroupButton } from "@/components/ui/input-group"
 import { setLastModel } from "@/lib/preferences"
 import { setConfigOption } from "@/lib/tauri"
@@ -11,6 +12,9 @@ export function ModelSelector() {
 	const [configOptions, setConfigOptions] = useAtom(configOptionsAtom)
 	const [open, setOpen] = useState(false)
 	const [query, setQuery] = useState("")
+	const rootRef = useRef<HTMLDivElement>(null)
+
+	useDismissOnOutside(rootRef, () => setOpen(false), open)
 
 	const modelOption = configOptions.find(
 		(option) => option.category?.toLowerCase().includes("model") || option.id === "model",
@@ -49,7 +53,7 @@ export function ModelSelector() {
 	}
 
 	return (
-		<div className="relative">
+		<div ref={rootRef} className="relative">
 			<InputGroupButton
 				variant="ghost"
 				size="sm"

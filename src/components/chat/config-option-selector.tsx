@@ -1,6 +1,7 @@
 import { useAtom } from "jotai"
 import { ChevronDown } from "lucide-react"
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
+import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside"
 import { InputGroupButton } from "@/components/ui/input-group"
 import { setConfigOption } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
@@ -26,6 +27,9 @@ export function ConfigOptionSelector({
 }: ConfigOptionSelectorProps) {
 	const [configOptions, setConfigOptions] = useAtom(configOptionsAtom)
 	const [open, setOpen] = useState(false)
+	const rootRef = useRef<HTMLDivElement>(null)
+
+	useDismissOnOutside(rootRef, () => setOpen(false), open)
 
 	const option = useMemo(() => configOptions.find(match), [configOptions, match])
 
@@ -57,7 +61,7 @@ export function ConfigOptionSelector({
 	}
 
 	return (
-		<div className={cn("relative", className)}>
+		<div ref={rootRef} className={cn("relative", className)}>
 			<InputGroupButton
 				variant="ghost"
 				size="sm"

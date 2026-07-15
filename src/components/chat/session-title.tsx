@@ -1,3 +1,4 @@
+import { Home } from "lucide-react"
 import { useAtomValue } from "jotai"
 import { getProjectDirectoryLabel } from "@/lib/project-display"
 import { sessionTitle } from "@/lib/sessions"
@@ -13,10 +14,7 @@ export function SessionTitle() {
 
 	if (!activeSession) {
 		return (
-			<span
-				data-tauri-drag-region
-				className="block min-w-0 flex-1 truncate text-sm text-muted-foreground"
-			>
+			<span className="block min-w-0 flex-1 truncate text-sm text-muted-foreground">
 				Sin sesión activa
 			</span>
 		)
@@ -26,11 +24,11 @@ export function SessionTitle() {
 	const title = sessionTitle(activeSession, activeIndex)
 
 	return (
-		<span
-			data-tauri-drag-region
-			className="block min-w-0 flex-1 truncate text-sm"
-		>
-			<span className="text-muted-foreground/70">{directoryLabel}</span>
+		<span className="block min-w-0 flex-1 truncate text-sm">
+			<span className="inline-flex items-center gap-1 text-muted-foreground/70">
+				<Home className="size-3 shrink-0" />
+				{directoryLabel}
+			</span>
 			<span className="mx-1.5 text-muted-foreground/40">/</span>
 			<span className="font-medium text-foreground">{title}</span>
 		</span>

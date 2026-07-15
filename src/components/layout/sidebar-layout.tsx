@@ -159,7 +159,6 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 				{appBar ? (
 					<div
 						data-slot="session-title-layer"
-						data-tauri-drag-region={isTauri ? true : undefined}
 						className="pointer-events-none absolute z-[46] flex items-center"
 						style={{
 							top: SHELL_INSET,
@@ -170,7 +169,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 							right: SHELL_INSET + 12,
 						}}
 					>
-						<div className="pointer-events-auto min-w-0 flex-1 overflow-hidden">{appBar}</div>
+						<div className="min-w-0 flex-1 overflow-hidden">{appBar}</div>
 					</div>
 				) : null}
 

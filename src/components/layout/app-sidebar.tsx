@@ -97,12 +97,12 @@ function SessionItem({
 					isActive={isSelected}
 					onClick={onSelect}
 					size={compact ? "sm" : "default"}
-					className={pinnable ? "pr-8" : undefined}
+					className={pinnable || isPinned ? "pr-8" : undefined}
 				>
 					<Icon className={cn("size-3.5 shrink-0", color, status === "running" && "animate-spin")} />
 					<span className="min-w-0 flex-1 truncate">{sessionTitle(session, sessionIndex)}</span>
 				</SidebarMenuButton>
-				{pinnable && onTogglePin ? (
+				{(pinnable || isPinned) && onTogglePin ? (
 					<button
 						type="button"
 						title={isPinned ? "Quitar de pinned" : "Agregar a pinned"}
@@ -112,7 +112,7 @@ function SessionItem({
 						}}
 						className={cn(
 							"absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-sidebar-foreground/50 opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover/menu-item:opacity-100",
-							isPinned && "opacity-100 text-sidebar-ring",
+							isPinned && "text-sidebar-ring",
 						)}
 					>
 						<Pin className={cn("size-3", isPinned && "fill-current")} />
