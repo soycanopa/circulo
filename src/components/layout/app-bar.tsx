@@ -12,7 +12,7 @@ export function AppBar({ className }: AppBarProps) {
 		<div
 			data-slot="app-bar"
 			{...windowDragRegionProps()}
-			className={cn("relative z-[45] shrink-0 border-b border-border/50", className)}
+			className={cn("relative z-[45] box-border shrink-0 border-b border-border/50", className)}
 			style={{ height: APP_BAR_HEIGHT }}
 		/>
 	)

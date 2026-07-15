@@ -188,10 +188,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 							right: SHELL_INSET + 12,
 						}}
 					>
-						<div
-							className="flex min-w-0 flex-1 items-center overflow-hidden"
-							style={{ margin: "4px 0 6px" }}
-						>
+						<div className="flex min-w-0 flex-1 items-center overflow-hidden">
 							{appBar}
 						</div>
 					</motion.div>
@@ -209,7 +206,7 @@ function SidebarChromeHeader() {
 		<div
 			data-slot="sidebar-chrome-header"
 			{...windowDragRegionProps()}
-			className="relative z-[45] shrink-0 border-b border-border/50"
+			className="relative z-[45] box-border shrink-0 border-b border-border/50"
 			style={{ height: APP_BAR_HEIGHT }}
 		/>
 	)
