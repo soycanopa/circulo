@@ -112,10 +112,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 			<div
 				data-slot="sidebar-wrapper"
 				data-state={open ? "expanded" : "collapsed"}
-				className={cn(
-					"group/sidebar-wrapper relative flex h-screen w-full p-2 text-foreground",
-					open ? "gap-2" : "gap-0",
-				)}
+				className="group/sidebar-wrapper relative flex h-screen w-full gap-0 p-2 text-foreground"
 				style={
 					{
 						"--shell-inset": `${SHELL_INSET}px`,
@@ -196,9 +193,7 @@ export function SidebarContent({ children }: { children: ReactNode }) {
 }
 
 export function SidebarFooter({ children }: { children: ReactNode }) {
-	return (
-		<div className="shrink-0 space-y-1 border-t border-sidebar-border/10 p-2">{children}</div>
-	)
+	return <div className="shrink-0 space-y-1 p-2">{children}</div>
 }
 
 export function SidebarGroup({ children, label }: { children: ReactNode; label?: string }) {

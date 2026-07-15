@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
+import { SHELL_INSET } from "@/lib/window-chrome"
 import {
 	SIDEBAR_MAX_WIDTH,
 	SIDEBAR_MIN_WIDTH,
@@ -18,10 +19,9 @@ export function SidebarResizeHandle({ width, onWidthChange }: SidebarResizeHandl
 			const shell = document.querySelector('[data-slot="sidebar-wrapper"]')
 			if (!shell) return
 			const rect = shell.getBoundingClientRect()
-			const inset = 8
 			const next = Math.min(
 				SIDEBAR_MAX_WIDTH,
-				Math.max(SIDEBAR_MIN_WIDTH, event.clientX - rect.left - inset),
+				Math.max(SIDEBAR_MIN_WIDTH, event.clientX - rect.left - SHELL_INSET),
 			)
 			onWidthChange(next)
 		},
@@ -49,14 +49,14 @@ export function SidebarResizeHandle({ width, onWidthChange }: SidebarResizeHandl
 			data-slot="sidebar-resize-handle"
 			onMouseDown={() => setDragging(true)}
 			className="relative z-20 shrink-0 cursor-col-resize select-none"
-			style={{ width: dragging ? 4 : 2 }}
+			style={{ width: SHELL_INSET }}
 		>
 			{dragging ? (
 				<div
-					className="absolute inset-y-0 left-0 right-0"
+					className="absolute inset-y-0 left-1/2 w-1 -translate-x-1/2"
 					style={{
 						background:
-							"linear-gradient(to right, rgba(0,0,0,0), rgba(111,203,243,0.4) 50%, rgba(0,0,0,0))",
+							"linear-gradient(to bottom, rgba(0,0,0,0), rgba(111,203,243,0.45) 50%, rgba(0,0,0,0))",
 					}}
 				/>
 			) : null}
