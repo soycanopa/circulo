@@ -1,3 +1,4 @@
+import { isPlanModeValue } from "@/lib/agent-mode-presentations"
 import type { ConfigOption } from "@/types/acp"
 
 export function findModeOption(options: ConfigOption[]): ConfigOption | undefined {
@@ -8,5 +9,5 @@ export function findModeOption(options: ConfigOption[]): ConfigOption | undefine
 }
 
 export function isAgentPlanMode(options: ConfigOption[]): boolean {
-	return findModeOption(options)?.currentValue === "plan"
+	return isPlanModeValue(findModeOption(options)?.currentValue)
 }

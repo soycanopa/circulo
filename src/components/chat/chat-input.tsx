@@ -5,6 +5,7 @@ import { AgentModeSelector } from "@/components/chat/agent-mode-selector"
 import { ModelSelector } from "@/components/chat/model-selector"
 import { ThinkingSelector } from "@/components/chat/thinking-selector"
 import { ThreadFolderPicker } from "@/components/chat/thread-folder-picker"
+import { isAgentPlanMode } from "@/lib/agent-mode"
 import { setPromptInFlightSync } from "@/lib/prompt-flight"
 import { deriveTitleFromMessage } from "@/lib/sessions"
 import {
@@ -17,10 +18,12 @@ import { searchFiles, sendPrompt } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
 import {
 	activeSessionIdAtom,
+	configOptionsAtom,
 	messagesAtom,
 	NEW_THREAD_PICKER_ID,
 	pendingPlanAtom,
 	planCommentModeAtom,
+	planTurnActiveAtom,
 	projectPathAtom,
 	promptInFlightAtom,
 	sessionsAtom,
@@ -58,6 +61,8 @@ export function ChatInput({
 		threadFolderPickerSessionIdAtom,
 	)
 	const projectPath = useAtomValue(projectPathAtom)
+	const configOptions = useAtomValue(configOptionsAtom)
+	const setPlanTurnActive = useSetAtom(planTurnActiveAtom)
 	const messageCount = useAtomValue(messagesAtom).length
 	const isPendingNewThreadFolder = pickerSessionId === NEW_THREAD_PICKER_ID
 	const showFolderPicker =
@@ -142,6 +147,7 @@ export function ChatInput({
 		])
 		if (planCommentMode) setPlanCommentMode(false)
 		setPendingPlan(null)
+		setPlanTurnActive(isAgentPlanMode(configOptions))
 
 		if (activeSessionId) {
 			setSessions((current) =>
@@ -169,7 +175,7 @@ export function ChatInput({
 	const inputDisabled = disabled || isAwaitingPermission || isPendingNewThreadFolder
 
 	return (
-		<div className="shrink-0 px-4 pb-4 pt-2">
+		<div className="relative z-10 shrink-0 overflow-visible px-4 pb-4 pt-2">
 			<div className="relative mx-auto max-w-3xl">
 				{visibleSuggestions.length > 0 && query !== null ? (
 					<div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
@@ -237,8 +243,8 @@ export function ChatInput({
 							}}
 						/>
 
-						<InputGroupAddon className="justify-between">
-							<div className="flex min-w-0 flex-wrap items-center gap-1">
+						<InputGroupAddon className="justify-between overflow-visible">
+							<div className="flex min-w-0 flex-wrap items-center gap-1 overflow-visible">
 								<AgentModeSelector />
 								<ThinkingSelector />
 								<ModelSelector />

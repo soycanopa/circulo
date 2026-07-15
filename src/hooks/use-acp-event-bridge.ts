@@ -1,6 +1,8 @@
 import { getDefaultStore, useSetAtom } from "jotai"
 import { useEffect, useRef } from "react"
-import { isAgentPlanMode } from "@/lib/agent-mode"
+import { findModeOption, isAgentPlanMode } from "@/lib/agent-mode"
+import { isPlanModeValue } from "@/lib/agent-mode-presentations"
+import { normalizePlanMarkdown } from "@/lib/plan-markdown"
 import { applySessionInfoUpdate, applySessionUpdate } from "@/lib/acp-parser"
 import { promptInFlightRef, setPromptInFlightSync } from "@/lib/prompt-flight"
 import { applySessionDefaults } from "@/lib/session-defaults"
@@ -14,6 +16,7 @@ import {
 	messagesAtom,
 	pendingPlanAtom,
 	planCommentModeAtom,
+	planTurnActiveAtom,
 	projectPathAtom,
 	promptInFlightAtom,
 	replayingHistoryAtom,
@@ -105,13 +108,15 @@ export function useAcpEventBridge() {
 				}
 
 				const isStreamingTurn = promptInFlightRef.current
+				const jotaiStore = getDefaultStore()
+				const planTurnActive = jotaiStore.get(planTurnActiveAtom)
 
 				setMessages((current) => {
 					const result = applySessionUpdate(
 						current,
 						streamingRef.current,
 						payload,
-						{ streamToMessage: !isStreamingTurn },
+						{ streamToMessage: !isStreamingTurn && !planTurnActive },
 					)
 					streamingRef.current = result.streamingText
 					setStreamingText(result.streamingText)
@@ -133,14 +138,32 @@ export function useAcpEventBridge() {
 				const stream = streamingRef.current
 				const jotaiStore = getDefaultStore()
 				const configOptions = jotaiStore.get(configOptionsAtom)
-				const planMode = isAgentPlanMode(configOptions)
+				const planTurnActive = jotaiStore.get(planTurnActiveAtom)
+				const planMode =
+					planTurnActive ||
+					isAgentPlanMode(configOptions) ||
+					isPlanModeValue(findModeOption(configOptions)?.currentValue)
 
 				if (planMode && stream.trim()) {
+					const normalized = normalizePlanMarkdown(stream)
 					jotaiStore.set(pendingPlanAtom, {
-						content: stream,
+						content: normalized,
 						timestamp: Date.now(),
 					})
 					jotaiStore.set(planCommentModeAtom, false)
+					setMessages((current) => {
+						const next = [...current]
+						const last = next[next.length - 1]
+						if (
+							last?.role === "assistant" &&
+							(!last.content.trim() ||
+								normalized.startsWith(last.content) ||
+								last.content.startsWith(normalized))
+						) {
+							next.pop()
+						}
+						return next
+					})
 				} else {
 					setMessages((current) => {
 						if (!stream) return current
@@ -166,6 +189,7 @@ export function useAcpEventBridge() {
 					})
 				}
 
+				jotaiStore.set(planTurnActiveAtom, false)
 				streamingRef.current = ""
 				setStreamingText("")
 				setPromptInFlight(false)

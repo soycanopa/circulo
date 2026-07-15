@@ -37,3 +37,6 @@ export const pendingPlanAtom = atom<PendingPlan | null>(null)
 
 /** When true, the chat input sends feedback about the pending plan. */
 export const planCommentModeAtom = atom(false)
+
+/** Tracks whether the active prompt turn expects a plan preview response. */
+export const planTurnActiveAtom = atom(false)

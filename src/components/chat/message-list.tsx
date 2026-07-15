@@ -26,12 +26,26 @@ export function MessageList({ messages, connected }: MessageListProps) {
 	const shouldAutoScrollRef = useRef(true)
 
 	const isPlanMode = isAgentPlanMode(configOptions)
-	const planContent = streamingText || pendingPlan?.content || ""
+	const planContent = pendingPlan?.content || (isPlanMode ? streamingText : "") || ""
 	const showPlanPreview =
-		isPlanMode &&
-		(Boolean(streamingText) || (Boolean(pendingPlan) && !promptInFlight))
-	const showThinking = promptInFlight && !streamingText
-	const showRegularStream = Boolean(streamingText) && !isPlanMode
+		Boolean(pendingPlan) || (isPlanMode && (Boolean(streamingText) || promptInFlight))
+	const showThinking = promptInFlight && !streamingText && !showPlanPreview
+	const showRegularStream = Boolean(streamingText) && !showPlanPreview
+
+	const visibleMessages =
+		showPlanPreview && pendingPlan?.content.trim()
+			? messages.filter((message) => {
+					if (message.role !== "assistant") return true
+					const content = message.content.trim()
+					if (!content) return false
+					const plan = pendingPlan.content.trim()
+					return !(
+						plan.startsWith(content) ||
+						content.startsWith(plan) ||
+						content === plan
+					)
+				})
+			: messages
 
 	useEffect(() => {
 		const container = containerRef.current
@@ -61,7 +75,7 @@ export function MessageList({ messages, connected }: MessageListProps) {
 			) : null}
 
 			<div className="mx-auto flex max-w-3xl flex-col gap-4">
-				{messages.map((message) => (
+				{visibleMessages.map((message) => (
 					<div
 						key={message.id}
 						className={

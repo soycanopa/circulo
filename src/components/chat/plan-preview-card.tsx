@@ -1,5 +1,6 @@
 import { Download, Loader2, MessageSquare, ThumbsDown, ThumbsUp } from "lucide-react"
 import { MarkdownContent } from "@/components/chat/markdown-content"
+import { normalizePlanMarkdown } from "@/lib/plan-markdown"
 import { cn } from "@/lib/utils"
 
 interface PlanPreviewCardProps {
@@ -21,7 +22,8 @@ export function PlanPreviewCard({
 	onComment,
 	onReject,
 }: PlanPreviewCardProps) {
-	const canAct = actionsEnabled && !isStreaming && Boolean(content.trim())
+	const normalizedContent = normalizePlanMarkdown(content)
+	const canAct = actionsEnabled && !isStreaming && Boolean(normalizedContent.trim())
 
 	return (
 		<div className="overflow-hidden rounded-xl border border-[#3B5EF9]/30 bg-card shadow-sm">
@@ -36,7 +38,7 @@ export function PlanPreviewCard({
 				</div>
 				<button
 					type="button"
-					disabled={!content.trim()}
+					disabled={!normalizedContent.trim()}
 					onClick={onDownload}
 					className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
 				>
@@ -46,8 +48,8 @@ export function PlanPreviewCard({
 			</div>
 
 			<div className="max-h-[min(60vh,28rem)] overflow-y-auto px-4 py-3">
-				{content.trim() ? (
-					<MarkdownContent content={content} />
+				{normalizedContent.trim() ? (
+					<MarkdownContent content={normalizedContent} className="prose-headings:text-foreground prose-p:text-foreground/90 prose-li:text-foreground/90" />
 				) : (
 					<p className="text-sm text-muted-foreground">Escribiendo el plan…</p>
 				)}

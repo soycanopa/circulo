@@ -1,10 +1,9 @@
 import { useAtom } from "jotai"
 import { ChevronDown, Star } from "lucide-react"
-import { AnimatePresence, motion } from "motion/react"
 import { useMemo, useRef, useState } from "react"
 import { ProviderIcon } from "@/components/chat/provider-icon"
 import { SelectorMenuItem } from "@/components/chat/selector-menu-item"
-import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside"
+import { SelectorPortalMenu } from "@/components/chat/selector-portal-menu"
 import { InputGroupButton } from "@/components/ui/input-group"
 import {
 	getFavoriteModels,
@@ -16,7 +15,6 @@ import {
 	filterModelGroups,
 	findModelEntry,
 } from "@/lib/model-groups"
-import { fadeSlideUp } from "@/lib/motion-presets"
 import { setLastModel } from "@/lib/preferences"
 import { setConfigOption } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
@@ -29,8 +27,6 @@ export function ModelSelector() {
 	const [query, setQuery] = useState("")
 	const [favorites, setFavorites] = useState(getFavoriteModels)
 	const rootRef = useRef<HTMLDivElement>(null)
-
-	useDismissOnOutside(rootRef, () => setOpen(false), open)
 
 	const modelOption = configOptions.find(
 		(option) => option.category?.toLowerCase().includes("model") || option.id === "model",
@@ -77,11 +73,11 @@ export function ModelSelector() {
 	}
 
 	return (
-		<div ref={rootRef} className="relative">
+		<div ref={rootRef} className="relative shrink-0">
 			<InputGroupButton
 				variant="ghost"
 				size="sm"
-				className="h-7 max-w-48 gap-1.5 px-2 text-xs"
+				className="h-7 max-w-52 gap-1.5 px-2 text-xs"
 				disabled={!hasModels}
 				onClick={() => hasModels && setOpen((v) => !v)}
 			>
@@ -92,73 +88,71 @@ export function ModelSelector() {
 				<ChevronDown className="size-3 shrink-0 opacity-60" />
 			</InputGroupButton>
 
-			<AnimatePresence>
-				{open && modelOption ? (
-					<motion.div
-						{...fadeSlideUp}
-						className="absolute bottom-full left-0 z-30 mb-2 w-72 overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
-					>
-						<div className="border-b border-border p-2">
-							<input
-								value={query}
-								onChange={(e) => setQuery(e.target.value)}
-								placeholder="Buscar modelo…"
-								className="h-7 w-full rounded-md border border-input bg-muted/40 px-2 text-xs outline-none focus:ring-1 focus:ring-ring/40"
-								autoFocus
-							/>
-						</div>
-						<div className="scrollbar-thin max-h-64 overflow-y-auto p-1">
-							{!hasVisible ? (
-								<p className="px-2 py-2 text-xs text-muted-foreground">Sin resultados</p>
-							) : (
-								<>
-									{favoriteModels.length > 0 ? (
-										<section className="mb-1">
-											<p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-												Favoritos
-											</p>
-											<ul>
-												{favoriteModels.map((model) => (
-													<li key={`fav-${model.value}`}>
-														<ModelRow
-															model={model}
-															isActive={model.value === modelOption.currentValue}
-															isFavorite
-															onSelect={() => void handleSelect(model.value)}
-															onToggleFavorite={(e) => handleToggleFavorite(e, model.value)}
-														/>
-													</li>
-												))}
-											</ul>
-										</section>
-									) : null}
+			<SelectorPortalMenu
+				open={open && Boolean(modelOption)}
+				anchorRef={rootRef}
+				onClose={() => setOpen(false)}
+				minWidth={288}
+			>
+				<div className="border-b border-border p-2">
+					<input
+						value={query}
+						onChange={(e) => setQuery(e.target.value)}
+						placeholder="Buscar modelo…"
+						className="h-7 w-full rounded-md border border-input bg-muted/40 px-2 text-xs outline-none focus:ring-1 focus:ring-ring/40"
+						autoFocus
+					/>
+				</div>
+				<div className="scrollbar-thin max-h-64 overflow-y-auto p-1">
+					{!hasVisible ? (
+						<p className="px-2 py-2 text-xs text-muted-foreground">Sin resultados</p>
+					) : (
+						<>
+							{favoriteModels.length > 0 ? (
+								<section className="mb-1">
+									<p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+										Favoritos
+									</p>
+									<ul>
+										{favoriteModels.map((model) => (
+											<li key={`fav-${model.value}`}>
+												<ModelRow
+													model={model}
+													isActive={model.value === modelOption!.currentValue}
+													isFavorite
+													onSelect={() => void handleSelect(model.value)}
+													onToggleFavorite={(e) => handleToggleFavorite(e, model.value)}
+												/>
+											</li>
+										))}
+									</ul>
+								</section>
+							) : null}
 
-									{visibleGroups.map((group) => (
-										<section key={group.name} className="mb-1 last:mb-0">
-											<p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-												{group.name}
-											</p>
-											<ul>
-												{group.models.map((model) => (
-													<li key={model.value}>
-														<ModelRow
-															model={model}
-															isActive={model.value === modelOption.currentValue}
-															isFavorite={isFavoriteModel(model.value)}
-															onSelect={() => void handleSelect(model.value)}
-															onToggleFavorite={(e) => handleToggleFavorite(e, model.value)}
-														/>
-													</li>
-												))}
-											</ul>
-										</section>
-									))}
-								</>
-							)}
-						</div>
-					</motion.div>
-				) : null}
-			</AnimatePresence>
+							{visibleGroups.map((group) => (
+								<section key={group.name} className="mb-1 last:mb-0">
+									<p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+										{group.name}
+									</p>
+									<ul>
+										{group.models.map((model) => (
+											<li key={model.value}>
+												<ModelRow
+													model={model}
+													isActive={model.value === modelOption!.currentValue}
+													isFavorite={isFavoriteModel(model.value)}
+													onSelect={() => void handleSelect(model.value)}
+													onToggleFavorite={(e) => handleToggleFavorite(e, model.value)}
+												/>
+											</li>
+										))}
+									</ul>
+								</section>
+							))}
+						</>
+					)}
+				</div>
+			</SelectorPortalMenu>
 		</div>
 	)
 }

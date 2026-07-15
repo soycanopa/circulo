@@ -1,10 +1,8 @@
 import { useAtom } from "jotai"
 import { ChevronDown } from "lucide-react"
-import { AnimatePresence, motion } from "motion/react"
 import { useMemo, useRef, useState } from "react"
-import { fadeSlideUp } from "@/lib/motion-presets"
-import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside"
 import { SelectorMenuItem } from "@/components/chat/selector-menu-item"
+import { SelectorPortalMenu } from "@/components/chat/selector-portal-menu"
 import { InputGroupButton } from "@/components/ui/input-group"
 import { setConfigOption } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
@@ -31,8 +29,6 @@ export function ConfigOptionSelector({
 	const [configOptions, setConfigOptions] = useAtom(configOptionsAtom)
 	const [open, setOpen] = useState(false)
 	const rootRef = useRef<HTMLDivElement>(null)
-
-	useDismissOnOutside(rootRef, () => setOpen(false), open)
 
 	const option = useMemo(() => configOptions.find(match), [configOptions, match])
 
@@ -64,7 +60,7 @@ export function ConfigOptionSelector({
 	}
 
 	return (
-		<div ref={rootRef} className={cn("relative", className)}>
+		<div ref={rootRef} className={cn("relative shrink-0", className)}>
 			<InputGroupButton
 				variant="ghost"
 				size="sm"
@@ -76,31 +72,30 @@ export function ConfigOptionSelector({
 				<ChevronDown className="size-3 shrink-0 opacity-60" />
 			</InputGroupButton>
 
-			<AnimatePresence>
-				{open && option ? (
-					<motion.div
-						{...fadeSlideUp}
-						className="absolute bottom-full left-0 z-30 mb-2 min-w-44 overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
-					>
-						<ul className="scrollbar-thin max-h-48 overflow-y-auto p-1">
-							{option.options.map((entry) => (
-								<li key={entry.value}>
-									<SelectorMenuItem
-										active={entry.value === option.currentValue}
-										onClick={() => void handleSelect(entry.value)}
-										className="flex-col items-start"
-									>
-										<span>{entry.name}</span>
-										{entry.description ? (
-											<span className="text-[10px] text-muted-foreground">{entry.description}</span>
-										) : null}
-									</SelectorMenuItem>
-								</li>
-							))}
-						</ul>
-					</motion.div>
-				) : null}
-			</AnimatePresence>
+			<SelectorPortalMenu
+				open={open && Boolean(option)}
+				anchorRef={rootRef}
+				onClose={() => setOpen(false)}
+				minWidth={176}
+				className="p-1"
+			>
+				<ul className="scrollbar-thin max-h-48 overflow-y-auto">
+					{option?.options.map((entry) => (
+						<li key={entry.value}>
+							<SelectorMenuItem
+								active={entry.value === option.currentValue}
+								onClick={() => void handleSelect(entry.value)}
+								className="flex-col items-start"
+							>
+								<span>{entry.name}</span>
+								{entry.description ? (
+									<span className="text-[10px] text-muted-foreground">{entry.description}</span>
+								) : null}
+							</SelectorMenuItem>
+						</li>
+					))}
+				</ul>
+			</SelectorPortalMenu>
 		</div>
 	)
 }

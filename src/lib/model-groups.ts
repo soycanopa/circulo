@@ -38,6 +38,39 @@ function inferProviderId(value: string, name: string, group?: string): string {
 	return "other"
 }
 
+const MODEL_TOKEN_LABELS: Record<string, string> = {
+	deepseek: "DeepSeek",
+	openai: "OpenAI",
+	anthropic: "Anthropic",
+	gemini: "Gemini",
+	minimax: "MiniMax",
+	gpt: "GPT",
+	o1: "o1",
+	o3: "o3",
+	o4: "o4",
+	sonnet: "Sonnet",
+	haiku: "Haiku",
+	opus: "Opus",
+	pro: "Pro",
+	flash: "Flash",
+	mini: "Mini",
+}
+
+function formatModelToken(part: string): string {
+	const key = part.trim().toLowerCase()
+	if (MODEL_TOKEN_LABELS[key]) return MODEL_TOKEN_LABELS[key]
+	if (/^v?\d+(?:\.\d+)?[a-z]?$/i.test(part)) return part.toLowerCase()
+	return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+}
+
+function humanizeModelSlug(slug: string): string {
+	return slug
+		.split(/[-_/]+/)
+		.filter(Boolean)
+		.map(formatModelToken)
+		.join(" ")
+}
+
 export function modelDisplayName(name: string, value: string, providerId: string): string {
 	const label = formatProviderLabel(providerId)
 	const patterns = [
@@ -48,21 +81,21 @@ export function modelDisplayName(name: string, value: string, providerId: string
 
 	for (const pattern of patterns) {
 		const stripped = name.replace(pattern, "").trim()
-		if (stripped && stripped !== name) return stripped
+		if (stripped && stripped !== name) return humanizeModelSlug(stripped)
 	}
 
 	const slash = value.indexOf("/")
 	if (slash > 0) {
 		const tail = value.slice(slash + 1).trim()
-		if (tail) return tail
+		if (tail) return humanizeModelSlug(tail)
 	}
 
 	if (name.includes(" - ")) {
 		const tail = name.split(" - ").slice(1).join(" - ").trim()
-		if (tail) return tail
+		if (tail) return humanizeModelSlug(tail)
 	}
 
-	return name.trim()
+	return humanizeModelSlug(name.trim())
 }
 
 export function buildModelGroups(options: ConfigOption["options"]): ModelGroup[] {

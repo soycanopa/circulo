@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -117,9 +118,12 @@
 	app-region: no-drag;
 }
 [data-slot="input-group"] {
-	@apply overflow-hidden rounded-xl border shadow-sm;
+	@apply rounded-xl border shadow-sm;
 	background: var(--chat-input);
 	border-color: var(--chat-input-border);
+}
+[data-slot="input-group-addon"] {
+	overflow: visible;
 }
 [data-slot="sidebar-resize-indicator"] {
 	background: linear-gradient(

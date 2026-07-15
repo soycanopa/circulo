@@ -1,5 +1,6 @@
 import { useAtom, useSetAtom } from "jotai"
 import { useCallback } from "react"
+import { normalizePlanMarkdown } from "@/lib/plan-markdown"
 import { setPromptInFlightSync } from "@/lib/prompt-flight"
 import { sendPrompt } from "@/lib/tauri"
 import {
@@ -25,7 +26,7 @@ export function usePlanActions() {
 
 	const acceptPlan = useCallback(async () => {
 		if (!pendingPlan?.content.trim()) return
-		const plan = pendingPlan.content
+		const plan = normalizePlanMarkdown(pendingPlan.content)
 		setPendingPlan(null)
 		setPromptInFlightSync(true)
 		setPromptInFlight(true)
