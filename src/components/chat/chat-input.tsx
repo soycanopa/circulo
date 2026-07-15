@@ -155,7 +155,7 @@ export function ChatInput({
 
 	return (
 		<div className="shrink-0 px-4 pb-4 pt-2">
-			<div className="relative mx-auto max-w-4xl">
+			<div className="relative mx-auto max-w-3xl">
 				{visibleSuggestions.length > 0 && query !== null ? (
 					<div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
 						{visibleSuggestions.map((path) => (

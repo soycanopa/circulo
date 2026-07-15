@@ -41,7 +41,7 @@ export function MessageList({ messages, streamingText, connected }: MessageListP
 				</div>
 			) : null}
 
-			<div className="mx-auto flex max-w-4xl flex-col gap-4">
+			<div className="mx-auto flex max-w-3xl flex-col gap-4">
 				{messages.map((message) => (
 					<div
 						key={message.id}
