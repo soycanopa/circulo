@@ -1,16 +1,29 @@
-import { useSetAtom } from "jotai"
-import { AtSign, Send } from "lucide-react"
+import { useAtom, useSetAtom } from "jotai"
+import { AtSign, CornerDownLeft, Loader2 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
-import { Button } from "@/components/ui/button"
+import { AgentModeSelector } from "@/components/chat/agent-mode-selector"
+import { ModelSelector } from "@/components/chat/model-selector"
+import { ThinkingSelector } from "@/components/chat/thinking-selector"
+import { deriveTitleFromMessage } from "@/lib/sessions"
+import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupTextarea,
+} from "@/components/ui/input-group"
 import { searchFiles, sendPrompt } from "@/lib/tauri"
-import { messagesAtom } from "@/stores/atoms"
 import { cn } from "@/lib/utils"
+import {
+	activeSessionIdAtom,
+	messagesAtom,
+	promptInFlightAtom,
+	sessionsAtom,
+} from "@/stores/atoms"
 import type { MentionChip, SessionStatus } from "@/types/acp"
 
 interface ChatInputProps {
 	disabled?: boolean
 	sessionStatus: SessionStatus
-	onSubmit?: () => void
 }
 
 function extractMentionQuery(value: string, caret: number) {
@@ -20,32 +33,31 @@ function extractMentionQuery(value: string, caret: number) {
 }
 
 function extractMentionPaths(value: string): string[] {
-	const matches = value.matchAll(/@([^\s@]+)/g)
-	return [...matches].map((match) => match[1])
+	return [...value.matchAll(/@([^\s@]+)/g)].map((match) => match[1])
 }
 
-export function ChatInput({ disabled, sessionStatus, onSubmit }: ChatInputProps) {
+export function ChatInput({ disabled, sessionStatus }: ChatInputProps) {
 	const setMessages = useSetAtom(messagesAtom)
+	const setSessions = useSetAtom(sessionsAtom)
+	const [activeSessionId] = useAtom(activeSessionIdAtom)
+	const [promptInFlight, setPromptInFlight] = useAtom(promptInFlightAtom)
 	const [value, setValue] = useState("")
 	const [mentions, setMentions] = useState<MentionChip[]>([])
 	const [query, setQuery] = useState<string | null>(null)
 	const [suggestions, setSuggestions] = useState<string[]>([])
 	const [caret, setCaret] = useState(0)
 
-	const isBusy = sessionStatus === "generating" || sessionStatus === "awaiting_permission"
+	const isAwaitingPermission = sessionStatus === "awaiting_permission"
+	const isSubmitting = promptInFlight
 
 	useEffect(() => {
 		if (query === null) {
 			setSuggestions([])
 			return
 		}
-
 		const timeout = setTimeout(() => {
-			searchFiles(query)
-				.then(setSuggestions)
-				.catch(() => setSuggestions([]))
+			searchFiles(query).then(setSuggestions).catch(() => setSuggestions([]))
 		}, 120)
-
 		return () => clearTimeout(timeout)
 	}, [query])
 
@@ -53,12 +65,7 @@ export function ChatInput({ disabled, sessionStatus, onSubmit }: ChatInputProps)
 
 	function updateMentionsFromValue(nextValue: string) {
 		const paths = extractMentionPaths(nextValue)
-		setMentions(
-			paths.map((path) => ({
-				path,
-				label: path.split("/").pop() ?? path,
-			})),
-		)
+		setMentions(paths.map((path) => ({ path, label: path.split("/").pop() ?? path })))
 	}
 
 	function handleChange(nextValue: string, nextCaret: number) {
@@ -73,16 +80,16 @@ export function ChatInput({ disabled, sessionStatus, onSubmit }: ChatInputProps)
 		const afterCaret = value.slice(caret)
 		const replaced = beforeCaret.replace(/@([^\s@]*)$/, `@${path} `)
 		const nextValue = `${replaced}${afterCaret}`
-		const nextCaret = replaced.length
 		setValue(nextValue)
-		setCaret(nextCaret)
+		setCaret(replaced.length)
 		updateMentionsFromValue(nextValue)
 		setQuery(null)
 	}
 
-	async function handleSubmit() {
+	async function handleSubmit(event?: React.FormEvent) {
+		event?.preventDefault()
 		const trimmed = value.trim()
-		if (!trimmed || disabled || isBusy) return
+		if (!trimmed || disabled || isAwaitingPermission || isSubmitting) return
 
 		const contextPaths = mentions.map((mention) => mention.path)
 		setMessages((current) => [
@@ -95,32 +102,34 @@ export function ChatInput({ disabled, sessionStatus, onSubmit }: ChatInputProps)
 				timestamp: Date.now(),
 			},
 		])
-		await sendPrompt(trimmed, contextPaths)
+
+		if (activeSessionId) {
+			setSessions((current) =>
+				current.map((session) => {
+					if (session.sessionId !== activeSessionId) return session
+					if (session.title?.trim()) return session
+					return { ...session, title: deriveTitleFromMessage(trimmed) }
+				}),
+			)
+		}
+		setPromptInFlight(true)
 		setValue("")
 		setMentions([])
 		setQuery(null)
-		onSubmit?.()
+		try {
+			await sendPrompt(trimmed, contextPaths)
+		} catch {
+			setPromptInFlight(false)
+		}
 	}
 
-	return (
-		<div className="border-t border-border bg-card/80 p-4">
-			{mentions.length > 0 ? (
-				<div className="mb-2 flex flex-wrap gap-2">
-					{mentions.map((mention) => (
-						<span
-							key={mention.path}
-							className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs"
-						>
-							<AtSign className="size-3" />
-							{mention.label}
-						</span>
-					))}
-				</div>
-			) : null}
+	const inputDisabled = disabled || isAwaitingPermission
 
-			<div className="relative">
+	return (
+		<div className="shrink-0 px-4 pb-4 pt-2">
+			<div className="relative mx-auto max-w-4xl">
 				{visibleSuggestions.length > 0 && query !== null ? (
-					<div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-md border border-border bg-popover shadow-lg">
+					<div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
 						{visibleSuggestions.map((path) => (
 							<button
 								key={path}
@@ -134,36 +143,62 @@ export function ChatInput({ disabled, sessionStatus, onSubmit }: ChatInputProps)
 					</div>
 				) : null}
 
-				<div className="flex items-end gap-2">
-					<textarea
-						value={value}
-						disabled={disabled || isBusy}
-						placeholder="Escribe un mensaje… Usa @ para referenciar archivos"
-						className={cn(
-							"min-h-24 flex-1 resize-none rounded-lg border border-input bg-muted/30 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/40",
-							(disabled || isBusy) && "opacity-60",
-						)}
-						onChange={(event) =>
-							handleChange(event.target.value, event.target.selectionStart ?? 0)
-						}
-						onSelect={(event) =>
-							setCaret((event.target as HTMLTextAreaElement).selectionStart ?? 0)
-						}
-						onKeyDown={(event) => {
-							if (event.key === "Enter" && !event.shiftKey) {
-								event.preventDefault()
-								void handleSubmit()
+				<form onSubmit={(e) => void handleSubmit(e)}>
+					<InputGroup>
+						{mentions.length > 0 ? (
+							<div className="flex flex-wrap gap-1.5 px-3 pt-2">
+								{mentions.map((mention) => (
+									<span
+										key={mention.path}
+										className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
+									>
+										<AtSign className="size-3" />
+										{mention.label}
+									</span>
+								))}
+							</div>
+						) : null}
+
+						<InputGroupTextarea
+							value={value}
+							disabled={inputDisabled}
+							placeholder="Escribe un mensaje… Usa @ para referenciar archivos"
+							className={cn(inputDisabled && "opacity-60")}
+							onChange={(event) =>
+								handleChange(event.target.value, event.target.selectionStart ?? 0)
 							}
-						}}
-					/>
-					<Button
-						disabled={disabled || isBusy || !value.trim()}
-						onClick={() => void handleSubmit()}
-						aria-label="Enviar mensaje"
-					>
-						<Send className="size-4" />
-					</Button>
-				</div>
+							onSelect={(event) =>
+								setCaret((event.target as HTMLTextAreaElement).selectionStart ?? 0)
+							}
+							onKeyDown={(event) => {
+								if (event.key === "Enter" && !event.shiftKey) {
+									event.preventDefault()
+									void handleSubmit()
+								}
+							}}
+						/>
+
+						<InputGroupAddon className="justify-between">
+							<div className="flex min-w-0 flex-wrap items-center gap-1">
+								<AgentModeSelector />
+								<ThinkingSelector />
+								<ModelSelector />
+							</div>
+							<InputGroupButton
+								type="submit"
+								variant="default"
+								disabled={inputDisabled || isSubmitting || !value.trim()}
+								aria-label="Enviar mensaje"
+							>
+								{isSubmitting ? (
+									<Loader2 className="size-4 animate-spin" />
+								) : (
+									<CornerDownLeft className="size-4" />
+								)}
+							</InputGroupButton>
+						</InputGroupAddon>
+					</InputGroup>
+				</form>
 			</div>
 		</div>
 	)
