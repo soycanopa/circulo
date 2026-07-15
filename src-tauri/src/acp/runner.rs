@@ -628,11 +628,11 @@ pub async fn start_agent_connection(
                                             .sessions
                                             .retain(|entry| entry.session_id != id);
 
-                                        if project.session_id == id {
-                                            if let Some(next) = project.sessions.first() {
-                                                project.session_id = next.session_id.clone();
-                                            }
-                                        }
+                                        project.session_id = project
+                                            .sessions
+                                            .first()
+                                            .map(|entry| entry.session_id.clone())
+                                            .unwrap_or_default();
 
                                         (
                                             project.sessions.clone(),

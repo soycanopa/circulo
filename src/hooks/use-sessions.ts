@@ -31,7 +31,11 @@ export function useSessions() {
 	const syncStatus = useCallback(
 		(status: Awaited<ReturnType<typeof createSession>>) => {
 			setSessions(status.sessions)
-			setActiveSessionId(status.activeSessionId ?? status.sessionId)
+			setActiveSessionId(
+				status.sessions.length > 0
+					? (status.activeSessionId ?? status.sessionId)
+					: null,
+			)
 			setProjectPath(status.projectPath)
 		},
 		[setSessions, setActiveSessionId, setProjectPath],
