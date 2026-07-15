@@ -20,7 +20,7 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "acceptFirstMouse": true,
-        "trafficLightPosition": { "x": 15, "y": 22 }
+        "trafficLightPosition": { "x": 15, "y": 24 }
       }
     ],
     "security": {
