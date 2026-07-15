@@ -1,9 +1,10 @@
-import { useAtom, useSetAtom } from "jotai"
+import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { AtSign, CornerDownLeft, Loader2 } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { AgentModeSelector } from "@/components/chat/agent-mode-selector"
 import { ModelSelector } from "@/components/chat/model-selector"
 import { ThinkingSelector } from "@/components/chat/thinking-selector"
+import { ThreadFolderPicker } from "@/components/chat/thread-folder-picker"
 import { setPromptInFlightSync } from "@/lib/prompt-flight"
 import { deriveTitleFromMessage } from "@/lib/sessions"
 import {
@@ -17,6 +18,7 @@ import { cn } from "@/lib/utils"
 import {
 	activeSessionIdAtom,
 	messagesAtom,
+	projectPathAtom,
 	promptInFlightAtom,
 	sessionsAtom,
 	threadFolderPickerSessionIdAtom,
@@ -26,6 +28,7 @@ import type { MentionChip, SessionStatus } from "@/types/acp"
 interface ChatInputProps {
 	disabled?: boolean
 	sessionStatus: SessionStatus
+	onOpenProject: (path: string) => Promise<void>
 }
 
 function extractMentionQuery(value: string, caret: number) {
@@ -38,11 +41,19 @@ function extractMentionPaths(value: string): string[] {
 	return [...value.matchAll(/@([^\s@]+)/g)].map((match) => match[1])
 }
 
-export function ChatInput({ disabled, sessionStatus }: ChatInputProps) {
+export function ChatInput({ disabled, sessionStatus, onOpenProject }: ChatInputProps) {
 	const setMessages = useSetAtom(messagesAtom)
 	const setSessions = useSetAtom(sessionsAtom)
 	const [activeSessionId] = useAtom(activeSessionIdAtom)
-	const setThreadFolderPickerSessionId = useSetAtom(threadFolderPickerSessionIdAtom)
+	const [pickerSessionId, setThreadFolderPickerSessionId] = useAtom(
+		threadFolderPickerSessionIdAtom,
+	)
+	const projectPath = useAtomValue(projectPathAtom)
+	const messageCount = useAtomValue(messagesAtom).length
+	const showFolderPicker =
+		Boolean(pickerSessionId) &&
+		pickerSessionId === activeSessionId &&
+		messageCount === 0
 	const [promptInFlight, setPromptInFlight] = useAtom(promptInFlightAtom)
 	const [value, setValue] = useState("")
 	const [mentions, setMentions] = useState<MentionChip[]>([])
@@ -150,7 +161,19 @@ export function ChatInput({ disabled, sessionStatus }: ChatInputProps) {
 				) : null}
 
 				<form onSubmit={(e) => void handleSubmit(e)}>
-					<InputGroup>
+					{showFolderPicker ? (
+						<div
+							data-slot="thread-folder-tab"
+							className="absolute bottom-full left-0 z-10 -mb-px flex items-center rounded-t-lg border border-[var(--chat-input-border)] border-b-0 bg-[var(--chat-input)] px-2.5 py-1.5 shadow-[0_-4px_12px_rgba(0,0,0,0.35)]"
+						>
+							<ThreadFolderPicker
+								projectPath={projectPath}
+								onOpenProject={onOpenProject}
+								onClose={() => setThreadFolderPickerSessionId(null)}
+							/>
+						</div>
+					) : null}
+					<InputGroup className={cn(showFolderPicker && "rounded-tl-none")}>
 						{mentions.length > 0 ? (
 							<div className="flex flex-wrap gap-1.5 px-3 pt-2">
 								{mentions.map((mention) => (

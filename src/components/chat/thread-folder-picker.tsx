@@ -44,7 +44,10 @@ export function ThreadFolderPicker({
 	function updateMenuPosition() {
 		const rect = triggerRef.current?.getBoundingClientRect()
 		if (!rect) return
-		setMenuPosition({ top: rect.bottom + 6, left: rect.left })
+		setMenuPosition({
+			top: rect.top - 6,
+			left: rect.left,
+		})
 	}
 
 	function closeMenu() {
@@ -120,8 +123,8 @@ export function ThreadFolderPicker({
 					setOpenMenu(true)
 				}}
 				className={cn(
-					"inline-flex items-center gap-1.5 rounded-lg border border-[#414141] bg-[#1a1a1a] px-2.5 py-1.5 text-xs text-foreground/90 shadow-sm transition-colors hover:bg-[#222222] disabled:opacity-60",
-					openMenu && "bg-[#222222]",
+					"inline-flex items-center gap-1.5 px-0.5 py-0 text-xs text-foreground/90 transition-colors hover:text-foreground disabled:opacity-60",
+					openMenu && "text-foreground",
 				)}
 			>
 				<FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
@@ -134,7 +137,7 @@ export function ThreadFolderPicker({
 						<div
 							ref={menuRef}
 							{...noDragProps}
-							className="fixed z-[200] w-56 overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
+							className="fixed z-[200] w-56 -translate-y-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
 							style={{ top: menuPosition.top, left: menuPosition.left }}
 						>
 							<div className="p-1">

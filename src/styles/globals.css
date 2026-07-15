@@ -117,6 +117,9 @@
 	background: var(--chat-input);
 	border-color: var(--chat-input-border);
 }
+[data-slot="thread-folder-tab"] {
+	box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.35);
+}
 
 .scrollbar-thin { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .loading-shimmer { color: var(--muted-foreground); animation: pulse 1.5s ease-in-out infinite; }
