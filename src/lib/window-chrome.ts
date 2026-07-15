@@ -6,13 +6,13 @@ export const APP_BAR_CONTENT_HEIGHT = 28
 export const APP_BAR_HEIGHT = 40
 
 /** Top offset for sidebar toggle and plus button (from app bar row start). */
-export const APP_BAR_CONTROL_PADDING_TOP = 8
+export const APP_BAR_CONTROL_PADDING_TOP = 9
 
 /** Top offset for the floating session title (from app bar row start). */
 export const APP_BAR_TITLE_PADDING_TOP = 15
 
 /** Top offset for native traffic lights (from app bar row start). */
-export const TRAFFIC_LIGHT_PADDING_TOP = 16
+export const TRAFFIC_LIGHT_PADDING_TOP = 17
 
 /** Extra inset for the floating session title from the left chrome cluster. */
 export const APP_BAR_TITLE_INSET_LEFT = 4
