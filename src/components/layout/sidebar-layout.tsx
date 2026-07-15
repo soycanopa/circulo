@@ -161,7 +161,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 							animate={{ width: SHELL_INSET, opacity: 1 }}
 							exit={{ width: 0, opacity: 0 }}
 							transition={layoutSpring}
-							className="shrink-0 overflow-hidden"
+							className="relative z-[55] shrink-0 self-stretch overflow-visible"
 						>
 							<SidebarResizeHandle width={sidebarWidth} onWidthChange={setSidebarWidth} />
 						</motion.div>

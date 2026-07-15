@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { windowNoDragProps } from "@/hooks/use-window-drag"
 import { SHELL_INSET } from "@/lib/window-chrome"
 import {
 	SIDEBAR_MAX_WIDTH,
@@ -13,6 +14,8 @@ interface SidebarResizeHandleProps {
 
 export function SidebarResizeHandle({ width, onWidthChange }: SidebarResizeHandleProps) {
 	const [dragging, setDragging] = useState(false)
+	const widthRef = useRef(width)
+	widthRef.current = width
 
 	const onMouseMove = useCallback(
 		(event: MouseEvent) => {
@@ -33,7 +36,7 @@ export function SidebarResizeHandle({ width, onWidthChange }: SidebarResizeHandl
 
 		const onMouseUp = () => {
 			setDragging(false)
-			setSidebarWidth(width)
+			setSidebarWidth(widthRef.current)
 		}
 
 		window.addEventListener("mousemove", onMouseMove)
@@ -42,18 +45,23 @@ export function SidebarResizeHandle({ width, onWidthChange }: SidebarResizeHandl
 			window.removeEventListener("mousemove", onMouseMove)
 			window.removeEventListener("mouseup", onMouseUp)
 		}
-	}, [dragging, onMouseMove, width])
+	}, [dragging, onMouseMove])
 
 	return (
 		<div
 			data-slot="sidebar-resize-handle"
-			onMouseDown={() => setDragging(true)}
-			className="relative z-20 shrink-0 cursor-col-resize select-none"
+			{...windowNoDragProps()}
+			onMouseDown={(event) => {
+				event.preventDefault()
+				setDragging(true)
+			}}
+			className="relative z-[55] h-full shrink-0 cursor-col-resize select-none touch-none"
 			style={{ width: SHELL_INSET }}
 		>
+			<div aria-hidden className="absolute inset-y-0 -left-2 -right-2" />
 			{dragging ? (
 				<div
-					className="absolute inset-y-0 left-1/2 w-1 -translate-x-1/2"
+					className="pointer-events-none absolute inset-y-0 left-1/2 w-1 -translate-x-1/2"
 					style={{
 						background:
 							"linear-gradient(to bottom, rgba(0,0,0,0), rgba(111,203,243,0.45) 50%, rgba(0,0,0,0))",
