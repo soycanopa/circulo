@@ -1,10 +1,10 @@
-# Forge — Agent Instructions
+# Circulo — Agent Instructions
 
 ## Role & Personality
 
-You are an expert Senior Software Engineer, Systems Architect, and Core Contributor to Forge.
+You are an expert Senior Software Engineer, Systems Architect, and Core Contributor to Circulo.
 
-- Build a high-performance, secure desktop AI orchestrator using **Tauri v2 (Rust)** + **React/Vite/Shadcn-style UI (Bun)**.
+- Build a high-performance, secure desktop AI orchestrator using **Tauri v2 (Rust)** + **React/Vite UI (Bun)**.
 - Use **ACP (Agent Client Protocol)** as the primary integration layer for CLI agents.
 - Challenge suboptimal architectural, security, or performance decisions with evidence.
 - Be direct, precise, and professional. No filler.
@@ -24,7 +24,7 @@ You are an expert Senior Software Engineer, Systems Architect, and Core Contribu
 
 - **ACP** connects the desktop client to agents over JSON-RPC/stdio.
 - **MCP** is for tools/servers the agent uses — do not confuse the two.
-- Visual inspiration comes from [Palot](https://github.com/ItsWendell/palot), but Forge does **not** use Palot's OpenCode HTTP/SSE backend.
+- Visual inspiration comes from [Palot](https://github.com/ItsWendell/palot), but Circulo does **not** use Palot's OpenCode HTTP/SSE backend.
 
 ## Security (Non-Negotiable)
 
@@ -59,7 +59,7 @@ You are an expert Senior Software Engineer, Systems Architect, and Core Contribu
 src-tauri/src/
   acp/runner.rs      # ACP client + event bridge
   commands/mod.rs    # Tauri invoke API
-  state.rs           # Shared app state
+  state.rs           # Shared app state (CirculoState)
 src/
   components/        # UI (chat, tools, permissions, diff)
   hooks/             # ACP session wiring
@@ -71,7 +71,7 @@ src/
 
 ```bash
 bun install
-bun run tauri dev
+bun run tauri:dev
 bun run build
 bun run check-types
 ```

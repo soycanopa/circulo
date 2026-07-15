@@ -1,7 +1,7 @@
 export const GENERAL_CHAT_PROJECT = "/Users/soycanopa"
 
-const SIDEBAR_WIDTH_KEY = "forge-sidebar-width"
-const LAST_MODEL_KEY = "forge-last-model"
+const SIDEBAR_WIDTH_KEY = "circulo-sidebar-width"
+const LAST_MODEL_KEY = "circulo-last-model"
 
 export const SIDEBAR_MIN_WIDTH = 200
 export const SIDEBAR_MAX_WIDTH = 500

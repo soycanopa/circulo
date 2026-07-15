@@ -1,4 +1,4 @@
-const PROJECT_ALIASES_KEY = "forge-project-aliases"
+const PROJECT_ALIASES_KEY = "circulo-project-aliases"
 
 type ProjectAliasMap = Record<string, string>
 

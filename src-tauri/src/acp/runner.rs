@@ -70,7 +70,7 @@ pub async fn start_agent_connection(
 
     agent_client_protocol::Client
         .builder()
-        .name("forge")
+        .name("circulo")
         .on_receive_notification(
             async move |notification: SessionNotification, _cx| {
                 let payload = serde_json::to_value(&notification).unwrap_or(Value::Null);
@@ -224,7 +224,7 @@ pub async fn start_agent_connection(
                         .unwrap_or_default()
                 };
 
-                let forge_sessions = if session_store.sessions.is_empty() {
+                let app_sessions = if session_store.sessions.is_empty() {
                     Vec::new()
                 } else if agent_capabilities.list_sessions {
                     let filtered = session_store.filter_agent_sessions(listed_sessions);
@@ -240,17 +240,17 @@ pub async fn start_agent_connection(
                 {
                     let mut guard = state.lock().await;
                     if let Some(project) = guard.project.as_mut() {
-                        project.sessions = forge_sessions.clone();
+                        project.sessions = app_sessions.clone();
                     }
                 }
 
                 let target_session_id =
-                    session_store.preferred_active_id(&forge_sessions);
+                    session_store.preferred_active_id(&app_sessions);
 
                 let bootstrap = async {
-                    if let Some(id) = target_session_id.clone().filter(|_| !forge_sessions.is_empty())
+                    if let Some(id) = target_session_id.clone().filter(|_| !app_sessions.is_empty())
                     {
-                        let session_entry = forge_sessions
+                        let session_entry = app_sessions
                             .iter()
                             .find(|entry| entry.session_id == id)
                             .cloned()
@@ -499,7 +499,7 @@ pub async fn start_agent_connection(
                             }
                         }
                         AgentCommand::LoadSession { id } => {
-                            let (supports_load, is_forge_session) = {
+                            let (supports_load, is_circulo_session) = {
                                 let guard = state.lock().await;
                                 let project = match guard.project.as_ref() {
                                     Some(p) => p,
@@ -521,11 +521,11 @@ pub async fn start_agent_connection(
                                 continue;
                             }
 
-                            if !is_forge_session {
+                            if !is_circulo_session {
                                 let _ = app.emit(
                                     "acp:error",
                                     serde_json::json!({
-                                        "message": "Session was not started from Forge"
+                                        "message": "Session was not started from Circulo"
                                     }),
                                 );
                                 continue;

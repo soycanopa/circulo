@@ -514,6 +514,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "circulo"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "walkdir",
+ "window-vibrancy 0.7.1",
+]
+
+[[package]]
 name = "combine"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1073,25 +1092,6 @@ name = "foreign-types-shared"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
-
-[[package]]
-name = "forge"
-version = "0.1.0"
-dependencies = [
- "agent-client-protocol",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "walkdir",
- "window-vibrancy 0.7.1",
-]
 
 [[package]]
 name = "form_urlencoded"

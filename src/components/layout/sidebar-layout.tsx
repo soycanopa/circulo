@@ -9,14 +9,14 @@ import {
 	type ReactNode,
 } from "react"
 import type { LucideIcon } from "lucide-react"
-import { AnimatePresence, motion } from "motion/react"
+
 import { AppBar } from "@/components/layout/app-bar"
 import { SidebarResizeHandle } from "@/components/layout/sidebar-resize-handle"
 import { WindowControls } from "@/components/layout/window-controls"
 import { WindowDragStrip } from "@/components/layout/window-drag-strip"
 import { windowDragRegionProps, windowNoDragProps } from "@/hooks/use-window-drag"
 import { useSessions } from "@/hooks/use-sessions"
-import { layoutSpring } from "@/lib/motion-presets"
+
 import { getSidebarWidth } from "@/lib/preferences"
 import {
 	APP_BAR_HEIGHT,
@@ -97,6 +97,7 @@ function LayoutWindowControls({
 export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps) {
 	const [open, setOpen] = useState(true)
 	const [sidebarWidth, setSidebarWidth] = useState(getSidebarWidth)
+	const [isResizing, setIsResizing] = useState(false)
 
 	const toggleSidebar = useCallback(() => {
 		setOpen((value) => !value)
@@ -135,38 +136,37 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 			>
 				<NarrowWindowCollapser open={open} setOpen={setOpen} />
 
-				<motion.aside
+				<aside
 					data-slot="sidebar"
 					data-state={open ? "expanded" : "collapsed"}
-					initial={false}
-					animate={{
-						width: open ? sidebarWidth : 0,
-						opacity: open ? 1 : 0,
-					}}
-					transition={layoutSpring}
+					data-resizing={isResizing ? "" : undefined}
 					className="relative flex h-full shrink-0 flex-col overflow-hidden rounded-xl"
-					style={{ pointerEvents: open ? "auto" : "none" }}
+					style={{
+						width: open ? sidebarWidth : 0,
+						pointerEvents: open ? "auto" : "none",
+					}}
 				>
-					<div className="flex h-full flex-col" style={{ width: sidebarWidth }}>
+					<div
+						className="flex h-full min-w-0 flex-col"
+						style={{ width: sidebarWidth }}
+					>
 						<SidebarChromeHeader />
 						{sidebar}
 					</div>
-				</motion.aside>
+				</aside>
 
-				<AnimatePresence initial={false}>
-					{open ? (
-						<motion.div
-							key="sidebar-resize"
-							initial={{ width: 0, opacity: 0 }}
-							animate={{ width: SHELL_INSET, opacity: 1 }}
-							exit={{ width: 0, opacity: 0 }}
-							transition={layoutSpring}
-							className="relative z-[55] shrink-0 self-stretch overflow-visible"
-						>
-							<SidebarResizeHandle width={sidebarWidth} onWidthChange={setSidebarWidth} />
-						</motion.div>
-					) : null}
-				</AnimatePresence>
+				{open ? (
+					<div
+						className="relative z-[55] shrink-0 self-stretch overflow-visible"
+						style={{ width: SHELL_INSET }}
+					>
+						<SidebarResizeHandle
+							width={sidebarWidth}
+							onWidthChange={setSidebarWidth}
+							onResizingChange={setIsResizing}
+						/>
+					</div>
+				) : null}
 
 				<main
 					data-slot="sidebar-inset"
@@ -180,13 +180,12 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 
 				<WindowDragStrip />
 				{appBar ? (
-					<motion.div
+					<div
 						data-slot="session-title-layer"
+						data-resizing={isResizing ? "" : undefined}
 						className="pointer-events-none absolute z-[52] box-border flex items-start overflow-visible"
-						initial={false}
-						animate={{ left: titleLeft }}
-						transition={layoutSpring}
 						style={{
+							left: titleLeft,
 							top: 0,
 							height: APP_BAR_HEIGHT,
 							right: SHELL_INSET + 12,
@@ -199,7 +198,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 						>
 							{appBar}
 						</div>
-					</motion.div>
+					</div>
 				) : null}
 				<LayoutWindowControls open={open} onToggleSidebar={toggleSidebar} />
 			</div>
@@ -220,7 +219,10 @@ function SidebarChromeHeader() {
 
 export function Sidebar({ className, children }: { className?: string; children: ReactNode }) {
 	return (
-		<div data-slot="sidebar-inner" className={cn("flex min-h-0 flex-1 flex-col", className)}>
+		<div
+			data-slot="sidebar-inner"
+			className={cn("flex min-h-0 w-full min-w-0 flex-1 flex-col", className)}
+		>
 			{children}
 		</div>
 	)
@@ -239,7 +241,11 @@ export function SidebarContent({ children }: { children: ReactNode }) {
 }
 
 export function SidebarFooter({ children }: { children: ReactNode }) {
-	return <div className="shrink-0 space-y-1 p-2">{children}</div>
+	return (
+		<div data-slot="sidebar-footer" className="w-full shrink-0 space-y-1 p-2">
+			{children}
+		</div>
+	)
 }
 
 export function SidebarGroup({
@@ -264,8 +270,14 @@ export function SidebarGroup({
 	)
 }
 
-export function SidebarMenu({ children }: { children: ReactNode }) {
-	return <ul className="flex flex-col gap-0.5">{children}</ul>
+export function SidebarMenu({
+	children,
+	className,
+}: {
+	children: ReactNode
+	className?: string
+}) {
+	return <ul className={cn("flex flex-col gap-0.5", className)}>{children}</ul>
 }
 
 export function SidebarMenuItem({ children }: { children: ReactNode }) {
@@ -299,9 +311,7 @@ export function SidebarMenuButton({
 			className={cn(
 				"flex w-full items-center gap-2 rounded-md px-2 text-left text-sidebar-foreground transition-colors",
 				size === "default" ? "h-8 text-[13px]" : "h-7 text-xs",
-				isActive
-					? "bg-sidebar-accent text-sidebar-accent-foreground"
-					: "hover:bg-sidebar-accent/60",
+				isActive && "text-sidebar-accent-foreground",
 				className,
 			)}
 		>

@@ -494,13 +494,16 @@ export function AppSidebar({
 			</SidebarContent>
 
 			<SidebarFooter>
-				<div className="flex items-center justify-between gap-1">
+				<div className="flex w-full min-w-0 items-center justify-between gap-1">
 					<ConnectionStatus connected={connected} />
-					<SidebarMenu>
+					<SidebarMenu className="min-w-0 shrink">
 						<SidebarMenuItem>
-							<SidebarMenuButton className="text-muted-foreground" disabled={loading}>
-								<Settings className="size-4" />
-								<span>Settings</span>
+							<SidebarMenuButton
+								className="ml-auto w-auto min-w-0 text-muted-foreground"
+								disabled={loading}
+							>
+								<Settings className="size-4 shrink-0" />
+								<span className="truncate">Settings</span>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
 					</SidebarMenu>

@@ -6,7 +6,7 @@ mod state;
 
 use std::sync::Arc;
 
-use state::{ForgeState, SharedState};
+use state::{CirculoState, SharedState};
 use tauri::Manager;
 use tracing_subscriber::EnvFilter;
 
@@ -16,7 +16,7 @@ pub fn run() {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let shared_state: SharedState = Arc::new(tokio::sync::Mutex::new(ForgeState::new()));
+    let shared_state: SharedState = Arc::new(tokio::sync::Mutex::new(CirculoState::new()));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

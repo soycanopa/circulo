@@ -10,7 +10,7 @@ export function usePinnedSessions() {
 
 	useEffect(() => {
 		const onStorage = (event: StorageEvent) => {
-			if (event.key === "forge-pinned-sessions") {
+			if (event.key === "circulo-pinned-sessions") {
 				setPinnedIds(getPinnedSessionIds())
 			}
 		}

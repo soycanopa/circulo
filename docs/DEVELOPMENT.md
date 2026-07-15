@@ -3,7 +3,7 @@
 ## Setup inicial
 
 ```bash
-cd ~/Desktop/forge
+cd ~/Desktop/circulo
 bun install
 source ~/.cargo/env   # si Rust no está en PATH
 ```
@@ -96,7 +96,7 @@ El artefacto queda en `src-tauri/target/release/bundle/`.
 Paper Desktop expone un servidor MCP local al abrir un archivo.
 
 1. Instalar [Paper Desktop](https://paper.design/downloads)
-2. Abrir el mock de Forge en Paper
+2. Abrir el mock de Circulo en Paper
 3. Conectar el MCP en tu herramienta de agente
 
 ### Grok CLI
@@ -122,7 +122,7 @@ En `~/.gemini/antigravity/mcp_config.json`:
 
 Docs: https://paper.design/docs/mcp
 
-**Nota:** Paper/Figma/Craft están deshabilitados dentro de Forge. El agente OpenCode que lanza Forge usa `OPENCODE_CONFIG_CONTENT` para bloquear MCPs de diseño; úsalos solo en Grok/Cursor/Antigravity, no en el chat de Forge.
+**Nota:** Paper/Figma/Craft están deshabilitados dentro de Circulo. El agente OpenCode que lanza Circulo usa `OPENCODE_CONFIG_CONTENT` para bloquear MCPs de diseño; úsalos solo en Grok/Cursor/Antigravity, no en el chat de Circulo.
 
 ## Multi-sesión ACP
 

@@ -1,13 +1,13 @@
-# Arquitectura de Forge
+# Arquitectura de Circulo
 
 ## Visión general
 
-Forge actúa como **cliente ACP**. La UI de React nunca habla directamente con OpenCode: todo pasa por el core Rust de Tauri.
+Circulo actúa como **cliente ACP**. La UI de React nunca habla directamente con OpenCode: todo pasa por el core Rust de Tauri.
 
 ```mermaid
 flowchart LR
   UI[React_UI] -->|invoke| CMD[Tauri_Commands]
-  CMD --> STATE[ForgeState]
+  CMD --> STATE[CirculoState]
   STATE --> ACP[ACP_Client]
   ACP -->|stdio_JSON-RPC| OC[opencode_acp]
   ACP -->|emit_events| UI

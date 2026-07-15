@@ -1,4 +1,4 @@
-const FAVORITE_MODELS_KEY = "forge-favorite-models"
+const FAVORITE_MODELS_KEY = "circulo-favorite-models"
 
 export function getFavoriteModels(): string[] {
 	try {

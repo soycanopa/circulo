@@ -1,6 +1,6 @@
 import { GENERAL_CHAT_PROJECT } from "@/lib/preferences"
 
-const RECENT_PROJECTS_KEY = "forge-recent-projects"
+const RECENT_PROJECTS_KEY = "circulo-recent-projects"
 const MAX_STORED_RECENT_PROJECTS = 20
 
 export const MAX_RECENT_PROJECTS_DISPLAY = 5

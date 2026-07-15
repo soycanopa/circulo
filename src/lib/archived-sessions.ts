@@ -1,4 +1,4 @@
-const ARCHIVED_SESSIONS_KEY = "forge-archived-sessions"
+const ARCHIVED_SESSIONS_KEY = "circulo-archived-sessions"
 
 export function getArchivedSessionIds(): string[] {
 	try {

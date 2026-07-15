@@ -1,15 +1,15 @@
-# ACP en Forge
+# ACP en Circulo
 
-Forge implementa el rol de **Client** en el [Agent Client Protocol](https://agentclientprotocol.com/).
+Circulo implementa el rol de **Client** en el [Agent Client Protocol](https://agentclientprotocol.com/).
 
 ## ¿Por qué ACP y no HTTP/SSE?
 
 | Enfoque | Usado por | Pros | Contras |
 |---------|-----------|------|---------|
 | HTTP + SSE | Palot + `@opencode-ai/sdk` | SDK maduro, muchas APIs | Acoplado a OpenCode |
-| ACP + stdio | Zed, JetBrains, Forge | Multi-agente estándar | Cliente más complejo |
+| ACP + stdio | Zed, JetBrains, Circulo | Multi-agente estándar | Cliente más complejo |
 
-Forge elige ACP para soportar cualquier CLI compatible: OpenCode, Cline, Grok CLI, Gemini CLI, etc.
+Circulo elige ACP para soportar cualquier CLI compatible: OpenCode, Cline, Grok CLI, Gemini CLI, etc.
 
 ## OpenCode
 
@@ -19,7 +19,7 @@ opencode acp
 
 Documentación: https://opencode.ai/docs/acp/
 
-Forge ejecuta este comando como subproceso al abrir un proyecto. El `cwd` del proceso es la carpeta del proyecto.
+Circulo ejecuta este comando como subproceso al abrir un proyecto. El `cwd` del proceso es la carpeta del proyecto.
 
 ## Flujo de un turno
 
@@ -42,7 +42,7 @@ El usuario debe responder antes de que el agente continúe. Esto es intencional.
 
 ## Modelos
 
-OpenCode expone modelos en `configOptions` al crear la sesión. Forge renderiza un `<select>` y llama:
+OpenCode expone modelos en `configOptions` al crear la sesión. Circulo renderiza un `<select>` y llama:
 
 ```
 session/set_config_option { configId, value }
@@ -50,7 +50,7 @@ session/set_config_option { configId, value }
 
 ## Tool calls relevantes
 
-| `kind` ACP | UI Forge |
+| `kind` ACP | UI Circulo |
 |------------|----------|
 | `read` | Preview de archivo |
 | `search` | Resultados grep/glob |

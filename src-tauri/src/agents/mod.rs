@@ -4,7 +4,7 @@ use agent_client_protocol::AcpAgent;
 
 pub const DEFAULT_AGENT_COMMAND: &str = "opencode acp";
 
-/// Design-oriented MCP servers that should not be available when Forge runs OpenCode.
+/// Design-oriented MCP servers that should not be available when Circulo runs OpenCode.
 /// Paper/Figma/Craft are for the IDE design workflow (Grok/Cursor), not coding tasks.
 const FORGE_OPENCODE_CONFIG_CONTENT: &str = r#"{"$schema":"https://opencode.ai/config.json","tools":{"paper_*":false,"figma_*":false,"Framelink_Figma_MCP_*":false,"craft-business_*":false,"craft-personal_*":false},"mcp":{"paper":{"enabled":false},"figma":{"enabled":false},"Framelink_Figma_MCP":{"enabled":false},"craft-business":{"enabled":false},"craft-personal":{"enabled":false}}}"#;
 

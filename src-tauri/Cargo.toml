@@ -1,12 +1,12 @@
 [package]
-name = "forge"
+name = "circulo"
 version = "0.1.0"
-description = "Desktop AI orchestrator via Agent Client Protocol"
+description = "Circulo — desktop AI orchestrator via Agent Client Protocol"
 authors = ["soycanopa"]
 edition = "2021"
 
 [lib]
-name = "forge_lib"
+name = "circulo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

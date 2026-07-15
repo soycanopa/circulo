@@ -10,9 +10,14 @@ import {
 interface SidebarResizeHandleProps {
 	width: number
 	onWidthChange: (width: number) => void
+	onResizingChange?: (resizing: boolean) => void
 }
 
-export function SidebarResizeHandle({ width, onWidthChange }: SidebarResizeHandleProps) {
+export function SidebarResizeHandle({
+	width,
+	onWidthChange,
+	onResizingChange,
+}: SidebarResizeHandleProps) {
 	const [dragging, setDragging] = useState(false)
 	const widthRef = useRef(width)
 	widthRef.current = width
@@ -36,6 +41,7 @@ export function SidebarResizeHandle({ width, onWidthChange }: SidebarResizeHandl
 
 		const onMouseUp = () => {
 			setDragging(false)
+			onResizingChange?.(false)
 			setSidebarWidth(widthRef.current)
 		}
 
@@ -45,7 +51,7 @@ export function SidebarResizeHandle({ width, onWidthChange }: SidebarResizeHandl
 			window.removeEventListener("mousemove", onMouseMove)
 			window.removeEventListener("mouseup", onMouseUp)
 		}
-	}, [dragging, onMouseMove])
+	}, [dragging, onMouseMove, onResizingChange])
 
 	return (
 		<div
@@ -53,6 +59,7 @@ export function SidebarResizeHandle({ width, onWidthChange }: SidebarResizeHandl
 			{...windowNoDragProps()}
 			onMouseDown={(event) => {
 				event.preventDefault()
+				onResizingChange?.(true)
 				setDragging(true)
 			}}
 			className="relative z-[55] h-full shrink-0 cursor-col-resize select-none touch-none"

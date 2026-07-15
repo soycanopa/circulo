@@ -15,7 +15,7 @@ function findModelOption(options: ConfigOption[]) {
 	)
 }
 
-/** Apply Forge defaults after a session becomes ready. */
+/** Apply Circulo defaults after a session becomes ready. */
 export async function applySessionDefaults(configOptions: ConfigOption[]): Promise<void> {
 	const modeOption = findModeOption(configOptions)
 	if (modeOption?.options.some((entry) => entry.value === "plan")) {

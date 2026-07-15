@@ -1,4 +1,4 @@
-const PINNED_KEY = "forge-pinned-sessions"
+const PINNED_KEY = "circulo-pinned-sessions"
 
 export function getPinnedSessionIds(): string[] {
 	try {

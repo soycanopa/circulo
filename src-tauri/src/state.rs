@@ -141,12 +141,12 @@ impl ActiveProject {
     }
 }
 
-pub struct ForgeState {
+pub struct CirculoState {
     pub project: Option<ActiveProject>,
     pub permission_waiters: HashMap<String, oneshot::Sender<String>>,
 }
 
-impl ForgeState {
+impl CirculoState {
     pub fn new() -> Self {
         Self {
             project: None,
@@ -178,4 +178,4 @@ impl ForgeState {
     }
 }
 
-pub type SharedState = Arc<Mutex<ForgeState>>;
+pub type SharedState = Arc<Mutex<CirculoState>>;

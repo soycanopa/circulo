@@ -11,7 +11,7 @@ export function useArchivedSessions() {
 
 	useEffect(() => {
 		const onStorage = (event: StorageEvent) => {
-			if (event.key === "forge-archived-sessions") {
+			if (event.key === "circulo-archived-sessions") {
 				setArchivedIds(getArchivedSessionIds())
 			}
 		}
