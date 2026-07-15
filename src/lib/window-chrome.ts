@@ -1,14 +1,11 @@
 export const SHELL_INSET = 8
 
-/** Top inset for chrome content (traffic lights, title, sidebar controls). */
-export const APP_BAR_PADDING_TOP = 4
+/** Symmetric vertical padding inside the app bar chrome row. */
+export const APP_BAR_PADDING_Y = 6
 
 export const APP_BAR_CONTENT_HEIGHT = 28
 
-export const APP_BAR_PADDING_BOTTOM = 8
-
-export const APP_BAR_HEIGHT =
-	APP_BAR_PADDING_TOP + APP_BAR_CONTENT_HEIGHT + APP_BAR_PADDING_BOTTOM
+export const APP_BAR_HEIGHT = APP_BAR_PADDING_Y * 2 + APP_BAR_CONTENT_HEIGHT
 
 /** Extra inset for the floating session title from the left chrome cluster. */
 export const APP_BAR_TITLE_INSET_LEFT = 4
@@ -27,13 +24,14 @@ export const isTauri =
 export const WINDOW_CONTROL_SIZE = 28
 export const WINDOW_CONTROL_GAP = 2
 
-/** Vertical offset from window top to control button top — aligned with traffic lights. */
-export const WINDOW_CONTROL_TOP = SHELL_INSET + APP_BAR_PADDING_TOP
+/** Vertical offset from window top to control button top — centered in app bar row. */
+export const WINDOW_CONTROL_TOP = SHELL_INSET + (APP_BAR_HEIGHT - WINDOW_CONTROL_SIZE) / 2
 
 /** Native macOS traffic-light origin — synced with tauri.conf.json. */
+const TRAFFIC_LIGHT_CLUSTER_HALF = 6
 export const TRAFFIC_LIGHT_POSITION = {
 	x: 15,
-	y: SHELL_INSET + APP_BAR_PADDING_TOP,
+	y: Math.round(WINDOW_CONTROL_TOP + WINDOW_CONTROL_SIZE / 2 - TRAFFIC_LIGHT_CLUSTER_HALF),
 }
 
 /** Offset from the window edge where the sidebar toggle starts. */
