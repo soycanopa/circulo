@@ -16,6 +16,7 @@ import {
 	replayingHistoryAtom,
 	sessionsAtom,
 	streamingTextAtom,
+	threadFolderPickerSessionIdAtom,
 } from "@/stores/atoms"
 
 export function useSessions() {
@@ -27,6 +28,7 @@ export function useSessions() {
 	const setConfigOptions = useSetAtom(configOptionsAtom)
 	const setProjectPath = useSetAtom(projectPathAtom)
 	const setReplayingHistory = useSetAtom(replayingHistoryAtom)
+	const setThreadFolderPickerSessionId = useSetAtom(threadFolderPickerSessionIdAtom)
 
 	const syncStatus = useCallback(
 		(status: Awaited<ReturnType<typeof createSession>>) => {
@@ -51,20 +53,32 @@ export function useSessions() {
 	const selectSession = useCallback(
 		async (id: string) => {
 			if (id === activeSessionId) return
+			setThreadFolderPickerSessionId(null)
 			setReplayingHistory(true)
 			setMessages([])
 			setStreamingText("")
 			const status = await loadSession(id)
 			syncStatus(status)
 		},
-		[activeSessionId, setMessages, setStreamingText, setReplayingHistory, syncStatus],
+		[
+			activeSessionId,
+			setMessages,
+			setStreamingText,
+			setReplayingHistory,
+			setThreadFolderPickerSessionId,
+			syncStatus,
+		],
 	)
 
 	const newThread = useCallback(async () => {
 		resetChatState()
 		const status = await createSession()
 		syncStatus(status)
-	}, [resetChatState, syncStatus])
+		const sessionId = status.activeSessionId ?? status.sessionId
+		if (sessionId) {
+			setThreadFolderPickerSessionId(sessionId)
+		}
+	}, [resetChatState, setThreadFolderPickerSessionId, syncStatus])
 
 	const newChat = useCallback(async () => {
 		resetChatState()

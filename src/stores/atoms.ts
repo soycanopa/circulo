@@ -20,3 +20,6 @@ export const errorMessageAtom = atom<string | null>(null)
 export const sessionsAtom = atom<SessionInfo[]>([])
 export const activeSessionIdAtom = atom<string | null>(null)
 export const agentCapabilitiesAtom = atom<AgentCapabilities | null>(null)
+
+/** Session id that should show the thread folder picker (set on new thread). */
+export const threadFolderPickerSessionIdAtom = atom<string | null>(null)

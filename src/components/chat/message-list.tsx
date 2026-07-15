@@ -7,9 +7,10 @@ interface MessageListProps {
 	messages: ChatMessage[]
 	streamingText: string
 	connected: boolean
+	empty?: boolean
 }
 
-export function MessageList({ messages, streamingText, connected }: MessageListProps) {
+export function MessageList({ messages, streamingText, connected, empty = true }: MessageListProps) {
 	const bottomRef = useRef<HTMLDivElement>(null)
 	const containerRef = useRef<HTMLDivElement>(null)
 	const shouldAutoScrollRef = useRef(true)
@@ -33,7 +34,7 @@ export function MessageList({ messages, streamingText, connected }: MessageListP
 
 	return (
 		<div ref={containerRef} className="scrollbar-thin flex-1 overflow-y-auto px-4 py-4">
-			{messages.length === 0 ? (
+			{messages.length === 0 && empty ? (
 				<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
 					{connected
 						? "Envía tu primer mensaje al agente."

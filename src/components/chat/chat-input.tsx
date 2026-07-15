@@ -19,6 +19,7 @@ import {
 	messagesAtom,
 	promptInFlightAtom,
 	sessionsAtom,
+	threadFolderPickerSessionIdAtom,
 } from "@/stores/atoms"
 import type { MentionChip, SessionStatus } from "@/types/acp"
 
@@ -41,6 +42,7 @@ export function ChatInput({ disabled, sessionStatus }: ChatInputProps) {
 	const setMessages = useSetAtom(messagesAtom)
 	const setSessions = useSetAtom(sessionsAtom)
 	const [activeSessionId] = useAtom(activeSessionIdAtom)
+	const setThreadFolderPickerSessionId = useSetAtom(threadFolderPickerSessionIdAtom)
 	const [promptInFlight, setPromptInFlight] = useAtom(promptInFlightAtom)
 	const [value, setValue] = useState("")
 	const [mentions, setMentions] = useState<MentionChip[]>([])
@@ -113,6 +115,7 @@ export function ChatInput({ disabled, sessionStatus }: ChatInputProps) {
 				}),
 			)
 		}
+		setThreadFolderPickerSessionId(null)
 		setPromptInFlightSync(true)
 		setPromptInFlight(true)
 		setValue("")

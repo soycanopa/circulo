@@ -4,6 +4,7 @@ import { SessionTitle } from "@/components/chat/session-title"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { SidebarLayout } from "@/components/layout/sidebar-layout"
 import { ChatView } from "@/components/chat/chat-view"
+import { addRecentProject } from "@/lib/recent-projects"
 import { GENERAL_CHAT_PROJECT } from "@/lib/preferences"
 import { closeProject, getProjectStatus, openProject } from "@/lib/tauri"
 import {
@@ -56,6 +57,7 @@ export function AppShell() {
 	async function handleOpenProject(path: string) {
 		setLoading(true)
 		try {
+			addRecentProject(path)
 			const status = await openProject(path)
 			setConnected(status.connected)
 			setProjectPath(status.projectPath)
@@ -95,7 +97,7 @@ export function AppShell() {
 				/>
 			}
 		>
-			<ChatView connected={connected} />
+			<ChatView connected={connected} onOpenProject={handleOpenProject} />
 		</SidebarLayout>
 	)
 }
