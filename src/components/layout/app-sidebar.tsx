@@ -11,9 +11,10 @@ import {
 	Pin,
 	Settings,
 	Timer,
+	Trash2,
 } from "lucide-react"
 import { useAtomValue } from "jotai"
-import { useMemo, useState } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import {
 	Sidebar,
 	SidebarContent,
@@ -27,7 +28,13 @@ import { ConnectionStatus } from "@/components/layout/connection-status"
 import { SessionActionsMenu } from "@/components/layout/session-actions-menu"
 import { useArchivedSessions } from "@/hooks/use-archived-sessions"
 import { usePinnedSessions } from "@/hooks/use-pinned-sessions"
+import { GENERAL_CHAT_PROJECT } from "@/lib/preferences"
 import { getProjectDisplayName, isGeneralChatProject } from "@/lib/project-display"
+import {
+	getRecentProjectLabel,
+	getRecentProjects,
+	removeRecentProject,
+} from "@/lib/recent-projects"
 import { sessionTitle } from "@/lib/sessions"
 import { cn } from "@/lib/utils"
 import { useSessions } from "@/hooks/use-sessions"
@@ -143,11 +150,58 @@ function SessionItem({
 	)
 }
 
+function ProjectFolderRow({
+	path,
+	isActive,
+	isExpanded,
+	onToggle,
+	onRemove,
+	children,
+}: {
+	path: string
+	isActive: boolean
+	isExpanded: boolean
+	onToggle: () => void
+	onRemove: () => void
+	children?: ReactNode
+}) {
+	const label = getRecentProjectLabel(path)
+
+	return (
+		<>
+			<SidebarMenuItem>
+				<div className="group/menu-item relative">
+					<SidebarMenuButton isActive={isActive} onClick={onToggle} className="pr-8">
+						<ChevronRight
+							className="size-3 text-muted-foreground transition-transform"
+							style={{ transform: isExpanded ? "rotate(90deg)" : undefined }}
+						/>
+						<span className="truncate font-medium">{label}</span>
+					</SidebarMenuButton>
+					<button
+						type="button"
+						title="Eliminar proyecto"
+						onClick={(event) => {
+							event.stopPropagation()
+							onRemove()
+						}}
+						className="absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-sidebar-foreground/50 opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-destructive group-hover/menu-item:opacity-100"
+					>
+						<Trash2 className="size-3.5" />
+					</button>
+				</div>
+			</SidebarMenuItem>
+			{isExpanded ? children : null}
+		</>
+	)
+}
+
 export function AppSidebar({
 	connected,
 	projectPath,
 	sessionStatus,
 	onOpenProject,
+	onCloseProject,
 	loading,
 }: AppSidebarProps) {
 	const { sessions, activeSessionId, newThread, newChat, selectSession, archiveSession, deleteSession } =
@@ -155,7 +209,9 @@ export function AppSidebar({
 	const { pinnedIds, togglePin, isPinned } = usePinnedSessions()
 	const { isArchived } = useArchivedSessions()
 	const promptInFlight = useAtomValue(promptInFlightAtom)
-	const [expanded, setExpanded] = useState(true)
+	const [expandedChats, setExpandedChats] = useState(true)
+	const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({})
+	const [recentProjectsVersion, setRecentProjectsVersion] = useState(0)
 	const [sessionPending, setSessionPending] = useState(false)
 
 	const visibleSessions = useMemo(
@@ -183,7 +239,38 @@ export function AppSidebar({
 	const projectName = getProjectDisplayName(projectPath)
 	const isGeneralChat = isGeneralChatProject(projectPath)
 	const showChatsFolder = isGeneralChat && visibleSessions.length > 0
-	const showProjectFolder = Boolean(projectPath) && !isGeneralChat
+	const savedProjects = useMemo(() => {
+		void recentProjectsVersion
+		const recent = getRecentProjects()
+		if (projectPath && !isGeneralChatProject(projectPath) && !recent.includes(projectPath)) {
+			return [projectPath, ...recent]
+		}
+		return recent
+	}, [projectPath, recentProjectsVersion])
+
+	function isProjectExpanded(path: string) {
+		if (path in expandedProjects) return expandedProjects[path]
+		return path === projectPath
+	}
+
+	function toggleProjectExpanded(path: string) {
+		setExpandedProjects((current) => ({
+			...current,
+			[path]: !isProjectExpanded(path),
+		}))
+	}
+
+	async function handleRemoveProject(path: string) {
+		const label = getRecentProjectLabel(path)
+		if (!window.confirm(`¿Eliminar "${label}" del sidebar?`)) return
+		removeRecentProject(path)
+		setRecentProjectsVersion((value) => value + 1)
+		if (projectPath !== path) return
+		await runSessionAction(async () => {
+			await onCloseProject()
+			await onOpenProject(GENERAL_CHAT_PROJECT)
+		})
+	}
 
 	async function runSessionAction(action: () => Promise<void>) {
 		setSessionPending(true)
@@ -198,6 +285,7 @@ export function AppSidebar({
 		const selected = await open({ directory: true, multiple: false, title: "Abrir proyecto" })
 		if (!selected || Array.isArray(selected)) return
 		await onOpenProject(selected)
+		setRecentProjectsVersion((value) => value + 1)
 	}
 
 	return (
@@ -268,48 +356,107 @@ export function AppSidebar({
 
 				<SidebarGroup label="Projects" icon={Folders}>
 					<SidebarMenu>
-						{showChatsFolder || showProjectFolder ? (
-							<SidebarMenuItem>
-								<SidebarMenuButton onClick={() => setExpanded((v) => !v)}>
-									<ChevronRight
-										className="size-3 text-muted-foreground transition-transform"
-										style={{ transform: expanded ? "rotate(90deg)" : undefined }}
-									/>
-									<span className="truncate font-medium">{projectName}</span>
-								</SidebarMenuButton>
-							</SidebarMenuItem>
+						{showChatsFolder ? (
+							<>
+								<SidebarMenuItem>
+									<SidebarMenuButton onClick={() => setExpandedChats((value) => !value)}>
+										<ChevronRight
+											className="size-3 text-muted-foreground transition-transform"
+											style={{ transform: expandedChats ? "rotate(90deg)" : undefined }}
+										/>
+										<span className="truncate font-medium">{projectName}</span>
+									</SidebarMenuButton>
+								</SidebarMenuItem>
+								{expandedChats ? (
+									<div className="ml-3 border-l border-sidebar-border/10 pl-1">
+										<SidebarMenu>
+											{visibleSessions.map((session, index) => (
+												<SessionItem
+													key={session.sessionId}
+													session={session}
+													sessionIndex={index}
+													isSelected={session.sessionId === activeSessionId}
+													status={sessionStatusFor(
+														session.sessionId,
+														activeSessionId,
+														sessionStatus,
+														promptInFlight,
+													)}
+													onSelect={() =>
+														void runSessionAction(() => selectSession(session.sessionId))
+													}
+													pinnable
+													isPinned={isPinned(session.sessionId)}
+													onTogglePin={() => togglePin(session.sessionId)}
+													onArchive={() => void handleArchive(session.sessionId)}
+													onDelete={() => void handleDelete(session.sessionId)}
+													compact
+												/>
+											))}
+										</SidebarMenu>
+									</div>
+								) : null}
+							</>
 						) : null}
-						{expanded && (showChatsFolder || showProjectFolder) ? (
-							<div className="ml-3 border-l border-sidebar-border/10 pl-1">
-								<SidebarMenu>
-									{visibleSessions.length === 0 ? (
-										<p className="px-2 py-1.5 text-xs text-muted-foreground/60">No threads yet</p>
-									) : (
-										visibleSessions.map((session, index) => (
-											<SessionItem
-												key={session.sessionId}
-												session={session}
-												sessionIndex={index}
-												isSelected={session.sessionId === activeSessionId}
-												status={sessionStatusFor(
-													session.sessionId,
-													activeSessionId,
-													sessionStatus,
-													promptInFlight,
-												)}
-												onSelect={() => void runSessionAction(() => selectSession(session.sessionId))}
-												pinnable
-												isPinned={isPinned(session.sessionId)}
-												onTogglePin={() => togglePin(session.sessionId)}
-												onArchive={() => void handleArchive(session.sessionId)}
-												onDelete={() => void handleDelete(session.sessionId)}
-												compact
-											/>
-										))
-									)}
-								</SidebarMenu>
-							</div>
-						) : null}
+						{savedProjects.map((path) => {
+							const isActive = path === projectPath
+							const isExpanded = isProjectExpanded(path)
+
+							return (
+								<ProjectFolderRow
+									key={path}
+									path={path}
+									isActive={isActive}
+									isExpanded={isExpanded}
+									onToggle={() => {
+										if (!isActive) {
+											void runSessionAction(async () => {
+												await onOpenProject(path)
+												setExpandedProjects((current) => ({ ...current, [path]: true }))
+											})
+											return
+										}
+										toggleProjectExpanded(path)
+									}}
+									onRemove={() => void handleRemoveProject(path)}
+								>
+									<div className="ml-3 border-l border-sidebar-border/10 pl-1">
+										<SidebarMenu>
+											{isActive && visibleSessions.length === 0 ? (
+												<p className="px-2 py-1.5 text-xs text-muted-foreground/60">
+													No threads yet
+												</p>
+											) : null}
+											{isActive
+												? visibleSessions.map((session, index) => (
+														<SessionItem
+															key={session.sessionId}
+															session={session}
+															sessionIndex={index}
+															isSelected={session.sessionId === activeSessionId}
+															status={sessionStatusFor(
+																session.sessionId,
+																activeSessionId,
+																sessionStatus,
+																promptInFlight,
+															)}
+															onSelect={() =>
+																void runSessionAction(() => selectSession(session.sessionId))
+															}
+															pinnable
+															isPinned={isPinned(session.sessionId)}
+															onTogglePin={() => togglePin(session.sessionId)}
+															onArchive={() => void handleArchive(session.sessionId)}
+															onDelete={() => void handleDelete(session.sessionId)}
+															compact
+														/>
+													))
+												: null}
+										</SidebarMenu>
+									</div>
+								</ProjectFolderRow>
+							)
+						})}
 					</SidebarMenu>
 				</SidebarGroup>
 			</SidebarContent>

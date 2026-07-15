@@ -26,6 +26,12 @@ export function addRecentProject(path: string): void {
 	localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(next))
 }
 
+export function removeRecentProject(path: string): void {
+	if (!path) return
+	const next = getRecentProjects().filter((entry) => entry !== path)
+	localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(next))
+}
+
 export function getRecentProjectLabel(path: string): string {
 	return path.split("/").pop() ?? path
 }
