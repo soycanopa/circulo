@@ -4,6 +4,7 @@ import { SessionTitle } from "@/components/chat/session-title"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { SidebarLayout } from "@/components/layout/sidebar-layout"
 import { ChatView } from "@/components/chat/chat-view"
+import { GENERAL_CHAT_PROJECT } from "@/lib/preferences"
 import { closeProject, getProjectStatus, openProject } from "@/lib/tauri"
 import {
 	activeSessionIdAtom,
@@ -27,15 +28,29 @@ export function AppShell() {
 	}, [sessionStatus])
 
 	useEffect(() => {
-		getProjectStatus()
-			.then((status) => {
+		let cancelled = false
+
+		async function bootstrap() {
+			try {
+				let status = await getProjectStatus()
+				if (!status.connected) {
+					status = await openProject(GENERAL_CHAT_PROJECT)
+				}
+				if (cancelled) return
 				setConnected(status.connected)
 				setProjectPath(status.projectPath)
 				setSessions(status.sessions)
 				setActiveSessionId(status.activeSessionId ?? status.sessionId)
 				setCapabilities(status.capabilities)
-			})
-			.catch(() => setConnected(false))
+			} catch {
+				if (!cancelled) setConnected(false)
+			}
+		}
+
+		void bootstrap()
+		return () => {
+			cancelled = true
+		}
 	}, [setProjectPath, setSessions, setActiveSessionId, setCapabilities])
 
 	async function handleOpenProject(path: string) {

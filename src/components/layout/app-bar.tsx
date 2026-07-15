@@ -21,7 +21,12 @@ export function AppBar({ sidebarCollapsed, children, className }: AppBarProps) {
 			)}
 			style={{ height: APP_BAR_HEIGHT }}
 		>
-			<div className="relative flex h-full min-w-0 flex-1 items-center">{children}</div>
+			<div
+				data-tauri-drag-region={isTauri ? true : undefined}
+				className="relative flex h-full min-w-0 flex-1 items-center"
+			>
+				{children}
+			</div>
 		</div>
 	)
 }

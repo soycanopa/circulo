@@ -166,7 +166,7 @@ function SidebarChromeHeader() {
 		<div
 			data-slot="sidebar-chrome-header"
 			data-tauri-drag-region={isTauri ? true : undefined}
-			className="flex shrink-0 flex-row items-center gap-1"
+			className="relative z-[45] flex shrink-0 flex-row items-center gap-1"
 			style={{ height: APP_BAR_HEIGHT }}
 		/>
 	)

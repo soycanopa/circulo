@@ -134,6 +134,7 @@ export function AppSidebar({
 	const { pinnedIds, togglePin, isPinned } = usePinnedSessions()
 	const promptInFlight = useAtomValue(promptInFlightAtom)
 	const [expanded, setExpanded] = useState(true)
+	const [sessionPending, setSessionPending] = useState(false)
 
 	const pinnedSessions = useMemo(
 		() =>
@@ -144,6 +145,15 @@ export function AppSidebar({
 	)
 
 	const projectName = getProjectDisplayName(projectPath)
+
+	async function runSessionAction(action: () => Promise<void>) {
+		setSessionPending(true)
+		try {
+			await action()
+		} finally {
+			setSessionPending(false)
+		}
+	}
 
 	async function handleAddProject() {
 		const selected = await open({ directory: true, multiple: false, title: "Abrir proyecto" })
@@ -157,14 +167,30 @@ export function AppSidebar({
 				<SidebarGroup>
 					<SidebarMenu>
 						<SidebarMenuItem>
-							<SidebarMenuButton onClick={() => void newThread()} className="text-muted-foreground">
-								<MessageSquarePlus className="size-4" />
+							<SidebarMenuButton
+								onClick={() => void runSessionAction(newThread)}
+								disabled={sessionPending}
+								className="text-muted-foreground"
+							>
+								{sessionPending ? (
+									<Loader2 className="size-4 animate-spin" />
+								) : (
+									<MessageSquarePlus className="size-4" />
+								)}
 								<span>New Thread</span>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
 						<SidebarMenuItem>
-							<SidebarMenuButton onClick={() => void newChat()} className="text-muted-foreground">
-								<MessageSquare className="size-4" />
+							<SidebarMenuButton
+								onClick={() => void runSessionAction(newChat)}
+								disabled={sessionPending}
+								className="text-muted-foreground"
+							>
+								{sessionPending ? (
+									<Loader2 className="size-4 animate-spin" />
+								) : (
+									<MessageSquare className="size-4" />
+								)}
 								<span>New Chat</span>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
@@ -177,86 +203,70 @@ export function AppSidebar({
 					</SidebarMenu>
 				</SidebarGroup>
 
-				{connected ? (
-					<SidebarGroup label="Pinned">
-						<SidebarMenu>
-							{pinnedSessions.length === 0 ? (
-								<p className="px-2 py-1.5 text-xs text-muted-foreground/60">Nada pinned</p>
-							) : (
-								pinnedSessions.map((session) => (
-									<SessionItem
-										key={session.sessionId}
-										session={session}
-										sessionIndex={sessions.findIndex((s) => s.sessionId === session.sessionId)}
-										isSelected={session.sessionId === activeSessionId}
-										status={sessionStatusFor(
-											session.sessionId,
-											activeSessionId,
-											sessionStatus,
-											promptInFlight,
-										)}
-										onSelect={() => void selectSession(session.sessionId)}
-										isPinned
-										onTogglePin={() => togglePin(session.sessionId)}
-									/>
-								))
-							)}
-						</SidebarMenu>
-					</SidebarGroup>
-				) : null}
+				<SidebarGroup label="Pinned">
+					<SidebarMenu>
+						{pinnedSessions.map((session) => (
+							<SessionItem
+								key={session.sessionId}
+								session={session}
+								sessionIndex={sessions.findIndex((s) => s.sessionId === session.sessionId)}
+								isSelected={session.sessionId === activeSessionId}
+								status={sessionStatusFor(
+									session.sessionId,
+									activeSessionId,
+									sessionStatus,
+									promptInFlight,
+								)}
+								onSelect={() => void runSessionAction(() => selectSession(session.sessionId))}
+								isPinned
+								onTogglePin={() => togglePin(session.sessionId)}
+							/>
+						))}
+					</SidebarMenu>
+				</SidebarGroup>
 
-				{connected ? (
-					<SidebarGroup label="Projects">
-						{projectPath ? (
-							<SidebarMenu>
-								<SidebarMenuItem>
-									<SidebarMenuButton onClick={() => setExpanded((v) => !v)}>
-										<ChevronRight
-											className="size-3 text-muted-foreground transition-transform"
-											style={{ transform: expanded ? "rotate(90deg)" : undefined }}
-										/>
-										<span className="truncate font-medium">{projectName}</span>
-									</SidebarMenuButton>
-								</SidebarMenuItem>
-								{expanded ? (
-									<div className="ml-3 border-l border-sidebar-border/10 pl-1">
-										<SidebarMenu>
-											{sessions.length === 0 ? (
-												<p className="px-2 py-1.5 text-xs text-muted-foreground/60">No threads yet</p>
-											) : (
-												sessions.map((session, index) => (
-													<SessionItem
-														key={session.sessionId}
-														session={session}
-														sessionIndex={index}
-														isSelected={session.sessionId === activeSessionId}
-														status={sessionStatusFor(
-															session.sessionId,
-															activeSessionId,
-															sessionStatus,
-															promptInFlight,
-														)}
-														onSelect={() => void selectSession(session.sessionId)}
-														pinnable
-														isPinned={isPinned(session.sessionId)}
-														onTogglePin={() => togglePin(session.sessionId)}
-														compact
-													/>
-												))
-											)}
-										</SidebarMenu>
-									</div>
-								) : null}
-							</SidebarMenu>
-						) : (
-							<p className="px-2 py-1.5 text-xs text-muted-foreground/60">Abre un proyecto para empezar</p>
-						)}
-					</SidebarGroup>
-				) : (
-					<div className="px-4 py-8 text-center text-xs text-muted-foreground">
-						Abre un proyecto para empezar
-					</div>
-				)}
+				<SidebarGroup label="Projects">
+					<SidebarMenu>
+						<SidebarMenuItem>
+							<SidebarMenuButton onClick={() => setExpanded((v) => !v)}>
+								<ChevronRight
+									className="size-3 text-muted-foreground transition-transform"
+									style={{ transform: expanded ? "rotate(90deg)" : undefined }}
+								/>
+								<span className="truncate font-medium">{projectName}</span>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+						{expanded ? (
+							<div className="ml-3 border-l border-sidebar-border/10 pl-1">
+								<SidebarMenu>
+									{sessions.length === 0 ? (
+										<p className="px-2 py-1.5 text-xs text-muted-foreground/60">No threads yet</p>
+									) : (
+										sessions.map((session, index) => (
+											<SessionItem
+												key={session.sessionId}
+												session={session}
+												sessionIndex={index}
+												isSelected={session.sessionId === activeSessionId}
+												status={sessionStatusFor(
+													session.sessionId,
+													activeSessionId,
+													sessionStatus,
+													promptInFlight,
+												)}
+												onSelect={() => void runSessionAction(() => selectSession(session.sessionId))}
+												pinnable
+												isPinned={isPinned(session.sessionId)}
+												onTogglePin={() => togglePin(session.sessionId)}
+												compact
+											/>
+										))
+									)}
+								</SidebarMenu>
+							</div>
+						) : null}
+					</SidebarMenu>
+				</SidebarGroup>
 			</SidebarContent>
 
 			<SidebarFooter>

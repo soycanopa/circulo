@@ -100,11 +100,16 @@
 	-webkit-app-region: drag;
 	app-region: drag;
 }
+[data-tauri-drag-region] * {
+	-webkit-app-region: drag;
+	app-region: drag;
+}
 [data-tauri-drag-region] button,
 [data-tauri-drag-region] a,
 [data-tauri-drag-region] input,
 [data-tauri-drag-region] textarea,
-[data-tauri-drag-region] select {
+[data-tauri-drag-region] select,
+[data-tauri-drag-region] [data-tauri-drag-region="false"] {
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
 }
