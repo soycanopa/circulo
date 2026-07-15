@@ -9,6 +9,7 @@ export interface ConfigOption {
 		value: string
 		name: string
 		description?: string
+		group?: string
 	}>
 }
 

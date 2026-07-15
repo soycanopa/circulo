@@ -671,15 +671,18 @@ fn map_config_options(options: Option<&[SessionConfigOption]>) -> Vec<ConfigOpti
                                 value: item.value.to_string(),
                                 name: item.name.clone(),
                                 description: item.description.clone(),
+                                group: None,
                             })
                             .collect(),
                         SessionConfigSelectOptions::Grouped(groups) => groups
                             .iter()
-                            .flat_map(|group| group.options.iter())
-                            .map(|item| ConfigOptionValueDto {
-                                value: item.value.to_string(),
-                                name: item.name.clone(),
-                                description: item.description.clone(),
+                            .flat_map(|group| {
+                                group.options.iter().map(|item| ConfigOptionValueDto {
+                                    value: item.value.to_string(),
+                                    name: item.name.clone(),
+                                    description: item.description.clone(),
+                                    group: Some(group.name.clone()),
+                                })
                             })
                             .collect(),
                         _ => Vec::new(),

@@ -12,12 +12,12 @@ import { AppBar } from "@/components/layout/app-bar"
 import { SidebarResizeHandle } from "@/components/layout/sidebar-resize-handle"
 import { WindowControls } from "@/components/layout/window-controls"
 import { WindowDragStrip } from "@/components/layout/window-drag-strip"
+import { windowDragRegionProps } from "@/hooks/use-window-drag"
 import { useSessions } from "@/hooks/use-sessions"
 import { getSidebarWidth } from "@/lib/preferences"
 import {
 	APP_BAR_HEIGHT,
 	APP_BAR_TITLE_GAP,
-	isTauri,
 	SHELL_INSET,
 	SIDEBAR_COLLAPSE_THRESHOLD,
 	WINDOW_CONTROLS_END,
@@ -161,7 +161,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 						data-slot="session-title-layer"
 						className="pointer-events-none absolute z-[46] flex items-center"
 						style={{
-							top: SHELL_INSET,
+							top: 0,
 							height: APP_BAR_HEIGHT,
 							left: open
 								? sidebarWidth + SHELL_INSET + 16
@@ -184,7 +184,7 @@ function SidebarChromeHeader() {
 	return (
 		<div
 			data-slot="sidebar-chrome-header"
-			data-tauri-drag-region={isTauri ? true : undefined}
+			{...windowDragRegionProps()}
 			className="relative z-[45] flex shrink-0 flex-row items-center gap-1"
 			style={{ height: APP_BAR_HEIGHT }}
 		/>

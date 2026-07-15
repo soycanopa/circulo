@@ -2,6 +2,7 @@ import { useAtom } from "jotai"
 import { ChevronDown } from "lucide-react"
 import { useMemo, useRef, useState } from "react"
 import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside"
+import { SelectorMenuItem } from "@/components/chat/selector-menu-item"
 import { InputGroupButton } from "@/components/ui/input-group"
 import { setConfigOption } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
@@ -78,19 +79,16 @@ export function ConfigOptionSelector({
 					<ul className="scrollbar-thin max-h-48 overflow-y-auto p-1">
 						{option.options.map((entry) => (
 							<li key={entry.value}>
-								<button
-									type="button"
-									className={cn(
-										"flex w-full flex-col rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent",
-										entry.value === option.currentValue && "bg-accent text-accent-foreground",
-									)}
+								<SelectorMenuItem
+									active={entry.value === option.currentValue}
 									onClick={() => void handleSelect(entry.value)}
+									className="flex-col items-start"
 								>
 									<span>{entry.name}</span>
 									{entry.description ? (
 										<span className="text-[10px] text-muted-foreground">{entry.description}</span>
 									) : null}
-								</button>
+								</SelectorMenuItem>
 							</li>
 						))}
 					</ul>

@@ -22,6 +22,7 @@ pub struct ConfigOptionValueDto {
     pub value: String,
     pub name: String,
     pub description: Option<String>,
+    pub group: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
