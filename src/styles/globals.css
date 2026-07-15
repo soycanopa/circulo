@@ -92,6 +92,8 @@
 [data-slot="sidebar"],
 [data-slot="sidebar-inset"] {
 	min-height: 0;
+}
+[data-slot="sidebar-inset"] {
 	box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 [data-slot="sidebar-wrapper"][data-state="collapsed"] [data-slot="sidebar-inset"] {
