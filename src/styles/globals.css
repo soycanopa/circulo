@@ -75,6 +75,7 @@
 	--diff-deletion: #ff6764;
 	--window-chrome: #050505;
 	--chat-input: #2b2b2b;
+	--chat-input-border: #414141;
 }
 
 @layer base {
@@ -112,8 +113,9 @@
 	app-region: no-drag;
 }
 [data-slot="input-group"] {
-	@apply rounded-xl border border-input shadow-sm;
+	@apply rounded-xl border shadow-sm;
 	background: var(--chat-input);
+	border-color: var(--chat-input-border);
 }
 
 .scrollbar-thin { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
