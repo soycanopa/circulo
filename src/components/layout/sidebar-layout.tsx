@@ -8,6 +8,7 @@ import {
 	type CSSProperties,
 	type ReactNode,
 } from "react"
+import type { LucideIcon } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import { AppBar } from "@/components/layout/app-bar"
 import { SidebarResizeHandle } from "@/components/layout/sidebar-resize-handle"
@@ -241,11 +242,22 @@ export function SidebarFooter({ children }: { children: ReactNode }) {
 	return <div className="shrink-0 space-y-1 p-2">{children}</div>
 }
 
-export function SidebarGroup({ children, label }: { children: ReactNode; label?: string }) {
+export function SidebarGroup({
+	children,
+	label,
+	icon: Icon,
+}: {
+	children: ReactNode
+	label?: string
+	icon?: LucideIcon
+}) {
 	return (
 		<div className="relative py-1">
 			{label ? (
-				<p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{label}</p>
+				<p className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-muted-foreground">
+					{Icon ? <Icon className="size-3 shrink-0 opacity-80" /> : null}
+					{label}
+				</p>
 			) : null}
 			{children}
 		</div>

@@ -4,6 +4,7 @@ import {
 	ChevronRight,
 	CircleDot,
 	FolderOpen,
+	Folders,
 	Loader2,
 	MessageSquare,
 	MessageSquarePlus,
@@ -241,7 +242,7 @@ export function AppSidebar({
 					</SidebarMenu>
 				</SidebarGroup>
 
-				<SidebarGroup label="Pinned">
+				<SidebarGroup label="Pinned" icon={Pin}>
 					<SidebarMenu>
 						{pinnedSessions.map((session) => (
 							<SessionItem
@@ -265,7 +266,7 @@ export function AppSidebar({
 					</SidebarMenu>
 				</SidebarGroup>
 
-				<SidebarGroup label="Projects">
+				<SidebarGroup label="Projects" icon={Folders}>
 					<SidebarMenu>
 						{showChatsFolder || showProjectFolder ? (
 							<SidebarMenuItem>
