@@ -209,7 +209,7 @@ export function AppSidebar({
 							<SidebarMenuButton
 								onClick={() => void runSessionAction(newThread)}
 								disabled={sessionPending}
-								className="text-muted-foreground"
+								className="text-[#FAFAFA]"
 							>
 								{sessionPending ? (
 									<Loader2 className="size-4 animate-spin" />
@@ -223,7 +223,7 @@ export function AppSidebar({
 							<SidebarMenuButton
 								onClick={() => void runSessionAction(newChat)}
 								disabled={sessionPending}
-								className="text-muted-foreground"
+								className="text-[#FAFAFA]"
 							>
 								{sessionPending ? (
 									<Loader2 className="size-4 animate-spin" />
@@ -234,7 +234,7 @@ export function AppSidebar({
 							</SidebarMenuButton>
 						</SidebarMenuItem>
 						<SidebarMenuItem>
-							<SidebarMenuButton onClick={() => void handleAddProject()} className="text-muted-foreground">
+							<SidebarMenuButton onClick={() => void handleAddProject()} className="text-[#FAFAFA]">
 								<FolderOpen className="size-4" />
 								<span>Add Project</span>
 							</SidebarMenuButton>
