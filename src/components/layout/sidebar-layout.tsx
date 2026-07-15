@@ -16,10 +16,11 @@ import { useSessions } from "@/hooks/use-sessions"
 import { getSidebarWidth } from "@/lib/preferences"
 import {
 	APP_BAR_HEIGHT,
+	APP_BAR_TITLE_GAP,
 	isTauri,
 	SHELL_INSET,
 	SIDEBAR_COLLAPSE_THRESHOLD,
-	WINDOW_CONTROLS_INSET,
+	WINDOW_CONTROLS_END,
 } from "@/lib/window-chrome"
 import { cn } from "@/lib/utils"
 
@@ -117,7 +118,8 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 					{
 						"--shell-inset": `${SHELL_INSET}px`,
 						"--sidebar-width": `${sidebarWidth}px`,
-						"--window-controls-inset": `${WINDOW_CONTROLS_INSET}px`,
+						"--window-controls-end": `${WINDOW_CONTROLS_END}px`,
+						"--app-bar-title-gap": `${APP_BAR_TITLE_GAP}px`,
 					} as CSSProperties
 				}
 			>
@@ -148,11 +150,29 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 					data-slot="sidebar-inset"
 					className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-background"
 				>
-					<AppBar sidebarCollapsed={!open}>{appBar}</AppBar>
+					<AppBar />
 					<div data-slot="content-area" className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
 						{children}
 					</div>
 				</main>
+
+				{appBar ? (
+					<div
+						data-slot="session-title-layer"
+						data-tauri-drag-region={isTauri ? true : undefined}
+						className="pointer-events-none absolute z-[46] flex items-center"
+						style={{
+							top: SHELL_INSET,
+							height: APP_BAR_HEIGHT,
+							left: open
+								? sidebarWidth + SHELL_INSET + 16
+								: WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP,
+							right: SHELL_INSET + 12,
+						}}
+					>
+						<div className="pointer-events-auto min-w-0 flex-1 overflow-hidden">{appBar}</div>
+					</div>
+				) : null}
 
 				<WindowDragStrip />
 				<LayoutWindowControls open={open} onToggleSidebar={toggleSidebar} />

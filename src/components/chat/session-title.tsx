@@ -30,7 +30,8 @@ export function SessionTitle() {
 			data-tauri-drag-region
 			className="block min-w-0 flex-1 truncate text-sm"
 		>
-			<span className="text-muted-foreground/70">{directoryLabel}/</span>
+			<span className="text-muted-foreground/70">{directoryLabel}</span>
+			<span className="mx-1.5 text-muted-foreground/40">/</span>
 			<span className="font-medium text-foreground">{title}</span>
 		</span>
 	)

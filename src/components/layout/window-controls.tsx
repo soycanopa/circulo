@@ -1,8 +1,10 @@
 import { PanelLeft, Plus } from "lucide-react"
 import {
+	APP_BAR_HEIGHT,
 	SHELL_INSET,
 	WINDOW_CONTROLS_LEFT,
-	WINDOW_CONTROL_TOP,
+	WINDOW_CONTROL_GAP,
+	WINDOW_CONTROL_SIZE,
 } from "@/lib/window-chrome"
 import { cn } from "@/lib/utils"
 
@@ -24,10 +26,11 @@ export function WindowControls({
 }: WindowControlsProps) {
 	return (
 		<div
-			className={cn("pointer-events-none absolute z-50 flex items-center gap-0.5", className)}
+			className={cn("pointer-events-none absolute z-50 flex items-center", className)}
 			style={{
-				top: WINDOW_CONTROL_TOP - SHELL_INSET,
+				top: (APP_BAR_HEIGHT - WINDOW_CONTROL_SIZE) / 2,
 				left: WINDOW_CONTROLS_LEFT - SHELL_INSET,
+				gap: WINDOW_CONTROL_GAP,
 			}}
 		>
 			<button
