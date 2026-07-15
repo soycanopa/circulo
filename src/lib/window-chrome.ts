@@ -15,7 +15,7 @@ export const APP_BAR_TITLE_PADDING_TOP = 18
 export const TRAFFIC_LIGHT_PADDING_TOP = 20
 
 /** Extra inset for the floating session title from the left chrome cluster. */
-export const APP_BAR_TITLE_INSET_LEFT = 6
+export const APP_BAR_TITLE_INSET_LEFT = 8
 
 /** Gap between window controls and session title when sidebar is collapsed. */
 export const APP_BAR_TITLE_GAP = 12
