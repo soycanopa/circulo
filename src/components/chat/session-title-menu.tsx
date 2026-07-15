@@ -63,7 +63,11 @@ export function SessionTitleMenu({ sessionId, title, onRename }: SessionTitleMen
 			<button
 				type="button"
 				title="Opciones de sesión"
-				onClick={() => setOpen((value) => !value)}
+				onPointerDown={(event) => event.stopPropagation()}
+				onClick={(event) => {
+					event.stopPropagation()
+					setOpen((value) => !value)
+				}}
 				className={cn(
 					"flex size-5 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground",
 					open && "bg-accent text-foreground",
@@ -73,7 +77,7 @@ export function SessionTitleMenu({ sessionId, title, onRename }: SessionTitleMen
 			</button>
 
 			{open ? (
-				<div className="absolute left-0 top-full z-50 mt-1 min-w-44 overflow-hidden rounded-lg border border-border bg-popover py-1 shadow-lg">
+				<div className="absolute left-0 top-full z-[60] mt-1 min-w-44 overflow-hidden rounded-lg border border-border bg-popover py-1 shadow-lg">
 					{renaming ? (
 						<div className="space-y-1 px-2 py-1.5">
 							<input

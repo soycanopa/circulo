@@ -180,7 +180,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 				{appBar ? (
 					<motion.div
 						data-slot="session-title-layer"
-						className="pointer-events-none absolute z-[46] box-border flex items-start"
+						className="pointer-events-none absolute z-[51] box-border flex items-start overflow-visible"
 						initial={false}
 						animate={{ left: titleLeft }}
 						transition={layoutSpring}
@@ -191,7 +191,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 							paddingTop: APP_BAR_TITLE_PADDING_TOP,
 						}}
 					>
-						<div className="flex min-w-0 flex-1 items-center overflow-hidden">
+						<div className="flex min-w-0 flex-1 items-center overflow-visible">
 							{appBar}
 						</div>
 					</motion.div>
