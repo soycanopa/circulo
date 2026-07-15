@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils"
 import {
 	activeSessionIdAtom,
 	messagesAtom,
+	NEW_THREAD_PICKER_ID,
 	projectPathAtom,
 	promptInFlightAtom,
 	sessionsAtom,
@@ -29,6 +30,7 @@ interface ChatInputProps {
 	disabled?: boolean
 	sessionStatus: SessionStatus
 	onOpenProject: (path: string) => Promise<void>
+	onOpenProjectForNewThread: (path: string) => Promise<void>
 }
 
 function extractMentionQuery(value: string, caret: number) {
@@ -41,7 +43,12 @@ function extractMentionPaths(value: string): string[] {
 	return [...value.matchAll(/@([^\s@]+)/g)].map((match) => match[1])
 }
 
-export function ChatInput({ disabled, sessionStatus, onOpenProject }: ChatInputProps) {
+export function ChatInput({
+	disabled,
+	sessionStatus,
+	onOpenProject,
+	onOpenProjectForNewThread,
+}: ChatInputProps) {
 	const setMessages = useSetAtom(messagesAtom)
 	const setSessions = useSetAtom(sessionsAtom)
 	const [activeSessionId] = useAtom(activeSessionIdAtom)
@@ -50,10 +57,12 @@ export function ChatInput({ disabled, sessionStatus, onOpenProject }: ChatInputP
 	)
 	const projectPath = useAtomValue(projectPathAtom)
 	const messageCount = useAtomValue(messagesAtom).length
+	const isPendingNewThreadFolder = pickerSessionId === NEW_THREAD_PICKER_ID
 	const showFolderPicker =
 		Boolean(pickerSessionId) &&
-		pickerSessionId === activeSessionId &&
-		messageCount === 0
+		messageCount === 0 &&
+		(isPendingNewThreadFolder || pickerSessionId === activeSessionId)
+	const pickerProjectPath = isPendingNewThreadFolder ? null : projectPath
 	const [promptInFlight, setPromptInFlight] = useAtom(promptInFlightAtom)
 	const [value, setValue] = useState("")
 	const [mentions, setMentions] = useState<MentionChip[]>([])
@@ -103,7 +112,9 @@ export function ChatInput({ disabled, sessionStatus, onOpenProject }: ChatInputP
 	async function handleSubmit(event?: React.FormEvent) {
 		event?.preventDefault()
 		const trimmed = value.trim()
-		if (!trimmed || disabled || isAwaitingPermission || isSubmitting) return
+		if (!trimmed || disabled || isAwaitingPermission || isSubmitting || isPendingNewThreadFolder) {
+			return
+		}
 
 		const contextPaths = mentions.map((mention) => mention.path)
 		setMessages((current) => [
@@ -140,7 +151,7 @@ export function ChatInput({ disabled, sessionStatus, onOpenProject }: ChatInputP
 		}
 	}
 
-	const inputDisabled = disabled || isAwaitingPermission
+	const inputDisabled = disabled || isAwaitingPermission || isPendingNewThreadFolder
 
 	return (
 		<div className="shrink-0 px-4 pb-4 pt-2">
@@ -165,8 +176,10 @@ export function ChatInput({ disabled, sessionStatus, onOpenProject }: ChatInputP
 						{showFolderPicker ? (
 							<div data-slot="thread-selectors">
 								<ThreadFolderPicker
-									projectPath={projectPath}
-									onOpenProject={onOpenProject}
+									projectPath={pickerProjectPath}
+									onOpenProject={
+										isPendingNewThreadFolder ? onOpenProjectForNewThread : onOpenProject
+									}
 									onClose={() => setThreadFolderPickerSessionId(null)}
 								/>
 							</div>

@@ -38,7 +38,7 @@ export function ThreadFolderPicker({
 		return filtered.slice(0, MAX_RECENT_PROJECTS_DISPLAY)
 	}, [allRecent, query])
 
-	const folderLabel = getProjectDirectoryLabel(projectPath)
+	const folderLabel = projectPath ? getProjectDirectoryLabel(projectPath) : "Seleccionar carpeta"
 	const noDragProps = windowNoDragProps()
 
 	function updateMenuPosition() {

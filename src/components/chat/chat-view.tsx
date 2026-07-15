@@ -3,6 +3,7 @@ import { ChatInput } from "@/components/chat/chat-input"
 import { MessageList } from "@/components/chat/message-list"
 import { PermissionCard } from "@/components/permissions/permission-card"
 import { useAcpSession } from "@/hooks/use-acp-session"
+import { useSessions } from "@/hooks/use-sessions"
 import { errorMessageAtom } from "@/stores/atoms"
 
 interface ChatViewProps {
@@ -11,6 +12,7 @@ interface ChatViewProps {
 }
 
 export function ChatView({ connected, onOpenProject }: ChatViewProps) {
+	const { openProjectForNewThread } = useSessions()
 	const { messages, streamingText, sessionStatus } = useAcpSession()
 	const errorMessage = useAtomValue(errorMessageAtom)
 
@@ -28,6 +30,7 @@ export function ChatView({ connected, onOpenProject }: ChatViewProps) {
 				disabled={!connected}
 				sessionStatus={sessionStatus}
 				onOpenProject={onOpenProject}
+				onOpenProjectForNewThread={openProjectForNewThread}
 			/>
 		</div>
 	)

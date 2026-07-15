@@ -12,6 +12,7 @@ import {
 	activeSessionIdAtom,
 	configOptionsAtom,
 	messagesAtom,
+	NEW_THREAD_PICKER_ID,
 	projectPathAtom,
 	replayingHistoryAtom,
 	sessionsAtom,
@@ -72,16 +73,23 @@ export function useSessions() {
 
 	const newThread = useCallback(async () => {
 		resetChatState()
-		const status = await createSession()
-		syncStatus(status)
-		const sessionId = status.activeSessionId ?? status.sessionId
-		if (sessionId) {
-			setThreadFolderPickerSessionId(sessionId)
-		}
-	}, [resetChatState, setThreadFolderPickerSessionId, syncStatus])
+		setActiveSessionId(null)
+		setThreadFolderPickerSessionId(NEW_THREAD_PICKER_ID)
+	}, [resetChatState, setActiveSessionId, setThreadFolderPickerSessionId])
+
+	const openProjectForNewThread = useCallback(
+		async (path: string) => {
+			const status = await openProject(path)
+			syncStatus(status)
+			const createStatus = await createSession()
+			syncStatus(createStatus)
+		},
+		[syncStatus],
+	)
 
 	const newChat = useCallback(async () => {
 		resetChatState()
+		setThreadFolderPickerSessionId(null)
 		if (projectPath === GENERAL_CHAT_PROJECT) {
 			const status = await createSession()
 			syncStatus(status)
@@ -89,7 +97,7 @@ export function useSessions() {
 		}
 		const status = await openProject(GENERAL_CHAT_PROJECT)
 		syncStatus(status)
-	}, [projectPath, resetChatState, syncStatus])
+	}, [projectPath, resetChatState, setThreadFolderPickerSessionId, syncStatus])
 
 	const deleteSession = useCallback(
 		async (id: string) => {
@@ -146,6 +154,7 @@ export function useSessions() {
 		selectSession,
 		newThread,
 		newChat,
+		openProjectForNewThread,
 		deleteSession,
 		archiveSession,
 		renameSession: renameSessionTitle,
