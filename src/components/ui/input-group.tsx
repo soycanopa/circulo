@@ -37,7 +37,7 @@ export function InputGroupAddon({
 		<div
 			className={cn(
 				"flex items-center gap-1 px-2 py-1.5",
-				align === "block-end" && "border-t border-[var(--chat-input-border)]/50",
+				align === "block-end" && "border-t border-border/50",
 				className,
 			)}
 		>

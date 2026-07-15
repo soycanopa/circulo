@@ -161,7 +161,7 @@ export function ChatInput({ disabled, sessionStatus, onOpenProject }: ChatInputP
 				) : null}
 
 				<form onSubmit={(e) => void handleSubmit(e)}>
-					<InputGroup data-thread-selectors={showFolderPicker ? "true" : undefined}>
+					<InputGroup>
 						{showFolderPicker ? (
 							<div data-slot="thread-selectors">
 								<ThreadFolderPicker
@@ -171,60 +171,58 @@ export function ChatInput({ disabled, sessionStatus, onOpenProject }: ChatInputP
 								/>
 							</div>
 						) : null}
-						<div data-slot="input-group-body">
-							{mentions.length > 0 ? (
-								<div className="flex flex-wrap gap-1.5 px-3 pt-2">
-									{mentions.map((mention) => (
-										<span
-											key={mention.path}
-											className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
-										>
-											<AtSign className="size-3" />
-											{mention.label}
-										</span>
-									))}
-								</div>
-							) : null}
+						{mentions.length > 0 ? (
+							<div className="flex flex-wrap gap-1.5 px-3 pt-2">
+								{mentions.map((mention) => (
+									<span
+										key={mention.path}
+										className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
+									>
+										<AtSign className="size-3" />
+										{mention.label}
+									</span>
+								))}
+							</div>
+						) : null}
 
-							<InputGroupTextarea
-								value={value}
-								disabled={inputDisabled}
-								placeholder="Escribe un mensaje… Usa @ para referenciar archivos"
-								className={cn(inputDisabled && "opacity-60")}
-								onChange={(event) =>
-									handleChange(event.target.value, event.target.selectionStart ?? 0)
+						<InputGroupTextarea
+							value={value}
+							disabled={inputDisabled}
+							placeholder="Escribe un mensaje… Usa @ para referenciar archivos"
+							className={cn(inputDisabled && "opacity-60")}
+							onChange={(event) =>
+								handleChange(event.target.value, event.target.selectionStart ?? 0)
+							}
+							onSelect={(event) =>
+								setCaret((event.target as HTMLTextAreaElement).selectionStart ?? 0)
+							}
+							onKeyDown={(event) => {
+								if (event.key === "Enter" && !event.shiftKey) {
+									event.preventDefault()
+									void handleSubmit()
 								}
-								onSelect={(event) =>
-									setCaret((event.target as HTMLTextAreaElement).selectionStart ?? 0)
-								}
-								onKeyDown={(event) => {
-									if (event.key === "Enter" && !event.shiftKey) {
-										event.preventDefault()
-										void handleSubmit()
-									}
-								}}
-							/>
+							}}
+						/>
 
-							<InputGroupAddon className="justify-between">
-								<div className="flex min-w-0 flex-wrap items-center gap-1">
-									<AgentModeSelector />
-									<ThinkingSelector />
-									<ModelSelector />
-								</div>
-								<InputGroupButton
-									type="submit"
-									variant="default"
-									disabled={inputDisabled || isSubmitting || !value.trim()}
-									aria-label="Enviar mensaje"
-								>
-									{isSubmitting ? (
-										<Loader2 className="size-4 animate-spin" />
-									) : (
-										<CornerDownLeft className="size-4" />
-									)}
-								</InputGroupButton>
-							</InputGroupAddon>
-						</div>
+						<InputGroupAddon className="justify-between">
+							<div className="flex min-w-0 flex-wrap items-center gap-1">
+								<AgentModeSelector />
+								<ThinkingSelector />
+								<ModelSelector />
+							</div>
+							<InputGroupButton
+								type="submit"
+								variant="default"
+								disabled={inputDisabled || isSubmitting || !value.trim()}
+								aria-label="Enviar mensaje"
+							>
+								{isSubmitting ? (
+									<Loader2 className="size-4 animate-spin" />
+								) : (
+									<CornerDownLeft className="size-4" />
+								)}
+							</InputGroupButton>
+						</InputGroupAddon>
 					</InputGroup>
 				</form>
 			</div>
