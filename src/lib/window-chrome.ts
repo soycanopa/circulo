@@ -1,5 +1,17 @@
-export const APP_BAR_HEIGHT = 40
 export const SHELL_INSET = 8
+
+/** Symmetric vertical padding inside the app bar chrome row. */
+export const APP_BAR_PADDING_Y = 6
+
+export const APP_BAR_CONTENT_HEIGHT = 28
+
+export const APP_BAR_HEIGHT = APP_BAR_PADDING_Y * 2 + APP_BAR_CONTENT_HEIGHT
+
+/** Extra inset for the floating session title from the left chrome cluster. */
+export const APP_BAR_TITLE_INSET_LEFT = 4
+
+/** Gap between window controls and session title when sidebar is collapsed. */
+export const APP_BAR_TITLE_GAP = 12
 
 const isMac =
 	typeof navigator !== "undefined" &&
@@ -36,11 +48,9 @@ export const WINDOW_CONTROLS_END =
 	WINDOW_CONTROL_GAP +
 	WINDOW_CONTROL_SIZE
 
-/** Space between the plus button and session title when the sidebar is collapsed. */
-export const APP_BAR_TITLE_GAP = 10
-
 /** Legacy inset — prefer WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP. */
-export const WINDOW_CONTROLS_INSET = WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP
+export const WINDOW_CONTROLS_INSET =
+	WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP + APP_BAR_TITLE_INSET_LEFT
 
 /** Full-height chrome strip used for window dragging (inset + app bar). */
 export const WINDOW_DRAG_STRIP_HEIGHT = SHELL_INSET + APP_BAR_HEIGHT

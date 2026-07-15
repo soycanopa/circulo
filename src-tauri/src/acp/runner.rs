@@ -12,15 +12,46 @@ use agent_client_protocol::schema::v1::{
 };
 use agent_client_protocol::{Agent, ConnectionTo};
 use serde_json::Value;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tracing::{error, info};
 
 use crate::agents::build_opencode_agent;
+use crate::session_store::{store_path_for, ProjectSessionStore};
 use crate::state::{
     AgentCapabilitiesDto, AgentCommand, ConfigOptionDto, ConfigOptionValueDto, ContextFile,
     SessionInfoDto, SharedState,
 };
+
+fn load_project_store(app: &AppHandle, project_path: &Path) -> ProjectSessionStore {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| ProjectSessionStore::load(&store_path_for(&dir, project_path)))
+        .unwrap_or_default()
+}
+
+fn save_project_store(app: &AppHandle, project_path: &Path, store: &ProjectSessionStore) {
+    if let Ok(dir) = app.path().app_data_dir() {
+        let path = store_path_for(&dir, project_path);
+        let _ = store.save(&path);
+    }
+}
+
+fn sessions_from_store(store: &ProjectSessionStore, project_path: &Path) -> Vec<SessionInfoDto> {
+    store
+        .sessions
+        .iter()
+        .map(|stored| {
+            session_info_from_parts(
+                stored.session_id.clone(),
+                project_path.to_path_buf(),
+                stored.title.clone(),
+                stored.updated_at.clone(),
+            )
+        })
+        .collect()
+}
 
 pub async fn start_agent_connection(
     app: AppHandle,
@@ -80,6 +111,24 @@ pub async fn start_agent_connection(
                         Some(&active_session_id),
                         None,
                     );
+
+                    let project_path = {
+                        let guard = state_for_notifications.lock().await;
+                        guard
+                            .project
+                            .as_ref()
+                            .map(|project| project.project_path.clone())
+                    };
+                    if let Some(project_path) = project_path {
+                        let mut store = load_project_store(&app_for_notifications, &project_path);
+                        if let Some(session) = sessions
+                            .iter()
+                            .find(|entry| entry.session_id == notification.session_id.to_string())
+                        {
+                            store.upsert(session);
+                            save_project_store(&app_for_notifications, &project_path, &store);
+                        }
+                    }
                 }
 
                 Ok(())
@@ -153,41 +202,138 @@ pub async fn start_agent_connection(
                     }
                 }
 
-                let session_response = match connection
-                    .send_request(NewSessionRequest::new(project_path.clone()))
-                    .block_task()
-                    .await
+                let mut session_store = load_project_store(&app, &project_path);
+
+                if agent_capabilities.list_sessions {
+                    let _ = list_sessions_on_connection(
+                        &connection,
+                        &app,
+                        &state,
+                        &project_path,
+                        None,
+                    )
+                    .await;
+                }
+
+                let listed_sessions = {
+                    let guard = state.lock().await;
+                    guard
+                        .project
+                        .as_ref()
+                        .map(|project| project.sessions.clone())
+                        .unwrap_or_default()
+                };
+
+                let forge_sessions = if session_store.sessions.is_empty() {
+                    Vec::new()
+                } else if agent_capabilities.list_sessions {
+                    let filtered = session_store.filter_agent_sessions(listed_sessions);
+                    if filtered.is_empty() {
+                        sessions_from_store(&session_store, &project_path)
+                    } else {
+                        filtered
+                    }
+                } else {
+                    sessions_from_store(&session_store, &project_path)
+                };
+
                 {
-                    Ok(response) => response,
+                    let mut guard = state.lock().await;
+                    if let Some(project) = guard.project.as_mut() {
+                        project.sessions = forge_sessions.clone();
+                    }
+                }
+
+                let target_session_id =
+                    session_store.preferred_active_id(&forge_sessions);
+
+                let bootstrap = async {
+                    if let Some(id) = target_session_id.clone().filter(|_| !forge_sessions.is_empty())
+                    {
+                        let session_entry = forge_sessions
+                            .iter()
+                            .find(|entry| entry.session_id == id)
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                session_info_from_parts(
+                                    id.clone(),
+                                    project_path.clone(),
+                                    None,
+                                    None,
+                                )
+                            });
+
+                        if agent_capabilities.load_session {
+                            let request =
+                                LoadSessionRequest::new(id.clone(), project_path.clone());
+                            if let Ok(response) =
+                                connection.send_request(request).block_task().await
+                            {
+                                let config_options =
+                                    map_config_options(response.config_options.as_deref());
+                                return Ok::<_, String>((id, config_options, session_entry));
+                            }
+                        } else {
+                            let config_options = {
+                                let guard = state.lock().await;
+                                guard
+                                    .project
+                                    .as_ref()
+                                    .map(|project| project.config_options.clone())
+                                    .unwrap_or_default()
+                            };
+                            return Ok::<_, String>((id, config_options, session_entry));
+                        }
+                    }
+
+                    let session_response = connection
+                        .send_request(NewSessionRequest::new(project_path.clone()))
+                        .block_task()
+                        .await
+                        .map_err(|err| format!("ACP session/new failed: {err}"))?;
+                    let session_id = session_response.session_id.to_string();
+                    let config_options =
+                        map_config_options(session_response.config_options.as_deref());
+                    let session_entry = session_info_from_parts(
+                        session_id.clone(),
+                        project_path.clone(),
+                        None,
+                        None,
+                    );
+                    Ok::<_, String>((session_id, config_options, session_entry))
+                };
+
+                let (session_id, config_options, session_entry) = match bootstrap.await {
+                    Ok(result) => result,
                     Err(err) => {
                         let _ = app.emit(
                             "acp:error",
-                            serde_json::json!({ "message": format!("ACP session/new failed: {err}") }),
+                            serde_json::json!({ "message": err }),
                         );
                         return Ok(());
                     }
                 };
 
-                let session_id = session_response.session_id.clone();
-                let config_options =
-                    map_config_options(session_response.config_options.as_deref());
-                let initial_session = session_info_from_parts(
-                    session_id.to_string(),
-                    project_path.clone(),
-                    None,
-                    None,
-                );
+                session_store.upsert(&session_entry);
+                session_store.set_active(&session_id);
+                save_project_store(&app, &project_path, &session_store);
 
                 {
                     let mut guard = state.lock().await;
                     if let Some(project) = guard.project.as_mut() {
-                        project.session_id = session_id.to_string();
+                        project.session_id = session_id.clone();
                         project.config_options = config_options.clone();
-                        project.sessions = vec![initial_session];
+                        if !project
+                            .sessions
+                            .iter()
+                            .any(|entry| entry.session_id == session_id)
+                        {
+                            project.sessions.push(session_entry);
+                        }
                     }
                 }
 
-                let active_session_id = Arc::new(Mutex::new(session_id.to_string()));
+                let active_session_id = Arc::new(Mutex::new(session_id.clone()));
 
                 emit_session_ready(
                     &app,
@@ -333,6 +479,16 @@ pub async fn start_agent_connection(
                                         Some(&new_session_id),
                                         None,
                                     );
+
+                                    let mut store = load_project_store(&app, &project_path);
+                                    if let Some(session) = sessions
+                                        .iter()
+                                        .find(|entry| entry.session_id == new_session_id)
+                                    {
+                                        store.upsert(session);
+                                    }
+                                    store.set_active(&new_session_id);
+                                    save_project_store(&app, &project_path, &store);
                                 }
                                 Err(err) => {
                                     let _ = app.emit(
@@ -492,6 +648,10 @@ pub async fn start_agent_connection(
                                         Some(&active_session_id_value),
                                         None,
                                     );
+
+                                    let mut store = load_project_store(&app, &project_path);
+                                    store.remove(&id);
+                                    save_project_store(&app, &project_path, &store);
                                 }
                                 Err(err) => {
                                     let _ = app.emit(
@@ -591,6 +751,10 @@ async fn switch_active_session(
             project.config_options = config_options.clone();
         }
     }
+
+    let mut store = load_project_store(app, project_path);
+    store.set_active(&session_id);
+    save_project_store(app, project_path, &store);
 
     emit_session_ready(app, session_id, project_path, &config_options);
 }

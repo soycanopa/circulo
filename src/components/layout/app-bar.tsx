@@ -6,7 +6,7 @@ interface AppBarProps {
 	className?: string
 }
 
-/** Chrome spacer — border sits flush under the session title row. */
+/** Chrome spacer — symmetric padding with border at the bottom edge. */
 export function AppBar({ className }: AppBarProps) {
 	return (
 		<div

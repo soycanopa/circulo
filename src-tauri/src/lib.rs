@@ -1,6 +1,7 @@
 mod acp;
 mod agents;
 mod commands;
+mod session_store;
 mod state;
 
 use std::sync::Arc;

@@ -20,6 +20,7 @@ import { getSidebarWidth } from "@/lib/preferences"
 import {
 	APP_BAR_HEIGHT,
 	APP_BAR_TITLE_GAP,
+	APP_BAR_TITLE_INSET_LEFT,
 	SHELL_INSET,
 	SIDEBAR_COLLAPSE_THRESHOLD,
 	WINDOW_CONTROLS_END,
@@ -99,8 +100,8 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 	}, [])
 
 	const titleLeft = open
-		? sidebarWidth + SHELL_INSET + 16
-		: WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP
+		? sidebarWidth + SHELL_INSET + 16 + APP_BAR_TITLE_INSET_LEFT
+		: WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP + APP_BAR_TITLE_INSET_LEFT
 
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
@@ -177,7 +178,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 				{appBar ? (
 					<motion.div
 						data-slot="session-title-layer"
-						className="pointer-events-none absolute z-[46] flex items-center"
+						className="pointer-events-none absolute z-[46] box-border flex items-center"
 						initial={false}
 						animate={{ left: titleLeft }}
 						transition={layoutSpring}
@@ -187,7 +188,12 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 							right: SHELL_INSET + 12,
 						}}
 					>
-						<div className="flex min-w-0 flex-1 items-center overflow-hidden">{appBar}</div>
+						<div
+							className="flex min-w-0 flex-1 items-center overflow-hidden"
+							style={{ margin: "4px 0 6px" }}
+						>
+							{appBar}
+						</div>
 					</motion.div>
 				) : null}
 
