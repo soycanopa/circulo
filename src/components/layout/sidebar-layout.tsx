@@ -177,7 +177,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 				{appBar ? (
 					<motion.div
 						data-slot="session-title-layer"
-						className="pointer-events-none absolute z-[46] flex items-stretch"
+						className="pointer-events-none absolute z-[46] flex items-center"
 						initial={false}
 						animate={{ left: titleLeft }}
 						transition={layoutSpring}
@@ -187,7 +187,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 							right: SHELL_INSET + 12,
 						}}
 					>
-						<div className="flex min-w-0 flex-1 items-stretch overflow-hidden px-0">{appBar}</div>
+						<div className="flex min-w-0 flex-1 items-center overflow-hidden">{appBar}</div>
 					</motion.div>
 				) : null}
 

@@ -3,12 +3,15 @@ import type { ConfigOption } from "@/types/acp"
 export interface ModelEntry {
 	value: string
 	name: string
+	displayName: string
 	description?: string
 	group: string
+	providerId: string
 }
 
 export interface ModelGroup {
 	name: string
+	providerId: string
 	models: ModelEntry[]
 }
 
@@ -20,44 +23,75 @@ const PROVIDER_LABELS: Record<string, string> = {
 	google: "Google",
 }
 
-function formatProviderLabel(raw: string): string {
+export function formatProviderLabel(raw: string): string {
 	const key = raw.trim().toLowerCase()
 	return PROVIDER_LABELS[key] ?? raw.charAt(0).toUpperCase() + raw.slice(1)
 }
 
-function inferGroup(value: string, name: string, group?: string): string {
-	if (group?.trim()) return formatProviderLabel(group)
+function inferProviderId(value: string, name: string, group?: string): string {
+	if (group?.trim()) return group.trim().toLowerCase()
 	const slash = value.indexOf("/")
-	if (slash > 0) return formatProviderLabel(value.slice(0, slash))
+	if (slash > 0) return value.slice(0, slash).toLowerCase()
 	const colon = value.indexOf(":")
-	if (colon > 0) return formatProviderLabel(value.slice(0, colon))
-	if (name.includes(" - ")) return formatProviderLabel(name.split(" - ")[0] ?? name)
-	return "Otros"
+	if (colon > 0) return value.slice(0, colon).toLowerCase()
+	if (name.includes(" - ")) return (name.split(" - ")[0] ?? name).trim().toLowerCase()
+	return "other"
 }
 
-export function buildModelGroups(
-	options: ConfigOption["options"],
-): ModelGroup[] {
+export function modelDisplayName(name: string, value: string, providerId: string): string {
+	const label = formatProviderLabel(providerId)
+	const patterns = [
+		new RegExp(`^${label}\\s*[-–—:]\\s*`, "i"),
+		new RegExp(`^${providerId}\\s*[-–—:/]\\s*`, "i"),
+		new RegExp(`^${label}\\s+`, "i"),
+	]
+
+	for (const pattern of patterns) {
+		const stripped = name.replace(pattern, "").trim()
+		if (stripped && stripped !== name) return stripped
+	}
+
+	const slash = value.indexOf("/")
+	if (slash > 0) {
+		const tail = value.slice(slash + 1).trim()
+		if (tail) return tail
+	}
+
+	if (name.includes(" - ")) {
+		const tail = name.split(" - ").slice(1).join(" - ").trim()
+		if (tail) return tail
+	}
+
+	return name.trim()
+}
+
+export function buildModelGroups(options: ConfigOption["options"]): ModelGroup[] {
 	const byGroup = new Map<string, ModelEntry[]>()
+	const providerIds = new Map<string, string>()
 
 	for (const option of options) {
-		const group = inferGroup(option.value, option.name, option.group)
+		const providerId = inferProviderId(option.value, option.name, option.group)
+		const group = formatProviderLabel(providerId)
 		const entry: ModelEntry = {
 			value: option.value,
 			name: option.name,
+			displayName: modelDisplayName(option.name, option.value, providerId),
 			description: option.description,
 			group,
+			providerId,
 		}
 		const bucket = byGroup.get(group) ?? []
 		bucket.push(entry)
 		byGroup.set(group, bucket)
+		providerIds.set(group, providerId)
 	}
 
 	return [...byGroup.entries()]
 		.sort(([a], [b]) => a.localeCompare(b, "es"))
 		.map(([name, models]) => ({
 			name,
-			models: models.sort((a, b) => a.name.localeCompare(b.name, "es")),
+			providerId: providerIds.get(name) ?? name.toLowerCase(),
+			models: models.sort((a, b) => a.displayName.localeCompare(b.displayName, "es")),
 		}))
 }
 
@@ -68,12 +102,11 @@ export function filterModelGroups(
 ): { favorites: ModelEntry[]; groups: ModelGroup[] } {
 	const q = query.trim().toLowerCase()
 
-	const allModels = groups.flatMap((group) =>
-		group.models.map((model) => ({ ...model, group: group.name })),
-	)
+	const allModels = groups.flatMap((group) => group.models)
 
 	const matches = (model: ModelEntry) =>
 		!q ||
+		model.displayName.toLowerCase().includes(q) ||
 		model.name.toLowerCase().includes(q) ||
 		model.value.toLowerCase().includes(q) ||
 		model.group.toLowerCase().includes(q)
@@ -88,4 +121,15 @@ export function filterModelGroups(
 		.filter((group) => group.models.length > 0)
 
 	return { favorites, groups: filteredGroups }
+}
+
+export function findModelEntry(
+	groups: ModelGroup[],
+	value: string,
+): ModelEntry | null {
+	for (const group of groups) {
+		const match = group.models.find((model) => model.value === value)
+		if (match) return match
+	}
+	return null
 }

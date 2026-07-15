@@ -14,27 +14,23 @@ export function SessionTitle() {
 
 	if (!activeSession) {
 		return (
-			<div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 leading-tight">
-				<p className="truncate text-sm text-muted-foreground">Sin sesión activa</p>
-			</div>
+			<span className="block min-w-0 flex-1 truncate text-sm text-muted-foreground">
+				Sin sesión activa
+			</span>
 		)
 	}
 
 	const directoryLabel = getProjectDirectoryLabel(projectPath)
 	const title = sessionTitle(activeSession, activeIndex)
-	const sessionLabel = `Sesión ${activeIndex + 1}`
 
 	return (
-		<div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 leading-tight">
-			<p className="truncate text-sm font-medium text-foreground">{title}</p>
-			<p className="flex min-w-0 items-center truncate text-xs text-muted-foreground/70">
-				<Home className="mr-1 size-3 shrink-0" />
-				<span className="truncate">
-					{directoryLabel}
-					<span className="mx-1 text-muted-foreground/40">/</span>
-					{sessionLabel}
-				</span>
-			</p>
-		</div>
+		<span className="flex min-w-0 flex-1 items-center truncate text-sm leading-none">
+			<span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground/70">
+				<Home className="size-3" />
+				{directoryLabel}
+			</span>
+			<span className="mx-1.5 shrink-0 text-muted-foreground/40">/</span>
+			<span className="truncate font-medium text-foreground">{title}</span>
+		</span>
 	)
 }

@@ -2,7 +2,7 @@ import { useAtom } from "jotai"
 import { ChevronDown, Star } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import { useMemo, useRef, useState } from "react"
-import { fadeSlideUp } from "@/lib/motion-presets"
+import { ProviderIcon } from "@/components/chat/provider-icon"
 import { SelectorMenuItem } from "@/components/chat/selector-menu-item"
 import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside"
 import { InputGroupButton } from "@/components/ui/input-group"
@@ -11,11 +11,17 @@ import {
 	isFavoriteModel,
 	toggleFavoriteModel,
 } from "@/lib/favorite-models"
-import { buildModelGroups, filterModelGroups } from "@/lib/model-groups"
+import {
+	buildModelGroups,
+	filterModelGroups,
+	findModelEntry,
+} from "@/lib/model-groups"
+import { fadeSlideUp } from "@/lib/motion-presets"
 import { setLastModel } from "@/lib/preferences"
 import { setConfigOption } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
 import { configOptionsAtom } from "@/stores/atoms"
+import type { ModelEntry } from "@/lib/model-groups"
 
 export function ModelSelector() {
 	const [configOptions, setConfigOptions] = useAtom(configOptionsAtom)
@@ -30,18 +36,15 @@ export function ModelSelector() {
 		(option) => option.category?.toLowerCase().includes("model") || option.id === "model",
 	)
 
-	const currentName = useMemo(() => {
-		if (!modelOption) return "Modelo"
-		return (
-			modelOption.options.find((o) => o.value === modelOption.currentValue)?.name ??
-			modelOption.currentValue
-		)
-	}, [modelOption])
-
 	const modelGroups = useMemo(
 		() => (modelOption ? buildModelGroups(modelOption.options) : []),
 		[modelOption],
 	)
+
+	const currentModel = useMemo(() => {
+		if (!modelOption) return null
+		return findModelEntry(modelGroups, modelOption.currentValue)
+	}, [modelGroups, modelOption])
 
 	const favoriteSet = useMemo(() => new Set(favorites), [favorites])
 
@@ -78,11 +81,14 @@ export function ModelSelector() {
 			<InputGroupButton
 				variant="ghost"
 				size="sm"
-				className="h-7 max-w-48 gap-1 px-2 text-xs"
+				className="h-7 max-w-48 gap-1.5 px-2 text-xs"
 				disabled={!hasModels}
 				onClick={() => hasModels && setOpen((v) => !v)}
 			>
-				<span className="truncate">{currentName}</span>
+				{currentModel ? (
+					<ProviderIcon providerId={currentModel.providerId} />
+				) : null}
+				<span className="truncate">{currentModel?.displayName ?? "Modelo"}</span>
 				<ChevronDown className="size-3 shrink-0 opacity-60" />
 			</InputGroupButton>
 
@@ -92,64 +98,64 @@ export function ModelSelector() {
 						{...fadeSlideUp}
 						className="absolute bottom-full left-0 z-30 mb-2 w-72 overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
 					>
-					<div className="border-b border-border p-2">
-						<input
-							value={query}
-							onChange={(e) => setQuery(e.target.value)}
-							placeholder="Buscar modelo…"
-							className="h-7 w-full rounded-md border border-input bg-muted/40 px-2 text-xs outline-none focus:ring-1 focus:ring-ring/40"
-							autoFocus
-						/>
-					</div>
-					<div className="scrollbar-thin max-h-64 overflow-y-auto p-1">
-						{!hasVisible ? (
-							<p className="px-2 py-2 text-xs text-muted-foreground">Sin resultados</p>
-						) : (
-							<>
-								{favoriteModels.length > 0 ? (
-									<section className="mb-1">
-										<p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-											Favoritos
-										</p>
-										<ul>
-											{favoriteModels.map((model) => (
-												<li key={`fav-${model.value}`}>
-													<ModelRow
-														model={model}
-														isActive={model.value === modelOption.currentValue}
-														isFavorite
-														onSelect={() => void handleSelect(model.value)}
-														onToggleFavorite={(e) => handleToggleFavorite(e, model.value)}
-													/>
-												</li>
-											))}
-										</ul>
-									</section>
-								) : null}
+						<div className="border-b border-border p-2">
+							<input
+								value={query}
+								onChange={(e) => setQuery(e.target.value)}
+								placeholder="Buscar modelo…"
+								className="h-7 w-full rounded-md border border-input bg-muted/40 px-2 text-xs outline-none focus:ring-1 focus:ring-ring/40"
+								autoFocus
+							/>
+						</div>
+						<div className="scrollbar-thin max-h-64 overflow-y-auto p-1">
+							{!hasVisible ? (
+								<p className="px-2 py-2 text-xs text-muted-foreground">Sin resultados</p>
+							) : (
+								<>
+									{favoriteModels.length > 0 ? (
+										<section className="mb-1">
+											<p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+												Favoritos
+											</p>
+											<ul>
+												{favoriteModels.map((model) => (
+													<li key={`fav-${model.value}`}>
+														<ModelRow
+															model={model}
+															isActive={model.value === modelOption.currentValue}
+															isFavorite
+															onSelect={() => void handleSelect(model.value)}
+															onToggleFavorite={(e) => handleToggleFavorite(e, model.value)}
+														/>
+													</li>
+												))}
+											</ul>
+										</section>
+									) : null}
 
-								{visibleGroups.map((group) => (
-									<section key={group.name} className="mb-1 last:mb-0">
-										<p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-											{group.name}
-										</p>
-										<ul>
-											{group.models.map((model) => (
-												<li key={model.value}>
-													<ModelRow
-														model={model}
-														isActive={model.value === modelOption.currentValue}
-														isFavorite={isFavoriteModel(model.value)}
-														onSelect={() => void handleSelect(model.value)}
-														onToggleFavorite={(e) => handleToggleFavorite(e, model.value)}
-													/>
-												</li>
-											))}
-										</ul>
-									</section>
-								))}
-							</>
-						)}
-					</div>
+									{visibleGroups.map((group) => (
+										<section key={group.name} className="mb-1 last:mb-0">
+											<p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+												{group.name}
+											</p>
+											<ul>
+												{group.models.map((model) => (
+													<li key={model.value}>
+														<ModelRow
+															model={model}
+															isActive={model.value === modelOption.currentValue}
+															isFavorite={isFavoriteModel(model.value)}
+															onSelect={() => void handleSelect(model.value)}
+															onToggleFavorite={(e) => handleToggleFavorite(e, model.value)}
+														/>
+													</li>
+												))}
+											</ul>
+										</section>
+									))}
+								</>
+							)}
+						</div>
 					</motion.div>
 				) : null}
 			</AnimatePresence>
@@ -164,7 +170,7 @@ function ModelRow({
 	onSelect,
 	onToggleFavorite,
 }: {
-	model: { value: string; name: string; description?: string }
+	model: ModelEntry
 	isActive: boolean
 	isFavorite: boolean
 	onSelect: () => void
@@ -172,8 +178,9 @@ function ModelRow({
 }) {
 	return (
 		<div className="group/model-row relative">
-			<SelectorMenuItem active={isActive} onClick={onSelect} className="pr-8">
-				<span className="truncate">{model.name}</span>
+			<SelectorMenuItem active={isActive} onClick={onSelect} className="gap-2 pr-8">
+				<ProviderIcon providerId={model.providerId} />
+				<span className="truncate">{model.displayName}</span>
 			</SelectorMenuItem>
 			<button
 				type="button"
