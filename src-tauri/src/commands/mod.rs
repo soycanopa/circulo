@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::acp::{read_context_file, search_project_files, start_agent_connection};
 use crate::state::{
-    ActiveProject, AgentCommand, ContextFile, ProjectStatus, SharedState,
+    ActiveProject, AgentCapabilitiesDto, AgentCommand, ContextFile, ProjectStatus, SharedState,
 };
 
 #[tauri::command]
@@ -43,6 +43,14 @@ pub async fn open_project(
             session_id: session_placeholder,
             cmd_tx: cmd_tx.clone(),
             config_options: Vec::new(),
+            sessions: Vec::new(),
+            agent_capabilities: AgentCapabilitiesDto {
+                load_session: false,
+                list_sessions: false,
+                resume_session: false,
+                close_session: false,
+            },
+            list_cursor: None,
         });
     }
 
@@ -138,6 +146,94 @@ pub async fn set_config_option(
         .send(AgentCommand::SetConfigOption { config_id, value })
         .await
         .map_err(|err| format!("Failed to set config option: {err}"))
+}
+
+#[tauri::command]
+pub async fn list_sessions(state: State<'_, SharedState>) -> Result<ProjectStatus, String> {
+    let cmd_tx = {
+        let guard = state.lock().await;
+        let project = guard
+            .project
+            .as_ref()
+            .ok_or_else(|| "No project open".to_string())?;
+        project.cmd_tx.clone()
+    };
+
+    cmd_tx
+        .send(AgentCommand::ListSessions)
+        .await
+        .map_err(|err| format!("Failed to list sessions: {err}"))?;
+
+    Ok(state.lock().await.status())
+}
+
+#[tauri::command]
+pub async fn create_session(state: State<'_, SharedState>) -> Result<ProjectStatus, String> {
+    let cmd_tx = {
+        let guard = state.lock().await;
+        let project = guard
+            .project
+            .as_ref()
+            .ok_or_else(|| "No project open".to_string())?;
+        project.cmd_tx.clone()
+    };
+
+    cmd_tx
+        .send(AgentCommand::CreateSession)
+        .await
+        .map_err(|err| format!("Failed to create session: {err}"))?;
+
+    Ok(state.lock().await.status())
+}
+
+#[tauri::command]
+pub async fn load_session(
+    state: State<'_, SharedState>,
+    id: String,
+) -> Result<ProjectStatus, String> {
+    let cmd_tx = {
+        let guard = state.lock().await;
+        let project = guard
+            .project
+            .as_ref()
+            .ok_or_else(|| "No project open".to_string())?;
+        if !project.supports_load_session() {
+            return Err("Agent does not support session/load".to_string());
+        }
+        project.cmd_tx.clone()
+    };
+
+    cmd_tx
+        .send(AgentCommand::LoadSession { id })
+        .await
+        .map_err(|err| format!("Failed to load session: {err}"))?;
+
+    Ok(state.lock().await.status())
+}
+
+#[tauri::command]
+pub async fn close_session(
+    state: State<'_, SharedState>,
+    id: String,
+) -> Result<ProjectStatus, String> {
+    let cmd_tx = {
+        let guard = state.lock().await;
+        let project = guard
+            .project
+            .as_ref()
+            .ok_or_else(|| "No project open".to_string())?;
+        if !project.supports_close_session() {
+            return Err("Agent does not support session/close".to_string());
+        }
+        project.cmd_tx.clone()
+    };
+
+    cmd_tx
+        .send(AgentCommand::CloseSession { id })
+        .await
+        .map_err(|err| format!("Failed to close session: {err}"))?;
+
+    Ok(state.lock().await.status())
 }
 
 #[tauri::command]

@@ -1,23 +1,25 @@
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
+use std::sync::Arc;
 
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
-    ContentBlock, InitializeRequest, NewSessionRequest, PromptRequest,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    CloseSessionRequest, ContentBlock, InitializeRequest, ListSessionsRequest,
+    LoadSessionRequest, NewSessionRequest, PromptRequest, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, ResumeSessionRequest,
     SelectedPermissionOutcome, SessionConfigKind, SessionConfigOption,
-    SessionConfigSelectOptions, SessionNotification, SetSessionConfigOptionRequest,
-    TextContent,
+    SessionConfigSelectOptions, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, TextContent,
 };
-use agent_client_protocol::{AcpAgent, Agent, ConnectionTo};
+use agent_client_protocol::{Agent, ConnectionTo};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tracing::{error, info};
 
-use crate::agents::DEFAULT_AGENT_COMMAND;
+use crate::agents::build_opencode_agent;
 use crate::state::{
-    AgentCommand, ConfigOptionDto, ConfigOptionValueDto, ContextFile, SharedState,
+    AgentCapabilitiesDto, AgentCommand, ConfigOptionDto, ConfigOptionValueDto, ContextFile,
+    SessionInfoDto, SharedState,
 };
 
 pub async fn start_agent_connection(
@@ -26,10 +28,10 @@ pub async fn start_agent_connection(
     project_path: PathBuf,
     cmd_rx: mpsc::Receiver<AgentCommand>,
 ) -> Result<(), String> {
-    let agent = AcpAgent::from_str(DEFAULT_AGENT_COMMAND)
-        .map_err(|err| format!("Failed to parse agent command: {err}"))?;
+    let agent = build_opencode_agent(&project_path)?;
 
     let app_for_notifications = app.clone();
+    let state_for_notifications = state.clone();
     let state_for_permissions = state.clone();
     let app_for_permissions = app.clone();
 
@@ -42,6 +44,44 @@ pub async fn start_agent_connection(
             async move |notification: SessionNotification, _cx| {
                 let payload = serde_json::to_value(&notification).unwrap_or(Value::Null);
                 let _ = app_for_notifications.emit("acp:session_update", payload);
+
+                if let SessionUpdate::SessionInfoUpdate(update) = &notification.update {
+                    let (sessions, active_session_id) = {
+                        let mut guard = state_for_notifications.lock().await;
+                        if let Some(project) = guard.project.as_mut() {
+                            let session_id = notification.session_id.to_string();
+                            if let Some(session) = project
+                                .sessions
+                                .iter_mut()
+                                .find(|entry| entry.session_id == session_id)
+                            {
+                                match update.title.as_opt_ref() {
+                                    Some(Some(title)) => session.title = Some(title.clone()),
+                                    Some(None) => session.title = None,
+                                    None => {}
+                                }
+                                match update.updated_at.as_opt_ref() {
+                                    Some(Some(updated_at)) => {
+                                        session.updated_at = Some(updated_at.clone())
+                                    }
+                                    Some(None) => session.updated_at = None,
+                                    None => {}
+                                }
+                            }
+                            (project.sessions.clone(), project.session_id.clone())
+                        } else {
+                            return Ok(());
+                        }
+                    };
+
+                    emit_sessions_updated(
+                        &app_for_notifications,
+                        &sessions,
+                        Some(&active_session_id),
+                        None,
+                    );
+                }
+
                 Ok(())
             },
             agent_client_protocol::on_receive_notification!(),
@@ -50,31 +90,31 @@ pub async fn start_agent_connection(
             async move |request: RequestPermissionRequest, responder, _connection| {
                 let app = app_for_permissions.clone();
                 let state = state_for_permissions.clone();
-                    let request_id = uuid::Uuid::new_v4().to_string();
-                    let (tx, rx) = oneshot::channel::<String>();
+                let request_id = uuid::Uuid::new_v4().to_string();
+                let (tx, rx) = oneshot::channel::<String>();
 
-                    {
-                        let mut guard = state.lock().await;
-                        guard.permission_waiters.insert(request_id.clone(), tx);
+                {
+                    let mut guard = state.lock().await;
+                    guard.permission_waiters.insert(request_id.clone(), tx);
+                }
+
+                let payload = serde_json::json!({
+                    "requestId": request_id,
+                    "sessionId": request.session_id,
+                    "toolCall": request.tool_call,
+                    "options": request.options,
+                });
+
+                let _ = app.emit("acp:permission_request", payload);
+
+                let outcome = match rx.await {
+                    Ok(option_id) => {
+                        RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                            option_id,
+                        ))
                     }
-
-                    let payload = serde_json::json!({
-                        "requestId": request_id,
-                        "sessionId": request.session_id,
-                        "toolCall": request.tool_call,
-                        "options": request.options,
-                    });
-
-                    let _ = app.emit("acp:permission_request", payload);
-
-                    let outcome = match rx.await {
-                        Ok(option_id) => {
-                            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                                option_id,
-                            ))
-                        }
-                        Err(_) => RequestPermissionOutcome::Cancelled,
-                    };
+                    Err(_) => RequestPermissionOutcome::Cancelled,
+                };
 
                 let _ = responder.respond(RequestPermissionResponse::new(outcome));
                 Ok(())
@@ -88,16 +128,29 @@ pub async fn start_agent_connection(
 
             async move {
                 info!("Initializing OpenCode ACP agent");
-                if let Err(err) = connection
+                let init_response = match connection
                     .send_request(InitializeRequest::new(ProtocolVersion::V1))
                     .block_task()
                     .await
                 {
-                    let _ = app.emit(
-                        "acp:error",
-                        serde_json::json!({ "message": format!("ACP initialize failed: {err}") }),
-                    );
-                    return Ok(());
+                    Ok(response) => response,
+                    Err(err) => {
+                        let _ = app.emit(
+                            "acp:error",
+                            serde_json::json!({ "message": format!("ACP initialize failed: {err}") }),
+                        );
+                        return Ok(());
+                    }
+                };
+
+                let agent_capabilities =
+                    AgentCapabilitiesDto::from_capabilities(&init_response.agent_capabilities);
+
+                {
+                    let mut guard = state.lock().await;
+                    if let Some(project) = guard.project.as_mut() {
+                        project.agent_capabilities = agent_capabilities.clone();
+                    }
                 }
 
                 let session_response = match connection
@@ -118,25 +171,47 @@ pub async fn start_agent_connection(
                 let session_id = session_response.session_id.clone();
                 let config_options =
                     map_config_options(session_response.config_options.as_deref());
+                let initial_session = session_info_from_parts(
+                    session_id.to_string(),
+                    project_path.clone(),
+                    None,
+                    None,
+                );
 
                 {
                     let mut guard = state.lock().await;
                     if let Some(project) = guard.project.as_mut() {
                         project.session_id = session_id.to_string();
                         project.config_options = config_options.clone();
+                        project.sessions = vec![initial_session];
                     }
                 }
 
-                let _ = app.emit(
-                    "acp:session_ready",
-                    serde_json::json!({
-                        "sessionId": session_id.to_string(),
-                        "projectPath": project_path.display().to_string(),
-                        "configOptions": config_options,
-                    }),
-                );
+                let active_session_id = Arc::new(Mutex::new(session_id.to_string()));
 
+                emit_session_ready(
+                    &app,
+                    session_id.to_string(),
+                    &project_path,
+                    &config_options,
+                );
                 info!(session_id = %session_id, "ACP session ready");
+
+                {
+                    let sessions = state
+                        .lock()
+                        .await
+                        .project
+                        .as_ref()
+                        .map(|project| project.sessions.clone())
+                        .unwrap_or_default();
+                    emit_sessions_updated(
+                        &app,
+                        &sessions,
+                        Some(&session_id.to_string()),
+                        None,
+                    );
+                }
 
                 while let Some(command) = cmd_rx.recv().await {
                     match command {
@@ -144,9 +219,10 @@ pub async fn start_agent_connection(
                             text,
                             context_files,
                         } => {
+                            let active_id = active_session_id.lock().await.clone();
                             let blocks = build_prompt_blocks(&text, &context_files);
                             if let Err(err) = connection
-                                .send_request(PromptRequest::new(session_id.clone(), blocks))
+                                .send_request(PromptRequest::new(active_id, blocks))
                                 .block_task()
                                 .await
                             {
@@ -160,8 +236,9 @@ pub async fn start_agent_connection(
                             }
                         }
                         AgentCommand::SetConfigOption { config_id, value } => {
+                            let active_id = active_session_id.lock().await.clone();
                             let request = SetSessionConfigOptionRequest::new(
-                                session_id.clone(),
+                                active_id,
                                 config_id,
                                 value.as_str(),
                             );
@@ -184,6 +261,246 @@ pub async fn start_agent_connection(
                                 }
                             }
                         }
+                        AgentCommand::ListSessions => {
+                            let (sessions, active_session_id) = {
+                                let guard = state.lock().await;
+                                match guard.project.as_ref() {
+                                    Some(project) => (
+                                        project.sessions.clone(),
+                                        project.session_id.clone(),
+                                    ),
+                                    None => (Vec::new(), String::new()),
+                                }
+                            };
+                            emit_sessions_updated(
+                                &app,
+                                &sessions,
+                                Some(&active_session_id),
+                                None,
+                            );
+                        }
+                        AgentCommand::CreateSession => {
+                            match connection
+                                .send_request(NewSessionRequest::new(project_path.clone()))
+                                .block_task()
+                                .await
+                            {
+                                Ok(response) => {
+                                    let new_session_id = response.session_id.to_string();
+                                    let config_options = map_config_options(
+                                        response.config_options.as_deref(),
+                                    );
+                                    let session_entry = session_info_from_parts(
+                                        new_session_id.clone(),
+                                        project_path.clone(),
+                                        None,
+                                        None,
+                                    );
+
+                                    {
+                                        let mut guard = state.lock().await;
+                                        if let Some(project) = guard.project.as_mut() {
+                                            if !project
+                                                .sessions
+                                                .iter()
+                                                .any(|entry| entry.session_id == new_session_id)
+                                            {
+                                                project.sessions.push(session_entry);
+                                            }
+                                            project.session_id = new_session_id.clone();
+                                            project.config_options = config_options.clone();
+                                        }
+                                    }
+
+                                    *active_session_id.lock().await = new_session_id.clone();
+                                    emit_session_ready(
+                                        &app,
+                                        new_session_id.clone(),
+                                        &project_path,
+                                        &config_options,
+                                    );
+
+                                    let sessions = state
+                                        .lock()
+                                        .await
+                                        .project
+                                        .as_ref()
+                                        .map(|project| project.sessions.clone())
+                                        .unwrap_or_default();
+                                    emit_sessions_updated(
+                                        &app,
+                                        &sessions,
+                                        Some(&new_session_id),
+                                        None,
+                                    );
+                                }
+                                Err(err) => {
+                                    let _ = app.emit(
+                                        "acp:error",
+                                        serde_json::json!({ "message": err.to_string() }),
+                                    );
+                                }
+                            }
+                        }
+                        AgentCommand::LoadSession { id } => {
+                            let (supports_load, is_forge_session) = {
+                                let guard = state.lock().await;
+                                let project = match guard.project.as_ref() {
+                                    Some(p) => p,
+                                    None => continue,
+                                };
+                                (
+                                    project.supports_load_session(),
+                                    project.sessions.iter().any(|s| s.session_id == id),
+                                )
+                            };
+
+                            if !supports_load {
+                                let _ = app.emit(
+                                    "acp:error",
+                                    serde_json::json!({
+                                        "message": "Agent does not support session/load"
+                                    }),
+                                );
+                                continue;
+                            }
+
+                            if !is_forge_session {
+                                let _ = app.emit(
+                                    "acp:error",
+                                    serde_json::json!({
+                                        "message": "Session was not started from Forge"
+                                    }),
+                                );
+                                continue;
+                            }
+
+                            let request =
+                                LoadSessionRequest::new(id.clone(), project_path.clone());
+                            match connection.send_request(request).block_task().await {
+                                Ok(response) => {
+                                    let config_options = map_config_options(
+                                        response.config_options.as_deref(),
+                                    );
+                                    switch_active_session(
+                                        &app,
+                                        &state,
+                                        &active_session_id,
+                                        id,
+                                        config_options,
+                                        &project_path,
+                                    )
+                                    .await;
+                                }
+                                Err(err) => {
+                                    let _ = app.emit(
+                                        "acp:error",
+                                        serde_json::json!({ "message": err.to_string() }),
+                                    );
+                                }
+                            }
+                        }
+                        AgentCommand::ResumeSession { id } => {
+                            if !state
+                                .lock()
+                                .await
+                                .project
+                                .as_ref()
+                                .is_some_and(|project| project.supports_resume_session())
+                            {
+                                let _ = app.emit(
+                                    "acp:error",
+                                    serde_json::json!({
+                                        "message": "Agent does not support session/resume"
+                                    }),
+                                );
+                                continue;
+                            }
+
+                            let request =
+                                ResumeSessionRequest::new(id.clone(), project_path.clone());
+                            match connection.send_request(request).block_task().await {
+                                Ok(response) => {
+                                    let config_options = map_config_options(
+                                        response.config_options.as_deref(),
+                                    );
+                                    switch_active_session(
+                                        &app,
+                                        &state,
+                                        &active_session_id,
+                                        id,
+                                        config_options,
+                                        &project_path,
+                                    )
+                                    .await;
+                                }
+                                Err(err) => {
+                                    let _ = app.emit(
+                                        "acp:error",
+                                        serde_json::json!({ "message": err.to_string() }),
+                                    );
+                                }
+                            }
+                        }
+                        AgentCommand::CloseSession { id } => {
+                            if !state
+                                .lock()
+                                .await
+                                .project
+                                .as_ref()
+                                .is_some_and(|project| project.supports_close_session())
+                            {
+                                let _ = app.emit(
+                                    "acp:error",
+                                    serde_json::json!({
+                                        "message": "Agent does not support session/close"
+                                    }),
+                                );
+                                continue;
+                            }
+
+                            let request = CloseSessionRequest::new(id.clone());
+                            match connection.send_request(request).block_task().await {
+                                Ok(_) => {
+                                    let (sessions, active_session_id_value) = {
+                                        let mut guard = state.lock().await;
+                                        let Some(project) = guard.project.as_mut() else {
+                                            continue;
+                                        };
+
+                                        project
+                                            .sessions
+                                            .retain(|entry| entry.session_id != id);
+
+                                        if project.session_id == id {
+                                            if let Some(next) = project.sessions.first() {
+                                                project.session_id = next.session_id.clone();
+                                            }
+                                        }
+
+                                        (
+                                            project.sessions.clone(),
+                                            project.session_id.clone(),
+                                        )
+                                    };
+
+                                    *active_session_id.lock().await =
+                                        active_session_id_value.clone();
+                                    emit_sessions_updated(
+                                        &app,
+                                        &sessions,
+                                        Some(&active_session_id_value),
+                                        None,
+                                    );
+                                }
+                                Err(err) => {
+                                    let _ = app.emit(
+                                        "acp:error",
+                                        serde_json::json!({ "message": err.to_string() }),
+                                    );
+                                }
+                            }
+                        }
                         AgentCommand::Shutdown => break,
                     }
                 }
@@ -195,6 +512,134 @@ pub async fn start_agent_connection(
         .map_err(|err| format!("ACP connection ended: {err}"))?;
 
     Ok(())
+}
+
+async fn list_sessions_on_connection(
+    connection: &ConnectionTo<Agent>,
+    app: &AppHandle,
+    state: &SharedState,
+    project_path: &PathBuf,
+    cursor: Option<String>,
+) -> Result<(), String> {
+    let is_paginated = cursor.is_some();
+    let mut request = ListSessionsRequest::new().cwd(project_path.clone());
+    if let Some(cursor) = cursor {
+        request = request.cursor(cursor);
+    }
+
+    let response = connection
+        .send_request(request)
+        .block_task()
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let sessions: Vec<SessionInfoDto> = response
+        .sessions
+        .iter()
+        .map(SessionInfoDto::from)
+        .collect();
+    let next_cursor = response.next_cursor.clone();
+
+    let (all_sessions, active_session_id) = {
+        let mut guard = state.lock().await;
+        let Some(project) = guard.project.as_mut() else {
+            return Ok(());
+        };
+
+        if is_paginated {
+            for session in sessions.iter() {
+                if let Some(existing) = project
+                    .sessions
+                    .iter_mut()
+                    .find(|entry| entry.session_id == session.session_id)
+                {
+                    *existing = session.clone();
+                } else {
+                    project.sessions.push(session.clone());
+                }
+            }
+        } else {
+            project.sessions = sessions.clone();
+        }
+
+        project.list_cursor = next_cursor.clone();
+        (project.sessions.clone(), project.session_id.clone())
+    };
+
+    emit_sessions_updated(
+        app,
+        &all_sessions,
+        Some(&active_session_id),
+        next_cursor,
+    );
+    Ok(())
+}
+
+async fn switch_active_session(
+    app: &AppHandle,
+    state: &SharedState,
+    active_session_id: &Arc<Mutex<String>>,
+    session_id: String,
+    config_options: Vec<ConfigOptionDto>,
+    project_path: &PathBuf,
+) {
+    *active_session_id.lock().await = session_id.clone();
+    {
+        let mut guard = state.lock().await;
+        if let Some(project) = guard.project.as_mut() {
+            project.session_id = session_id.clone();
+            project.config_options = config_options.clone();
+        }
+    }
+
+    emit_session_ready(app, session_id, project_path, &config_options);
+}
+
+fn emit_session_ready(
+    app: &AppHandle,
+    session_id: String,
+    project_path: &PathBuf,
+    config_options: &[ConfigOptionDto],
+) {
+    let _ = app.emit(
+        "acp:session_ready",
+        serde_json::json!({
+            "sessionId": session_id,
+            "projectPath": project_path.display().to_string(),
+            "configOptions": config_options,
+        }),
+    );
+}
+
+fn emit_sessions_updated(
+    app: &AppHandle,
+    sessions: &[SessionInfoDto],
+    active_session_id: Option<&str>,
+    next_cursor: Option<String>,
+) {
+    let _ = app.emit(
+        "acp:sessions_updated",
+        serde_json::json!({
+            "sessions": sessions,
+            "activeSessionId": active_session_id,
+            "nextCursor": next_cursor,
+        }),
+    );
+}
+
+fn session_info_from_parts(
+    session_id: String,
+    cwd: PathBuf,
+    title: Option<String>,
+    updated_at: Option<String>,
+) -> SessionInfoDto {
+    SessionInfoDto {
+        session_id,
+        cwd: cwd.display().to_string(),
+        additional_directories: Vec::new(),
+        title,
+        updated_at,
+    }
 }
 
 fn build_prompt_blocks(text: &str, context_files: &[ContextFile]) -> Vec<ContentBlock> {

@@ -27,6 +27,10 @@ pub fn run() {
             commands::send_prompt,
             commands::respond_permission,
             commands::set_config_option,
+            commands::list_sessions,
+            commands::create_session,
+            commands::load_session,
+            commands::close_session,
             commands::search_files,
         ])
         .run(tauri::generate_context!())
