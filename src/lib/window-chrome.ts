@@ -36,7 +36,7 @@ export const WINDOW_CONTROL_TOP = SHELL_INSET + APP_BAR_CONTROL_PADDING_TOP
 
 /** Native macOS traffic-light origin — synced with tauri.conf.json. */
 export const TRAFFIC_LIGHT_POSITION = {
-	x: 18,
+	x: 22,
 	y: SHELL_INSET + TRAFFIC_LIGHT_PADDING_TOP,
 }
 
