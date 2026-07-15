@@ -96,10 +96,11 @@
 	width: 100%;
 	min-width: 0;
 }
-[data-tauri-drag-region] {
+[data-tauri-drag-region]:not([data-tauri-drag-region="false"]) {
 	-webkit-app-region: drag;
 	app-region: drag;
 }
+[data-tauri-drag-region="false"],
 [data-tauri-drag-region] button,
 [data-tauri-drag-region] a,
 [data-tauri-drag-region] input,

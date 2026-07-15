@@ -13,7 +13,7 @@ import { AppBar } from "@/components/layout/app-bar"
 import { SidebarResizeHandle } from "@/components/layout/sidebar-resize-handle"
 import { WindowControls } from "@/components/layout/window-controls"
 import { WindowDragStrip } from "@/components/layout/window-drag-strip"
-import { windowDragRegionProps } from "@/hooks/use-window-drag"
+import { windowDragRegionProps, windowNoDragProps } from "@/hooks/use-window-drag"
 import { useSessions } from "@/hooks/use-sessions"
 import { layoutSpring } from "@/lib/motion-presets"
 import { getSidebarWidth } from "@/lib/preferences"
@@ -177,10 +177,11 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 					</div>
 				</main>
 
+				<WindowDragStrip />
 				{appBar ? (
 					<motion.div
 						data-slot="session-title-layer"
-						className="pointer-events-none absolute z-[51] box-border flex items-start overflow-visible"
+						className="pointer-events-none absolute z-[52] box-border flex items-start overflow-visible"
 						initial={false}
 						animate={{ left: titleLeft }}
 						transition={layoutSpring}
@@ -191,13 +192,14 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 							paddingTop: APP_BAR_TITLE_PADDING_TOP,
 						}}
 					>
-						<div className="flex min-w-0 flex-1 items-center overflow-visible">
+						<div
+							{...windowNoDragProps()}
+							className="pointer-events-auto flex min-w-0 flex-1 items-center overflow-visible"
+						>
 							{appBar}
 						</div>
 					</motion.div>
 				) : null}
-
-				<WindowDragStrip />
 				<LayoutWindowControls open={open} onToggleSidebar={toggleSidebar} />
 			</div>
 		</SidebarContext.Provider>

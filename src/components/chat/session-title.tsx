@@ -27,13 +27,13 @@ export function SessionTitle() {
 	const title = sessionTitle(activeSession, activeIndex)
 
 	return (
-		<span className="pointer-events-none flex min-w-0 flex-1 items-center truncate text-sm leading-none">
+		<span className="flex min-w-0 flex-1 items-center text-sm leading-none">
 			<span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground/70">
 				<Home className="size-3" />
 				{directoryLabel}
 			</span>
 			<span className="mx-1.5 shrink-0 text-muted-foreground/40">/</span>
-			<span className="flex min-w-0 items-center gap-0.5">
+			<span className="flex min-w-0 items-center gap-1">
 				<span className="truncate font-medium text-foreground">{title}</span>
 				<SessionTitleMenu
 					sessionId={activeSessionId}

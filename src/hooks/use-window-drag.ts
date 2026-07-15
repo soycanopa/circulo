@@ -7,3 +7,9 @@ export function windowDragRegionProps(): Record<string, string> | undefined {
 	if (!isTauri) return undefined
 	return { "data-tauri-drag-region": TAURI_DRAG_REGION_DEEP }
 }
+
+/** Opt interactive chrome controls out of the native window drag region. */
+export function windowNoDragProps(): Record<string, string> | undefined {
+	if (!isTauri) return undefined
+	return { "data-tauri-drag-region": "false" }
+}

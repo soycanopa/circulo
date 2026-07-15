@@ -1,4 +1,5 @@
 import { PanelLeft, Plus } from "lucide-react"
+import { windowNoDragProps } from "@/hooks/use-window-drag"
 import {
 	APP_BAR_CONTROL_PADDING_TOP,
 	SHELL_INSET,
@@ -34,6 +35,7 @@ export function WindowControls({
 		>
 			<button
 				type="button"
+				{...windowNoDragProps()}
 				onClick={onToggleSidebar}
 				title={sidebarOpen ? "Ocultar sidebar (⌘B)" : "Mostrar sidebar (⌘B)"}
 				className={controlButtonClass}
@@ -43,6 +45,7 @@ export function WindowControls({
 			{!sidebarOpen ? (
 				<button
 					type="button"
+					{...windowNoDragProps()}
 					onClick={onNewThread}
 					title="New Thread"
 					className={controlButtonClass}
