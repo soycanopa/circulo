@@ -160,23 +160,22 @@ export function ChatInput({ disabled, sessionStatus, onOpenProject }: ChatInputP
 					</div>
 				) : null}
 
-				<form
-					onSubmit={(e) => void handleSubmit(e)}
-					className={cn(showFolderPicker && "-mt-9")}
-				>
-					<InputGroup>
-						{showFolderPicker ? (
-							<div
-								data-slot="thread-folder-bar"
-								className="flex w-full items-center border-b border-[var(--chat-input-border)] px-3 py-2"
-							>
+				<form onSubmit={(e) => void handleSubmit(e)}>
+					{showFolderPicker ? (
+						<div
+							data-slot="thread-selectors"
+							className="mb-2 flex flex-wrap items-center gap-2"
+						>
+							<div data-slot="thread-selector-chip" className="shrink-0">
 								<ThreadFolderPicker
 									projectPath={projectPath}
 									onOpenProject={onOpenProject}
 									onClose={() => setThreadFolderPickerSessionId(null)}
 								/>
 							</div>
-						) : null}
+						</div>
+					) : null}
+					<InputGroup>
 						{mentions.length > 0 ? (
 							<div className="flex flex-wrap gap-1.5 px-3 pt-2">
 								{mentions.map((mention) => (
