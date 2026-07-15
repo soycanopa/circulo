@@ -144,7 +144,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 						opacity: open ? 1 : 0,
 					}}
 					transition={layoutSpring}
-					className="relative flex h-full shrink-0 flex-col overflow-hidden rounded-xl bg-sidebar"
+					className="relative flex h-full shrink-0 flex-col overflow-hidden rounded-xl"
 					style={{ pointerEvents: open ? "auto" : "none" }}
 				>
 					<div className="flex h-full flex-col" style={{ width: sidebarWidth }}>
@@ -170,7 +170,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 
 				<main
 					data-slot="sidebar-inset"
-					className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-background"
+					className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl"
 				>
 					<AppBar />
 					<div data-slot="content-area" className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
