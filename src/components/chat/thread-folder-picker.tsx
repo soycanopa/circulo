@@ -123,12 +123,12 @@ export function ThreadFolderPicker({
 					setOpenMenu(true)
 				}}
 				className={cn(
-					"inline-flex items-center gap-1.5 px-0.5 py-0 text-xs text-foreground/90 transition-colors hover:text-foreground disabled:opacity-60",
+					"inline-flex w-full items-center gap-1.5 px-0 py-0 text-left text-xs text-foreground/90 transition-colors hover:text-foreground disabled:opacity-60",
 					openMenu && "text-foreground",
 				)}
 			>
 				<FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
-				<span className="max-w-[10rem] truncate font-medium">{folderLabel}</span>
+				<span className="min-w-0 flex-1 truncate font-medium">{folderLabel}</span>
 				<ChevronDown className="size-3 shrink-0 text-muted-foreground" />
 			</button>
 

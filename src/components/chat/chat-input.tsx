@@ -160,20 +160,23 @@ export function ChatInput({ disabled, sessionStatus, onOpenProject }: ChatInputP
 					</div>
 				) : null}
 
-				<form onSubmit={(e) => void handleSubmit(e)}>
-					{showFolderPicker ? (
-						<div
-							data-slot="thread-folder-tab"
-							className="absolute bottom-full left-0 z-10 -mb-px flex items-center rounded-t-lg border border-[var(--chat-input-border)] border-b-0 bg-[var(--chat-input)] px-2.5 py-1.5 shadow-[0_-4px_12px_rgba(0,0,0,0.35)]"
-						>
-							<ThreadFolderPicker
-								projectPath={projectPath}
-								onOpenProject={onOpenProject}
-								onClose={() => setThreadFolderPickerSessionId(null)}
-							/>
-						</div>
-					) : null}
-					<InputGroup className={cn(showFolderPicker && "rounded-tl-none")}>
+				<form
+					onSubmit={(e) => void handleSubmit(e)}
+					className={cn(showFolderPicker && "-mt-9")}
+				>
+					<InputGroup>
+						{showFolderPicker ? (
+							<div
+								data-slot="thread-folder-bar"
+								className="flex w-full items-center border-b border-[var(--chat-input-border)] px-3 py-2"
+							>
+								<ThreadFolderPicker
+									projectPath={projectPath}
+									onOpenProject={onOpenProject}
+									onClose={() => setThreadFolderPickerSessionId(null)}
+								/>
+							</div>
+						) : null}
 						{mentions.length > 0 ? (
 							<div className="flex flex-wrap gap-1.5 px-3 pt-2">
 								{mentions.map((mention) => (
