@@ -43,8 +43,12 @@ export const TRAFFIC_LIGHT_POSITION = {
 	y: SHELL_INSET + TRAFFIC_LIGHT_PADDING_TOP,
 }
 
+/** Horizontal gap between native traffic lights and the sidebar toggle. */
+export const TRAFFIC_LIGHT_TOGGLE_GAP = 4
+
 /** Offset from the window edge where the sidebar toggle starts. */
-export const WINDOW_CONTROLS_LEFT = isMac && isTauri ? 93 : SHELL_INSET
+export const WINDOW_CONTROLS_LEFT =
+	isMac && isTauri ? 93 + TRAFFIC_LIGHT_TOGGLE_GAP : SHELL_INSET
 
 /**
  * X where collapsed chrome controls end (toggle + plus), relative to the shell
