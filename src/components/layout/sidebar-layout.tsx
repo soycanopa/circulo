@@ -1,0 +1,259 @@
+import {
+	createContext,
+	useCallback,
+	useContext,
+	useEffect,
+	useRef,
+	useState,
+	type CSSProperties,
+	type ReactNode,
+} from "react"
+import { AppBar } from "@/components/layout/app-bar"
+import { SidebarResizeHandle } from "@/components/layout/sidebar-resize-handle"
+import { WindowControls } from "@/components/layout/window-controls"
+import { WindowDragStrip } from "@/components/layout/window-drag-strip"
+import { useSessions } from "@/hooks/use-sessions"
+import { getSidebarWidth } from "@/lib/preferences"
+import {
+	APP_BAR_HEIGHT,
+	isTauri,
+	SHELL_INSET,
+	SIDEBAR_COLLAPSE_THRESHOLD,
+	WINDOW_CONTROLS_INSET,
+} from "@/lib/window-chrome"
+import { cn } from "@/lib/utils"
+
+interface SidebarLayoutProps {
+	sidebar: ReactNode
+	children: ReactNode
+	appBar?: ReactNode
+}
+
+interface SidebarContextValue {
+	open: boolean
+	setOpen: (open: boolean) => void
+	toggleSidebar: () => void
+}
+
+const SidebarContext = createContext<SidebarContextValue | null>(null)
+
+export function useSidebarLayout() {
+	const context = useContext(SidebarContext)
+	if (!context) {
+		throw new Error("useSidebarLayout must be used within SidebarLayout")
+	}
+	return context
+}
+
+function NarrowWindowCollapser({ open, setOpen }: { open: boolean; setOpen: (open: boolean) => void }) {
+	const collapsedByUsRef = useRef(false)
+
+	useEffect(() => {
+		const check = () => {
+			const narrow = window.innerWidth < SIDEBAR_COLLAPSE_THRESHOLD
+			if (narrow && open) {
+				collapsedByUsRef.current = true
+				setOpen(false)
+			} else if (!narrow && !open && collapsedByUsRef.current) {
+				collapsedByUsRef.current = false
+				setOpen(true)
+			} else if (!narrow && !open) {
+				collapsedByUsRef.current = false
+			}
+		}
+
+		check()
+		window.addEventListener("resize", check)
+		return () => window.removeEventListener("resize", check)
+	}, [open, setOpen])
+
+	return null
+}
+
+function LayoutWindowControls({
+	open,
+	onToggleSidebar,
+}: {
+	open: boolean
+	onToggleSidebar: () => void
+}) {
+	const { newThread } = useSessions()
+	return (
+		<WindowControls
+			sidebarOpen={open}
+			onToggleSidebar={onToggleSidebar}
+			onNewThread={() => void newThread()}
+		/>
+	)
+}
+
+export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps) {
+	const [open, setOpen] = useState(true)
+	const [sidebarWidth, setSidebarWidth] = useState(getSidebarWidth)
+
+	const toggleSidebar = useCallback(() => {
+		setOpen((value) => !value)
+	}, [])
+
+	useEffect(() => {
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "b" && (event.metaKey || event.ctrlKey)) {
+				event.preventDefault()
+				toggleSidebar()
+			}
+		}
+
+		window.addEventListener("keydown", handleKeyDown)
+		return () => window.removeEventListener("keydown", handleKeyDown)
+	}, [toggleSidebar])
+
+	return (
+		<SidebarContext.Provider value={{ open, setOpen, toggleSidebar }}>
+			<div
+				data-slot="sidebar-wrapper"
+				data-state={open ? "expanded" : "collapsed"}
+				className={cn(
+					"group/sidebar-wrapper relative flex h-screen w-full p-2 text-foreground",
+					open ? "gap-2" : "gap-0",
+				)}
+				style={
+					{
+						"--shell-inset": `${SHELL_INSET}px`,
+						"--sidebar-width": `${sidebarWidth}px`,
+						"--window-controls-inset": `${WINDOW_CONTROLS_INSET}px`,
+					} as CSSProperties
+				}
+			>
+				<NarrowWindowCollapser open={open} setOpen={setOpen} />
+
+				<aside
+					data-slot="sidebar"
+					data-state={open ? "expanded" : "collapsed"}
+					className={cn(
+						"flex h-full shrink-0 flex-col overflow-hidden rounded-xl bg-sidebar transition-[transform,opacity] duration-250 ease-in-out",
+						open
+							? "relative"
+							: "pointer-events-none absolute top-2 left-2 z-0 -translate-x-[calc(100%+var(--shell-inset))] opacity-0",
+					)}
+					style={{ width: open ? sidebarWidth : 0 }}
+				>
+					<div className="flex h-full flex-col" style={{ width: sidebarWidth }}>
+						<SidebarChromeHeader />
+						{sidebar}
+					</div>
+				</aside>
+
+				{open ? (
+					<SidebarResizeHandle width={sidebarWidth} onWidthChange={setSidebarWidth} />
+				) : null}
+
+				<main
+					data-slot="sidebar-inset"
+					className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-background"
+				>
+					<AppBar sidebarCollapsed={!open}>{appBar}</AppBar>
+					<div data-slot="content-area" className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+						{children}
+					</div>
+				</main>
+
+				<WindowDragStrip />
+				<LayoutWindowControls open={open} onToggleSidebar={toggleSidebar} />
+			</div>
+		</SidebarContext.Provider>
+	)
+}
+
+function SidebarChromeHeader() {
+	return (
+		<div
+			data-slot="sidebar-chrome-header"
+			data-tauri-drag-region={isTauri ? true : undefined}
+			className="flex shrink-0 flex-row items-center gap-1"
+			style={{ height: APP_BAR_HEIGHT }}
+		/>
+	)
+}
+
+export function Sidebar({ className, children }: { className?: string; children: ReactNode }) {
+	return (
+		<div data-slot="sidebar-inner" className={cn("flex min-h-0 flex-1 flex-col", className)}>
+			{children}
+		</div>
+	)
+}
+
+export function SidebarHeader({ children }: { children: ReactNode }) {
+	return (
+		<div className="flex shrink-0 items-center gap-2 border-b border-sidebar-border/10 px-4 py-2">
+			{children}
+		</div>
+	)
+}
+
+export function SidebarContent({ children }: { children: ReactNode }) {
+	return <div className="scrollbar-thin flex-1 overflow-y-auto px-2 py-2">{children}</div>
+}
+
+export function SidebarFooter({ children }: { children: ReactNode }) {
+	return (
+		<div className="shrink-0 space-y-1 border-t border-sidebar-border/10 p-2">{children}</div>
+	)
+}
+
+export function SidebarGroup({ children, label }: { children: ReactNode; label?: string }) {
+	return (
+		<div className="relative py-1">
+			{label ? (
+				<p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{label}</p>
+			) : null}
+			{children}
+		</div>
+	)
+}
+
+export function SidebarMenu({ children }: { children: ReactNode }) {
+	return <ul className="flex flex-col gap-0.5">{children}</ul>
+}
+
+export function SidebarMenuItem({ children }: { children: ReactNode }) {
+	return <li>{children}</li>
+}
+
+interface SidebarMenuButtonProps {
+	children: ReactNode
+	isActive?: boolean
+	onClick?: () => void
+	className?: string
+	size?: "default" | "sm"
+	disabled?: boolean
+}
+
+export function SidebarMenuButton({
+	children,
+	isActive,
+	onClick,
+	className,
+	size = "default",
+	disabled,
+}: SidebarMenuButtonProps) {
+	return (
+		<button
+			type="button"
+			data-slot="sidebar-menu-button"
+			data-active={isActive ? "" : undefined}
+			disabled={disabled}
+			onClick={onClick}
+			className={cn(
+				"flex w-full items-center gap-2 rounded-md px-2 text-left text-sidebar-foreground transition-colors",
+				size === "default" ? "h-8 text-[13px]" : "h-7 text-xs",
+				isActive
+					? "bg-sidebar-accent text-sidebar-accent-foreground"
+					: "hover:bg-sidebar-accent/60",
+				className,
+			)}
+		>
+			{children}
+		</button>
+	)
+}

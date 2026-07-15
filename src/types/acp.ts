@@ -12,6 +12,21 @@ export interface ConfigOption {
 	}>
 }
 
+export interface AgentCapabilities {
+	loadSession: boolean
+	listSessions: boolean
+	resumeSession: boolean
+	closeSession: boolean
+}
+
+export interface SessionInfo {
+	sessionId: string
+	cwd: string
+	additionalDirectories: string[]
+	title?: string
+	updatedAt?: string
+}
+
 export interface PermissionOption {
 	optionId: string
 	name: string
@@ -54,3 +69,5 @@ export interface MentionChip {
 	path: string
 	label: string
 }
+
+export type SidebarSessionStatus = "running" | "waiting" | "idle" | "failed"

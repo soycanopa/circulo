@@ -8,6 +8,7 @@ import type { ToolCallState } from "@/types/acp"
 
 interface ToolCallCardProps {
 	toolCall: ToolCallState
+	nested?: boolean
 }
 
 const statusLabel: Record<ToolCallState["status"], string> = {
@@ -17,11 +18,17 @@ const statusLabel: Record<ToolCallState["status"], string> = {
 	failed: "Falló",
 }
 
-export function ToolCallCard({ toolCall }: ToolCallCardProps) {
-	const [open, setOpen] = useState(toolCall.status !== "completed")
+export function ToolCallCard({ toolCall, nested = false }: ToolCallCardProps) {
+	const [open, setOpen] = useState(false)
+	const isActive = toolCall.status === "in_progress" || toolCall.status === "pending"
 
 	return (
-		<div className="my-2 rounded-md border border-border bg-card">
+		<div
+			className={cn(
+				"rounded-md border border-border bg-card",
+				nested ? "my-0" : "my-2",
+			)}
+		>
 			<button
 				type="button"
 				onClick={() => setOpen((value) => !value)}
@@ -32,17 +39,16 @@ export function ToolCallCard({ toolCall }: ToolCallCardProps) {
 				) : (
 					<ChevronRight className="size-4 text-muted-foreground" />
 				)}
-				<span className="flex-1 font-medium">{toolCall.title}</span>
-				{toolCall.kind ? <Badge>{toolCall.kind}</Badge> : null}
+				<span className="min-w-0 flex-1 truncate font-medium">{toolCall.title}</span>
+				{toolCall.kind ? <Badge className="shrink-0">{toolCall.kind}</Badge> : null}
 				<Badge
 					className={cn(
+						"shrink-0",
 						toolCall.status === "failed" && "border-destructive text-destructive",
 						toolCall.status === "completed" && "border-diff-addition text-diff-addition",
 					)}
 				>
-					{toolCall.status === "in_progress" || toolCall.status === "pending" ? (
-						<Loader2 className="mr-1 inline size-3 animate-spin" />
-					) : null}
+					{isActive ? <Loader2 className="mr-1 inline size-3 animate-spin" /> : null}
 					{statusLabel[toolCall.status]}
 				</Badge>
 			</button>

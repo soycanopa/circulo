@@ -1,12 +1,15 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
-import type { ConfigOption } from "@/types/acp"
+import type { AgentCapabilities, ConfigOption, SessionInfo } from "@/types/acp"
 
 export interface ProjectStatus {
 	connected: boolean
 	projectPath: string | null
 	sessionId: string | null
+	activeSessionId: string | null
 	agentCommand: string
+	sessions: SessionInfo[]
+	capabilities: AgentCapabilities | null
 }
 
 export async function getProjectStatus(): Promise<ProjectStatus> {
@@ -37,11 +40,31 @@ export async function searchFiles(query: string): Promise<string[]> {
 	return invoke<string[]>("search_files", { query })
 }
 
+export async function listSessions(): Promise<ProjectStatus> {
+	return invoke<ProjectStatus>("list_sessions")
+}
+
+export async function createSession(): Promise<ProjectStatus> {
+	return invoke<ProjectStatus>("create_session")
+}
+
+export async function loadSession(id: string): Promise<ProjectStatus> {
+	return invoke<ProjectStatus>("load_session", { id })
+}
+
+export async function closeSession(id: string): Promise<ProjectStatus> {
+	return invoke<ProjectStatus>("close_session", { id })
+}
+
 export function listenAcpEvents(handlers: {
 	onSessionReady?: (payload: {
 		sessionId: string
 		projectPath: string
 		configOptions: ConfigOption[]
+	}) => void
+	onSessionsUpdated?: (payload: {
+		sessions: SessionInfo[]
+		activeSessionId: string
 	}) => void
 	onSessionUpdate?: (payload: unknown) => void
 	onPermissionRequest?: (payload: unknown) => void
@@ -56,6 +79,12 @@ export function listenAcpEvents(handlers: {
 				sessionId: string
 				projectPath: string
 				configOptions: ConfigOption[]
+			})
+		}),
+		listen("acp:sessions_updated", (event) => {
+			handlers.onSessionsUpdated?.(event.payload as {
+				sessions: SessionInfo[]
+				activeSessionId: string
 			})
 		}),
 		listen("acp:session_update", (event) => {

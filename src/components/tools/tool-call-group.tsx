@@ -1,0 +1,66 @@
+import { ChevronDown, ChevronRight, Loader2 } from "lucide-react"
+import { useState } from "react"
+import { ToolCallCard } from "@/components/tools/tool-call-card"
+import { Badge } from "@/components/ui/badge"
+import { groupStatus, type ToolCallGroup } from "@/lib/tool-call-groups"
+import { cn } from "@/lib/utils"
+
+interface ToolCallGroupCardProps {
+	group: ToolCallGroup
+}
+
+const statusLabel = {
+	pending: "Pendiente",
+	in_progress: "En progreso",
+	completed: "Completado",
+	failed: "Falló",
+} as const
+
+export function ToolCallGroupCard({ group }: ToolCallGroupCardProps) {
+	const status = groupStatus(group.tools)
+	const [open, setOpen] = useState(false)
+	const count = group.tools.length
+
+	if (count === 1) {
+		return <ToolCallCard toolCall={group.tools[0]} />
+	}
+
+	return (
+		<div className="my-2 rounded-md border border-border bg-card">
+			<button
+				type="button"
+				onClick={() => setOpen((value) => !value)}
+				className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm"
+			>
+				{open ? (
+					<ChevronDown className="size-4 text-muted-foreground" />
+				) : (
+					<ChevronRight className="size-4 text-muted-foreground" />
+				)}
+				<span className="flex-1 font-medium">
+					{group.label}
+					<span className="ml-1.5 text-muted-foreground">({count})</span>
+				</span>
+				<Badge
+					className={cn(
+						status === "failed" && "border-destructive text-destructive",
+						status === "completed" && "border-diff-addition text-diff-addition",
+					)}
+				>
+					{status === "in_progress" || status === "pending" ? (
+						<Loader2 className="mr-1 inline size-3 animate-spin" />
+					) : null}
+					{statusLabel[status]}
+				</Badge>
+			</button>
+
+			{open ? (
+				<div className="space-y-1 border-t border-border px-2 py-2">
+					{group.tools.map((tool) => (
+						<ToolCallCard key={tool.id} toolCall={tool} nested />
+					))}
+				</div>
+			) : null}
+		</div>
+	)
+}

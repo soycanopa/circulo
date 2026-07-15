@@ -1,14 +1,15 @@
 import { useEffect, useRef } from "react"
 import { MarkdownContent } from "@/components/chat/markdown-content"
-import { ToolCallCard } from "@/components/tools/tool-call-card"
+import { ToolCallList } from "@/components/tools/tool-call-list"
 import type { ChatMessage } from "@/types/acp"
 
 interface MessageListProps {
 	messages: ChatMessage[]
 	streamingText: string
+	connected: boolean
 }
 
-export function MessageList({ messages, streamingText }: MessageListProps) {
+export function MessageList({ messages, streamingText, connected }: MessageListProps) {
 	const bottomRef = useRef<HTMLDivElement>(null)
 	const containerRef = useRef<HTMLDivElement>(null)
 	const shouldAutoScrollRef = useRef(true)
@@ -16,13 +17,11 @@ export function MessageList({ messages, streamingText }: MessageListProps) {
 	useEffect(() => {
 		const container = containerRef.current
 		if (!container) return
-
 		function handleScroll() {
 			const distanceFromBottom =
 				container!.scrollHeight - container!.scrollTop - container!.clientHeight
 			shouldAutoScrollRef.current = distanceFromBottom < 80
 		}
-
 		container.addEventListener("scroll", handleScroll)
 		return () => container.removeEventListener("scroll", handleScroll)
 	}, [])
@@ -36,11 +35,13 @@ export function MessageList({ messages, streamingText }: MessageListProps) {
 		<div ref={containerRef} className="scrollbar-thin flex-1 overflow-y-auto px-4 py-4">
 			{messages.length === 0 ? (
 				<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-					Abre un proyecto y envía tu primer mensaje al agente.
+					{connected
+						? "Envía tu primer mensaje al agente."
+						: "Abre un proyecto desde el sidebar para empezar."}
 				</div>
 			) : null}
 
-			<div className="mx-auto flex max-w-3xl flex-col gap-4">
+			<div className="mx-auto flex max-w-4xl flex-col gap-4">
 				{messages.map((message) => (
 					<div
 						key={message.id}
@@ -52,10 +53,8 @@ export function MessageList({ messages, streamingText }: MessageListProps) {
 					>
 						{message.role === "assistant" ? (
 							<>
+								<ToolCallList toolCalls={message.toolCalls} />
 								{message.content ? <MarkdownContent content={message.content} /> : null}
-								{message.toolCalls.map((toolCall) => (
-									<ToolCallCard key={toolCall.id} toolCall={toolCall} />
-								))}
 							</>
 						) : (
 							<p className="whitespace-pre-wrap">{message.content}</p>
@@ -66,9 +65,7 @@ export function MessageList({ messages, streamingText }: MessageListProps) {
 				{streamingText ? (
 					<div className="max-w-full">
 						<MarkdownContent content={streamingText} />
-						<span className="loading-shimmer text-xs text-muted-foreground">
-							Generando…
-						</span>
+						<span className="loading-shimmer text-xs text-muted-foreground">Generando…</span>
 					</div>
 				) : null}
 			</div>
