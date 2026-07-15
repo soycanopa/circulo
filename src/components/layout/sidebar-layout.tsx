@@ -21,6 +21,7 @@ import {
 	APP_BAR_HEIGHT,
 	APP_BAR_TITLE_GAP,
 	APP_BAR_TITLE_INSET_LEFT,
+	APP_BAR_TITLE_INSET_LEFT_COLLAPSED,
 	APP_BAR_TITLE_PADDING_TOP,
 	SHELL_INSET,
 	SIDEBAR_COLLAPSE_THRESHOLD,
@@ -102,7 +103,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 
 	const titleLeft = open
 		? sidebarWidth + SHELL_INSET + 16 + APP_BAR_TITLE_INSET_LEFT
-		: WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP + APP_BAR_TITLE_INSET_LEFT
+		: WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP + APP_BAR_TITLE_INSET_LEFT_COLLAPSED
 
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {

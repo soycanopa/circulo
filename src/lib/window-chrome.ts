@@ -14,8 +14,11 @@ export const APP_BAR_TITLE_PADDING_TOP = 18
 /** Top offset for native traffic lights (from app bar row start). */
 export const TRAFFIC_LIGHT_PADDING_TOP = 20
 
-/** Extra inset for the floating session title from the left chrome cluster. */
+/** Extra inset for the session title when the sidebar is expanded. */
 export const APP_BAR_TITLE_INSET_LEFT = 8
+
+/** Extra inset for the session title when the sidebar is collapsed. */
+export const APP_BAR_TITLE_INSET_LEFT_COLLAPSED = 4
 
 /** Gap between window controls and session title when sidebar is collapsed. */
 export const APP_BAR_TITLE_GAP = 12
@@ -56,7 +59,7 @@ export const WINDOW_CONTROLS_END =
 
 /** Legacy inset — prefer WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP. */
 export const WINDOW_CONTROLS_INSET =
-	WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP + APP_BAR_TITLE_INSET_LEFT
+	WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP + APP_BAR_TITLE_INSET_LEFT_COLLAPSED
 
 /** Full-height chrome strip used for window dragging (inset + app bar). */
 export const WINDOW_DRAG_STRIP_HEIGHT = SHELL_INSET + APP_BAR_HEIGHT
