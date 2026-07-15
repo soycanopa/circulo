@@ -177,13 +177,10 @@ Documentación detallada: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/
 
 ---
 
-## Roadmap
+## Roadmap y planificación
 
-- [ ] Multi-agente (selector Cline, Grok CLI, Gemini CLI)
-- [ ] Panel de review lateral (estilo Palot)
-- [ ] Settings panel (preferencias de app)
-- [ ] Builds Windows/Linux pulidas
-- [ ] Icono y assets de marca Circulo
+- **[ROADMAP.md](ROADMAP.md)** — análisis comparativo vs [soycanopa/circulo](https://github.com/soycanopa/circulo) y [OpenChamber](https://github.com/openchamber/openchamber), priorizado de más complejo a más sencillo
+- **[SKILLS.md](SKILLS.md)** — skills recomendados de [skills.sh](https://skills.sh/) para desarrollar Circulo
 
 ---
 
