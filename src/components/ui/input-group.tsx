@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from "react"
+import { forwardRef, type ComponentProps, type ReactNode } from "react"
 import { cn } from "@/lib/utils"
 
 export function InputGroup({ className, children, ...props }: ComponentProps<"div">) {
@@ -9,20 +9,20 @@ export function InputGroup({ className, children, ...props }: ComponentProps<"di
 	)
 }
 
-export function InputGroupTextarea({
-	className,
-	...props
-}: ComponentProps<"textarea">) {
-	return (
-		<textarea
-			className={cn(
-				"min-h-16 max-h-48 w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground",
-				className,
-			)}
-			{...props}
-		/>
-	)
-}
+export const InputGroupTextarea = forwardRef<HTMLTextAreaElement, ComponentProps<"textarea">>(
+	function InputGroupTextarea({ className, ...props }, ref) {
+		return (
+			<textarea
+				ref={ref}
+				className={cn(
+					"min-h-16 max-h-48 w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground",
+					className,
+				)}
+				{...props}
+			/>
+		)
+	},
+)
 
 export function InputGroupAddon({
 	className,

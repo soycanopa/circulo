@@ -26,3 +26,14 @@ export const NEW_THREAD_PICKER_ID = "__new_thread__"
 
 /** Session id that should show the thread folder picker (set on new thread). */
 export const threadFolderPickerSessionIdAtom = atom<string | null>(null)
+
+export interface PendingPlan {
+	content: string
+	timestamp: number
+}
+
+/** Plan markdown awaiting user accept / comment / reject. */
+export const pendingPlanAtom = atom<PendingPlan | null>(null)
+
+/** When true, the chat input sends feedback about the pending plan. */
+export const planCommentModeAtom = atom(false)

@@ -13,7 +13,7 @@ interface ChatViewProps {
 
 export function ChatView({ connected, onOpenProject }: ChatViewProps) {
 	const { openProjectForNewThread } = useSessions()
-	const { messages, streamingText, sessionStatus } = useAcpSession()
+	const { messages, sessionStatus } = useAcpSession()
 	const errorMessage = useAtomValue(errorMessageAtom)
 
 	return (
@@ -24,7 +24,7 @@ export function ChatView({ connected, onOpenProject }: ChatViewProps) {
 				</div>
 			) : null}
 
-			<MessageList messages={messages} streamingText={streamingText} connected={connected} />
+			<MessageList messages={messages} connected={connected} />
 			<PermissionCard />
 			<ChatInput
 				disabled={!connected}

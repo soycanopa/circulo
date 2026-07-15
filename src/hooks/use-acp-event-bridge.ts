@@ -1,5 +1,6 @@
-import { useSetAtom } from "jotai"
+import { getDefaultStore, useSetAtom } from "jotai"
 import { useEffect, useRef } from "react"
+import { isAgentPlanMode } from "@/lib/agent-mode"
 import { applySessionInfoUpdate, applySessionUpdate } from "@/lib/acp-parser"
 import { promptInFlightRef, setPromptInFlightSync } from "@/lib/prompt-flight"
 import { applySessionDefaults } from "@/lib/session-defaults"
@@ -11,6 +12,8 @@ import {
 	configOptionsAtom,
 	errorMessageAtom,
 	messagesAtom,
+	pendingPlanAtom,
+	planCommentModeAtom,
 	projectPathAtom,
 	promptInFlightAtom,
 	replayingHistoryAtom,
@@ -59,6 +62,8 @@ export function useAcpEventBridge() {
 				setMessages([])
 				setStreamingText("")
 				streamingRef.current = ""
+				getDefaultStore().set(pendingPlanAtom, null)
+				getDefaultStore().set(planCommentModeAtom, false)
 
 				void applySessionDefaults(payload.configOptions).catch(() => undefined)
 
@@ -125,29 +130,41 @@ export function useAcpEventBridge() {
 				setConfigOptions(payload.configOptions)
 			},
 			onPromptComplete: () => {
-				setMessages((current) => {
-					const stream = streamingRef.current
-					if (!stream) return current
+				const stream = streamingRef.current
+				const jotaiStore = getDefaultStore()
+				const configOptions = jotaiStore.get(configOptionsAtom)
+				const planMode = isAgentPlanMode(configOptions)
 
-					const next = [...current]
-					const last = next[next.length - 1]
-					if (last?.role === "assistant") {
-						if (stream.startsWith(last.content)) {
-							last.content = stream
-						} else if (!last.content.endsWith(stream)) {
-							last.content = `${last.content}${stream}`
+				if (planMode && stream.trim()) {
+					jotaiStore.set(pendingPlanAtom, {
+						content: stream,
+						timestamp: Date.now(),
+					})
+					jotaiStore.set(planCommentModeAtom, false)
+				} else {
+					setMessages((current) => {
+						if (!stream) return current
+
+						const next = [...current]
+						const last = next[next.length - 1]
+						if (last?.role === "assistant") {
+							if (stream.startsWith(last.content)) {
+								last.content = stream
+							} else if (!last.content.endsWith(stream)) {
+								last.content = `${last.content}${stream}`
+							}
+						} else {
+							next.push({
+								id: crypto.randomUUID(),
+								role: "assistant",
+								content: stream,
+								toolCalls: [],
+								timestamp: Date.now(),
+							})
 						}
-					} else {
-						next.push({
-							id: crypto.randomUUID(),
-							role: "assistant",
-							content: stream,
-							toolCalls: [],
-							timestamp: Date.now(),
-						})
-					}
-					return next
-				})
+						return next
+					})
+				}
 
 				streamingRef.current = ""
 				setStreamingText("")

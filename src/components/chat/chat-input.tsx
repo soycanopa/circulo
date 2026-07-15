@@ -1,6 +1,6 @@
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { AtSign, CornerDownLeft, Loader2 } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { AgentModeSelector } from "@/components/chat/agent-mode-selector"
 import { ModelSelector } from "@/components/chat/model-selector"
 import { ThinkingSelector } from "@/components/chat/thinking-selector"
@@ -19,6 +19,8 @@ import {
 	activeSessionIdAtom,
 	messagesAtom,
 	NEW_THREAD_PICKER_ID,
+	pendingPlanAtom,
+	planCommentModeAtom,
 	projectPathAtom,
 	promptInFlightAtom,
 	sessionsAtom,
@@ -64,6 +66,9 @@ export function ChatInput({
 		(isPendingNewThreadFolder || pickerSessionId === activeSessionId)
 	const pickerProjectPath = isPendingNewThreadFolder ? null : projectPath
 	const [promptInFlight, setPromptInFlight] = useAtom(promptInFlightAtom)
+	const [planCommentMode, setPlanCommentMode] = useAtom(planCommentModeAtom)
+	const setPendingPlan = useSetAtom(pendingPlanAtom)
+	const textareaRef = useRef<HTMLTextAreaElement>(null)
 	const [value, setValue] = useState("")
 	const [mentions, setMentions] = useState<MentionChip[]>([])
 	const [query, setQuery] = useState<string | null>(null)
@@ -72,6 +77,11 @@ export function ChatInput({
 
 	const isAwaitingPermission = sessionStatus === "awaiting_permission"
 	const isSubmitting = promptInFlight
+
+	useEffect(() => {
+		if (!planCommentMode) return
+		textareaRef.current?.focus()
+	}, [planCommentMode])
 
 	useEffect(() => {
 		if (query === null) {
@@ -116,17 +126,22 @@ export function ChatInput({
 			return
 		}
 
+		const promptText = planCommentMode
+			? `Comentarios sobre el plan:\n\n${trimmed}`
+			: trimmed
 		const contextPaths = mentions.map((mention) => mention.path)
 		setMessages((current) => [
 			...current,
 			{
 				id: crypto.randomUUID(),
 				role: "user",
-				content: trimmed,
+				content: promptText,
 				toolCalls: [],
 				timestamp: Date.now(),
 			},
 		])
+		if (planCommentMode) setPlanCommentMode(false)
+		setPendingPlan(null)
 
 		if (activeSessionId) {
 			setSessions((current) =>
@@ -144,7 +159,7 @@ export function ChatInput({
 		setMentions([])
 		setQuery(null)
 		try {
-			await sendPrompt(trimmed, contextPaths)
+			await sendPrompt(promptText, contextPaths)
 		} catch {
 			setPromptInFlightSync(false)
 			setPromptInFlight(false)
@@ -199,9 +214,14 @@ export function ChatInput({
 						) : null}
 
 						<InputGroupTextarea
+							ref={textareaRef}
 							value={value}
 							disabled={inputDisabled}
-							placeholder="Escribe un mensaje… Usa @ para referenciar archivos"
+							placeholder={
+								planCommentMode
+									? "Comenta el plan: qué cambiar, qué priorizar, qué rechazar…"
+									: "Escribe un mensaje… Usa @ para referenciar archivos"
+							}
 							className={cn(inputDisabled && "opacity-60")}
 							onChange={(event) =>
 								handleChange(event.target.value, event.target.selectionStart ?? 0)
@@ -230,7 +250,7 @@ export function ChatInput({
 								aria-label="Enviar mensaje"
 							>
 								{isSubmitting ? (
-									<Loader2 className="size-4 animate-spin" />
+									<Loader2 className="size-4 animate-spin text-[#3B5EF9]" />
 								) : (
 									<CornerDownLeft className="size-4" />
 								)}
