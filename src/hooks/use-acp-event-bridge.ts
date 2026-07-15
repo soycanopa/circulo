@@ -4,6 +4,7 @@ import { findModeOption, isAgentPlanMode } from "@/lib/agent-mode"
 import { isPlanModeValue } from "@/lib/agent-mode-presentations"
 import { normalizePlanMarkdown } from "@/lib/plan-markdown"
 import { applySessionInfoUpdate, applySessionUpdate } from "@/lib/acp-parser"
+import { parseUsageUpdate } from "@/lib/context-window"
 import { promptInFlightRef, setPromptInFlightSync } from "@/lib/prompt-flight"
 import { applySessionDefaults } from "@/lib/session-defaults"
 import { listenAcpEvents } from "@/lib/tauri"
@@ -12,6 +13,7 @@ import {
 	activeSessionIdAtom,
 	agentCapabilitiesAtom,
 	configOptionsAtom,
+	contextWindowAtom,
 	errorMessageAtom,
 	messagesAtom,
 	pendingPlanAtom,
@@ -67,6 +69,7 @@ export function useAcpEventBridge() {
 				streamingRef.current = ""
 				getDefaultStore().set(pendingPlanAtom, null)
 				getDefaultStore().set(planCommentModeAtom, false)
+				getDefaultStore().set(contextWindowAtom, null)
 
 				void applySessionDefaults(payload.configOptions).catch(() => undefined)
 
@@ -104,6 +107,12 @@ export function useAcpEventBridge() {
 					if (Array.isArray(nextOptions)) {
 						setConfigOptions(nextOptions as ConfigOption[])
 					}
+					return
+				}
+
+				const usageSnapshot = parseUsageUpdate(payload)
+				if (usageSnapshot) {
+					getDefaultStore().set(contextWindowAtom, usageSnapshot)
 					return
 				}
 
@@ -215,6 +224,7 @@ export function useAcpEventBridge() {
 				setCapabilities(null)
 				streamingRef.current = ""
 				setStreamingText("")
+				getDefaultStore().set(contextWindowAtom, null)
 			},
 		}).then((listeners) => {
 			if (cancelled) {

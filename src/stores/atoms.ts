@@ -1,4 +1,5 @@
 import { atom } from "jotai"
+import type { ContextWindowSnapshot } from "@/lib/context-window"
 import type {
 	AgentCapabilities,
 	ChatMessage,
@@ -40,3 +41,6 @@ export const planCommentModeAtom = atom(false)
 
 /** Tracks whether the active prompt turn expects a plan preview response. */
 export const planTurnActiveAtom = atom(false)
+
+/** Latest context window usage for the active session (from ACP usage_update). */
+export const contextWindowAtom = atom<ContextWindowSnapshot | null>(null)

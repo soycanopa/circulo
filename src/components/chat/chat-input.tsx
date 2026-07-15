@@ -2,6 +2,7 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { AtSign, CornerDownLeft, Loader2 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { AgentModeSelector } from "@/components/chat/agent-mode-selector"
+import { ContextWindowMeter } from "@/components/chat/context-window-meter"
 import { ModelSelector } from "@/components/chat/model-selector"
 import { ThinkingSelector } from "@/components/chat/thinking-selector"
 import { ThreadFolderPicker } from "@/components/chat/thread-folder-picker"
@@ -19,6 +20,7 @@ import { cn } from "@/lib/utils"
 import {
 	activeSessionIdAtom,
 	configOptionsAtom,
+	contextWindowAtom,
 	messagesAtom,
 	NEW_THREAD_PICKER_ID,
 	pendingPlanAtom,
@@ -62,6 +64,7 @@ export function ChatInput({
 	)
 	const projectPath = useAtomValue(projectPathAtom)
 	const configOptions = useAtomValue(configOptionsAtom)
+	const contextWindow = useAtomValue(contextWindowAtom)
 	const setPlanTurnActive = useSetAtom(planTurnActiveAtom)
 	const messageCount = useAtomValue(messagesAtom).length
 	const isPendingNewThreadFolder = pickerSessionId === NEW_THREAD_PICKER_ID
@@ -249,6 +252,8 @@ export function ChatInput({
 								<ThinkingSelector />
 								<ModelSelector />
 							</div>
+							<div className="flex items-center gap-2">
+								<ContextWindowMeter usage={contextWindow} />
 							<InputGroupButton
 								type="submit"
 								variant="default"
@@ -261,6 +266,7 @@ export function ChatInput({
 									<CornerDownLeft className="size-4" />
 								)}
 							</InputGroupButton>
+							</div>
 						</InputGroupAddon>
 					</InputGroup>
 				</form>
