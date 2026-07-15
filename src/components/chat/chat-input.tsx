@@ -161,18 +161,16 @@ export function ChatInput({ disabled, sessionStatus, onOpenProject }: ChatInputP
 				) : null}
 
 				<form onSubmit={(e) => void handleSubmit(e)}>
-					{showFolderPicker ? (
-						<div data-slot="thread-selectors">
-							<div data-slot="thread-selector-chip">
+					<InputGroup>
+						{showFolderPicker ? (
+							<div data-slot="thread-selectors">
 								<ThreadFolderPicker
 									projectPath={projectPath}
 									onOpenProject={onOpenProject}
 									onClose={() => setThreadFolderPickerSessionId(null)}
 								/>
 							</div>
-						</div>
-					) : null}
-					<InputGroup>
+						) : null}
 						{mentions.length > 0 ? (
 							<div className="flex flex-wrap gap-1.5 px-3 pt-2">
 								{mentions.map((mention) => (
