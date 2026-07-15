@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { AgentModeSelector } from "@/components/chat/agent-mode-selector"
 import { ModelSelector } from "@/components/chat/model-selector"
 import { ThinkingSelector } from "@/components/chat/thinking-selector"
+import { setPromptInFlightSync } from "@/lib/prompt-flight"
 import { deriveTitleFromMessage } from "@/lib/sessions"
 import {
 	InputGroup,
@@ -112,6 +113,7 @@ export function ChatInput({ disabled, sessionStatus }: ChatInputProps) {
 				}),
 			)
 		}
+		setPromptInFlightSync(true)
 		setPromptInFlight(true)
 		setValue("")
 		setMentions([])
@@ -119,6 +121,7 @@ export function ChatInput({ disabled, sessionStatus }: ChatInputProps) {
 		try {
 			await sendPrompt(trimmed, contextPaths)
 		} catch {
+			setPromptInFlightSync(false)
 			setPromptInFlight(false)
 		}
 	}

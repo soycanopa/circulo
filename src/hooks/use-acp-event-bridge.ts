@@ -1,6 +1,7 @@
-import { useAtomValue, useSetAtom } from "jotai"
+import { useSetAtom } from "jotai"
 import { useEffect, useRef } from "react"
 import { applySessionInfoUpdate, applySessionUpdate } from "@/lib/acp-parser"
+import { promptInFlightRef, setPromptInFlightSync } from "@/lib/prompt-flight"
 import { applySessionDefaults } from "@/lib/session-defaults"
 import { listenAcpEvents } from "@/lib/tauri"
 import {
@@ -37,17 +38,12 @@ export function useAcpEventBridge() {
 	const setSessions = useSetAtom(sessionsAtom)
 	const setCapabilities = useSetAtom(agentCapabilitiesAtom)
 
-	const promptInFlight = useAtomValue(promptInFlightAtom)
 	const streamingRef = useRef("")
-	const promptInFlightRef = useRef(false)
 	const activeSessionRef = useRef<string | null>(null)
 	const replayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
 	useEffect(() => {
-		promptInFlightRef.current = promptInFlight
-	}, [promptInFlight])
-
-	useEffect(() => {
+		let cancelled = false
 		let unlisteners: Array<() => void> = []
 
 		listenAcpEvents({
@@ -58,7 +54,7 @@ export function useAcpEventBridge() {
 				activeSessionRef.current = payload.sessionId
 				setSessionStatus("idle")
 				setPromptInFlight(false)
-				promptInFlightRef.current = false
+				setPromptInFlightSync(false)
 				setErrorMessage(null)
 				setMessages([])
 				setStreamingText("")
@@ -136,7 +132,11 @@ export function useAcpEventBridge() {
 					const next = [...current]
 					const last = next[next.length - 1]
 					if (last?.role === "assistant") {
-						last.content = `${last.content}${stream}`
+						if (stream.startsWith(last.content)) {
+							last.content = stream
+						} else if (!last.content.endsWith(stream)) {
+							last.content = `${last.content}${stream}`
+						}
 					} else {
 						next.push({
 							id: crypto.randomUUID(),
@@ -152,7 +152,7 @@ export function useAcpEventBridge() {
 				streamingRef.current = ""
 				setStreamingText("")
 				setPromptInFlight(false)
-				promptInFlightRef.current = false
+				setPromptInFlightSync(false)
 				setSessionStatus("idle")
 			},
 			onError: (payload) => {
@@ -160,13 +160,13 @@ export function useAcpEventBridge() {
 				streamingRef.current = ""
 				setStreamingText("")
 				setPromptInFlight(false)
-				promptInFlightRef.current = false
+				setPromptInFlightSync(false)
 				setSessionStatus("idle")
 			},
 			onDisconnected: () => {
 				setSessionStatus("disconnected")
 				setPromptInFlight(false)
-				promptInFlightRef.current = false
+				setPromptInFlightSync(false)
 				setReplayingHistory(false)
 				setProjectPath(null)
 				setSessions([])
@@ -176,10 +176,15 @@ export function useAcpEventBridge() {
 				setStreamingText("")
 			},
 		}).then((listeners) => {
+			if (cancelled) {
+				for (const unlisten of listeners) unlisten()
+				return
+			}
 			unlisteners = listeners
 		})
 
 		return () => {
+			cancelled = true
 			if (replayTimerRef.current) clearTimeout(replayTimerRef.current)
 			for (const unlisten of unlisteners) unlisten()
 		}

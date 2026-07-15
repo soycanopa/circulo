@@ -51,6 +51,17 @@ function ensureAssistantMessage(messages: ChatMessage[]): ChatMessage {
 	return created
 }
 
+/** Merges delta or cumulative stream chunks without duplicating text. */
+function mergeStreamText(current: string, chunk: string): string {
+	if (!chunk) return current
+	if (!current) return chunk
+	if (chunk === current) return current
+	if (chunk.startsWith(current)) return chunk
+	if (current.startsWith(chunk)) return current
+	if (current.endsWith(chunk)) return current
+	return `${current}${chunk}`
+}
+
 function ensureUserMessage(messages: ChatMessage[]): ChatMessage {
 	const last = messages[messages.length - 1]
 	if (last?.role === "user") return last
@@ -89,16 +100,16 @@ export function applySessionUpdate(
 	if (sessionUpdate === "user_message_chunk") {
 		const user = ensureUserMessage(nextMessages)
 		const chunk = extractTextFromContent(update.content)
-		user.content += chunk
+		user.content = mergeStreamText(user.content, chunk)
 	}
 
 	if (sessionUpdate === "agent_message_chunk") {
 		const chunk = extractTextFromContent(update.content)
 		if (streamToMessage) {
 			const assistant = ensureAssistantMessage(nextMessages)
-			assistant.content += chunk
+			assistant.content = mergeStreamText(assistant.content, chunk)
 		} else {
-			nextStreaming += chunk
+			nextStreaming = mergeStreamText(nextStreaming, chunk)
 		}
 	}
 
