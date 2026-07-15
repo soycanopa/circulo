@@ -7,7 +7,7 @@ import {
 	removeArchivedSessionId,
 } from "@/lib/archived-sessions"
 import { unpinSessionId } from "@/lib/pinned-sessions"
-import { closeSession, createSession, loadSession, openProject } from "@/lib/tauri"
+import { closeSession, createSession, loadSession, openProject, renameSession } from "@/lib/tauri"
 import {
 	activeSessionIdAtom,
 	configOptionsAtom,
@@ -86,6 +86,14 @@ export function useSessions() {
 		[resetChatState, syncStatus],
 	)
 
+	const renameSessionTitle = useCallback(
+		async (id: string, title: string) => {
+			const status = await renameSession(id, title)
+			syncStatus(status)
+		},
+		[syncStatus],
+	)
+
 	const archiveSession = useCallback(
 		async (id: string) => {
 			archiveSessionId(id)
@@ -122,6 +130,7 @@ export function useSessions() {
 		newChat,
 		deleteSession,
 		archiveSession,
+		renameSession: renameSessionTitle,
 		/** @deprecated use newThread */
 		newSession: newThread,
 	}

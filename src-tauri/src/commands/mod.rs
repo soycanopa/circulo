@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 use tokio::sync::mpsc;
 
 use crate::acp::{read_context_file, search_project_files, start_agent_connection};
+use crate::session_store::{store_path_for, ProjectSessionStore};
 use crate::state::{
     ActiveProject, AgentCapabilitiesDto, AgentCommand, ContextFile, ProjectStatus, SharedState,
 };
@@ -232,6 +233,46 @@ pub async fn close_session(
         .send(AgentCommand::CloseSession { id })
         .await
         .map_err(|err| format!("Failed to close session: {err}"))?;
+
+    Ok(state.lock().await.status())
+}
+
+#[tauri::command]
+pub async fn rename_session(
+    app: tauri::AppHandle,
+    state: State<'_, SharedState>,
+    id: String,
+    title: String,
+) -> Result<ProjectStatus, String> {
+    let trimmed = title.trim().to_string();
+    if trimmed.is_empty() {
+        return Err("El nombre no puede estar vacío".to_string());
+    }
+    if trimmed.chars().count() > 120 {
+        return Err("El nombre es demasiado largo".to_string());
+    }
+
+    let (project_path, updated_session) = {
+        let mut guard = state.lock().await;
+        let project = guard
+            .project
+            .as_mut()
+            .ok_or_else(|| "No project open".to_string())?;
+        let session = project
+            .sessions
+            .iter_mut()
+            .find(|entry| entry.session_id == id)
+            .ok_or_else(|| "Session not found".to_string())?;
+        session.title = Some(trimmed.clone());
+        (project.project_path.clone(), session.clone())
+    };
+
+    if let Ok(dir) = app.path().app_data_dir() {
+        let store_path = store_path_for(&dir, &project_path);
+        let mut store = ProjectSessionStore::load(&store_path);
+        store.upsert(&updated_session);
+        store.save(&store_path)?;
+    }
 
     Ok(state.lock().await.status())
 }

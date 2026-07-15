@@ -32,6 +32,7 @@ pub fn run() {
             commands::create_session,
             commands::load_session,
             commands::close_session,
+            commands::rename_session,
             commands::search_files,
         ])
         .run(tauri::generate_context!())

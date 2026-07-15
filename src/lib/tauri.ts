@@ -56,6 +56,10 @@ export async function closeSession(id: string): Promise<ProjectStatus> {
 	return invoke<ProjectStatus>("close_session", { id })
 }
 
+export async function renameSession(id: string, title: string): Promise<ProjectStatus> {
+	return invoke<ProjectStatus>("rename_session", { id, title })
+}
+
 export function listenAcpEvents(handlers: {
 	onSessionReady?: (payload: {
 		sessionId: string
