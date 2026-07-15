@@ -6,7 +6,7 @@ interface AppBarProps {
 	className?: string
 }
 
-/** Spacer row under the floating session title — deep drag region for the main panel chrome. */
+/** Chrome spacer — border sits flush under the session title row. */
 export function AppBar({ className }: AppBarProps) {
 	return (
 		<div

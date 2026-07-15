@@ -23,6 +23,8 @@ import {
 	SidebarMenuItem,
 } from "@/components/layout/sidebar-layout"
 import { ConnectionStatus } from "@/components/layout/connection-status"
+import { SessionActionsMenu } from "@/components/layout/session-actions-menu"
+import { useArchivedSessions } from "@/hooks/use-archived-sessions"
 import { usePinnedSessions } from "@/hooks/use-pinned-sessions"
 import { getProjectDisplayName } from "@/lib/project-display"
 import { sessionTitle } from "@/lib/sessions"
@@ -76,6 +78,8 @@ function SessionItem({
 	pinnable = false,
 	isPinned = false,
 	onTogglePin,
+	onArchive,
+	onDelete,
 	compact = false,
 }: {
 	session: SessionInfo
@@ -86,10 +90,15 @@ function SessionItem({
 	pinnable?: boolean
 	isPinned?: boolean
 	onTogglePin?: () => void
+	onArchive?: () => void
+	onDelete?: () => void
 	compact?: boolean
 }) {
 	const Icon = STATUS_ICON[status]
 	const color = STATUS_COLOR[status]
+	const hasPin = Boolean((pinnable || isPinned) && onTogglePin)
+	const hasActions = Boolean(onArchive && onDelete)
+
 	return (
 		<SidebarMenuItem>
 			<div className="group/menu-item relative">
@@ -97,18 +106,28 @@ function SessionItem({
 					isActive={isSelected}
 					onClick={onSelect}
 					size={compact ? "sm" : "default"}
-					className={pinnable || isPinned ? "pr-8" : undefined}
+					className={cn(
+						hasPin && hasActions && "pr-14",
+						(hasPin || hasActions) && !(hasPin && hasActions) && "pr-8",
+					)}
 				>
 					<Icon className={cn("size-3.5 shrink-0", color, status === "running" && "animate-spin")} />
 					<span className="min-w-0 flex-1 truncate">{sessionTitle(session, sessionIndex)}</span>
 				</SidebarMenuButton>
-				{(pinnable || isPinned) && onTogglePin ? (
+				{hasActions ? (
+					<SessionActionsMenu
+						className={hasPin ? "right-8" : undefined}
+						onArchive={onArchive!}
+						onDelete={onDelete!}
+					/>
+				) : null}
+				{hasPin ? (
 					<button
 						type="button"
 						title={isPinned ? "Quitar de pinned" : "Agregar a pinned"}
 						onClick={(event) => {
 							event.stopPropagation()
-							onTogglePin()
+							onTogglePin!()
 						}}
 						className={cn(
 							"absolute right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-sidebar-foreground/50 opacity-0 transition-opacity hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover/menu-item:opacity-100",
@@ -130,19 +149,35 @@ export function AppSidebar({
 	onOpenProject,
 	loading,
 }: AppSidebarProps) {
-	const { sessions, activeSessionId, newThread, newChat, selectSession } = useSessions()
+	const { sessions, activeSessionId, newThread, newChat, selectSession, archiveSession, deleteSession } =
+		useSessions()
 	const { pinnedIds, togglePin, isPinned } = usePinnedSessions()
+	const { isArchived } = useArchivedSessions()
 	const promptInFlight = useAtomValue(promptInFlightAtom)
 	const [expanded, setExpanded] = useState(true)
 	const [sessionPending, setSessionPending] = useState(false)
 
+	const visibleSessions = useMemo(
+		() => sessions.filter((session) => !isArchived(session.sessionId)),
+		[sessions, isArchived],
+	)
+
 	const pinnedSessions = useMemo(
 		() =>
 			pinnedIds
-				.map((id) => sessions.find((session) => session.sessionId === id))
+				.map((id) => visibleSessions.find((session) => session.sessionId === id))
 				.filter((session): session is SessionInfo => Boolean(session)),
-		[pinnedIds, sessions],
+		[pinnedIds, visibleSessions],
 	)
+
+	function handleArchive(sessionId: string) {
+		return runSessionAction(() => archiveSession(sessionId))
+	}
+
+	function handleDelete(sessionId: string) {
+		if (!window.confirm("¿Eliminar esta sesión? No se puede deshacer.")) return
+		return runSessionAction(() => deleteSession(sessionId))
+	}
 
 	const projectName = getProjectDisplayName(projectPath)
 
@@ -209,7 +244,7 @@ export function AppSidebar({
 							<SessionItem
 								key={session.sessionId}
 								session={session}
-								sessionIndex={sessions.findIndex((s) => s.sessionId === session.sessionId)}
+								sessionIndex={visibleSessions.findIndex((s) => s.sessionId === session.sessionId)}
 								isSelected={session.sessionId === activeSessionId}
 								status={sessionStatusFor(
 									session.sessionId,
@@ -220,6 +255,8 @@ export function AppSidebar({
 								onSelect={() => void runSessionAction(() => selectSession(session.sessionId))}
 								isPinned
 								onTogglePin={() => togglePin(session.sessionId)}
+								onArchive={() => void handleArchive(session.sessionId)}
+								onDelete={() => void handleDelete(session.sessionId)}
 							/>
 						))}
 					</SidebarMenu>
@@ -239,10 +276,10 @@ export function AppSidebar({
 						{expanded ? (
 							<div className="ml-3 border-l border-sidebar-border/10 pl-1">
 								<SidebarMenu>
-									{sessions.length === 0 ? (
+									{visibleSessions.length === 0 ? (
 										<p className="px-2 py-1.5 text-xs text-muted-foreground/60">No threads yet</p>
 									) : (
-										sessions.map((session, index) => (
+										visibleSessions.map((session, index) => (
 											<SessionItem
 												key={session.sessionId}
 												session={session}
@@ -258,6 +295,8 @@ export function AppSidebar({
 												pinnable
 												isPinned={isPinned(session.sessionId)}
 												onTogglePin={() => togglePin(session.sessionId)}
+												onArchive={() => void handleArchive(session.sessionId)}
+												onDelete={() => void handleDelete(session.sessionId)}
 												compact
 											/>
 										))

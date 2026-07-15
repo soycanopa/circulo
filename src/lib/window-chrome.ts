@@ -1,4 +1,4 @@
-export const APP_BAR_HEIGHT = 46
+export const APP_BAR_HEIGHT = 44
 export const SHELL_INSET = 8
 
 const isMac =

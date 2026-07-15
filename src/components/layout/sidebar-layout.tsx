@@ -8,12 +8,14 @@ import {
 	type CSSProperties,
 	type ReactNode,
 } from "react"
+import { AnimatePresence, motion } from "motion/react"
 import { AppBar } from "@/components/layout/app-bar"
 import { SidebarResizeHandle } from "@/components/layout/sidebar-resize-handle"
 import { WindowControls } from "@/components/layout/window-controls"
 import { WindowDragStrip } from "@/components/layout/window-drag-strip"
 import { windowDragRegionProps } from "@/hooks/use-window-drag"
 import { useSessions } from "@/hooks/use-sessions"
+import { layoutSpring } from "@/lib/motion-presets"
 import { getSidebarWidth } from "@/lib/preferences"
 import {
 	APP_BAR_HEIGHT,
@@ -96,6 +98,10 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 		setOpen((value) => !value)
 	}, [])
 
+	const titleLeft = open
+		? sidebarWidth + SHELL_INSET + 16
+		: WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP
+
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if (event.key === "b" && (event.metaKey || event.ctrlKey)) {
@@ -125,26 +131,38 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 			>
 				<NarrowWindowCollapser open={open} setOpen={setOpen} />
 
-				<aside
+				<motion.aside
 					data-slot="sidebar"
 					data-state={open ? "expanded" : "collapsed"}
-					className={cn(
-						"flex h-full shrink-0 flex-col overflow-hidden rounded-xl bg-sidebar transition-[transform,opacity] duration-250 ease-in-out",
-						open
-							? "relative"
-							: "pointer-events-none absolute top-2 left-2 z-0 -translate-x-[calc(100%+var(--shell-inset))] opacity-0",
-					)}
-					style={{ width: open ? sidebarWidth : 0 }}
+					initial={false}
+					animate={{
+						width: open ? sidebarWidth : 0,
+						opacity: open ? 1 : 0,
+					}}
+					transition={layoutSpring}
+					className="relative flex h-full shrink-0 flex-col overflow-hidden rounded-xl bg-sidebar"
+					style={{ pointerEvents: open ? "auto" : "none" }}
 				>
 					<div className="flex h-full flex-col" style={{ width: sidebarWidth }}>
 						<SidebarChromeHeader />
 						{sidebar}
 					</div>
-				</aside>
+				</motion.aside>
 
-				{open ? (
-					<SidebarResizeHandle width={sidebarWidth} onWidthChange={setSidebarWidth} />
-				) : null}
+				<AnimatePresence initial={false}>
+					{open ? (
+						<motion.div
+							key="sidebar-resize"
+							initial={{ width: 0, opacity: 0 }}
+							animate={{ width: SHELL_INSET, opacity: 1 }}
+							exit={{ width: 0, opacity: 0 }}
+							transition={layoutSpring}
+							className="shrink-0 overflow-hidden"
+						>
+							<SidebarResizeHandle width={sidebarWidth} onWidthChange={setSidebarWidth} />
+						</motion.div>
+					) : null}
+				</AnimatePresence>
 
 				<main
 					data-slot="sidebar-inset"
@@ -157,20 +175,20 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 				</main>
 
 				{appBar ? (
-					<div
+					<motion.div
 						data-slot="session-title-layer"
-						className="pointer-events-none absolute z-[46] flex items-center"
+						className="pointer-events-none absolute z-[46] flex items-stretch"
+						initial={false}
+						animate={{ left: titleLeft }}
+						transition={layoutSpring}
 						style={{
 							top: 0,
 							height: APP_BAR_HEIGHT,
-							left: open
-								? sidebarWidth + SHELL_INSET + 16
-								: WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP,
 							right: SHELL_INSET + 12,
 						}}
 					>
-						<div className="min-w-0 flex-1 overflow-hidden">{appBar}</div>
-					</div>
+						<div className="flex min-w-0 flex-1 items-stretch overflow-hidden px-0">{appBar}</div>
+					</motion.div>
 				) : null}
 
 				<WindowDragStrip />
@@ -185,7 +203,7 @@ function SidebarChromeHeader() {
 		<div
 			data-slot="sidebar-chrome-header"
 			{...windowDragRegionProps()}
-			className="relative z-[45] flex shrink-0 flex-row items-center gap-1"
+			className="relative z-[45] shrink-0 border-b border-border/50"
 			style={{ height: APP_BAR_HEIGHT }}
 		/>
 	)

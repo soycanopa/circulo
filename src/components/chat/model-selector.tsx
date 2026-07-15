@@ -1,6 +1,8 @@
 import { useAtom } from "jotai"
 import { ChevronDown, Star } from "lucide-react"
+import { AnimatePresence, motion } from "motion/react"
 import { useMemo, useRef, useState } from "react"
+import { fadeSlideUp } from "@/lib/motion-presets"
 import { SelectorMenuItem } from "@/components/chat/selector-menu-item"
 import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside"
 import { InputGroupButton } from "@/components/ui/input-group"
@@ -84,8 +86,12 @@ export function ModelSelector() {
 				<ChevronDown className="size-3 shrink-0 opacity-60" />
 			</InputGroupButton>
 
-			{open && modelOption ? (
-				<div className="absolute bottom-full left-0 z-30 mb-2 w-72 overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+			<AnimatePresence>
+				{open && modelOption ? (
+					<motion.div
+						{...fadeSlideUp}
+						className="absolute bottom-full left-0 z-30 mb-2 w-72 overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
+					>
 					<div className="border-b border-border p-2">
 						<input
 							value={query}
@@ -144,8 +150,9 @@ export function ModelSelector() {
 							</>
 						)}
 					</div>
-				</div>
-			) : null}
+					</motion.div>
+				) : null}
+			</AnimatePresence>
 		</div>
 	)
 }

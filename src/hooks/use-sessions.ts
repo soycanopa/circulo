@@ -1,7 +1,13 @@
 import { useAtom, useSetAtom } from "jotai"
 import { useCallback } from "react"
 import { GENERAL_CHAT_PROJECT } from "@/lib/preferences"
-import { createSession, loadSession, openProject } from "@/lib/tauri"
+import {
+	archiveSessionId,
+	getArchivedSessionIds,
+	removeArchivedSessionId,
+} from "@/lib/archived-sessions"
+import { unpinSessionId } from "@/lib/pinned-sessions"
+import { closeSession, createSession, loadSession, openProject } from "@/lib/tauri"
 import {
 	activeSessionIdAtom,
 	configOptionsAtom,
@@ -67,12 +73,55 @@ export function useSessions() {
 		syncStatus(status)
 	}, [projectPath, resetChatState, syncStatus])
 
+	const deleteSession = useCallback(
+		async (id: string) => {
+			const status = await closeSession(id)
+			unpinSessionId(id)
+			removeArchivedSessionId(id)
+			if (status.activeSessionId === id || status.sessionId === id) {
+				resetChatState()
+			}
+			syncStatus(status)
+		},
+		[resetChatState, syncStatus],
+	)
+
+	const archiveSession = useCallback(
+		async (id: string) => {
+			archiveSessionId(id)
+			unpinSessionId(id)
+			if (id !== activeSessionId) return
+			const archived = new Set(getArchivedSessionIds())
+			const remaining = sessions.filter(
+				(session) => !archived.has(session.sessionId),
+			)
+			const nextId = remaining[0]?.sessionId
+			if (!nextId) {
+				resetChatState()
+				setSessions(remaining)
+				setActiveSessionId(null)
+				return
+			}
+			await selectSession(nextId)
+		},
+		[
+			activeSessionId,
+			resetChatState,
+			selectSession,
+			sessions,
+			setActiveSessionId,
+			setSessions,
+		],
+	)
+
 	return {
 		sessions,
 		activeSessionId,
 		selectSession,
 		newThread,
 		newChat,
+		deleteSession,
+		archiveSession,
 		/** @deprecated use newThread */
 		newSession: newThread,
 	}

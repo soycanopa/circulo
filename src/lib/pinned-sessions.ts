@@ -15,6 +15,12 @@ export function setPinnedSessionIds(ids: string[]): void {
 	localStorage.setItem(PINNED_KEY, JSON.stringify(ids))
 }
 
+export function unpinSessionId(sessionId: string): string[] {
+	const next = getPinnedSessionIds().filter((id) => id !== sessionId)
+	setPinnedSessionIds(next)
+	return next
+}
+
 export function togglePinnedSession(sessionId: string): string[] {
 	const current = getPinnedSessionIds()
 	const next = current.includes(sessionId)
