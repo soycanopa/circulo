@@ -1,5 +1,23 @@
-import { forwardRef, type ComponentProps, type ReactNode } from "react"
+import {
+	forwardRef,
+	useCallback,
+	useLayoutEffect,
+	useRef,
+	type ComponentProps,
+	type ReactNode,
+} from "react"
 import { cn } from "@/lib/utils"
+
+const TEXTAREA_LINE_HEIGHT_REM = 1.375
+const TEXTAREA_VERTICAL_PADDING_REM = 1
+
+function textareaHeightForLines(lines: number) {
+	return `calc(${TEXTAREA_LINE_HEIGHT_REM * lines}rem + ${TEXTAREA_VERTICAL_PADDING_REM}rem)`
+}
+
+type InputGroupTextareaProps = ComponentProps<"textarea"> & {
+	maxRows?: number
+}
 
 export function InputGroup({ className, children, ...props }: ComponentProps<"div">) {
 	return (
@@ -9,15 +27,48 @@ export function InputGroup({ className, children, ...props }: ComponentProps<"di
 	)
 }
 
-export const InputGroupTextarea = forwardRef<HTMLTextAreaElement, ComponentProps<"textarea">>(
-	function InputGroupTextarea({ className, ...props }, ref) {
+export const InputGroupTextarea = forwardRef<HTMLTextAreaElement, InputGroupTextareaProps>(
+	function InputGroupTextarea({ className, maxRows = 8, onChange, value, ...props }, ref) {
+		const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+
+		const resizeToContent = useCallback(
+			(element: HTMLTextAreaElement | null) => {
+				if (!element) return
+				const maxHeightPx = maxRows * (TEXTAREA_LINE_HEIGHT_REM * 16) + TEXTAREA_VERTICAL_PADDING_REM * 16
+				element.style.height = "auto"
+				const nextHeight = Math.min(element.scrollHeight, maxHeightPx)
+				element.style.height = `${nextHeight}px`
+				element.style.overflowY = element.scrollHeight > maxHeightPx ? "auto" : "hidden"
+			},
+			[maxRows],
+		)
+
+		useLayoutEffect(() => {
+			resizeToContent(textareaRef.current)
+		}, [resizeToContent, value])
+
 		return (
 			<textarea
-				ref={ref}
+				ref={(element) => {
+					textareaRef.current = element
+					resizeToContent(element)
+					if (typeof ref === "function") ref(element)
+					else if (ref) ref.current = element
+				}}
+				rows={1}
+				value={value}
 				className={cn(
-					"min-h-16 max-h-48 w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground",
+					"scrollbar-thin w-full resize-none overflow-hidden bg-transparent px-3 py-2 text-sm leading-[1.375rem] outline-none placeholder:text-muted-foreground",
 					className,
 				)}
+				style={{
+					minHeight: textareaHeightForLines(1),
+					maxHeight: textareaHeightForLines(maxRows),
+				}}
+				onChange={(event) => {
+					resizeToContent(event.currentTarget)
+					onChange?.(event)
+				}}
 				{...props}
 			/>
 		)
