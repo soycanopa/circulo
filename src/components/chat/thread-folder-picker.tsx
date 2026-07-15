@@ -123,7 +123,7 @@ export function ThreadFolderPicker({
 					setOpenMenu(true)
 				}}
 				className={cn(
-					"inline-flex w-full min-w-0 items-center gap-1.5 text-xs text-foreground/90 transition-colors hover:text-foreground disabled:opacity-60",
+					"inline-flex max-w-full min-w-0 items-center gap-1.5 text-xs text-foreground/90 transition-colors hover:text-foreground disabled:opacity-60",
 					openMenu && "text-foreground",
 				)}
 			>

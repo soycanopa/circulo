@@ -162,11 +162,8 @@ export function ChatInput({ disabled, sessionStatus, onOpenProject }: ChatInputP
 
 				<form onSubmit={(e) => void handleSubmit(e)}>
 					{showFolderPicker ? (
-						<div
-							data-slot="thread-selectors"
-							className="mb-2 flex flex-wrap items-center gap-2"
-						>
-							<div data-slot="thread-selector-chip" className="shrink-0">
+						<div data-slot="thread-selectors">
+							<div data-slot="thread-selector-chip">
 								<ThreadFolderPicker
 									projectPath={projectPath}
 									onOpenProject={onOpenProject}
