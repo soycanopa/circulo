@@ -19,6 +19,7 @@ import { layoutSpring } from "@/lib/motion-presets"
 import { getSidebarWidth } from "@/lib/preferences"
 import {
 	APP_BAR_HEIGHT,
+	APP_BAR_PADDING_TOP,
 	APP_BAR_TITLE_GAP,
 	APP_BAR_TITLE_INSET_LEFT,
 	SHELL_INSET,
@@ -178,7 +179,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 				{appBar ? (
 					<motion.div
 						data-slot="session-title-layer"
-						className="pointer-events-none absolute z-[46] box-border flex items-center"
+						className="pointer-events-none absolute z-[46] box-border flex items-start"
 						initial={false}
 						animate={{ left: titleLeft }}
 						transition={layoutSpring}
@@ -186,6 +187,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 							top: 0,
 							height: APP_BAR_HEIGHT,
 							right: SHELL_INSET + 12,
+							paddingTop: APP_BAR_PADDING_TOP,
 						}}
 					>
 						<div className="flex min-w-0 flex-1 items-center overflow-hidden">
