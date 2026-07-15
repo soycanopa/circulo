@@ -179,7 +179,7 @@ Documentación detallada: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · [docs/
 
 ## Roadmap y planificación
 
-- **[ROADMAP.md](ROADMAP.md)** — análisis comparativo vs [soycanopa/circulo](https://github.com/soycanopa/circulo), [OpenChamber](https://github.com/openchamber/openchamber) y [Synara](https://github.com/Emanuele-web04/synara), priorizado de más complejo a más sencillo
+- **[ROADMAP.md](ROADMAP.md)** — análisis comparativo vs [soycanopa/circulo](https://github.com/soycanopa/circulo), [OpenChamber](https://github.com/openchamber/openchamber), [Synara](https://github.com/Emanuele-web04/synara) y [Craft Agents](https://github.com/craft-ai-agents/craft-agents-oss) (referente de polish en chat: diffs, previews, planes, credenciales)
 - **[SKILLS.md](SKILLS.md)** — skills recomendados de [skills.sh](https://skills.sh/) para desarrollar Circulo
 
 ---

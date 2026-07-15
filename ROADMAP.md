@@ -9,6 +9,7 @@ Documento de referencia para decidir qué traer de repos relacionados al **Circu
 | [soycanopa/circulo](https://github.com/soycanopa/circulo) | Electron + OpenCode SDK (HTTP/SSE) + monorepo Turborepo | Fork previo tuyo de Palot; misma marca, distinta arquitectura |
 | [openchamber/openchamber](https://github.com/openchamber/openchamber) | Desktop + Web/PWA + VS Code ext; OpenCode server | Referente de UX madura; 2k+ commits, comunidad activa |
 | [Emanuele-web04/synara](https://github.com/Emanuele-web04/synara) | Electron + Bun server WebSocket + multi-proveedor directo (Codex app-server, etc.) + SQLite | Competidor cercano en visión “workspace local”; ~2.2k commits, v0.5.4, 1.3k★ |
+| [craft-ai-agents/craft-agents-oss](https://github.com/craft-ai-agents/craft-agents-oss) | Electron + Claude/Pi SDK + `@craft-agent/ui` (Shiki, @pierre/diffs, TipTap) | **Referente #1 de polish en chat** — previews, diffs, planes, credenciales; ~97 commits, Apache 2.0 |
 
 **Circulo hoy (v0.1):** cliente ACP nativo con chat streaming, permisos, tool calls, diffs inline, plan mode, multi-sesión, sidebar de proyectos, frosted glass macOS. **No** tiene settings, review panel, git integrado, automations, ni capa HTTP al agente.
 
@@ -220,6 +221,118 @@ Documento de referencia para decidir qué traer de repos relacionados al **Circu
 
 ---
 
+## Nivel 2.9 — Chat polish (referencia Craft Agents)
+
+Análisis profundo de [craft-agents-oss](https://github.com/craft-ai-agents/craft-agents-oss) centrado en **cómo se ve y se siente el chat**. Circulo ya tiene los esqueletos (`markdown-content`, `plan-preview-card`, `permission-card`, `inline-diff-block`, `tool-call-card`); Craft está 2–3 capas más adelante en normalización y presentación.
+
+**Stack Craft relevante:** `packages/ui` — `react-markdown` + remark-gfm/math + Shiki 3 (cache LRU) + **@pierre/diffs** + overlays fullscreen. El chat agrupa mensajes en **turnos** (`TurnCard` + `turn-utils.ts`), no en burbujas planas.
+
+### C1. Diffs reales con @pierre/diffs (inline + markdown + overlay)
+**Fuente:** Craft (`MarkdownDiffBlock.tsx`, `diff-normalize.ts`, `ShikiDiffViewer.tsx`, `MultiDiffPreviewOverlay.tsx`)  
+**Complejidad:** 🟢 media · **ACP-ready** · 📦 dependencia ya en `package.json`  
+**Estado nuestro:** `inline-diff-block.tsx` hace diff línea-a-línea naive; `@pierre/diffs` declarado pero **sin usar**
+
+- Fences ` ```diff ` en markdown → `PatchDiff` con error boundary → fallback a `CodeBlock`.
+- `ensureUnifiedDiffFormat()` normaliza hunks sin headers `---/+++` (común en output de LLM).
+- Overlays: diff single-file y multi-file estilo PR; word-level diff (`lineDiffType: 'word'`).
+- `tool-parsers.ts` unifica parseo de resultados Edit/Write/Bash → overlay correcto.
+
+**Recomendación:** **prioridad máxima en chat** — reemplazar `inline-diff-block` y diffs en `tool-call-card`. ROI inmediato; mismo paquete que Synara/Craft.
+
+---
+
+### C2. CodeBlock Shiki con cache, copiar y tema
+**Fuente:** Craft (`CodeBlock.tsx`, `ShikiThemeContext.tsx`)  
+**Complejidad:** 🟢 baja · **ACP-ready**  
+**Estado nuestro:** `markdown-content.tsx` — Shiki sin cache, sin copy, tema fijo `github-dark-default`
+
+- Cache LRU (200 entradas), aliases de lenguaje (`js`→`javascript`), 3 modos (`terminal`/`minimal`/`full`).
+- Botón copiar; tema vía contexto (dark-only themes funcionan aunque el OS esté en light).
+
+**Recomendación:** fase A — refactor de `markdown-content.tsx` antes de fences especializados.
+
+---
+
+### C3. Permisos legibles en el composer (no JSON crudo)
+**Fuente:** Craft (`PermissionRequest.tsx`, `CompactPermissionModeSelector.tsx`)  
+**Complejidad:** 🟢 media-baja · **ACP-ready**  
+**Estado nuestro:** `permission-card.tsx` muestra `JSON.stringify(toolCall)` + Aprobar/Denegar
+
+- Craft: badge de tool, descripción humana, preview del comando (scrollable), **Allow / Always Allow / Deny**.
+- El prompt vive en el **área de input** (reemplaza composer), no como tarjeta flotante sobre mensajes.
+- Modos de sesión separados: safe / ask / allow-all (concepto del agente Craft; en ACP mapear a `allow_once` / `allow_always` / `reject_once`).
+
+**Recomendación:** **prioridad alta** — enriquecer `permission-card` o moverla al composer como Craft. Circulo ya tiene `allow_always` en roadmap (4.6); unificar aquí.
+
+---
+
+### C4. Credenciales y datos sensibles
+**Fuente:** Craft (`CredentialRequest.tsx`, `AuthRequestCard.tsx`, `credential-prompt.ts`)  
+**Complejidad:** 🟡 media · depende de ACP/agente  
+**Estado nuestro:** no existe
+
+- Modos: `bearer`, `basic`, `header`, `multi-header` (varios API keys a la vez).
+- Form en composer con show/hide password, validación, Escape=cancel; compatible 1Password (`action=sourceUrl`).
+- Historial en transcript como turno `auth-request` separado (no mezclado con respuesta del asistente).
+- Backend: keychain seguro; nunca persistir secretos en DOM/logs.
+
+**Recomendación:** preparar UI ahora (`CredentialPrompt.tsx`); cablear cuando ACP/OpenCode exponga `session/request_credential` o equivalente. Diseño 100% portable.
+
+---
+
+### C5. Plan preview — Accept & Compact + integración en turno
+**Fuente:** Craft (`AcceptPlanDropdown.tsx`, `TurnCard` variante plan, `submit-plan.ts`)  
+**Complejidad:** 🟢 baja-media · **ACP-ready**  
+**Estado nuestro:** `plan-preview-card.tsx` — Aceptar / Comentar / Rechazar / Descargar (buena base)
+
+- Craft añade **“Accept & Compact”**: resume conversación antes de ejecutar (útil con contexto largo).
+- Plan embebido en el turno del asistente (header verde, scroll con fade), no tarjeta flotante aislada.
+- Fullscreen `DocumentFormattedMarkdownOverlay` para planes largos; anotaciones inline (TipTap — no portar entero).
+
+**Recomendación:** añadir dropdown “Aceptar y compactar” en `plan-preview-card`; mantener tarjeta separada (ya funciona con ACP). Compact vía prompt `/compact` o comando del agente.
+
+---
+
+### C6. Markdown rico (fences especializados)
+**Fuente:** Craft (`Markdown.tsx` — router de fences)  
+**Complejidad:** 🟡 media (incremental)  
+**Estado nuestro:** GFM + code blocks básicos
+
+- Fences custom: `diff`, `json`, `mermaid`, `datatable`, `html-preview`, `pdf-preview`, `image-preview`, `latex`.
+- `MemoizedMarkdown` por `id` para no re-parsear en cada delta de streaming.
+- `CollapsibleMarkdownContext` — headings colapsables en docs largos.
+- Buffering de stream en `ResponseCard` (40 palabras / 500ms–2.5s) para no mostrar ruido mientras “piensa”.
+
+**Recomendación:** incremental — primero `diff` (C1) y `json`; luego mermaid (5.1). Evaluar buffering adaptado a expectativa de streaming ACP (no copiar literal).
+
+---
+
+### C7. Tool calls como “activity trace” en el turno
+**Fuente:** Craft (`TurnCard.tsx`, `turn-utils.ts`, `deriveTurnPhase()`)  
+**Complejidad:** 🟡 media-alta  
+**Estado nuestro:** `tool-call-card/group` — collapsible, ANSI en execute
+
+- Tools como líneas de actividad dentro del turno (icono + nombre + estado), no tarjetas sueltas por mensaje.
+- Fases: `pending` → `tool_active` → `awaiting` → `streaming` → `complete` — evita “thinking forever” entre tools.
+- `ActivityGroupRow` para subagentes Task; botón multi-diff si hay varios Edit/Write.
+- Modo `informative` vs `detailed` (preferencia de usuario).
+
+**Recomendación:** no portar `TurnCard` entero (ACP entrega mensajes planos). Sí portar **`deriveTurnPhase()`** ligero sobre `toolCalls` del mensaje actual + thinking indicator inteligente.
+
+---
+
+### C8. Overlays fullscreen para expandir tool output
+**Fuente:** Craft (`CodePreviewOverlay.tsx`, `MultiDiffPreviewOverlay.tsx`, `ActivityCardsOverlay.tsx`)  
+**Complejidad:** 🟡 media  
+**Estado nuestro:** expandir tool muestra `<pre>` plano
+
+- Click en actividad Read/Write → overlay con Shiki, rango de líneas, badge Read/Write.
+- Multi-diff consolidado por path; tabs para resultados MCP/browser heterogéneos.
+
+**Recomendación:** fase B — modal/dialog Tauri-friendly; depende de C1 + C2.
+
+---
+
 ## Nivel 3 — Experiencia de chat y agente
 
 ### 3.1 Cola de mensajes en el composer
@@ -235,20 +348,22 @@ Documento de referencia para decidir qué traer de repos relacionados al **Circu
 ---
 
 ### 3.2 Sub-agent cards (tareas delegadas)
-**Fuente:** soycanopa/circulo  
+**Fuente:** soycanopa/circulo, Craft (`ActivityGroupRow`)  
 **Complejidad:** 🟢 media · 🟡 si ACP no modela sub-sesiones  
 **Estado nuestro:** tool calls planos
 
 - Tarjetas colapsables con vista de sesión hija y progreso en vivo.
+- Craft anida tools por `parentId`/`depth` dentro del turno.
 
 ---
 
 ### 3.3 Preguntas interactivas del agente
-**Fuente:** soycanopa/circulo  
+**Fuente:** soycanopa/circulo, Craft (`StructuredInput.tsx`)  
 **Complejidad:** 🟢 media  
 **Estado nuestro:** solo permisos binarios
 
 - Radio, checkbox, texto libre con atajos de teclado.
+- Craft unifica permission | credential | admin_approval en un slot estructurado del composer.
 - Verificar eventos ACP `session/request_question` o equivalente OpenCode.
 
 ---
@@ -390,11 +505,12 @@ Documento de referencia para decidir qué traer de repos relacionados al **Circu
 ---
 
 ### 4.6 Permisos “allow always”
-**Fuente:** soycanopa/circulo  
+**Fuente:** soycanopa/circulo, **Craft** (`PermissionRequest` — “Always Allow”)  
 **Complejidad:** 🟢 baja  
 **Estado nuestro:** once / deny
 
 - Extender `PermissionCard` + persistir reglas por tool/path.
+- Unificar con rediseño C3: tres botones visibles, tip “recuerda para la sesión”.
 
 ---
 
@@ -506,11 +622,11 @@ Documento de referencia para decidir qué traer de repos relacionados al **Circu
 ---
 
 ### 5.4 Smart collapse en diffs (lockfiles, archivos gigantes)
-**Fuente:** soycanopa/circulo  
+**Fuente:** soycanopa/circulo, Craft (`MultiDiffPreviewOverlay` — foco por archivo)  
 **Complejidad:** 🟢 baja  
 **Estado nuestro:** mostramos todo
 
-- Heurísticas por path/tamaño en `inline-diff-block` y futuro review panel.
+- Heurísticas por path/tamaño en diffs Pierre y futuro review panel.
 
 ---
 
@@ -570,24 +686,27 @@ Documento de referencia para decidir qué traer de repos relacionados al **Circu
 
 ---
 
-## Matriz resumen — Top 12 recomendados para Circulo ACP
+## Matriz resumen — Top 15 recomendados para Circulo ACP
 
 | # | Feature | Origen | Esfuerzo | Impacto | ACP |
 |---|---------|--------|----------|---------|-----|
-| 1 | Settings panel | OC + Circulo E. + Synara | Medio-bajo | Alto | 🟢 |
-| 2 | Review panel + diff comments | Circulo E. + OC + Synara | Alto | Muy alto | 🟢 |
-| 3 | **Cola de mensajes en composer** | **Synara** | **Bajo** | **Alto** | 🟢 |
-| 4 | Command palette | Circulo E. | Bajo | Alto | 🟢 |
-| 5 | Keybindings JSON | Synara | Bajo | Medio-alto | 🟢 |
-| 6 | Wizard migración (`configconv`) | Circulo E. | Alto | Alto (onboarding) | 🟢 |
-| 7 | Slash commands / skills UI | Circulo E. + Synara | Medio | Alto | 🟢 |
-| 8 | Permisos allow-always + drafts | Circulo E. | Bajo | Medio | 🟢 |
-| 9 | Git commit/push (sin PR aún) | OC + Synara | Medio | Alto | 🟡 |
-| 10 | Registry multi-agente ACP | Nuestro + Synara (ideas) | Medio-bajo | Alto | 🟢 |
-| 11 | Disclosure motion + window state | Synara | Bajo | Medio (polish) | 🟢 |
-| 12 | CI + auto-update Tauri | Circulo E. + Synara | Medio | Alto (distribución) | 🟢 |
+| 1 | **@pierre/diffs en chat** (C1) | **Craft** | Medio | **Muy alto** | 🟢 |
+| 2 | **Permisos legibles** (C3) + allow-always | **Craft** + Circulo E. | Bajo-medio | Alto | 🟢 |
+| 3 | **CodeBlock Shiki** cache+copy (C2) | **Craft** | Bajo | Alto | 🟢 |
+| 4 | Settings panel | OC + Circulo E. + Synara | Medio-bajo | Alto | 🟢 |
+| 5 | Review panel + diff comments | Circulo E. + OC + Craft C8 | Alto | Muy alto | 🟢 |
+| 6 | Cola de mensajes en composer | Synara | Bajo | Alto | 🟢 |
+| 7 | Fases de turno + thinking (C7 ligero) | Craft | Medio | Medio-alto | 🟢 |
+| 8 | Plan: Aceptar y compactar (C5) | Craft | Bajo | Medio | 🟢 |
+| 9 | Command palette | Circulo E. | Bajo | Alto | 🟢 |
+| 10 | Keybindings JSON | Synara | Bajo | Medio-alto | 🟢 |
+| 11 | Slash commands / skills UI | Circulo E. + Synara | Medio | Alto | 🟢 |
+| 12 | Git commit/push (sin PR aún) | OC + Synara | Medio | Alto | 🟡 |
+| 13 | Registry multi-agente ACP | Nuestro + Synara | Medio-bajo | Alto | 🟢 |
+| 14 | Credential prompt UI (C4) | Craft | Medio | Medio (futuro) | 🟡 |
+| 15 | CI + auto-update Tauri | Circulo E. + Synara | Medio | Alto (distribución) | 🟢 |
 
-**Honorable mentions (fase B):** split layout + terminal, SQLite local, PR workspace (`gh`), provider handoff simplificado.
+**Honorable mentions (fase B):** overlays tool fullscreen (C8), fences json/mermaid (C6), split layout Synara, SQLite local, wizard `configconv`.
 
 ---
 
@@ -600,18 +719,25 @@ Documento de referencia para decidir qué traer de repos relacionados al **Circu
 5. **Registry multi-proveedor directo (Codex app-server, etc.)** — alto mantenimiento; usar ACP como capa unificada.
 6. **Effect-TS + `packages/contracts` completo** — excelente diseño en Synara, pero stack distinto; tomar *ideas* de schemas, no el runtime Effect.
 7. **AppSnap / captura nativa macOS** — nice-to-have de Synara; no prioridad frente a chat/git/core.
+8. **`TurnCard` completo + agrupación por turno Craft** — ACP entrega mensajes planos; portar solo fases ligeras (C7), no reescribir pipeline.
+9. **Ecosistema TipTap** (editor, anotaciones, bubble menus) — Craft es document-centric; Circulo es visor de chat.
+10. **Sistema de sources/credentials backend Craft** — `credential-manager`, OAuth multi-proveedor; distinto de ACP stdio.
+11. **Buffering agresivo de stream (40 palabras)** — puede chocar con streaming inmediato ACP; adaptar umbrales.
 
 ---
 
 ## Fases sugeridas
 
 ### Fase A — Cerrar MVP desktop (4–6 semanas)
-- Settings, command palette, **cola de mensajes**, **keybindings JSON**, drafts, allow-always, branding, CI, path portable.
+- **Chat polish Craft (bloque C1–C3):** @pierre/diffs, CodeBlock mejorado, permisos legibles + allow-always.
+- Settings, command palette, **cola de mensajes**, **keybindings JSON**, drafts, branding, CI, path portable.
 - **Disclosure motion** unificado, **window state** restoration.
-- Review panel v1 (lista de archivos tocados + diff simple).
+- Plan: **Aceptar y compactar** (C5). Fases de turno ligeras (C7).
+- Review panel v1 (lista de archivos tocados + diff Pierre).
 
-### Fase B — Paridad Palot / OpenChamber / Synara (2–3 meses)
+### Fase B — Paridad Palot / OpenChamber / Synara / Craft (2–3 meses)
 - Review panel v2 virtualizado, diff commenting, git commit/push; PR workspace vía `gh` (patrón Synara).
+- **Overlays tool fullscreen** (C8), fences json/mermaid (C6), credential prompt cableado si ACP lo expone (C4).
 - **Split layout** (chat + diff/terminal), terminal integrado, SQLite local.
 - Slash commands, sub-agent cards, adjuntos, compact, transcript scroll guardrails.
 - Wizard migración v1.
@@ -642,4 +768,40 @@ Documento de referencia para decidir qué traer de repos relacionados al **Circu
 
 ---
 
-*Última actualización: julio 2026 — basado en Circulo Tauri v0.1, soycanopa/circulo v0.15.x, openchamber main, synara v0.5.4.*
+## Craft Agents — resumen chat UX portable
+
+| Área Craft | Archivos clave | Circulo hoy | Acción |
+|------------|----------------|-------------|--------|
+| Diffs markdown + tools | `MarkdownDiffBlock.tsx`, `diff-normalize.ts` | `inline-diff-block` naive | Activar `@pierre/diffs` (C1) |
+| Code preview | `CodeBlock.tsx`, `ShikiThemeContext.tsx` | Shiki básico sin cache | Cache + copy + tema (C2) |
+| Permisos | `PermissionRequest.tsx` | JSON crudo en card | Rediseñar composer (C3) |
+| Credenciales | `CredentialRequest.tsx`, `AuthRequestCard.tsx` | No existe | UI preparada (C4) |
+| Plan | `AcceptPlanDropdown.tsx`, plan en `TurnCard` | `plan-preview-card` OK | + Accept & Compact (C5) |
+| Markdown rico | `Markdown.tsx` (10+ fences) | GFM básico | Incremental (C6) |
+| Tool trace | `TurnCard`, `deriveTurnPhase()` | `tool-call-card` | Fases ligeras (C7) |
+| Overlays | `*PreviewOverlay.tsx` | `<pre>` plano | Modal fase B (C8) |
+
+**Mapa de archivos Craft:**
+```
+packages/ui/src/components/markdown/Markdown.tsx
+packages/ui/src/components/markdown/CodeBlock.tsx
+packages/ui/src/components/markdown/MarkdownDiffBlock.tsx
+packages/ui/src/components/chat/TurnCard.tsx
+packages/ui/src/components/chat/turn-utils.ts
+packages/ui/src/components/chat/AcceptPlanDropdown.tsx
+apps/electron/.../structured/PermissionRequest.tsx
+apps/electron/.../structured/CredentialRequest.tsx
+```
+
+**Mapa Circulo (equivalentes a mejorar):**
+```
+src/components/chat/markdown-content.tsx      ← C2, C6
+src/components/diff/inline-diff-block.tsx     ← C1
+src/components/permissions/permission-card.tsx ← C3
+src/components/chat/plan-preview-card.tsx     ← C5
+src/components/tools/tool-call-card.tsx       ← C1, C7, C8
+```
+
+---
+
+*Última actualización: julio 2026 — basado en Circulo Tauri v0.1, soycanopa/circulo v0.15.x, openchamber main, synara v0.5.4, craft-agents-oss main.*
