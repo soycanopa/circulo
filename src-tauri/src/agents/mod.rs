@@ -1,0 +1,1 @@
+pub const DEFAULT_AGENT_COMMAND: &str = "opencode acp";

@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-diff-addition: var(--diff-addition);
+	--color-diff-deletion: var(--diff-deletion);
+	--font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+	--font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
+	--radius-sm: calc(var(--radius) - 4px);
+	--radius-md: calc(var(--radius) - 2px);
+	--radius-lg: var(--radius);
+}
+
+:root {
+	--radius: 0.75rem;
+	--background: #181818;
+	--foreground: #ffffff;
+	--card: #212121;
+	--card-foreground: #ffffff;
+	--muted: #282828;
+	--muted-foreground: #afafaf;
+	--primary: #ffffff;
+	--primary-foreground: #0d0d0d;
+	--secondary: #212121;
+	--secondary-foreground: #ffffff;
+	--accent: #282828;
+	--accent-foreground: #ffffff;
+	--destructive: #fa423e;
+	--border: #2e2e2e;
+	--input: #2e2e2e;
+	--ring: #6fcbf3;
+	--popover: #282828;
+	--popover-foreground: #ffffff;
+	--diff-addition: #40c977;
+	--diff-deletion: #ff6764;
+}
+
+@layer base {
+	* {
+		@apply border-border outline-ring/50;
+	}
+
+	body {
+		@apply bg-background text-foreground font-sans antialiased;
+	}
+
+	code,
+	kbd,
+	samp,
+	pre {
+		@apply font-mono;
+	}
+}
+
+.scrollbar-thin {
+	scrollbar-width: thin;
+	scrollbar-color: var(--border) transparent;
+}
+
+.loading-shimmer {
+	color: var(--muted-foreground);
+	animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+	0%,
+	100% {
+		opacity: 0.5;
+	}
+	50% {
+		opacity: 1;
+	}
+}
