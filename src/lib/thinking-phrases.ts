@@ -1,3 +1,5 @@
+import type { TurnPhase } from "@/lib/turn-phase"
+
 export const THINKING_PHRASES = [
 	"Convenciendo a los electrones…",
 	"Pidiéndole permiso al compilador…",
@@ -21,9 +23,20 @@ export const THINKING_PHRASES = [
 	"Tomando aire antes del refactor…",
 ] as const
 
-export function pickThinkingPhrase(previous?: string): string {
-	const pool = previous
-		? THINKING_PHRASES.filter((phrase) => phrase !== previous)
-		: THINKING_PHRASES
-	return pool[Math.floor(Math.random() * pool.length)] ?? THINKING_PHRASES[0]
+export const TOOL_ACTIVE_PHRASES = [
+	"Ejecutando herramientas en segundo plano…",
+	"El agente está en modo manos a la obra…",
+	"Esperando que la terminal responda…",
+	"Leyendo archivos como si fueran novelas…",
+	"Escribiendo código con guantes de seda…",
+	"Una herramienta va, otra vuelve…",
+	"Negociando con el filesystem…",
+	"Persuadiendo a grep de cooperar…",
+] as const
+
+export function pickThinkingPhrase(previous?: string, phase?: TurnPhase): string {
+	const source =
+		phase === "tool_active" ? TOOL_ACTIVE_PHRASES : THINKING_PHRASES
+	const pool = previous ? source.filter((phrase) => phrase !== previous) : source
+	return pool[Math.floor(Math.random() * pool.length)] ?? source[0]
 }
