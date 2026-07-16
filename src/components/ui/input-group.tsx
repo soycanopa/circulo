@@ -3,6 +3,7 @@ import {
 	useCallback,
 	useLayoutEffect,
 	useRef,
+	useState,
 	type ComponentProps,
 	type ReactNode,
 } from "react"
@@ -30,6 +31,7 @@ export function InputGroup({ className, children, ...props }: ComponentProps<"di
 export const InputGroupTextarea = forwardRef<HTMLTextAreaElement, InputGroupTextareaProps>(
 	function InputGroupTextarea({ className, maxRows = 8, onChange, value, ...props }, ref) {
 		const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+		const [scrollable, setScrollable] = useState(false)
 
 		const resizeToContent = useCallback(
 			(element: HTMLTextAreaElement | null) => {
@@ -38,7 +40,7 @@ export const InputGroupTextarea = forwardRef<HTMLTextAreaElement, InputGroupText
 				element.style.height = "auto"
 				const nextHeight = Math.min(element.scrollHeight, maxHeightPx)
 				element.style.height = `${nextHeight}px`
-				element.style.overflowY = element.scrollHeight > maxHeightPx ? "auto" : "hidden"
+				setScrollable(element.scrollHeight > maxHeightPx)
 			},
 			[maxRows],
 		)
@@ -48,29 +50,33 @@ export const InputGroupTextarea = forwardRef<HTMLTextAreaElement, InputGroupText
 		}, [resizeToContent, value])
 
 		return (
-			<textarea
-				ref={(element) => {
-					textareaRef.current = element
-					resizeToContent(element)
-					if (typeof ref === "function") ref(element)
-					else if (ref) ref.current = element
-				}}
-				rows={1}
-				value={value}
-				className={cn(
-					"scrollbar-thin w-full resize-none overflow-hidden bg-transparent px-3 py-2 text-sm leading-[1.375rem] outline-none placeholder:text-muted-foreground",
-					className,
-				)}
-				style={{
-					minHeight: textareaHeightForLines(1),
-					maxHeight: textareaHeightForLines(maxRows),
-				}}
-				onChange={(event) => {
-					resizeToContent(event.currentTarget)
-					onChange?.(event)
-				}}
-				{...props}
-			/>
+			<div className={cn(scrollable && "pr-2")}>
+				<textarea
+					data-slot="chat-input-textarea"
+					ref={(element) => {
+						textareaRef.current = element
+						resizeToContent(element)
+						if (typeof ref === "function") ref(element)
+						else if (ref) ref.current = element
+					}}
+					rows={1}
+					value={value}
+					className={cn(
+						"scrollbar-thin w-full resize-none bg-transparent py-2 pl-3 text-sm leading-[1.375rem] outline-none placeholder:text-muted-foreground",
+						scrollable ? "overflow-y-auto pr-1" : "overflow-hidden pr-3",
+						className,
+					)}
+					style={{
+						minHeight: textareaHeightForLines(1),
+						maxHeight: textareaHeightForLines(maxRows),
+					}}
+					onChange={(event) => {
+						resizeToContent(event.currentTarget)
+						onChange?.(event)
+					}}
+					{...props}
+				/>
+			</div>
 		)
 	},
 )
@@ -89,7 +95,7 @@ export function InputGroupAddon({
 			data-slot="input-group-addon"
 			className={cn(
 				"flex items-center gap-1 px-2 py-1.5",
-				align === "block-end" && "border-t border-border/50",
+				align === "block-end" && "input-group-addon-divider",
 				className,
 			)}
 		>

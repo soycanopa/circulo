@@ -137,7 +137,7 @@ export function ThreadFolderPicker({
 						<div
 							ref={menuRef}
 							{...noDragProps}
-							className="fixed z-[200] w-56 -translate-y-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg"
+							className="fixed z-[200] w-56 -translate-y-full overflow-hidden rounded-lg border border-popover-border bg-popover shadow-lg"
 							style={{ top: menuPosition.top, left: menuPosition.left }}
 						>
 							<div className="p-1">

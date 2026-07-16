@@ -17,7 +17,7 @@ export function SessionTitle() {
 
 	if (!activeSession || !activeSessionId) {
 		return (
-			<span className="block min-w-0 flex-1 truncate text-sm text-muted-foreground">
+			<span className="block min-w-0 flex-1 truncate text-xs text-muted-foreground">
 				Sin sesión activa
 			</span>
 		)
@@ -27,14 +27,14 @@ export function SessionTitle() {
 	const title = sessionTitle(activeSession, activeIndex)
 
 	return (
-		<span className="flex min-w-0 flex-1 items-center text-sm leading-none">
-			<span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground/70">
+		<span className="flex min-w-0 flex-1 items-center text-xs leading-none">
+			<span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground/80">
 				<Home className="size-3" />
 				{directoryLabel}
 			</span>
 			<span className="mx-1.5 shrink-0 text-muted-foreground/40">/</span>
 			<span className="flex min-w-0 items-center gap-1">
-				<span className="truncate font-medium text-foreground">{title}</span>
+				<span className="truncate text-foreground/90">{title}</span>
 				<SessionTitleMenu
 					sessionId={activeSessionId}
 					title={title}

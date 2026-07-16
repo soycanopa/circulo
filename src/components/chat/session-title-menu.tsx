@@ -129,7 +129,7 @@ export function SessionTitleMenu({ sessionId, title, onRename }: SessionTitleMen
 						<div
 							ref={menuRef}
 							{...noDragProps}
-							className="fixed z-[200] min-w-44 overflow-hidden rounded-lg border border-border bg-popover py-1 shadow-lg"
+							className="fixed z-[200] min-w-44 overflow-hidden rounded-lg border border-popover-border bg-popover py-1 shadow-lg"
 							style={{ top: menuPosition.top, left: menuPosition.left }}
 						>
 							{renaming ? (

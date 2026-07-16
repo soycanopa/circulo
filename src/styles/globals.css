@@ -30,6 +30,7 @@
 	--color-ring: var(--ring);
 	--color-popover: var(--popover);
 	--color-popover-foreground: var(--popover-foreground);
+	--color-popover-border: var(--popover-border);
 	--color-diff-addition: var(--diff-addition);
 	--color-diff-deletion: var(--diff-deletion);
 	--font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -64,6 +65,7 @@
 	--ring: #6fcbf3;
 	--popover: #282828;
 	--popover-foreground: #ffffff;
+	--popover-border: #5a5a5a;
 	--sidebar: #282828;
 	--sidebar-foreground: #ffffff;
 	--sidebar-primary: #ffffff;
@@ -157,13 +159,83 @@ html[data-tauri] [data-slot="sidebar"] {
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
 }
+.pierre-diff diffs-container,
+.pierre-diff-host {
+	display: block;
+	width: 100%;
+}
+
+.pierre-diff diffs-container {
+	min-height: 2.5rem;
+}
+
+.plan-preview-scroll {
+	mask-image: linear-gradient(
+		to bottom,
+		#000 0%,
+		#000 calc(100% - 2.5rem),
+		transparent 100%
+	);
+	-webkit-mask-image: linear-gradient(
+		to bottom,
+		#000 0%,
+		#000 calc(100% - 2.5rem),
+		transparent 100%
+	);
+}
+
 [data-slot="input-group"] {
-	@apply rounded-xl border shadow-sm;
+	@apply overflow-hidden rounded-xl border shadow-sm;
 	background: var(--chat-input);
 	border-color: var(--chat-input-border);
 }
 [data-slot="input-group-addon"] {
 	overflow: visible;
+}
+
+[data-slot="input-group-addon"].input-group-addon-divider {
+	position: relative;
+	z-index: 1;
+	border-top: none;
+	background: transparent;
+}
+
+[data-slot="input-group-addon"].input-group-addon-divider > * {
+	position: relative;
+	z-index: 1;
+}
+
+[data-slot="input-group-addon"].input-group-addon-divider::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: -16px;
+	bottom: -8px;
+	border-radius: 0 0 0.75rem 0.75rem;
+	background: color-mix(in srgb, var(--chat-input) 88%, transparent);
+	backdrop-filter: blur(22px) saturate(1.2);
+	-webkit-backdrop-filter: blur(22px) saturate(1.2);
+	mask-image: linear-gradient(
+		to bottom,
+		transparent 0%,
+		rgb(0 0 0 / 0.55) 14%,
+		#000 30%,
+		#000 70%,
+		rgb(0 0 0 / 0.55) 86%,
+		transparent 100%
+	);
+	-webkit-mask-image: linear-gradient(
+		to bottom,
+		transparent 0%,
+		rgb(0 0 0 / 0.55) 14%,
+		#000 30%,
+		#000 70%,
+		rgb(0 0 0 / 0.55) 86%,
+		transparent 100%
+	);
+	pointer-events: none;
+	z-index: 0;
 }
 [data-slot="sidebar-resize-indicator"] {
 	background: linear-gradient(
@@ -185,6 +257,75 @@ html[data-tauri] [data-slot="sidebar"] {
 	padding: 0.5rem 0.75rem;
 }
 
-.scrollbar-thin { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.scrollbar-thin {
+	scrollbar-width: thin;
+	scrollbar-color: color-mix(in srgb, var(--muted-foreground) 50%, transparent) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--muted-foreground) 42%, transparent);
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+	background: color-mix(in srgb, var(--muted-foreground) 62%, transparent);
+}
+
+[data-slot="chat-input-textarea"].scrollbar-thin {
+	scrollbar-gutter: stable;
+	scrollbar-color: color-mix(in srgb, var(--muted-foreground) 20%, transparent) transparent;
+}
+
+[data-slot="chat-input-textarea"].scrollbar-thin::-webkit-scrollbar {
+	width: 18px;
+}
+
+[data-slot="chat-input-textarea"].scrollbar-thin::-webkit-scrollbar-thumb {
+	border: 6px solid transparent;
+	border-left-width: 1px;
+	border-right-width: 1px;
+	border-radius: 999px;
+	background-clip: padding-box;
+	background-color: color-mix(in srgb, var(--muted-foreground) 20%, transparent);
+}
+
+[data-slot="chat-input-textarea"].scrollbar-thin::-webkit-scrollbar-thumb:hover {
+	background-color: color-mix(in srgb, var(--muted-foreground) 32%, transparent);
+}
 .loading-shimmer { color: var(--muted-foreground); animation: pulse 1.5s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+.thinking-shimmer {
+	background: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--muted-foreground) 70%, transparent) 0%,
+		color-mix(in srgb, var(--foreground) 92%, transparent) 42%,
+		color-mix(in srgb, var(--muted-foreground) 70%, transparent) 84%
+	);
+	background-size: 220% 100%;
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	animation:
+		thinking-shimmer 2.4s ease-in-out infinite,
+		thinking-phrase-in 0.45s ease-out;
+}
+
+@keyframes thinking-shimmer {
+	0% { background-position: 120% 0; }
+	100% { background-position: -120% 0; }
+}
+
+@keyframes thinking-phrase-in {
+	from { opacity: 0; transform: translateY(2px); }
+	to { opacity: 1; transform: translateY(0); }
+}

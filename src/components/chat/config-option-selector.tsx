@@ -76,6 +76,7 @@ export function ConfigOptionSelector({
 				open={open && Boolean(option)}
 				anchorRef={rootRef}
 				onClose={() => setOpen(false)}
+				preferPlacement="above"
 				minWidth={176}
 				className="p-1"
 			>
