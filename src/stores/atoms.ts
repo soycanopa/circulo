@@ -1,5 +1,6 @@
 import { atom } from "jotai"
 import { getAppSettings, type AppSettings, type SettingsSection } from "@/lib/app-settings"
+import type { AgentProviderId } from "@/lib/agent-providers"
 import type { ContextWindowSnapshot } from "@/lib/context-window"
 import type {
 	AgentCapabilities,
@@ -13,6 +14,8 @@ import type {
 } from "@/types/acp"
 
 export const projectPathAtom = atom<string | null>(null)
+/** OpenCode ACP process is running (may not have an active chat session yet). */
+export const agentConnectedAtom = atom(false)
 export const sessionStatusAtom = atom<SessionStatus>("disconnected")
 export const promptInFlightAtom = atom(false)
 export const replayingHistoryAtom = atom(false)
@@ -27,12 +30,24 @@ export const errorMessageAtom = atom<string | null>(null)
 export const sessionsAtom = atom<SessionInfo[]>([])
 export const activeSessionIdAtom = atom<string | null>(null)
 export const agentCapabilitiesAtom = atom<AgentCapabilities | null>(null)
+export const activeAgentIdAtom = atom<AgentProviderId>(getAppSettings().defaultProvider)
 
 /** Sentinel value: new thread awaiting project folder selection (no session yet). */
 export const NEW_THREAD_PICKER_ID = "__new_thread__"
 
 /** Session id that should show the thread folder picker (set on new thread). */
 export const threadFolderPickerSessionIdAtom = atom<string | null>(null)
+
+/** True while New Chat / new session is waiting on the agent. */
+export const creatingSessionAtom = atom(false)
+
+/** Prompt queued while an optimistic session is still connecting. */
+export interface PendingPrompt {
+	text: string
+	contextPaths: string[]
+}
+
+export const pendingPromptAtom = atom<PendingPrompt | null>(null)
 
 export interface PendingPlan {
 	content: string

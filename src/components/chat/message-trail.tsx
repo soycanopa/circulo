@@ -513,7 +513,7 @@ export function MessageTrail({ items, activeStore, onSelect }: MessageTrailProps
 			onKeyDown={handleKeyDown}
 			onBlur={handleRailBlur}
 			className={cn(
-				"absolute inset-y-0 left-0 z-20 hidden flex-col justify-center transition-opacity duration-200 sm:flex",
+				"sticky top-0 z-20 hidden h-full shrink-0 flex-col justify-center self-start transition-opacity duration-200 sm:flex",
 				visible ? "opacity-100" : "pointer-events-none opacity-0",
 			)}
 			style={{ width: RAIL_WIDTH_PX }}

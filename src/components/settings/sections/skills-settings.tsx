@@ -1,4 +1,5 @@
-import { ExternalLink, Search, Sparkles, X } from "lucide-react"
+import { open } from "@tauri-apps/plugin-dialog"
+import { ExternalLink, FolderOpen, Search, Sparkles, X } from "lucide-react"
 import { useAtomValue } from "jotai"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
@@ -8,10 +9,16 @@ import {
 	SettingsGroup,
 	SettingsRow,
 	SettingsSectionHeader,
+	SettingsSelect,
 	SettingsTabs,
 } from "@/components/settings/settings-ui"
 import { formatMcpDisplayName } from "@/lib/mcp-display"
-import { getProjectDisplayName } from "@/lib/project-display"
+import { getProjectDisplayName, isGeneralChatProject } from "@/lib/project-display"
+import {
+	addRecentProject,
+	getActiveProjectPaths,
+	getRecentProjectLabel,
+} from "@/lib/recent-projects"
 import {
 	buildSkillsShPackage,
 	buildSkillsShUrl,
@@ -82,7 +89,7 @@ function ExploreSkillRow({
 
 	async function handleInstall() {
 		if (scope === "project" && !projectPath) {
-			setError("Abre un proyecto para instalar aquí")
+			setError("Selecciona un proyecto destino")
 			return
 		}
 
@@ -139,12 +146,27 @@ function ExploreSkillRow({
 	)
 }
 
+function defaultSkillsProjectPath(projectPath: string | null, savedProjects: string[]): string | null {
+	if (projectPath && !isGeneralChatProject(projectPath)) return projectPath
+	return savedProjects[0] ?? null
+}
+
 export function SkillsSettings() {
 	const projectPath = useAtomValue(projectPathAtom)
 	const [tab, setTab] = useState<SkillsTab>("installed")
 	const [skills, setSkills] = useState<OpencodeSkillEntry[]>([])
 	const [loading, setLoading] = useState(true)
 	const [error, setError] = useState<string | null>(null)
+	const [recentProjectsVersion, setRecentProjectsVersion] = useState(0)
+
+	const savedProjects = useMemo(() => {
+		void recentProjectsVersion
+		return getActiveProjectPaths(projectPath)
+	}, [projectPath, recentProjectsVersion])
+
+	const [skillsProjectPath, setSkillsProjectPath] = useState<string | null>(() =>
+		defaultSkillsProjectPath(projectPath, getActiveProjectPaths(projectPath)),
+	)
 
 	const [query, setQuery] = useState("")
 	const [debouncedQuery, setDebouncedQuery] = useState("")
@@ -157,18 +179,23 @@ export function SkillsSettings() {
 		project: false,
 	})
 
+	useEffect(() => {
+		if (skillsProjectPath && savedProjects.includes(skillsProjectPath)) return
+		setSkillsProjectPath(defaultSkillsProjectPath(projectPath, savedProjects))
+	}, [projectPath, savedProjects, skillsProjectPath])
+
 	const refresh = useCallback(async () => {
 		setLoading(true)
 		setError(null)
 		try {
-			const entries = await listOpencodeSkills(projectPath)
+			const entries = await listOpencodeSkills(skillsProjectPath)
 			setSkills(entries)
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "No se pudieron cargar los skills")
 		} finally {
 			setLoading(false)
 		}
-	}, [projectPath])
+	}, [skillsProjectPath])
 
 	useEffect(() => {
 		void refresh()
@@ -210,10 +237,25 @@ export function SkillsSettings() {
 		}
 	}, [tab, debouncedQuery])
 
-	const installedNames = useMemo(
-		() => new Set(skills.map((skill) => skill.name.toLowerCase())),
-		[skills],
-	)
+	const installedNames = useMemo(() => {
+		const scoped =
+			installScope === "global"
+				? skills.filter((skill) => skill.scope === "global")
+				: skills.filter((skill) => skill.scope === "project")
+		return new Set(scoped.map((skill) => skill.name.toLowerCase()))
+	}, [skills, installScope])
+
+	async function handleBrowseProject() {
+		const selected = await open({
+			directory: true,
+			multiple: false,
+			title: "Seleccionar proyecto",
+		})
+		if (!selected || Array.isArray(selected)) return
+		addRecentProject(selected)
+		setRecentProjectsVersion((value) => value + 1)
+		setSkillsProjectPath(selected)
+	}
 
 	const globalSkills = skills.filter((skill) => skill.scope === "global")
 	const projectSkills = skills.filter((skill) => skill.scope === "project")
@@ -271,7 +313,7 @@ export function SkillsSettings() {
 							</SettingsCollapsible>
 
 							<SettingsCollapsible
-								title={`Proyecto — ${getProjectDisplayName(projectPath)}`}
+								title={`Proyecto — ${getProjectDisplayName(skillsProjectPath)}`}
 								subtitle=".agents/skills y .opencode/skills"
 								icon={<Sparkles className="size-4" />}
 								open={expandedInstalled.project}
@@ -280,15 +322,53 @@ export function SkillsSettings() {
 								}
 								badges={<SettingsBadge tone="neutral">{projectSkills.length}</SettingsBadge>}
 							>
-								{!projectPath ? (
-									<SettingsEmptyState>
-										Abre un proyecto para ver e instalar skills locales.
-									</SettingsEmptyState>
+								{savedProjects.length === 0 && !skillsProjectPath ? (
+									<div className="space-y-3 px-4 pb-3">
+										<SettingsEmptyState>
+											Añade un proyecto desde el sidebar o elige una carpeta.
+										</SettingsEmptyState>
+										<div className="flex justify-end">
+											<button
+												type="button"
+												onClick={() => void handleBrowseProject()}
+												className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/60 px-2.5 text-xs text-foreground transition-colors hover:bg-muted"
+											>
+												<FolderOpen className="size-3.5 text-muted-foreground" />
+												Carpeta…
+											</button>
+										</div>
+									</div>
 								) : (
-									<InstalledSkillsList
-										skills={projectSkills}
-										emptyLabel="No hay skills en este proyecto."
-									/>
+									<div className="space-y-3 px-4 pb-3">
+										<div className="flex flex-wrap items-center justify-end gap-2">
+											<SettingsSelect
+												value={skillsProjectPath ?? ""}
+												onChange={setSkillsProjectPath}
+												options={savedProjects.map((path) => ({
+													value: path,
+													label: getRecentProjectLabel(path),
+												}))}
+											/>
+											<button
+												type="button"
+												onClick={() => void handleBrowseProject()}
+												className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/60 px-2.5 text-xs text-foreground transition-colors hover:bg-muted"
+											>
+												<FolderOpen className="size-3.5 text-muted-foreground" />
+												Carpeta…
+											</button>
+										</div>
+										{!skillsProjectPath ? (
+											<SettingsEmptyState>
+												Selecciona un proyecto para ver sus skills locales.
+											</SettingsEmptyState>
+										) : (
+											<InstalledSkillsList
+												skills={projectSkills}
+												emptyLabel="No hay skills en este proyecto."
+											/>
+										)}
+									</div>
 								)}
 							</SettingsCollapsible>
 						</div>
@@ -331,10 +411,34 @@ export function SkillsSettings() {
 						</div>
 					</div>
 
-					{installScope === "project" && !projectPath ? (
-						<p className="text-xs text-amber-600 dark:text-amber-400">
-							Abre un proyecto para instalar skills a nivel de repositorio.
-						</p>
+					{installScope === "project" ? (
+						<div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+							<span className="text-xs text-muted-foreground">Proyecto destino</span>
+							<div className="flex flex-wrap items-center gap-2">
+								{savedProjects.length > 0 ? (
+									<SettingsSelect
+										value={skillsProjectPath ?? ""}
+										onChange={setSkillsProjectPath}
+										options={savedProjects.map((path) => ({
+											value: path,
+											label: getRecentProjectLabel(path),
+										}))}
+									/>
+								) : (
+									<span className="text-xs text-amber-600 dark:text-amber-400">
+										Añade un proyecto o elige una carpeta.
+									</span>
+								)}
+								<button
+									type="button"
+									onClick={() => void handleBrowseProject()}
+									className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border/60 px-2.5 text-xs text-foreground transition-colors hover:bg-muted"
+								>
+									<FolderOpen className="size-3.5 text-muted-foreground" />
+									Carpeta…
+								</button>
+							</div>
+						</div>
 					) : null}
 
 					{!debouncedQuery ? (
@@ -367,7 +471,7 @@ export function SkillsSettings() {
 										key={result.id}
 										result={result}
 										scope={installScope}
-										projectPath={projectPath}
+										projectPath={skillsProjectPath}
 										isInstalled={isInstalled}
 										onInstalled={() => void handleInstalledFromExplore()}
 									/>
@@ -381,7 +485,8 @@ export function SkillsSettings() {
 			<p className="text-xs leading-relaxed text-muted-foreground">
 				La instalación usa <code className="font-mono">npx skills add</code> con agente OpenCode.
 				Global va a <code className="font-mono">~/.config/opencode/skills</code>; proyecto a{" "}
-				<code className="font-mono">.agents/skills</code> del repo abierto.
+				<code className="font-mono">.agents/skills</code> del repo que elijas — no hace falta tenerlo
+				abierto en el chat.
 			</p>
 		</div>
 	)

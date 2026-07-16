@@ -5,6 +5,7 @@ import { createPortal } from "react-dom"
 import { getProjectDisplayName } from "@/lib/project-display"
 import { cn } from "@/lib/utils"
 import {
+	agentConnectedAtom,
 	errorMessageAtom,
 	projectPathAtom,
 	sessionStatusAtom,
@@ -12,11 +13,11 @@ import {
 import type { SessionStatus } from "@/types/acp"
 
 interface ConnectionStatusProps {
-	connected: boolean
+	connected?: boolean
 }
 
-function statusColor(connected: boolean, sessionStatus: SessionStatus): string {
-	if (!connected || sessionStatus === "disconnected") return "bg-red-500"
+function statusColor(agentConnected: boolean, sessionStatus: SessionStatus): string {
+	if (!agentConnected) return "bg-red-500"
 	if (
 		sessionStatus === "awaiting_permission" ||
 		sessionStatus === "awaiting_credential" ||
@@ -27,8 +28,8 @@ function statusColor(connected: boolean, sessionStatus: SessionStatus): string {
 	return "bg-green-500"
 }
 
-function statusLabel(connected: boolean, sessionStatus: SessionStatus): string {
-	if (!connected || sessionStatus === "disconnected") return "Desconectado"
+function statusLabel(agentConnected: boolean, sessionStatus: SessionStatus): string {
+	if (!agentConnected) return "Desconectado"
 	if (sessionStatus === "awaiting_permission") return "Esperando permiso"
 	if (sessionStatus === "awaiting_credential") return "Esperando credenciales"
 	if (sessionStatus === "generating") return "Generando respuesta"
@@ -36,6 +37,8 @@ function statusLabel(connected: boolean, sessionStatus: SessionStatus): string {
 }
 
 export function ConnectionStatus({ connected }: ConnectionStatusProps) {
+	const agentConnectedFromAtom = useAtomValue(agentConnectedAtom)
+	const agentConnected = connected ?? agentConnectedFromAtom
 	const sessionStatus = useAtomValue(sessionStatusAtom)
 	const projectPath = useAtomValue(projectPathAtom)
 	const errorMessage = useAtomValue(errorMessageAtom)
@@ -76,8 +79,8 @@ export function ConnectionStatus({ connected }: ConnectionStatusProps) {
 		}
 	}, [open])
 
-	const color = statusColor(connected, sessionStatus)
-	const label = statusLabel(connected, sessionStatus)
+	const color = statusColor(agentConnected, sessionStatus)
+	const label = statusLabel(agentConnected, sessionStatus)
 	const projectName = getProjectDisplayName(projectPath)
 
 	return (

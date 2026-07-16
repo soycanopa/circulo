@@ -1,4 +1,5 @@
 import { AboutSettings } from "@/components/settings/sections/about-settings"
+import { AgentsSettings } from "@/components/settings/sections/agents-settings"
 import { GeneralSettings } from "@/components/settings/sections/general-settings"
 import { McpSettings } from "@/components/settings/sections/mcp-settings"
 import { ProfileSettings } from "@/components/settings/sections/profile-settings"
@@ -10,6 +11,8 @@ export function SettingsPanel({ section }: { section: SettingsSection }) {
 	switch (section) {
 		case "general":
 			return <GeneralSettings />
+		case "agents":
+			return <AgentsSettings />
 		case "profile":
 			return <ProfileSettings />
 		case "shortcuts":

@@ -1,5 +1,4 @@
-import { ToolCallGroupCard } from "@/components/tools/tool-call-group"
-import { groupToolCalls } from "@/lib/tool-call-groups"
+import { StructuredToolActivity } from "@/components/tools/structured-tool-activity"
 import type { ToolCallState } from "@/types/acp"
 
 interface ToolCallListProps {
@@ -8,14 +7,5 @@ interface ToolCallListProps {
 
 export function ToolCallList({ toolCalls }: ToolCallListProps) {
 	if (toolCalls.length === 0) return null
-
-	const groups = groupToolCalls(toolCalls)
-
-	return (
-		<>
-			{groups.map((group) => (
-				<ToolCallGroupCard key={group.key} group={group} />
-			))}
-		</>
-	)
+	return <StructuredToolActivity toolCalls={toolCalls} />
 }

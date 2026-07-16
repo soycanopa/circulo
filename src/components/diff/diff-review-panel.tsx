@@ -1,42 +1,48 @@
-import { useAtom, useAtomValue } from "jotai"
-import { Expand, FileDiff, X } from "lucide-react"
-import { useEffect, useMemo } from "react"
-import { DiffFileList } from "@/components/diff/diff-file-list"
+import { useAtomValue } from "jotai"
+import { FileDiff, X } from "lucide-react"
+import { useEffect, useMemo, useRef } from "react"
 import { DiffStatLabel } from "@/components/chat/diff-stat-label"
-import { PierreFileDiff } from "@/components/diff/pierre-diff-view"
+import { CollapsedDiffRow } from "@/components/tools/collapsed-diff-row"
 import { useDiffPanel } from "@/hooks/use-diff-panel"
 import { windowNoDragProps } from "@/hooks/use-window-drag"
 import { collectSessionDiffStats } from "@/lib/session-diff-stats"
-import { collectSessionDiffs } from "@/lib/session-diffs"
+import { collectSessionDiffs, type SessionDiffEntry } from "@/lib/session-diffs"
 import { APP_BAR_HEIGHT } from "@/lib/window-chrome"
 import { activeDiffToolIdAtom, messagesAtom } from "@/stores/atoms"
-import type { ChatMessage, ToolCallState } from "@/types/acp"
+import type { ToolCallState } from "@/types/acp"
 
-function findToolCallById(messages: ChatMessage[], toolCallId: string): ToolCallState | null {
-	for (const message of messages) {
-		if (message.role !== "assistant") continue
-		const tool = message.toolCalls.find((entry) => entry.id === toolCallId)
-		if (tool) return tool
+function entryToToolCall(entry: SessionDiffEntry): ToolCallState {
+	return {
+		id: entry.id,
+		title: entry.title,
+		status: "completed",
+		content: "",
+		diff: {
+			path: entry.path,
+			oldText: entry.oldText,
+			newText: entry.newText,
+		},
 	}
-	return null
 }
 
 export function DiffReviewPanel() {
 	const messages = useAtomValue(messagesAtom)
-	const [activeDiffToolId, setActiveDiffToolId] = useAtom(activeDiffToolIdAtom)
-	const { closeDiffPanel, openDiffFullscreen } = useDiffPanel()
+	const activeDiffToolId = useAtomValue(activeDiffToolIdAtom)
+	const { closeDiffPanel } = useDiffPanel()
+	const listRef = useRef<HTMLDivElement>(null)
 
 	const entries = useMemo(() => collectSessionDiffs(messages), [messages])
 	const stats = useMemo(() => collectSessionDiffStats(messages), [messages])
-	const active =
-		entries.find((entry) => entry.id === activeDiffToolId) ?? entries[entries.length - 1]
 
 	useEffect(() => {
-		if (entries.length === 0) return
-		if (!activeDiffToolId || !entries.some((entry) => entry.id === activeDiffToolId)) {
-			setActiveDiffToolId(entries[entries.length - 1].id)
+		if (!activeDiffToolId || !listRef.current) return
+		const target = listRef.current.querySelector(
+			`[data-diff-entry-id="${activeDiffToolId}"]`,
+		)
+		if (target instanceof HTMLElement) {
+			target.scrollIntoView({ behavior: "smooth", block: "nearest" })
 		}
-	}, [entries, activeDiffToolId, setActiveDiffToolId])
+	}, [activeDiffToolId, entries.length])
 
 	return (
 		<aside
@@ -50,7 +56,7 @@ export function DiffReviewPanel() {
 			>
 				<FileDiff className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
 				<span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground">
-					Cambios
+					Archivos modificados
 					{entries.length > 0 ? (
 						<span className="ml-1.5 text-muted-foreground">({entries.length})</span>
 					) : null}
@@ -60,34 +66,18 @@ export function DiffReviewPanel() {
 					deletions={stats.deletions}
 					className="shrink-0 text-[11px]"
 				/>
-				<div {...windowNoDragProps()} className="flex shrink-0 items-center gap-0.5">
-					{active ? (
-						<button
-							type="button"
-							onClick={() => {
-								const toolCall = findToolCallById(messages, active.id)
-								if (toolCall) openDiffFullscreen(toolCall)
-							}}
-							className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent-hover hover:text-foreground"
-							title="Pantalla completa"
-							aria-label="Abrir diff en pantalla completa"
-						>
-							<Expand className="size-3.5" />
-						</button>
-					) : null}
-					<button
-						type="button"
-						onClick={(event) => {
-							event.stopPropagation()
-							closeDiffPanel()
-						}}
-						className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent-hover hover:text-foreground"
-						aria-label="Cerrar panel de cambios"
-						title="Cerrar panel (⌘⇧D)"
-					>
-						<X className="size-3.5" />
-					</button>
-				</div>
+				<button
+					type="button"
+					onClick={(event) => {
+						event.stopPropagation()
+						closeDiffPanel()
+					}}
+					className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent-hover hover:text-foreground"
+					aria-label="Cerrar panel de cambios"
+					title="Cerrar panel (⌘⇧D)"
+				>
+					<X className="size-3.5" />
+				</button>
 			</header>
 
 			{entries.length === 0 ? (
@@ -95,26 +85,18 @@ export function DiffReviewPanel() {
 					No hay archivos modificados en esta sesión.
 				</div>
 			) : (
-				<div className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,34%)_minmax(0,1fr)] overflow-hidden">
-					<div className="min-h-0 min-w-0 border-r border-border/50 bg-muted/20">
-						<DiffFileList
-							entries={entries}
-							activeId={active?.id ?? ""}
-							onSelect={setActiveDiffToolId}
-						/>
-					</div>
-
-					<div className="relative min-h-0 min-w-0 bg-[#141414]">
-						{active ? (
-							<PierreFileDiff
-								path={active.path}
-								oldText={active.oldText}
-								newText={active.newText}
-								fill
-								className="h-full rounded-none border-0"
+				<div
+					ref={listRef}
+					className="scrollbar-thin min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2"
+				>
+					{entries.map((entry) => (
+						<div key={entry.id} data-diff-entry-id={entry.id}>
+							<CollapsedDiffRow
+								toolCall={entryToToolCall(entry)}
+								showPanelAction={false}
 							/>
-						) : null}
-					</div>
+						</div>
+					))}
 				</div>
 			)}
 		</aside>

@@ -10,6 +10,7 @@ import type {
 export interface ProjectStatus {
 	connected: boolean
 	projectPath: string | null
+	agentId: string | null
 	sessionId: string | null
 	activeSessionId: string | null
 	agentCommand: string
@@ -21,8 +22,33 @@ export async function getProjectStatus(): Promise<ProjectStatus> {
 	return invoke<ProjectStatus>("get_project_status")
 }
 
-export async function openProject(path: string): Promise<ProjectStatus> {
-	return invoke<ProjectStatus>("open_project", { path })
+export interface OpenProjectOptions {
+	agentId?: string
+	deferSessionBootstrap?: boolean
+}
+
+export async function openProject(
+	path: string,
+	options?: OpenProjectOptions,
+): Promise<ProjectStatus> {
+	return invoke<ProjectStatus>("open_project", {
+		path,
+		agentId: options?.agentId ?? null,
+		deferSessionBootstrap: options?.deferSessionBootstrap ?? false,
+	})
+}
+
+export interface AgentProviderVersion {
+	id: string
+	label: string
+	command: string
+	installed: boolean
+	version: string | null
+	error: string | null
+}
+
+export async function listAgentProviderVersions(): Promise<AgentProviderVersion[]> {
+	return invoke<AgentProviderVersion[]>("list_agent_provider_versions")
 }
 
 export async function closeProject(): Promise<ProjectStatus> {
@@ -117,6 +143,14 @@ export async function installSkillsShSkill(input: {
 	return invoke<string>("install_skills_sh_skill", input)
 }
 
+export async function listStoredSessions(projectPath: string): Promise<SessionInfo[]> {
+	return invoke<SessionInfo[]>("list_stored_sessions", { projectPath })
+}
+
+export async function prefetchProjectSessions(projectPath: string): Promise<SessionInfo[]> {
+	return invoke<SessionInfo[]>("prefetch_project_sessions", { projectPath })
+}
+
 export async function listSessions(): Promise<ProjectStatus> {
 	return invoke<ProjectStatus>("list_sessions")
 }
@@ -129,8 +163,20 @@ export async function loadSession(id: string): Promise<ProjectStatus> {
 	return invoke<ProjectStatus>("load_session", { id })
 }
 
-export async function closeSession(id: string): Promise<ProjectStatus> {
-	return invoke<ProjectStatus>("close_session", { id })
+export interface CloseSessionResult {
+	status: ProjectStatus
+	projectPath: string
+	sessions: SessionInfo[]
+}
+
+export async function closeSession(
+	id: string,
+	projectPath?: string | null,
+): Promise<CloseSessionResult> {
+	return invoke<CloseSessionResult>("close_session", {
+		id,
+		projectPath: projectPath ?? null,
+	})
 }
 
 export async function renameSession(id: string, title: string): Promise<ProjectStatus> {
@@ -153,9 +199,19 @@ export function listenAcpEvents(handlers: {
 	onConfigOptions?: (payload: { configOptions: ConfigOption[] }) => void
 	onPromptComplete?: () => void
 	onError?: (payload: { message: string }) => void
+	onAgentReady?: (payload: {
+		projectPath: string
+		capabilities: AgentCapabilities
+	}) => void
 	onDisconnected?: () => void
 }): Promise<UnlistenFn[]> {
 	return Promise.all([
+		listen("agent:ready", (event) => {
+			handlers.onAgentReady?.(event.payload as {
+				projectPath: string
+				capabilities: AgentCapabilities
+			})
+		}),
 		listen("acp:session_ready", (event) => {
 			handlers.onSessionReady?.(event.payload as {
 				sessionId: string

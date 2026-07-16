@@ -2,7 +2,7 @@ import { useAtomValue } from "jotai"
 import { SettingsGroup, SettingsRow, SettingsSectionHeader } from "@/components/settings/settings-ui"
 import { projectPathAtom } from "@/stores/atoms"
 
-const VERSION = "0.1.0"
+import { APP_VERSION } from "@/lib/version"
 const REPO_URL = "https://github.com/soycanopa/circulo"
 
 export function AboutSettings() {
@@ -17,7 +17,7 @@ export function AboutSettings() {
 				/>
 				<SettingsGroup>
 					<SettingsRow label="Versión">
-						<span className="text-xs text-muted-foreground">{VERSION}</span>
+						<span className="text-xs text-muted-foreground">{APP_VERSION}</span>
 					</SettingsRow>
 					<SettingsRow label="Licencia">
 						<span className="text-xs text-muted-foreground">MIT</span>
@@ -39,19 +39,11 @@ export function AboutSettings() {
 			</div>
 
 			<div>
-				<SettingsSectionHeader title="Agente" />
+				<SettingsSectionHeader title="Sesión" />
 				<SettingsGroup>
-					<SettingsRow label="Comando">
-						<span className="font-mono text-xs text-muted-foreground">opencode acp</span>
-					</SettingsRow>
 					<SettingsRow label="Proyecto abierto">
 						<span className="max-w-[220px] truncate font-mono text-xs text-muted-foreground">
 							{projectPath ?? "—"}
-						</span>
-					</SettingsRow>
-					<SettingsRow label="Config OpenCode">
-						<span className="font-mono text-xs text-muted-foreground">
-							~/.config/opencode/opencode.json
 						</span>
 					</SettingsRow>
 				</SettingsGroup>

@@ -1,5 +1,6 @@
 import { Home } from "lucide-react"
 import { useAtomValue } from "jotai"
+import { AgentAppSelector } from "@/components/chat/agent-app-selector"
 import { SessionTitleMenu } from "@/components/chat/session-title-menu"
 import { useSessions } from "@/hooks/use-sessions"
 import { getProjectDirectoryLabel } from "@/lib/project-display"
@@ -17,8 +18,9 @@ export function SessionTitle() {
 
 	if (!activeSession || !activeSessionId) {
 		return (
-			<span className="block min-w-0 flex-1 truncate text-xs text-muted-foreground">
-				Sin sesión activa
+			<span className="flex min-w-0 flex-1 items-center gap-2 text-xs text-muted-foreground">
+				<AgentAppSelector />
+				<span className="truncate">Sin sesión activa</span>
 			</span>
 		)
 	}
@@ -27,8 +29,9 @@ export function SessionTitle() {
 	const title = sessionTitle(activeSession, activeIndex)
 
 	return (
-		<span className="flex min-w-0 flex-1 items-center text-xs leading-none">
-			<span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground/80">
+		<span className="flex min-w-0 flex-1 items-center gap-2 text-xs leading-none">
+			<AgentAppSelector />
+			<span className="inline-flex min-w-0 shrink items-center gap-1 text-muted-foreground/80">
 				<Home className="size-3" />
 				{directoryLabel}
 			</span>

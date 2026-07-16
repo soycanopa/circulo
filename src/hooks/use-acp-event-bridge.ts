@@ -5,12 +5,17 @@ import { isPlanLikeContent, normalizePlanMarkdown } from "@/lib/plan-markdown"
 import { applySessionInfoUpdate, applySessionUpdate } from "@/lib/acp-parser"
 import { parseUsageUpdate } from "@/lib/context-window"
 import { promptInFlightRef, setPromptInFlightSync } from "@/lib/prompt-flight"
+import { AGENT_READY_EVENT } from "@/lib/wait-for-agent-ready"
 import { applySessionDefaults } from "@/lib/session-defaults"
+import { isOptimisticSessionId } from "@/lib/optimistic-session"
+import { flushPendingPrompt } from "@/lib/pending-prompt"
+import { normalizeSessionId } from "@/lib/session-id"
 import { listenAcpEvents } from "@/lib/tauri"
 import {
 	activeCredentialAtom,
 	activePermissionAtom,
 	activeSessionIdAtom,
+	agentConnectedAtom,
 	agentCapabilitiesAtom,
 	configOptionsAtom,
 	contextWindowAtom,
@@ -29,6 +34,8 @@ import {
 import { normalizeCredentialRequest } from "@/lib/credential-presentation"
 import type { ConfigOption, PermissionRequest } from "@/types/acp"
 
+const HISTORY_REPLAY_MS = 2500
+
 /**
  * Registers ACP event listeners exactly once at the app root.
  * Do not call from multiple components — that duplicates every chunk/tool call.
@@ -46,55 +53,130 @@ export function useAcpEventBridge() {
 	const setActiveCredential = useSetAtom(activeCredentialAtom)
 	const setErrorMessage = useSetAtom(errorMessageAtom)
 	const setSessions = useSetAtom(sessionsAtom)
+	const setAgentConnected = useSetAtom(agentConnectedAtom)
 	const setCapabilities = useSetAtom(agentCapabilitiesAtom)
 
 	const streamingRef = useRef("")
 	const activeSessionRef = useRef<string | null>(null)
 	const replayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+	const scheduleReplayEnd = (setReplaying: (value: boolean) => void) => {
+		if (replayTimerRef.current) clearTimeout(replayTimerRef.current)
+		replayTimerRef.current = setTimeout(() => {
+			setReplaying(false)
+			replayTimerRef.current = null
+		}, HISTORY_REPLAY_MS)
+	}
+
+	const resolveAcceptedSessionId = (): string | null => {
+		const fromAtom = getDefaultStore().get(activeSessionIdAtom)
+		const candidate = normalizeSessionId(fromAtom ?? activeSessionRef.current)
+		return candidate
+	}
+
 	useEffect(() => {
 		let cancelled = false
 		let unlisteners: Array<() => void> = []
 
 		listenAcpEvents({
+			onAgentReady: (payload) => {
+				setAgentConnected(true)
+				setProjectPath(payload.projectPath)
+				setCapabilities(payload.capabilities)
+				setSessionStatus("idle")
+				setErrorMessage(null)
+				window.dispatchEvent(new CustomEvent(AGENT_READY_EVENT))
+			},
 			onSessionReady: (payload) => {
+				const store = getDefaultStore()
+				const activeFromAtom = store.get(activeSessionIdAtom)
+				const wasOptimistic =
+					isOptimisticSessionId(activeFromAtom) ||
+					isOptimisticSessionId(activeSessionRef.current)
+				const previousSessionId = wasOptimistic
+					? null
+					: normalizeSessionId(activeSessionRef.current)
+				const nextSessionId = payload.sessionId
+				const sessionChanged =
+					!wasOptimistic &&
+					previousSessionId !== null &&
+					previousSessionId !== nextSessionId
+
+				if (wasOptimistic) {
+					setSessions((current) =>
+						current.map((session) =>
+							isOptimisticSessionId(session.sessionId)
+								? { ...session, sessionId: nextSessionId }
+								: session,
+						),
+					)
+				}
+
 				setProjectPath(payload.projectPath)
 				setConfigOptions(payload.configOptions)
-				setActiveSessionId(payload.sessionId)
-				activeSessionRef.current = payload.sessionId
+				setActiveSessionId(nextSessionId)
+				activeSessionRef.current = nextSessionId
 				setSessionStatus("idle")
-				setPromptInFlight(false)
-				setPromptInFlightSync(false)
 				setErrorMessage(null)
-				setMessages([])
-				setStreamingText("")
-				streamingRef.current = ""
-				getDefaultStore().set(pendingPlanAtom, null)
-				getDefaultStore().set(activeCredentialAtom, null)
-				getDefaultStore().set(planCommentModeAtom, false)
+
+				if (sessionChanged) {
+					setMessages([])
+					setStreamingText("")
+					streamingRef.current = ""
+					setPromptInFlight(false)
+					setPromptInFlightSync(false)
+				}
+
+				store.set(pendingPlanAtom, null)
+				store.set(activeCredentialAtom, null)
+				store.set(planCommentModeAtom, false)
 
 				void applySessionDefaults(payload.configOptions).catch(() => undefined)
 
-				if (replayTimerRef.current) clearTimeout(replayTimerRef.current)
-				replayTimerRef.current = setTimeout(() => {
-					setReplayingHistory(false)
-					replayTimerRef.current = null
-				}, 400)
+				if (!wasOptimistic) {
+					setReplayingHistory(true)
+					scheduleReplayEnd(setReplayingHistory)
+				}
+
+				void flushPendingPrompt()
 			},
 			onSessionsUpdated: (payload) => {
-				setSessions(payload.sessions)
-				setActiveSessionId(payload.activeSessionId)
-				activeSessionRef.current = payload.activeSessionId
+				const store = getDefaultStore()
+				const hasOptimistic = store
+					.get(sessionsAtom)
+					.some((session) => isOptimisticSessionId(session.sessionId))
+
+				if (hasOptimistic) {
+					setSessions((current) => {
+						const optimistic = current.find((session) =>
+							isOptimisticSessionId(session.sessionId),
+						)
+						const merged = payload.sessions.filter(
+							(session) => !isOptimisticSessionId(session.sessionId),
+						)
+						return optimistic ? [optimistic, ...merged] : payload.sessions
+					})
+				} else {
+					setSessions(payload.sessions)
+				}
+
+				const nextId = normalizeSessionId(payload.activeSessionId)
+				if (nextId) {
+					setActiveSessionId(nextId)
+					activeSessionRef.current = nextId
+				}
 			},
 			onSessionUpdate: (payload) => {
 				const root = payload as Record<string, unknown>
 				const update = root?.update as Record<string, unknown> | undefined
-				const updateSessionId = typeof root?.sessionId === "string" ? root.sessionId : null
+				const updateSessionId =
+					typeof root?.sessionId === "string" ? root.sessionId : null
 
+				const acceptedSessionId = resolveAcceptedSessionId()
 				if (
 					updateSessionId &&
-					activeSessionRef.current &&
-					updateSessionId !== activeSessionRef.current
+					acceptedSessionId &&
+					updateSessionId !== acceptedSessionId
 				) {
 					return
 				}
@@ -131,6 +213,11 @@ export function useAcpEventBridge() {
 					)
 					streamingRef.current = result.streamingText
 					setStreamingText(result.streamingText)
+
+					if (result.messages.length > 0 && jotaiStore.get(replayingHistoryAtom)) {
+						scheduleReplayEnd(setReplayingHistory)
+					}
+
 					return result.messages
 				})
 
@@ -210,6 +297,7 @@ export function useAcpEventBridge() {
 				setPromptInFlight(false)
 				setPromptInFlightSync(false)
 				setSessionStatus("idle")
+				setReplayingHistory(false)
 			},
 			onError: (payload) => {
 				setErrorMessage(payload.message)
@@ -218,8 +306,10 @@ export function useAcpEventBridge() {
 				setPromptInFlight(false)
 				setPromptInFlightSync(false)
 				setSessionStatus("idle")
+				setReplayingHistory(false)
 			},
 			onDisconnected: () => {
+				setAgentConnected(false)
 				setSessionStatus("disconnected")
 				setPromptInFlight(false)
 				setPromptInFlightSync(false)
@@ -227,6 +317,7 @@ export function useAcpEventBridge() {
 				setProjectPath(null)
 				setSessions([])
 				setActiveSessionId(null)
+				activeSessionRef.current = null
 				setCapabilities(null)
 				streamingRef.current = ""
 				setStreamingText("")
@@ -249,6 +340,7 @@ export function useAcpEventBridge() {
 		setActiveCredential,
 		setActivePermission,
 		setActiveSessionId,
+		setAgentConnected,
 		setCapabilities,
 		setConfigOptions,
 		setErrorMessage,

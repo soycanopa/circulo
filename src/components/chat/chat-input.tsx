@@ -31,6 +31,7 @@ import {
 	type SlashEntry,
 } from "@/lib/slash-prompt"
 import { recordProfilePrompt } from "@/lib/profile-activity"
+import { isOptimisticSessionId } from "@/lib/optimistic-session"
 import { searchFiles, sendPrompt } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
 import {
@@ -42,6 +43,7 @@ import {
 	messagesAtom,
 	NEW_THREAD_PICKER_ID,
 	pendingPlanAtom,
+	pendingPromptAtom,
 	planCommentModeAtom,
 	planTurnActiveAtom,
 	projectPathAtom,
@@ -55,7 +57,7 @@ interface ChatInputProps {
 	disabled?: boolean
 	sessionStatus: SessionStatus
 	onOpenProject: (path: string) => Promise<void>
-	onOpenProjectForNewThread: (path: string) => Promise<void>
+	onOpenProjectForNewThread: (path: string) => void | Promise<void>
 }
 
 function extractMentionQuery(value: string, caret: number) {
@@ -117,6 +119,7 @@ export function ChatInput({
 	const showPermissionPrompt = Boolean(activePermission) && !showCredentialPrompt
 	const [planCommentMode, setPlanCommentMode] = useAtom(planCommentModeAtom)
 	const setPendingPlan = useSetAtom(pendingPlanAtom)
+	const setPendingPrompt = useSetAtom(pendingPromptAtom)
 	const textareaRef = useRef<HTMLTextAreaElement>(null)
 	const [value, setValue] = useState("")
 	const [mentions, setMentions] = useState<MentionChip[]>([])
@@ -331,12 +334,20 @@ export function ChatInput({
 			)
 		}
 		setThreadFolderPickerSessionId(null)
-		setPromptInFlightSync(true)
-		setPromptInFlight(true)
 		setValue("")
 		setMentions([])
 		setMentionQuery(null)
 		setSlashQuery(null)
+
+		if (isOptimisticSessionId(activeSessionId)) {
+			setPendingPrompt({ text: promptText, contextPaths })
+			setPromptInFlightSync(true)
+			setPromptInFlight(true)
+			return
+		}
+
+		setPromptInFlightSync(true)
+		setPromptInFlight(true)
 		try {
 			await sendPrompt(promptText, contextPaths)
 			recordProfilePrompt()

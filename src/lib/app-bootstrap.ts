@@ -1,5 +1,5 @@
+import { getAppSettings, getChatsProjectPath } from "@/lib/app-settings"
 import { getProjectStatus, openProject } from "@/lib/tauri"
-import { isGeneralChatProject } from "@/lib/project-display"
 import type { ProjectStatus } from "@/lib/tauri"
 
 const LAST_PROJECT_KEY = "circulo-last-project"
@@ -31,16 +31,14 @@ async function resolveStartupStatus(): Promise<ProjectStatus> {
 	const current = await getProjectStatus()
 	if (current.connected) return current
 
-	const lastProject = getLastProjectPath()
-	if (lastProject && !isGeneralChatProject(lastProject)) {
-		try {
-			return await openProject(lastProject)
-		} catch {
-			return current
-		}
+	try {
+		return await openProject(getChatsProjectPath(), {
+			agentId: getAppSettings().defaultProvider,
+			deferSessionBootstrap: true,
+		})
+	} catch {
+		return current
 	}
-
-	return current
 }
 
 /** Runs once per app load — avoids StrictMode double-spawn of the OpenCode agent. */

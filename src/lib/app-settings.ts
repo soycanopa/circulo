@@ -2,13 +2,17 @@ import { GENERAL_CHAT_PROJECT } from "@/lib/preferences"
 
 export type SettingsSection =
 	| "general"
+	| "agents"
 	| "profile"
 	| "shortcuts"
 	| "skills"
 	| "mcp"
 	| "about"
 
-export type DefaultAgentProvider = "opencode"
+import type { AgentProviderId } from "@/lib/agent-providers"
+
+export type { AgentProviderId }
+export type DefaultAgentProvider = AgentProviderId
 
 export interface AppSettings {
 	defaultAgentMode: string
@@ -84,6 +88,11 @@ export const SETTINGS_SECTIONS: {
 		id: "general",
 		label: "General",
 		description: "Defaults, sidebar layout, and chats folder.",
+	},
+	{
+		id: "agents",
+		label: "Agents",
+		description: "Apps CLI instaladas y agente activo de Circulo.",
 	},
 	{
 		id: "profile",

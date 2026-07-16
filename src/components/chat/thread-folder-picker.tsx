@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils"
 
 interface ThreadFolderPickerProps {
 	projectPath: string | null
-	onOpenProject: (path: string) => Promise<void>
+	onOpenProject: (path: string) => void | Promise<void>
 	onClose: () => void
 }
 

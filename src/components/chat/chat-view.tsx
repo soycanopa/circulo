@@ -6,7 +6,8 @@ import { TerminalPanel } from "@/components/terminal/terminal-panel"
 
 import { useAcpSession } from "@/hooks/use-acp-session"
 import { useSessions } from "@/hooks/use-sessions"
-import { errorMessageAtom, terminalOpenAtom } from "@/stores/atoms"
+import { isOptimisticSessionId } from "@/lib/optimistic-session"
+import { activeSessionIdAtom, errorMessageAtom, terminalOpenAtom } from "@/stores/atoms"
 
 interface ChatViewProps {
 	connected: boolean
@@ -16,8 +17,10 @@ interface ChatViewProps {
 export function ChatView({ connected, onOpenProject }: ChatViewProps) {
 	const { openProjectForNewThread } = useSessions()
 	const { messages, sessionStatus } = useAcpSession()
+	const activeSessionId = useAtomValue(activeSessionIdAtom)
 	const errorMessage = useAtomValue(errorMessageAtom)
 	const terminalOpen = useAtomValue(terminalOpenAtom)
+	const canCompose = connected || isOptimisticSessionId(activeSessionId)
 
 	return (
 		<div className="flex h-full min-h-0 flex-col">
@@ -29,7 +32,7 @@ export function ChatView({ connected, onOpenProject }: ChatViewProps) {
 
 			<MessageList messages={messages} connected={connected} />
 			<ChatInput
-				disabled={!connected}
+				disabled={!canCompose}
 				sessionStatus={sessionStatus}
 				onOpenProject={onOpenProject}
 				onOpenProjectForNewThread={openProjectForNewThread}

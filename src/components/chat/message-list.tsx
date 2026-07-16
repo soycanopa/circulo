@@ -5,6 +5,7 @@ import { MessageTrail } from "@/components/chat/message-trail"
 import { PlanPreviewCard } from "@/components/chat/plan-preview-card"
 import { ThinkingIndicator } from "@/components/chat/thinking-indicator"
 import { useAcpSession } from "@/hooks/use-acp-session"
+import { useChatAutoscroll } from "@/hooks/use-chat-autoscroll"
 import { useMessageTrail } from "@/hooks/use-message-trail"
 import { usePlanActions } from "@/hooks/use-plan-actions"
 import { isPlanLikeContent } from "@/lib/plan-markdown"
@@ -35,6 +36,12 @@ export function MessageList({ messages, connected }: MessageListProps) {
 			: messages
 	const { scrollRef, activeStore, trailItems, scrollToMessage } =
 		useMessageTrail(trailMessages)
+
+	useChatAutoscroll(scrollRef, {
+		streamingText,
+		messages,
+		promptInFlight,
+	})
 	const pendingPlan = useAtomValue(pendingPlanAtom)
 	const planTurnActive = useAtomValue(planTurnActiveAtom)
 	const { acceptPlan, acceptAndCompactPlan, rejectPlan, startPlanComment, downloadContent } =
@@ -88,29 +95,30 @@ export function MessageList({ messages, connected }: MessageListProps) {
 			: sourceMessages
 
 	return (
-		<div
-			ref={scrollRef}
-			className="scrollbar-thin relative flex-1 overflow-y-auto px-4 py-4"
-		>
+		<div className="relative flex min-h-0 flex-1">
 			<MessageTrail
 				items={trailItems}
 				activeStore={activeStore}
 				onSelect={scrollToMessage}
 			/>
-			{sourceMessages.length === 0 && !promptInFlight && !pendingPlan && !isStaleReplay ? (
-				<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-					{connected
-						? "Envía tu primer mensaje al agente."
-						: "Abre un proyecto desde el sidebar para empezar."}
-				</div>
-			) : null}
-
 			<div
-				className={cn(
-					"mx-auto flex max-w-3xl flex-col gap-4 transition-opacity duration-150",
-					isStaleReplay && "pointer-events-none opacity-40",
-				)}
+				ref={scrollRef}
+				className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:pl-16"
 			>
+				{sourceMessages.length === 0 && !promptInFlight && !pendingPlan && !isStaleReplay ? (
+					<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+						{connected
+							? "Envía tu primer mensaje al agente."
+							: "Abre un proyecto desde el sidebar para empezar."}
+					</div>
+				) : null}
+
+				<div
+					className={cn(
+						"mx-auto flex max-w-3xl flex-col gap-4 transition-opacity duration-150",
+						isStaleReplay && "pointer-events-none opacity-40",
+					)}
+				>
 				{visibleMessages.map((message, index) => {
 					const isLiveAssistant =
 						message.role === "assistant" &&
@@ -173,6 +181,7 @@ export function MessageList({ messages, connected }: MessageListProps) {
 						<MarkdownContent content={streamingText} />
 					</div>
 				) : null}
+				</div>
 			</div>
 		</div>
 	)

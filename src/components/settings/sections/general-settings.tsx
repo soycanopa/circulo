@@ -112,21 +112,7 @@ export function GeneralSettings() {
 							}
 						/>
 					</SettingsRow>
-					<SettingsRow
-						label="Proveedor por defecto"
-						description="Multi-agente llegará en una versión futura."
-					>
-						<SettingsSelect
-							value={settings.defaultProvider}
-							disabled
-							onChange={() => undefined}
-							options={[
-								{ value: "opencode", label: "OpenCode (activo)" },
-								{ value: "cline", label: "Cline — próximamente", disabled: true },
-								{ value: "codex", label: "Codex — próximamente", disabled: true },
-							]}
-						/>
-					</SettingsRow>
+
 				</SettingsGroup>
 			</div>
 

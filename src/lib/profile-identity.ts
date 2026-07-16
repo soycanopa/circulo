@@ -1,9 +1,24 @@
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 
 const NAME_KEY = "circulo:profile:name:v1"
 const HANDLE_KEY = "circulo:profile:handle:v1"
 const AVATAR_COLOR_KEY = "circulo:profile:avatar-color:v1"
 const AVATAR_IMAGE_KEY = "circulo:profile:avatar-image:v1"
+
+export const PROFILE_CHANGED_EVENT = "circulo:profile-changed"
+
+export function notifyProfileChanged() {
+	window.dispatchEvent(new CustomEvent(PROFILE_CHANGED_EVENT))
+}
+
+export function isProfileConfigured(): boolean {
+	return Boolean(
+		readStorage(NAME_KEY) ||
+			readStorage(HANDLE_KEY) ||
+			readStorage(AVATAR_IMAGE_KEY) ||
+			readStorage(AVATAR_COLOR_KEY),
+	)
+}
 
 export const PROFILE_AVATAR_COLORS = [
 	"#6fcbf3",
@@ -55,6 +70,7 @@ export function useProfileName(defaultName: string) {
 		if (!trimmed) return
 		setNameState(trimmed)
 		writeStorage(NAME_KEY, trimmed)
+		notifyProfileChanged()
 	}, [])
 
 	return { name, setName }
@@ -66,8 +82,10 @@ export function useProfileHandle(defaultHandle: string) {
 	const setHandle = useCallback((value: string) => {
 		const trimmed = value.trim()
 		if (!trimmed) return
-		setHandleState(trimmed.startsWith("@") ? trimmed : `@${trimmed}`)
-		writeStorage(HANDLE_KEY, trimmed.startsWith("@") ? trimmed : `@${trimmed}`)
+		const next = trimmed.startsWith("@") ? trimmed : `@${trimmed}`
+		setHandleState(next)
+		writeStorage(HANDLE_KEY, next)
+		notifyProfileChanged()
 	}, [])
 
 	return { handle, setHandle }
@@ -81,6 +99,7 @@ export function useProfileAvatarColor() {
 	const setColor = useCallback((value: string) => {
 		setColorState(value)
 		writeStorage(AVATAR_COLOR_KEY, value)
+		notifyProfileChanged()
 	}, [])
 
 	return { color, setColor }
@@ -98,7 +117,38 @@ export function useProfileAvatarImage() {
 		} else {
 			localStorage.removeItem(AVATAR_IMAGE_KEY)
 		}
+		notifyProfileChanged()
 	}, [])
 
 	return { image, setImage }
+}
+
+/** Sidebar + shell: live profile snapshot with configured flag. */
+export function useProfileIdentity() {
+	const defaultName = getDefaultProfileName()
+	const defaultHandle = getDefaultProfileHandle()
+	const { name } = useProfileName(defaultName)
+	const { handle } = useProfileHandle(defaultHandle)
+	const { color } = useProfileAvatarColor()
+	const { image } = useProfileAvatarImage()
+	const [revision, setRevision] = useState(0)
+
+	useEffect(() => {
+		function refresh() {
+			setRevision((value) => value + 1)
+		}
+		window.addEventListener(PROFILE_CHANGED_EVENT, refresh)
+		return () => window.removeEventListener(PROFILE_CHANGED_EVENT, refresh)
+	}, [])
+
+	const configured = useMemo(() => isProfileConfigured(), [revision, name, handle, image])
+
+	return {
+		name,
+		handle,
+		color,
+		image,
+		initials: getProfileInitials(name),
+		configured,
+	}
 }

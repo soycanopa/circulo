@@ -9,11 +9,10 @@ import {
 	MessageSquare,
 	MessageSquarePlus,
 	Pin,
-	Settings,
 	Timer,
 } from "lucide-react"
-import { useAtom, useAtomValue, useSetAtom } from "jotai"
-import { useMemo, useState, type ReactNode } from "react"
+import { useAtom, useAtomValue } from "jotai"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import {
 	Sidebar,
 	SidebarContent,
@@ -23,30 +22,37 @@ import {
 	SidebarMenuButton,
 	SidebarMenuItem,
 } from "@/components/layout/sidebar-layout"
-import { ConnectionStatus } from "@/components/layout/connection-status"
+import { SidebarFooterBar } from "@/components/layout/sidebar-footer-bar"
 import { ProjectActionsMenu } from "@/components/layout/project-actions-menu"
 import { SessionActionsMenu } from "@/components/layout/session-actions-menu"
 import { useArchivedSessions } from "@/hooks/use-archived-sessions"
 import { usePinnedSessions } from "@/hooks/use-pinned-sessions"
 import { getChatsProjectPath } from "@/lib/app-settings"
 import { getProjectDisplayName, isGeneralChatProject } from "@/lib/project-display"
+import { useStoredProjectSessions } from "@/hooks/use-stored-project-sessions"
 import {
 	getProjectSidebarLabel,
 	removeProjectAlias,
 	setProjectAlias,
 } from "@/lib/project-aliases"
-import { getRecentProjects, removeRecentProject } from "@/lib/recent-projects"
+import {
+	addRecentProject,
+	getActiveProjectPaths,
+	removeRecentProject,
+} from "@/lib/recent-projects"
+import type { OpenProjectOptions } from "@/lib/open-project"
 import { sessionTitle } from "@/lib/sessions"
 import { cn } from "@/lib/utils"
 import { useSessions } from "@/hooks/use-sessions"
-import { appSettingsAtom, promptInFlightAtom, settingsOpenAtom } from "@/stores/atoms"
+import { isOptimisticSessionId } from "@/lib/optimistic-session"
+import { appSettingsAtom, creatingSessionAtom, promptInFlightAtom } from "@/stores/atoms"
 import type { SessionInfo, SidebarSessionStatus } from "@/types/acp"
 
 interface AppSidebarProps {
 	connected: boolean
 	projectPath: string | null
 	sessionStatus: string
-	onOpenProject: (path: string) => Promise<void>
+	onOpenProject: (path: string, options?: OpenProjectOptions) => Promise<void>
 	onCloseProject: () => Promise<void>
 	loading: boolean
 }
@@ -230,18 +236,52 @@ export function AppSidebar({
 	const { pinnedIds, togglePin, isPinned } = usePinnedSessions()
 	const { isArchived } = useArchivedSessions()
 	const promptInFlight = useAtomValue(promptInFlightAtom)
+	const creatingSession = useAtomValue(creatingSessionAtom)
 	const [appSettings] = useAtom(appSettingsAtom)
-	const setSettingsOpen = useSetAtom(settingsOpenAtom)
+
 	const [expandedChats, setExpandedChats] = useState(true)
 	const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({})
 	const [recentProjectsVersion, setRecentProjectsVersion] = useState(0)
 	const [projectAliasesVersion, setProjectAliasesVersion] = useState(0)
 	const [pendingSessionId, setPendingSessionId] = useState<string | null>(null)
 
+	const chatsPath = getChatsProjectPath()
+
 	const visibleSessions = useMemo(
 		() => sessions.filter((session) => !isArchived(session.sessionId)),
 		[sessions, isArchived],
 	)
+
+	const savedProjects = useMemo(() => {
+		void recentProjectsVersion
+		return getActiveProjectPaths(projectPath).filter(
+			(path) => !isGeneralChatProject(path),
+		)
+	}, [projectPath, recentProjectsVersion])
+
+	const storedProjectPaths = useMemo(
+		() => [chatsPath, ...savedProjects],
+		[chatsPath, savedProjects],
+	)
+
+	const { storedByProject, setStoredByProject } =
+		useStoredProjectSessions(storedProjectPaths)
+
+	useEffect(() => {
+		if (!projectPath) return
+		setStoredByProject((current) => ({
+			...current,
+			[projectPath]: sessions,
+		}))
+	}, [projectPath, sessions, setStoredByProject])
+
+	function visibleSessionsForProject(path: string) {
+		const source =
+			path === projectPath && visibleSessions.length > 0
+				? visibleSessions
+				: (storedByProject[path] ?? [])
+		return source.filter((session) => !isArchived(session.sessionId))
+	}
 
 	const pinnedSessions = useMemo(
 		() =>
@@ -255,27 +295,76 @@ export function AppSidebar({
 		return runSessionAction(() => archiveSession(sessionId))
 	}
 
-	function handleDelete(sessionId: string) {
+	function handleDelete(sessionId: string, sessionProjectPath: string) {
 		if (!window.confirm("¿Eliminar esta sesión? No se puede deshacer.")) return
-		return runSessionAction(() => deleteSession(sessionId))
+		return runSessionAction(async () => {
+			const result = await deleteSession(sessionProjectPath, sessionId)
+			setStoredByProject((current) => ({
+				...current,
+				[sessionProjectPath]: result.sessions,
+			}))
+		})
 	}
 
-	const projectName = getProjectDisplayName(projectPath)
-	const isGeneralChat = isGeneralChatProject(projectPath)
+	const chatsSessions = visibleSessionsForProject(chatsPath)
 	const showChatsFolder =
-		appSettings.showChatsInSidebar && isGeneralChat && visibleSessions.length > 0
-	const savedProjects = useMemo(() => {
-		void recentProjectsVersion
-		const recent = getRecentProjects()
-		if (projectPath && !isGeneralChatProject(projectPath) && !recent.includes(projectPath)) {
-			return [projectPath, ...recent]
-		}
-		return recent
-	}, [projectPath, recentProjectsVersion])
+		appSettings.showChatsInSidebar && chatsSessions.length > 0
+	const chatsLabel = getProjectDisplayName(chatsPath)
 
 	function isProjectExpanded(path: string) {
 		if (path in expandedProjects) return expandedProjects[path]
-		return path === projectPath
+		return visibleSessionsForProject(path).length > 0 || path === projectPath
+	}
+
+	async function handleSelectSessionInProject(path: string, sessionId: string) {
+		await runSessionAction(
+			async () => {
+				if (projectPath !== path) {
+					await onOpenProject(path)
+					setExpandedProjects((current) => ({ ...current, [path]: true }))
+				}
+				await selectSession(sessionId)
+			},
+			{ pendingSessionId: sessionId },
+		)
+	}
+
+	function renderProjectSessions(path: string) {
+		const projectSessions = visibleSessionsForProject(path)
+		return (
+			<div className="ml-3 border-l border-sidebar-border/10 pl-1">
+				<SidebarMenu>
+					{projectSessions.length === 0 ? (
+						<p className="px-2 py-1.5 text-xs text-muted-foreground/60">No threads yet</p>
+					) : null}
+					{projectSessions.map((session, index) => (
+						<SessionItem
+							key={session.sessionId}
+							session={session}
+							sessionIndex={index}
+							isSelected={session.sessionId === activeSessionId}
+							status={sessionStatusFor(
+								session.sessionId,
+								activeSessionId,
+								sessionStatus,
+								promptInFlight,
+							)}
+							onSelect={() => void handleSelectSessionInProject(path, session.sessionId)}
+							isLoading={
+								pendingSessionId === session.sessionId ||
+								(creatingSession && isOptimisticSessionId(session.sessionId))
+							}
+							pinnable
+							isPinned={isPinned(session.sessionId)}
+							onTogglePin={() => togglePin(session.sessionId)}
+							onArchive={() => void handleArchive(session.sessionId)}
+							onDelete={() => void handleDelete(session.sessionId, path)}
+							compact
+						/>
+					))}
+				</SidebarMenu>
+			</div>
+		)
 	}
 
 	function toggleProjectExpanded(path: string) {
@@ -295,23 +384,31 @@ export function AppSidebar({
 		setProjectAliasesVersion((value) => value + 1)
 	}
 
-	async function handleNewSessionInProject(path: string) {
-		await runSessionAction(() => newSessionInProject(path))
+	function handleNewSessionInProject(path: string) {
+		newSessionInProject(path)
 		setExpandedProjects((current) => ({ ...current, [path]: true }))
 	}
 
 	async function handleRemoveProject(path: string) {
 		const label = getSavedProjectLabel(path)
 		if (!window.confirm(`¿Eliminar "${label}" del sidebar?`)) return
+
+		if (projectPath === path) {
+			await runSessionAction(async () => {
+				await onCloseProject()
+				await onOpenProject(getChatsProjectPath())
+			})
+		}
+
 		removeRecentProject(path)
 		removeProjectAlias(path)
+		setExpandedProjects((current) => {
+			const next = { ...current }
+			delete next[path]
+			return next
+		})
 		setRecentProjectsVersion((value) => value + 1)
 		setProjectAliasesVersion((value) => value + 1)
-		if (projectPath !== path) return
-		await runSessionAction(async () => {
-			await onCloseProject()
-			await onOpenProject(getChatsProjectPath())
-		})
 	}
 
 	async function runSessionAction(
@@ -332,10 +429,15 @@ export function AppSidebar({
 	}
 
 	async function handleAddProject() {
-		const selected = await open({ directory: true, multiple: false, title: "Abrir proyecto" })
+		const selected = await open({
+			directory: true,
+			multiple: false,
+			title: "Agregar proyecto",
+		})
 		if (!selected || Array.isArray(selected)) return
-		await onOpenProject(selected)
+		addRecentProject(selected)
 		setRecentProjectsVersion((value) => value + 1)
+		setExpandedProjects((current) => ({ ...current, [selected]: true }))
 	}
 
 	return (
@@ -353,7 +455,11 @@ export function AppSidebar({
 							</SidebarMenuButton>
 						</SidebarMenuItem>
 						<SidebarMenuItem>
-							<SidebarMenuButton onClick={() => void newChat()} className="text-[#FAFAFA]">
+							<SidebarMenuButton
+								onClick={() => newChat()}
+								disabled={loading}
+								className="text-[#FAFAFA]"
+							>
 								<MessageSquare className="size-4" />
 								<span>New Chat</span>
 							</SidebarMenuButton>
@@ -387,11 +493,16 @@ export function AppSidebar({
 										pendingSessionId: session.sessionId,
 									})
 								}
-								isLoading={pendingSessionId === session.sessionId}
+								isLoading={
+								pendingSessionId === session.sessionId ||
+								(creatingSession && isOptimisticSessionId(session.sessionId))
+							}
 								isPinned
 								onTogglePin={() => togglePin(session.sessionId)}
 								onArchive={() => void handleArchive(session.sessionId)}
-								onDelete={() => void handleDelete(session.sessionId)}
+								onDelete={() =>
+									void handleDelete(session.sessionId, session.cwd || projectPath || "")
+								}
 							/>
 							))}
 						</SidebarMenu>
@@ -408,50 +519,13 @@ export function AppSidebar({
 											className="size-3 text-muted-foreground transition-transform"
 											style={{ transform: expandedChats ? "rotate(90deg)" : undefined }}
 										/>
-										<span className="truncate font-medium">{projectName}</span>
+										<span className="truncate font-medium">{chatsLabel}</span>
 									</SidebarMenuButton>
 								</SidebarMenuItem>
-								{expandedChats ? (
-									<div className="ml-3 border-l border-sidebar-border/10 pl-1">
-										<SidebarMenu>
-											{visibleSessions.length === 0 ? (
-												<p className="px-2 py-1.5 text-xs text-muted-foreground/60">
-													No threads yet
-												</p>
-											) : null}
-											{visibleSessions.map((session, index) => (
-												<SessionItem
-													key={session.sessionId}
-													session={session}
-													sessionIndex={index}
-													isSelected={session.sessionId === activeSessionId}
-													status={sessionStatusFor(
-														session.sessionId,
-														activeSessionId,
-														sessionStatus,
-														promptInFlight,
-													)}
-													onSelect={() =>
-														void runSessionAction(() => selectSession(session.sessionId), {
-															pendingSessionId: session.sessionId,
-														})
-													}
-													isLoading={pendingSessionId === session.sessionId}
-													pinnable
-													isPinned={isPinned(session.sessionId)}
-													onTogglePin={() => togglePin(session.sessionId)}
-													onArchive={() => void handleArchive(session.sessionId)}
-													onDelete={() => void handleDelete(session.sessionId)}
-													compact
-												/>
-											))}
-										</SidebarMenu>
-									</div>
-								) : null}
+								{expandedChats ? renderProjectSessions(chatsPath) : null}
 							</>
 						) : null}
 						{savedProjects.map((path) => {
-							const isActive = path === projectPath
 							const isExpanded = isProjectExpanded(path)
 
 							return (
@@ -459,57 +533,12 @@ export function AppSidebar({
 									key={path}
 									label={getSavedProjectLabel(path)}
 									isExpanded={isExpanded}
-									onToggle={() => {
-										if (!isActive) {
-											void runSessionAction(async () => {
-												await onOpenProject(path)
-												setExpandedProjects((current) => ({ ...current, [path]: true }))
-											})
-											return
-										}
-										toggleProjectExpanded(path)
-									}}
+									onToggle={() => toggleProjectExpanded(path)}
 									onNewSession={() => void handleNewSessionInProject(path)}
 									onRename={(alias) => handleRenameProject(path, alias)}
 									onRemove={() => void handleRemoveProject(path)}
 								>
-									<div className="ml-3 border-l border-sidebar-border/10 pl-1">
-										<SidebarMenu>
-											{isActive && visibleSessions.length === 0 ? (
-												<p className="px-2 py-1.5 text-xs text-muted-foreground/60">
-													No threads yet
-												</p>
-											) : null}
-											{isActive
-												? visibleSessions.map((session, index) => (
-														<SessionItem
-															key={session.sessionId}
-															session={session}
-															sessionIndex={index}
-															isSelected={session.sessionId === activeSessionId}
-															status={sessionStatusFor(
-																session.sessionId,
-																activeSessionId,
-																sessionStatus,
-																promptInFlight,
-															)}
-															onSelect={() =>
-																void runSessionAction(() => selectSession(session.sessionId), {
-																	pendingSessionId: session.sessionId,
-																})
-															}
-															isLoading={pendingSessionId === session.sessionId}
-															pinnable
-															isPinned={isPinned(session.sessionId)}
-															onTogglePin={() => togglePin(session.sessionId)}
-															onArchive={() => void handleArchive(session.sessionId)}
-															onDelete={() => void handleDelete(session.sessionId)}
-															compact
-														/>
-													))
-												: null}
-										</SidebarMenu>
-									</div>
+									{isExpanded ? renderProjectSessions(path) : null}
 								</ProjectFolderRow>
 							)
 						})}
@@ -518,21 +547,7 @@ export function AppSidebar({
 			</SidebarContent>
 
 			<SidebarFooter>
-				<div className="flex w-full min-w-0 items-center justify-between gap-1">
-					<ConnectionStatus connected={connected} />
-					<SidebarMenu className="min-w-0 shrink">
-						<SidebarMenuItem>
-							<SidebarMenuButton
-								className="ml-auto w-auto min-w-0 text-muted-foreground"
-								disabled={loading}
-								onClick={() => setSettingsOpen(true)}
-							>
-								<Settings className="size-4 shrink-0" />
-								<span className="truncate">Settings</span>
-							</SidebarMenuButton>
-						</SidebarMenuItem>
-					</SidebarMenu>
-				</div>
+				<SidebarFooterBar connected={connected} loading={loading} />
 			</SidebarFooter>
 		</Sidebar>
 	)

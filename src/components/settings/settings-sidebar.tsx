@@ -1,5 +1,6 @@
 import {
 	ArrowLeft,
+	Bot,
 	Info,
 	Keyboard,
 	Plug,
@@ -22,6 +23,7 @@ import { settingsOpenAtom, settingsSectionAtom } from "@/stores/atoms"
 
 const SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
 	general: Settings2,
+	agents: Bot,
 	profile: User,
 	shortcuts: Keyboard,
 	skills: Sparkles,
