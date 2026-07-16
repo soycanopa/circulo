@@ -70,6 +70,9 @@ export interface OpencodeMcpServerEntry {
 	enabled: boolean
 	scope: string
 	serverType: string | null
+	source: string
+	configPath: string
+	readOnly: boolean
 }
 
 export async function listOpencodeCommands(
@@ -101,6 +104,7 @@ export async function setOpencodeMcpEnabled(input: {
 	scope: string
 	enabled: boolean
 	projectPath: string | null
+	configPath: string | null
 }): Promise<void> {
 	return invoke("set_opencode_mcp_enabled", input)
 }

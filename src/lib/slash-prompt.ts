@@ -22,7 +22,7 @@ export function extractSlashQuery(value: string, caret: number): string | null {
 }
 
 function formatMcpDescription(entry: OpencodeMcpServerEntry): string | null {
-	const parts = [entry.serverType, entry.scope].filter(Boolean)
+	const parts = [entry.serverType, entry.source, entry.scope].filter(Boolean)
 	return parts.length > 0 ? parts.join(" · ") : null
 }
 

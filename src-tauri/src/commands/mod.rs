@@ -367,6 +367,7 @@ pub async fn set_opencode_mcp_enabled(
     scope: String,
     enabled: bool,
     project_path: Option<String>,
+    config_path: Option<String>,
 ) -> Result<(), String> {
-    write_opencode_mcp_enabled(name, scope, enabled, project_path)
+    write_opencode_mcp_enabled(name, scope, enabled, project_path, config_path)
 }
