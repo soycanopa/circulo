@@ -1,3 +1,4 @@
+import { getDefaultAgentMode } from "@/lib/app-settings"
 import { getLastModel } from "@/lib/preferences"
 import { setConfigOption } from "@/lib/tauri"
 import type { ConfigOption } from "@/types/acp"
@@ -18,10 +19,12 @@ function findModelOption(options: ConfigOption[]) {
 /** Apply Circulo defaults after a session becomes ready. */
 export async function applySessionDefaults(configOptions: ConfigOption[]): Promise<void> {
 	const modeOption = findModeOption(configOptions)
-	if (modeOption?.options.some((entry) => entry.value === "plan")) {
-		if (modeOption.currentValue !== "plan") {
-			await setConfigOption(modeOption.id, "plan")
-		}
+	const preferredMode = getDefaultAgentMode()
+	if (
+		modeOption?.options.some((entry) => entry.value === preferredMode) &&
+		modeOption.currentValue !== preferredMode
+	) {
+		await setConfigOption(modeOption.id, preferredMode)
 	}
 
 	const modelOption = findModelOption(configOptions)

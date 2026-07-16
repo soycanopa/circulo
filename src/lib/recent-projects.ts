@@ -1,4 +1,4 @@
-import { GENERAL_CHAT_PROJECT } from "@/lib/preferences"
+import { getChatsProjectPath } from "@/lib/app-settings"
 
 const RECENT_PROJECTS_KEY = "circulo-recent-projects"
 const MAX_STORED_RECENT_PROJECTS = 20
@@ -18,7 +18,7 @@ export function getRecentProjects(): string[] {
 }
 
 export function addRecentProject(path: string): void {
-	if (!path || path === GENERAL_CHAT_PROJECT) return
+	if (!path || path === getChatsProjectPath()) return
 	const next = [path, ...getRecentProjects().filter((entry) => entry !== path)].slice(
 		0,
 		MAX_STORED_RECENT_PROJECTS,

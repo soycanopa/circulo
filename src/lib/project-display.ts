@@ -1,8 +1,8 @@
+import { getChatsProjectPath } from "@/lib/app-settings"
 import { getProjectSidebarLabel } from "@/lib/project-aliases"
-import { GENERAL_CHAT_PROJECT } from "@/lib/preferences"
 
 export function isGeneralChatProject(projectPath: string | null): boolean {
-	return projectPath === GENERAL_CHAT_PROJECT
+	return projectPath === getChatsProjectPath()
 }
 
 export function getProjectDisplayName(projectPath: string | null): string {

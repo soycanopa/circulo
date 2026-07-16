@@ -1,6 +1,6 @@
 import { useAtom, useSetAtom } from "jotai"
 import { useCallback } from "react"
-import { GENERAL_CHAT_PROJECT } from "@/lib/preferences"
+import { getChatsProjectPath } from "@/lib/app-settings"
 import {
 	archiveSessionId,
 	getArchivedSessionIds,
@@ -102,12 +102,12 @@ export function useSessions() {
 	const newChat = useCallback(async () => {
 		resetChatState()
 		setThreadFolderPickerSessionId(null)
-		if (projectPath === GENERAL_CHAT_PROJECT) {
+		if (projectPath === getChatsProjectPath()) {
 			const status = await createSession()
 			syncStatus(status)
 			return
 		}
-		const status = await openProject(GENERAL_CHAT_PROJECT)
+		const status = await openProject(getChatsProjectPath())
 		syncStatus(status)
 	}, [projectPath, resetChatState, setThreadFolderPickerSessionId, syncStatus])
 
