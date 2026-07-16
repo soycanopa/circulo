@@ -1,8 +1,9 @@
-import { Bot, Brain, Sparkles, Zap } from "lucide-react"
+import { Bot, Brain, Sparkles } from "lucide-react"
 import type { ComponentType, SVGProps } from "react"
 import {
 	MinimaxBrandIcon,
 	OpencodeBrandIcon,
+	XaiBrandIcon,
 	ZaiBrandIcon,
 } from "@/components/chat/provider-brand-icons"
 import { formatProviderLabel } from "@/lib/model-groups"
@@ -17,20 +18,21 @@ const PROVIDER_SVGS: Record<string, ProviderSvg> = {
 	"minimax-coding-plan": MinimaxBrandIcon,
 	zai: ZaiBrandIcon,
 	"zai-coding-plan": ZaiBrandIcon,
+	xai: XaiBrandIcon,
 }
 
 const PROVIDER_STYLES: Record<string, { className: string; Icon: typeof Bot }> = {
 	anthropic: { className: "bg-orange-500/15 text-orange-300", Icon: Brain },
 	openai: { className: "bg-emerald-500/15 text-emerald-300", Icon: Bot },
 	google: { className: "bg-blue-500/15 text-blue-300", Icon: Sparkles },
-	xai: { className: "bg-slate-500/15 text-slate-200", Icon: Zap },
 }
 
 const BRAND_ICON_STYLES: Record<string, string> = {
 	opencode: "bg-white/8 text-foreground",
 	"opencode-go": "bg-white/8 text-foreground",
-	minimax: "bg-violet-500/15 text-violet-200",
-	"minimax-coding-plan": "bg-violet-500/15 text-violet-200",
+	minimax: "bg-white/8 text-foreground",
+	"minimax-coding-plan": "bg-white/8 text-foreground",
+	xai: "bg-white/8 text-foreground",
 	zai: "bg-white/8 text-foreground",
 	"zai-coding-plan": "bg-white/8 text-foreground",
 }
