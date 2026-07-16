@@ -262,7 +262,8 @@ export function AppSidebar({
 
 	const projectName = getProjectDisplayName(projectPath)
 	const isGeneralChat = isGeneralChatProject(projectPath)
-	const showChatsFolder = appSettings.showChatsInSidebar && isGeneralChat
+	const showChatsFolder =
+		appSettings.showChatsInSidebar && isGeneralChat && visibleSessions.length > 0
 	const savedProjects = useMemo(() => {
 		void recentProjectsVersion
 		const recent = getRecentProjects()
