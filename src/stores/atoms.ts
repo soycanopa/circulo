@@ -1,4 +1,5 @@
 import { atom } from "jotai"
+import { getAppSettings, type AppSettings } from "@/lib/app-settings"
 import type { ContextWindowSnapshot } from "@/lib/context-window"
 import type {
 	AgentCapabilities,
@@ -70,3 +71,6 @@ export interface PlanOverlayState {
 }
 
 export const planOverlayAtom = atom<PlanOverlayState | null>(null)
+
+export const settingsOpenAtom = atom(false)
+export const appSettingsAtom = atom<AppSettings>(getAppSettings())

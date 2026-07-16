@@ -1,5 +1,6 @@
 import { Provider } from "jotai"
 import { PlanPreviewOverlay } from "@/components/overlays/plan-preview-overlay"
+import { SettingsOverlay } from "@/components/settings/settings-overlay"
 import { ToolPreviewOverlay } from "@/components/overlays/tool-preview-overlay"
 import { AppShell } from "@/components/layout/app-shell"
 import { useAcpEventBridge } from "@/hooks/use-acp-event-bridge"
@@ -16,6 +17,7 @@ export function App() {
 			<AppShell />
 			<ToolPreviewOverlay />
 			<PlanPreviewOverlay />
+			<SettingsOverlay />
 		</Provider>
 	)
 }
