@@ -329,3 +329,17 @@ html[data-tauri] [data-slot="sidebar"] {
 	from { opacity: 0; transform: translateY(2px); }
 	to { opacity: 1; transform: translateY(0); }
 }
+
+.message-trail-target[data-trail-flash="true"] {
+	animation: message-trail-flash 1.2s ease-out;
+}
+
+@keyframes message-trail-flash {
+	0%,
+	100% {
+		box-shadow: none;
+	}
+	18% {
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 70%, transparent);
+	}
+}

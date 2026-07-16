@@ -1,9 +1,11 @@
 import { useMemo } from "react"
 import { useAtomValue } from "jotai"
 import { MarkdownContent } from "@/components/chat/markdown-content"
+import { MessageTrail } from "@/components/chat/message-trail"
 import { PlanPreviewCard } from "@/components/chat/plan-preview-card"
 import { ThinkingIndicator } from "@/components/chat/thinking-indicator"
 import { useAcpSession } from "@/hooks/use-acp-session"
+import { useMessageTrail } from "@/hooks/use-message-trail"
 import { usePlanActions } from "@/hooks/use-plan-actions"
 import { isPlanLikeContent } from "@/lib/plan-markdown"
 import { deriveTurnPhase, shouldShowThinkingIndicator } from "@/lib/turn-phase"
@@ -20,6 +22,8 @@ interface MessageListProps {
 
 export function MessageList({ messages, connected }: MessageListProps) {
 	const { streamingText, promptInFlight, sessionStatus } = useAcpSession()
+	const { scrollRef, activeStore, trailItems, scrollToMessage } =
+		useMessageTrail(messages)
 	const pendingPlan = useAtomValue(pendingPlanAtom)
 	const planTurnActive = useAtomValue(planTurnActiveAtom)
 	const { acceptPlan, acceptAndCompactPlan, rejectPlan, startPlanComment, downloadContent } =
@@ -69,7 +73,15 @@ export function MessageList({ messages, connected }: MessageListProps) {
 			: messages
 
 	return (
-		<div className="scrollbar-thin flex-1 overflow-y-auto px-4 py-4">
+		<div
+			ref={scrollRef}
+			className="scrollbar-thin relative flex-1 overflow-y-auto px-4 py-4"
+		>
+			<MessageTrail
+				items={trailItems}
+				activeStore={activeStore}
+				onSelect={scrollToMessage}
+			/>
 			{messages.length === 0 && !promptInFlight && !pendingPlan ? (
 				<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
 					{connected
@@ -89,10 +101,11 @@ export function MessageList({ messages, connected }: MessageListProps) {
 					return (
 						<div
 							key={message.id}
+							data-message-id={message.id}
 							className={
 								message.role === "user"
-									? "ml-auto max-w-[85%] rounded-xl bg-secondary px-4 py-3 text-sm"
-									: "max-w-full"
+									? "message-trail-target ml-auto max-w-[85%] rounded-xl bg-secondary px-4 py-3 text-sm"
+									: "message-trail-target max-w-full"
 							}
 						>
 							{message.role === "assistant" ? (
