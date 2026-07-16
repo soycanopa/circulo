@@ -13,6 +13,14 @@ pub struct SkillEntryDto {
 
 #[derive(Debug, serde::Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct CommandEntryDto {
+    pub name: String,
+    pub description: Option<String>,
+    pub scope: String,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct McpServerEntryDto {
     pub name: String,
     pub enabled: bool,
@@ -75,6 +83,125 @@ fn list_skills_in_dir(base: &Path, scope: &str) -> Vec<SkillEntryDto> {
 
     entries.sort_by(|a, b| a.name.cmp(&b.name));
     entries
+}
+
+fn parse_frontmatter_description(content: &str) -> Option<String> {
+    let trimmed = content.trim_start();
+    if !trimmed.starts_with("---") {
+        return None;
+    }
+    let rest = trimmed.strip_prefix("---")?;
+    let end = rest.find("\n---")?;
+    let frontmatter = &rest[..end];
+    for line in frontmatter.lines() {
+        let line = line.trim();
+        if let Some(value) = line.strip_prefix("description:") {
+            let value = value.trim().trim_matches('"').trim_matches('\'');
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn list_commands_in_dir(commands_dir: &Path, scope: &str) -> Vec<CommandEntryDto> {
+    if !commands_dir.is_dir() {
+        return Vec::new();
+    }
+
+    let mut entries = Vec::new();
+    let Ok(read_dir) = std::fs::read_dir(commands_dir) else {
+        return entries;
+    };
+
+    for entry in read_dir.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(ext) = path.extension().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if ext != "md" {
+            continue;
+        }
+        let Some(name) = path
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().to_string())
+        else {
+            continue;
+        };
+        let description = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|content| parse_frontmatter_description(&content));
+        entries.push(CommandEntryDto {
+            name,
+            description,
+            scope: scope.to_string(),
+        });
+    }
+
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    entries
+}
+
+fn parse_commands_from_config(value: &Value, scope: &str) -> Vec<CommandEntryDto> {
+    let Some(command) = value.get("command").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+
+    let mut entries: Vec<CommandEntryDto> = command
+        .iter()
+        .map(|(name, config)| {
+            let description = config
+                .get("description")
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            CommandEntryDto {
+                name: name.clone(),
+                description,
+                scope: scope.to_string(),
+            }
+        })
+        .collect();
+
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    entries
+}
+
+fn load_config_commands(base: &Path, scope: &str) -> Vec<CommandEntryDto> {
+    let mut entries = Vec::new();
+    for name in ["opencode.json", "opencode.jsonc"] {
+        let path = base.join(name);
+        if let Some(value) = load_json_config(&path) {
+            entries.extend(parse_commands_from_config(&value, scope));
+            break;
+        }
+    }
+    entries
+}
+
+pub fn list_opencode_commands(project_path: Option<String>) -> Vec<CommandEntryDto> {
+    let global_dir = global_config_dir();
+    let mut commands = list_commands_in_dir(&global_dir.join("commands"), "global");
+    commands.extend(load_config_commands(&global_dir, "global"));
+
+    if let Some(path) = project_path {
+        let project = PathBuf::from(path);
+        commands.extend(list_commands_in_dir(
+            &project.join(".opencode").join("commands"),
+            "project",
+        ));
+        if let Some(config_path) = project_config_path(&project) {
+            if let Some(parent) = config_path.parent() {
+                commands.extend(load_config_commands(parent, "project"));
+            }
+        }
+    }
+
+    commands.sort_by(|a, b| a.name.cmp(&b.name));
+    commands
 }
 
 pub fn list_opencode_skills(project_path: Option<String>) -> Vec<SkillEntryDto> {

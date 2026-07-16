@@ -52,6 +52,12 @@ export async function searchFiles(query: string): Promise<string[]> {
 	return invoke<string[]>("search_files", { query })
 }
 
+export interface OpencodeCommandEntry {
+	name: string
+	description: string | null
+	scope: string
+}
+
 export interface OpencodeSkillEntry {
 	name: string
 	path: string
@@ -64,6 +70,14 @@ export interface OpencodeMcpServerEntry {
 	enabled: boolean
 	scope: string
 	serverType: string | null
+}
+
+export async function listOpencodeCommands(
+	projectPath: string | null,
+): Promise<OpencodeCommandEntry[]> {
+	return invoke<OpencodeCommandEntry[]>("list_opencode_commands", {
+		projectPath,
+	})
 }
 
 export async function listOpencodeSkills(

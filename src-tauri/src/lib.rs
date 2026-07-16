@@ -60,6 +60,7 @@ pub fn run() {
             commands::close_session,
             commands::rename_session,
             commands::search_files,
+            commands::list_opencode_commands,
             commands::list_opencode_skills,
             commands::list_opencode_mcp_servers,
             commands::set_opencode_mcp_enabled,

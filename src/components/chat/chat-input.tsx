@@ -4,8 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { AgentModeSelector } from "@/components/chat/agent-mode-selector"
 import { ContextWindowMeter } from "@/components/chat/context-window-meter"
 import { ModelSelector } from "@/components/chat/model-selector"
+import { SlashCommandPicker } from "@/components/chat/slash-command-picker"
 import { ThinkingSelector } from "@/components/chat/thinking-selector"
 import { ThreadFolderPicker } from "@/components/chat/thread-folder-picker"
+import { useSlashEntries } from "@/hooks/use-slash-entries"
 import { CredentialPrompt } from "@/components/credentials/credential-prompt"
 import { PermissionPrompt } from "@/components/permissions/permission-prompt"
 import { isAgentPlanMode } from "@/lib/agent-mode"
@@ -18,6 +20,12 @@ import {
 	InputGroupButton,
 	InputGroupTextarea,
 } from "@/components/ui/input-group"
+import {
+	expandSlashPrompt,
+	extractSlashQuery,
+	filterSlashEntries,
+	type SlashEntry,
+} from "@/lib/slash-prompt"
 import { searchFiles, sendPrompt } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
 import {
@@ -92,9 +100,12 @@ export function ChatInput({
 	const textareaRef = useRef<HTMLTextAreaElement>(null)
 	const [value, setValue] = useState("")
 	const [mentions, setMentions] = useState<MentionChip[]>([])
-	const [query, setQuery] = useState<string | null>(null)
+	const [mentionQuery, setMentionQuery] = useState<string | null>(null)
+	const [slashQuery, setSlashQuery] = useState<string | null>(null)
 	const [suggestions, setSuggestions] = useState<string[]>([])
+	const [slashSelectedIndex, setSlashSelectedIndex] = useState(0)
 	const [caret, setCaret] = useState(0)
+	const { entries: slashEntries, commands, skills } = useSlashEntries(projectPath)
 
 	const isAwaitingInput =
 		sessionStatus === "awaiting_permission" || sessionStatus === "awaiting_credential"
@@ -106,17 +117,25 @@ export function ChatInput({
 	}, [planCommentMode])
 
 	useEffect(() => {
-		if (query === null) {
+		if (mentionQuery === null) {
 			setSuggestions([])
 			return
 		}
 		const timeout = setTimeout(() => {
-			searchFiles(query).then(setSuggestions).catch(() => setSuggestions([]))
+			searchFiles(mentionQuery).then(setSuggestions).catch(() => setSuggestions([]))
 		}, 120)
 		return () => clearTimeout(timeout)
-	}, [query])
+	}, [mentionQuery])
 
 	const visibleSuggestions = useMemo(() => suggestions.slice(0, 8), [suggestions])
+	const visibleSlashEntries = useMemo(
+		() => (slashQuery === null ? [] : filterSlashEntries(slashEntries, slashQuery)),
+		[slashEntries, slashQuery],
+	)
+
+	useEffect(() => {
+		setSlashSelectedIndex(0)
+	}, [slashQuery, visibleSlashEntries.length])
 
 	function updateMentionsFromValue(nextValue: string) {
 		const paths = extractMentionPaths(nextValue)
@@ -127,7 +146,20 @@ export function ChatInput({
 		setValue(nextValue)
 		setCaret(nextCaret)
 		updateMentionsFromValue(nextValue)
-		setQuery(extractMentionQuery(nextValue, nextCaret))
+		const nextMentionQuery = extractMentionQuery(nextValue, nextCaret)
+		const nextSlashQuery = extractSlashQuery(nextValue, nextCaret)
+		if (nextMentionQuery !== null) {
+			setMentionQuery(nextMentionQuery)
+			setSlashQuery(null)
+			return
+		}
+		if (nextSlashQuery !== null) {
+			setSlashQuery(nextSlashQuery)
+			setMentionQuery(null)
+			return
+		}
+		setMentionQuery(null)
+		setSlashQuery(null)
 	}
 
 	function insertMention(path: string) {
@@ -138,7 +170,20 @@ export function ChatInput({
 		setValue(nextValue)
 		setCaret(replaced.length)
 		updateMentionsFromValue(nextValue)
-		setQuery(null)
+		setMentionQuery(null)
+	}
+
+	function insertSlash(entry: SlashEntry) {
+		const beforeCaret = value.slice(0, caret)
+		const afterCaret = value.slice(caret)
+		const replaced = beforeCaret.replace(/\/([^\s/]*)$/, `/${entry.name} `)
+		const nextValue = `${replaced}${afterCaret}`
+		setValue(nextValue)
+		setCaret(replaced.length)
+		updateMentionsFromValue(nextValue)
+		setSlashQuery(null)
+		setMentionQuery(null)
+		textareaRef.current?.focus()
 	}
 
 	async function handleSubmit(event?: React.FormEvent) {
@@ -148,16 +193,17 @@ export function ChatInput({
 			return
 		}
 
-		const promptText = planCommentMode
+		const expanded = planCommentMode
 			? `Comentarios sobre el plan:\n\n${trimmed}`
-			: trimmed
+			: expandSlashPrompt(trimmed, commands, skills)
+		const promptText = expanded
 		const contextPaths = mentions.map((mention) => mention.path)
 		setMessages((current) => [
 			...current,
 			{
 				id: crypto.randomUUID(),
 				role: "user",
-				content: promptText,
+				content: trimmed,
 				toolCalls: [],
 				timestamp: Date.now(),
 			},
@@ -180,7 +226,8 @@ export function ChatInput({
 		setPromptInFlight(true)
 		setValue("")
 		setMentions([])
-		setQuery(null)
+		setMentionQuery(null)
+		setSlashQuery(null)
 		try {
 			await sendPrompt(promptText, contextPaths)
 		} catch {
@@ -194,7 +241,7 @@ export function ChatInput({
 	return (
 		<div className="relative z-10 shrink-0 overflow-visible px-4 pb-4 pt-2">
 			<div className="relative mx-auto max-w-3xl">
-				{visibleSuggestions.length > 0 && query !== null ? (
+				{visibleSuggestions.length > 0 && mentionQuery !== null ? (
 					<div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-lg border border-popover-border bg-popover shadow-lg">
 						{visibleSuggestions.map((path) => (
 							<button
@@ -207,6 +254,15 @@ export function ChatInput({
 							</button>
 						))}
 					</div>
+				) : null}
+				{slashQuery !== null ? (
+					<SlashCommandPicker
+						query={slashQuery}
+						entries={slashEntries}
+						selectedIndex={slashSelectedIndex}
+						onSelect={insertSlash}
+						onHover={setSlashSelectedIndex}
+					/>
 				) : null}
 
 				<form onSubmit={(e) => void handleSubmit(e)}>
@@ -249,7 +305,7 @@ export function ChatInput({
 									placeholder={
 										planCommentMode
 											? "Comenta el plan: qué cambiar, qué priorizar, qué rechazar…"
-											: "Escribe un mensaje… Usa @ para referenciar archivos"
+											: "Escribe un mensaje… @ archivos · / commands y skills"
 									}
 									className={cn(inputDisabled && "opacity-60")}
 									onChange={(event) =>
@@ -259,6 +315,35 @@ export function ChatInput({
 										setCaret((event.target as HTMLTextAreaElement).selectionStart ?? 0)
 									}
 									onKeyDown={(event) => {
+										if (slashQuery !== null && visibleSlashEntries.length > 0) {
+											if (event.key === "ArrowDown") {
+												event.preventDefault()
+												setSlashSelectedIndex(
+													(current) => (current + 1) % visibleSlashEntries.length,
+												)
+												return
+											}
+											if (event.key === "ArrowUp") {
+												event.preventDefault()
+												setSlashSelectedIndex(
+													(current) =>
+														(current - 1 + visibleSlashEntries.length) %
+														visibleSlashEntries.length,
+												)
+												return
+											}
+											if (event.key === "Enter" && !event.shiftKey) {
+												event.preventDefault()
+												const entry = visibleSlashEntries[slashSelectedIndex]
+												if (entry) insertSlash(entry)
+												return
+											}
+											if (event.key === "Escape") {
+												event.preventDefault()
+												setSlashQuery(null)
+												return
+											}
+										}
 										if (event.key === "Enter" && !event.shiftKey) {
 											event.preventDefault()
 											void handleSubmit()

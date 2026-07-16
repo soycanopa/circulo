@@ -402,7 +402,7 @@ Análisis profundo de [craft-agents-oss](https://github.com/craft-ai-agents/craf
 ### 3.5 Slash commands + skills en el input
 **Fuente:** soycanopa/circulo, Synara  
 **Complejidad:** 🟢 media  
-**Estado nuestro:** 🟡 Settings → Skills lista global + proyecto (solo lectura); slash commands en composer ⬜ pendiente
+**Estado nuestro:** ✅ Picker `/` en composer (commands de `.opencode/commands` + `opencode.json`, skills global/proyecto); skills se expanden a prompt, commands pasan a OpenCode tal cual
 
 - Filtros Skills / Globales / Locales / CMD / MCP, chips, iconos tipo VS Code.
 - Synara: `ProviderComposerCapabilities` por proveedor (`supportsSkillDiscovery`, `supportsNativeSlashCommandDiscovery`, etc.) en `packages/contracts`.
@@ -738,7 +738,7 @@ Análisis profundo de [craft-agents-oss](https://github.com/craft-ai-agents/craf
 | 8 | Plan: Aceptar y compactar (C5) | Craft | Bajo | Medio | 🟢 | ✅ |
 | 9 | Command palette | Circulo E. | Bajo | Alto | 🟢 | ⬜ |
 | 10 | Keybindings JSON | Synara | Bajo | Medio-alto | 🟢 | ⬜ |
-| 11 | Slash commands / skills UI | Circulo E. + Synara | Medio | Alto | 🟢 | 🟡 |
+| 11 | Slash commands / skills UI | Circulo E. + Synara | Medio | Alto | 🟢 | ✅ |
 | 12 | Git commit/push (sin PR aún) | OC + Synara | Medio | Alto | 🟡 | ⬜ |
 | 13 | Registry multi-agente ACP | Nuestro + Synara | Medio-bajo | Alto | 🟢 | ⬜ |
 | 14 | Credential prompt UI (C4) | Craft | Medio | Medio (futuro) | 🟡 | 🟡 |
