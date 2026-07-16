@@ -3,6 +3,7 @@ import { useCallback, useState } from "react"
 const NAME_KEY = "circulo:profile:name:v1"
 const HANDLE_KEY = "circulo:profile:handle:v1"
 const AVATAR_COLOR_KEY = "circulo:profile:avatar-color:v1"
+const AVATAR_IMAGE_KEY = "circulo:profile:avatar-image:v1"
 
 export const PROFILE_AVATAR_COLORS = [
 	"#6fcbf3",
@@ -83,4 +84,21 @@ export function useProfileAvatarColor() {
 	}, [])
 
 	return { color, setColor }
+}
+
+export function useProfileAvatarImage() {
+	const [stored, setStoredState] = useState(() => readStorage(AVATAR_IMAGE_KEY) ?? "")
+	const image = stored.trim().length > 0 ? stored : null
+
+	const setImage = useCallback((value: string | null) => {
+		const next = value ?? ""
+		setStoredState(next)
+		if (next) {
+			writeStorage(AVATAR_IMAGE_KEY, next)
+		} else {
+			localStorage.removeItem(AVATAR_IMAGE_KEY)
+		}
+	}, [])
+
+	return { image, setImage }
 }

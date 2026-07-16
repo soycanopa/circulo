@@ -25,6 +25,7 @@ import {
 	getDefaultProfileName,
 	getProfileInitials,
 	useProfileAvatarColor,
+	useProfileAvatarImage,
 	useProfileHandle,
 	useProfileName,
 } from "@/lib/profile-identity"
@@ -78,6 +79,7 @@ export function ProfileSettings() {
 	const { name, setName } = useProfileName(defaultName)
 	const { handle, setHandle } = useProfileHandle(defaultHandle)
 	const { color: avatarColor, setColor: setAvatarColor } = useProfileAvatarColor()
+	const { image: avatarImage, setImage: setAvatarImage } = useProfileAvatarImage()
 
 	useEffect(() => {
 		seedProfileActivityFromSessions(sessions)
@@ -153,6 +155,7 @@ export function ProfileSettings() {
 				<ProfileAvatar
 					initials={initials}
 					color={avatarColor}
+					image={avatarImage}
 					className="size-16 shadow-sm"
 					textClassName="text-xl"
 				/>
@@ -325,10 +328,17 @@ export function ProfileSettings() {
 				name={name}
 				handle={handle}
 				avatarColor={avatarColor}
-				onSave={({ name: nextName, handle: nextHandle, avatarColor: nextColor }) => {
+				avatarImage={avatarImage}
+				onSave={({
+					name: nextName,
+					handle: nextHandle,
+					avatarColor: nextColor,
+					avatarImage: nextImage,
+				}) => {
 					setName(nextName)
 					setHandle(nextHandle)
 					setAvatarColor(nextColor)
+					setAvatarImage(nextImage)
 				}}
 			/>
 		</div>
