@@ -56,15 +56,13 @@ export function useSessions() {
 			if (id === activeSessionId) return
 			setThreadFolderPickerSessionId(null)
 			setReplayingHistory(true)
-			setMessages([])
-			setStreamingText("")
+			setActiveSessionId(id)
 			const status = await loadSession(id)
 			syncStatus(status)
 		},
 		[
 			activeSessionId,
-			setMessages,
-			setStreamingText,
+			setActiveSessionId,
 			setReplayingHistory,
 			setThreadFolderPickerSessionId,
 			syncStatus,

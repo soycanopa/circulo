@@ -72,7 +72,6 @@ export function useAcpEventBridge() {
 				getDefaultStore().set(pendingPlanAtom, null)
 				getDefaultStore().set(activeCredentialAtom, null)
 				getDefaultStore().set(planCommentModeAtom, false)
-				getDefaultStore().set(contextWindowAtom, null)
 
 				void applySessionDefaults(payload.configOptions).catch(() => undefined)
 

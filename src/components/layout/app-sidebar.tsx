@@ -84,6 +84,7 @@ function SessionItem({
 	session,
 	sessionIndex,
 	isSelected,
+	isLoading = false,
 	status,
 	onSelect,
 	pinnable = false,
@@ -96,6 +97,7 @@ function SessionItem({
 	session: SessionInfo
 	sessionIndex: number
 	isSelected: boolean
+	isLoading?: boolean
 	status: SidebarSessionStatus
 	onSelect: () => void
 	pinnable?: boolean
@@ -105,7 +107,7 @@ function SessionItem({
 	onDelete?: () => void
 	compact?: boolean
 }) {
-	const Icon = STATUS_ICON[status]
+	const Icon = isLoading ? Loader2 : STATUS_ICON[status]
 	const color = STATUS_COLOR[status]
 	const hasPin = Boolean((pinnable || isPinned) && onTogglePin)
 	const hasActions = Boolean(onArchive && onDelete)
@@ -116,13 +118,20 @@ function SessionItem({
 				<SidebarMenuButton
 					isActive={isSelected}
 					onClick={onSelect}
+					disabled={isLoading}
 					size={compact ? "sm" : "default"}
 					className={cn(
 						hasPin && hasActions && "pr-14",
 						(hasPin || hasActions) && !(hasPin && hasActions) && "pr-8",
 					)}
 				>
-					<Icon className={cn("size-3.5 shrink-0", color, status === "running" && "animate-spin")} />
+					<Icon
+						className={cn(
+							"size-3.5 shrink-0",
+							isLoading ? "text-muted-foreground" : color,
+							(status === "running" || isLoading) && "animate-spin",
+						)}
+					/>
 					<span className="min-w-0 flex-1 truncate">{sessionTitle(session, sessionIndex)}</span>
 				</SidebarMenuButton>
 				{hasActions ? (
@@ -155,7 +164,6 @@ function SessionItem({
 
 function ProjectFolderRow({
 	label,
-	isActive,
 	isExpanded,
 	onToggle,
 	onNewSession,
@@ -164,7 +172,6 @@ function ProjectFolderRow({
 	children,
 }: {
 	label: string
-	isActive: boolean
 	isExpanded: boolean
 	onToggle: () => void
 	onNewSession: () => void
@@ -176,7 +183,7 @@ function ProjectFolderRow({
 		<>
 			<SidebarMenuItem>
 				<div className="group/menu-item relative">
-					<SidebarMenuButton isActive={isActive} onClick={onToggle} className="pr-14">
+					<SidebarMenuButton onClick={onToggle} className="pr-14">
 						<ChevronRight
 							className="size-3 text-muted-foreground transition-transform"
 							style={{ transform: isExpanded ? "rotate(90deg)" : undefined }}
@@ -227,7 +234,7 @@ export function AppSidebar({
 	const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({})
 	const [recentProjectsVersion, setRecentProjectsVersion] = useState(0)
 	const [projectAliasesVersion, setProjectAliasesVersion] = useState(0)
-	const [sessionPending, setSessionPending] = useState(false)
+	const [pendingSessionId, setPendingSessionId] = useState<string | null>(null)
 
 	const visibleSessions = useMemo(
 		() => sessions.filter((session) => !isArchived(session.sessionId)),
@@ -304,12 +311,20 @@ export function AppSidebar({
 		})
 	}
 
-	async function runSessionAction(action: () => Promise<void>) {
-		setSessionPending(true)
+	async function runSessionAction(
+		action: () => Promise<void>,
+		options?: { pendingSessionId?: string },
+	) {
+		const pendingId = options?.pendingSessionId ?? null
+		if (pendingId) {
+			setPendingSessionId(pendingId)
+		}
 		try {
 			await action()
 		} finally {
-			setSessionPending(false)
+			if (pendingId) {
+				setPendingSessionId((current) => (current === pendingId ? null : current))
+			}
 		}
 	}
 
@@ -327,29 +342,16 @@ export function AppSidebar({
 					<SidebarMenu>
 						<SidebarMenuItem>
 							<SidebarMenuButton
-								onClick={() => void runSessionAction(newThread)}
-								disabled={sessionPending}
+								onClick={() => void newThread()}
 								className="text-[#FAFAFA]"
 							>
-								{sessionPending ? (
-									<Loader2 className="size-4 animate-spin" />
-								) : (
-									<MessageSquarePlus className="size-4" />
-								)}
+								<MessageSquarePlus className="size-4" />
 								<span>New Thread</span>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
 						<SidebarMenuItem>
-							<SidebarMenuButton
-								onClick={() => void runSessionAction(newChat)}
-								disabled={sessionPending}
-								className="text-[#FAFAFA]"
-							>
-								{sessionPending ? (
-									<Loader2 className="size-4 animate-spin" />
-								) : (
-									<MessageSquare className="size-4" />
-								)}
+							<SidebarMenuButton onClick={() => void newChat()} className="text-[#FAFAFA]">
+								<MessageSquare className="size-4" />
 								<span>New Chat</span>
 							</SidebarMenuButton>
 						</SidebarMenuItem>
@@ -376,7 +378,12 @@ export function AppSidebar({
 									sessionStatus,
 									promptInFlight,
 								)}
-								onSelect={() => void runSessionAction(() => selectSession(session.sessionId))}
+								onSelect={() =>
+									void runSessionAction(() => selectSession(session.sessionId), {
+										pendingSessionId: session.sessionId,
+									})
+								}
+								isLoading={pendingSessionId === session.sessionId}
 								isPinned
 								onTogglePin={() => togglePin(session.sessionId)}
 								onArchive={() => void handleArchive(session.sessionId)}
@@ -415,8 +422,11 @@ export function AppSidebar({
 														promptInFlight,
 													)}
 													onSelect={() =>
-														void runSessionAction(() => selectSession(session.sessionId))
+														void runSessionAction(() => selectSession(session.sessionId), {
+															pendingSessionId: session.sessionId,
+														})
 													}
+													isLoading={pendingSessionId === session.sessionId}
 													pinnable
 													isPinned={isPinned(session.sessionId)}
 													onTogglePin={() => togglePin(session.sessionId)}
@@ -438,7 +448,6 @@ export function AppSidebar({
 								<ProjectFolderRow
 									key={path}
 									label={getSavedProjectLabel(path)}
-									isActive={isActive}
 									isExpanded={isExpanded}
 									onToggle={() => {
 										if (!isActive) {
@@ -475,8 +484,11 @@ export function AppSidebar({
 																promptInFlight,
 															)}
 															onSelect={() =>
-																void runSessionAction(() => selectSession(session.sessionId))
+																void runSessionAction(() => selectSession(session.sessionId), {
+																	pendingSessionId: session.sessionId,
+																})
 															}
+															isLoading={pendingSessionId === session.sessionId}
 															pinnable
 															isPinned={isPinned(session.sessionId)}
 															onTogglePin={() => togglePin(session.sessionId)}

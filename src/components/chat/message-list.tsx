@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useRef } from "react"
 import { useAtomValue } from "jotai"
 import { MarkdownContent } from "@/components/chat/markdown-content"
 import { MessageTrail } from "@/components/chat/message-trail"
@@ -9,6 +9,7 @@ import { useMessageTrail } from "@/hooks/use-message-trail"
 import { usePlanActions } from "@/hooks/use-plan-actions"
 import { isPlanLikeContent } from "@/lib/plan-markdown"
 import { deriveTurnPhase, shouldShowThinkingIndicator } from "@/lib/turn-phase"
+import { cn } from "@/lib/utils"
 import { pendingPlanAtom, planTurnActiveAtom } from "@/stores/atoms"
 import { AuthRequestCard } from "@/components/credentials/auth-request-card"
 import { ActivityTrace } from "@/components/tools/activity-trace"
@@ -21,9 +22,19 @@ interface MessageListProps {
 }
 
 export function MessageList({ messages, connected }: MessageListProps) {
-	const { streamingText, promptInFlight, sessionStatus } = useAcpSession()
+	const { streamingText, promptInFlight, sessionStatus, replayingHistory } =
+		useAcpSession()
+	const lastRenderedMessagesRef = useRef(messages)
+	if (messages.length > 0) {
+		lastRenderedMessagesRef.current = messages
+	}
+
+	const trailMessages =
+		replayingHistory && messages.length === 0
+			? lastRenderedMessagesRef.current
+			: messages
 	const { scrollRef, activeStore, trailItems, scrollToMessage } =
-		useMessageTrail(messages)
+		useMessageTrail(trailMessages)
 	const pendingPlan = useAtomValue(pendingPlanAtom)
 	const planTurnActive = useAtomValue(planTurnActiveAtom)
 	const { acceptPlan, acceptAndCompactPlan, rejectPlan, startPlanComment, downloadContent } =
@@ -57,9 +68,13 @@ export function MessageList({ messages, connected }: MessageListProps) {
 			? messages.length - 1
 			: -1
 
+	const isStaleReplay =
+		replayingHistory && messages.length === 0 && lastRenderedMessagesRef.current.length > 0
+	const sourceMessages = isStaleReplay ? lastRenderedMessagesRef.current : messages
+
 	const visibleMessages =
 		showPlanPreview && pendingPlan?.content.trim()
-			? messages.filter((message) => {
+			? sourceMessages.filter((message) => {
 					if (message.role !== "assistant") return true
 					const content = message.content.trim()
 					if (!content) return false
@@ -70,7 +85,7 @@ export function MessageList({ messages, connected }: MessageListProps) {
 						content === plan
 					)
 				})
-			: messages
+			: sourceMessages
 
 	return (
 		<div
@@ -82,7 +97,7 @@ export function MessageList({ messages, connected }: MessageListProps) {
 				activeStore={activeStore}
 				onSelect={scrollToMessage}
 			/>
-			{messages.length === 0 && !promptInFlight && !pendingPlan ? (
+			{sourceMessages.length === 0 && !promptInFlight && !pendingPlan && !isStaleReplay ? (
 				<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
 					{connected
 						? "Envía tu primer mensaje al agente."
@@ -90,7 +105,12 @@ export function MessageList({ messages, connected }: MessageListProps) {
 				</div>
 			) : null}
 
-			<div className="mx-auto flex max-w-3xl flex-col gap-4">
+			<div
+				className={cn(
+					"mx-auto flex max-w-3xl flex-col gap-4 transition-opacity duration-150",
+					isStaleReplay && "pointer-events-none opacity-40",
+				)}
+			>
 				{visibleMessages.map((message, index) => {
 					const isLiveAssistant =
 						message.role === "assistant" &&
