@@ -1,13 +1,21 @@
 import { useAtom, useSetAtom } from "jotai"
 import { useCallback } from "react"
 import { getChatsProjectPath } from "@/lib/app-settings"
+import { isGeneralChatProject } from "@/lib/project-display"
 import {
 	archiveSessionId,
 	getArchivedSessionIds,
 	removeArchivedSessionId,
 } from "@/lib/archived-sessions"
 import { unpinSessionId } from "@/lib/pinned-sessions"
-import { closeSession, createSession, loadSession, openProject, renameSession } from "@/lib/tauri"
+import {
+	closeProject,
+	closeSession,
+	createSession,
+	loadSession,
+	openProject,
+	renameSession,
+} from "@/lib/tauri"
 import {
 	activeSessionIdAtom,
 	configOptionsAtom,
@@ -120,6 +128,14 @@ export function useSessions() {
 				resetChatState()
 			}
 			syncStatus(status)
+
+			if (
+				status.sessions.length === 0 &&
+				isGeneralChatProject(status.projectPath)
+			) {
+				const closedStatus = await closeProject()
+				syncStatus(closedStatus)
+			}
 		},
 		[resetChatState, syncStatus],
 	)
