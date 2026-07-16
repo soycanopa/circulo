@@ -52,6 +52,45 @@ export async function searchFiles(query: string): Promise<string[]> {
 	return invoke<string[]>("search_files", { query })
 }
 
+export interface OpencodeSkillEntry {
+	name: string
+	path: string
+	description: string | null
+	scope: string
+}
+
+export interface OpencodeMcpServerEntry {
+	name: string
+	enabled: boolean
+	scope: string
+	serverType: string | null
+}
+
+export async function listOpencodeSkills(
+	projectPath: string | null,
+): Promise<OpencodeSkillEntry[]> {
+	return invoke<OpencodeSkillEntry[]>("list_opencode_skills", {
+		projectPath,
+	})
+}
+
+export async function listOpencodeMcpServers(
+	projectPath: string | null,
+): Promise<OpencodeMcpServerEntry[]> {
+	return invoke<OpencodeMcpServerEntry[]>("list_opencode_mcp_servers", {
+		projectPath,
+	})
+}
+
+export async function setOpencodeMcpEnabled(input: {
+	name: string
+	scope: string
+	enabled: boolean
+	projectPath: string | null
+}): Promise<void> {
+	return invoke("set_opencode_mcp_enabled", input)
+}
+
 export async function listSessions(): Promise<ProjectStatus> {
 	return invoke<ProjectStatus>("list_sessions")
 }

@@ -1,6 +1,7 @@
 mod acp;
 mod agents;
 mod commands;
+mod opencode_config;
 mod session_store;
 mod state;
 
@@ -59,6 +60,9 @@ pub fn run() {
             commands::close_session,
             commands::rename_session,
             commands::search_files,
+            commands::list_opencode_skills,
+            commands::list_opencode_mcp_servers,
+            commands::set_opencode_mcp_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

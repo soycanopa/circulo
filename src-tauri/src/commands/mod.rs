@@ -5,6 +5,12 @@ use tauri::{Emitter, Manager, State};
 use tokio::sync::mpsc;
 
 use crate::acp::{read_context_file, search_project_files, start_agent_connection};
+use crate::opencode_config::{
+    list_opencode_mcp_servers as read_opencode_mcp_servers,
+    list_opencode_skills as read_opencode_skills,
+    set_opencode_mcp_enabled as write_opencode_mcp_enabled, McpServerEntryDto,
+    SkillEntryDto,
+};
 use crate::session_store::{store_path_for, ProjectSessionStore};
 use crate::state::{
     ActiveProject, AgentCapabilitiesDto, AgentCommand, ContextFile, CredentialResponseDto,
@@ -308,4 +314,42 @@ pub async fn search_files(
         .as_ref()
         .ok_or_else(|| "No project open".to_string())?;
     Ok(search_project_files(&project.project_path, &query, 50))
+}
+
+#[tauri::command]
+pub async fn list_opencode_skills(
+    state: State<'_, SharedState>,
+    project_path: Option<String>,
+) -> Result<Vec<SkillEntryDto>, String> {
+    let fallback = state
+        .lock()
+        .await
+        .project
+        .as_ref()
+        .map(|project| project.project_path.display().to_string());
+    Ok(read_opencode_skills(project_path.or(fallback)))
+}
+
+#[tauri::command]
+pub async fn list_opencode_mcp_servers(
+    state: State<'_, SharedState>,
+    project_path: Option<String>,
+) -> Result<Vec<McpServerEntryDto>, String> {
+    let fallback = state
+        .lock()
+        .await
+        .project
+        .as_ref()
+        .map(|project| project.project_path.display().to_string());
+    Ok(read_opencode_mcp_servers(project_path.or(fallback)))
+}
+
+#[tauri::command]
+pub async fn set_opencode_mcp_enabled(
+    name: String,
+    scope: String,
+    enabled: bool,
+    project_path: Option<String>,
+) -> Result<(), String> {
+    write_opencode_mcp_enabled(name, scope, enabled, project_path)
 }
