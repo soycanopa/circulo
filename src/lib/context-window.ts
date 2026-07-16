@@ -1,3 +1,5 @@
+import type { ConfigOption } from "@/types/acp"
+
 export type ContextBreakdownId =
 	| "mcpTools"
 	| "systemTools"
@@ -114,7 +116,12 @@ function findBreakdownSource(update: Record<string, unknown>): unknown {
 	)
 }
 
-/** Parse OpenCode ACP `usage_update` (and optional extended breakdown fields). */
+/**
+ * Parse OpenCode ACP `usage_update` (totals + optional extended breakdown if the agent sends them).
+ *
+ * Note: OpenCode's per-category breakdown (MCP tools, Skills, etc.) is not in `usage_update` today;
+ * a future fallback may fetch `/session/:id/context` (HTTP), SDK, or CLI — see docs/ACP.md § Límites.
+ */
 export function parseUsageUpdate(payload: unknown): ContextWindowSnapshot | null {
 	const root = asRecord(payload)
 	const update = asRecord(root?.update)
@@ -157,4 +164,100 @@ export function parseUsageUpdate(payload: unknown): ContextWindowSnapshot | null
 
 export function deriveMeterPercent(snapshot: ContextWindowSnapshot): number {
 	return clampPercent(snapshot.usedPercent ?? 0)
+}
+
+function findModelOption(configOptions: ConfigOption[]) {
+	return configOptions.find(
+		(option) => option.id === "model" || option.category?.toLowerCase().includes("model"),
+	)
+}
+
+function parseTokenLimitFromText(text: string): number | null {
+	const normalized = text.replace(/,/g, " ")
+
+	const millionMatch = /(\d+(?:\.\d+)?)\s*M(?:illion)?(?:\s*(?:token|context|ctx|window))?/i.exec(
+		normalized,
+	)
+	if (millionMatch) return Math.round(Number.parseFloat(millionMatch[1]) * 1_000_000)
+
+	const thousandMatch = /(\d+(?:\.\d+)?)\s*K(?:\s*(?:token|context|ctx|window))?/i.exec(normalized)
+	if (thousandMatch) return Math.round(Number.parseFloat(thousandMatch[1]) * 1_000)
+
+	const explicitMatch = /(\d{4,})\s*(?:tokens?|context|ctx)/i.exec(normalized)
+	if (explicitMatch) return Number.parseInt(explicitMatch[1], 10)
+
+	return null
+}
+
+function inferKnownModelLimit(modelValue: string): number | null {
+	const value = modelValue.toLowerCase()
+	if (value.includes("minimax")) return 1_000_000
+	if (value.includes("kimi-k2")) return 262_144
+	if (value.includes("deepseek")) return 128_000
+	if (value.includes("glm")) return 128_000
+	if (value.includes("qwen")) return 128_000
+	if (value.includes("grok")) return 131_072
+	return null
+}
+
+/** Infer the active model's context limit from config metadata when ACP has not sent usage yet. */
+export function inferModelContextLimit(configOptions: ConfigOption[]): number | null {
+	const modelOption = findModelOption(configOptions)
+	if (!modelOption) return null
+
+	const selected = modelOption.options.find((entry) => entry.value === modelOption.currentValue)
+	const texts = [
+		selected?.description,
+		selected?.name,
+		selected?.value,
+		modelOption.currentValue,
+	].filter((entry): entry is string => Boolean(entry?.trim()))
+
+	for (const text of texts) {
+		const parsed = parseTokenLimitFromText(text)
+		if (parsed) return parsed
+	}
+
+	return inferKnownModelLimit(modelOption.currentValue)
+}
+
+/** Merge live ACP usage with model metadata so new sessions still show total capacity. */
+export function resolveContextWindowDisplay(
+	usage: ContextWindowSnapshot | null,
+	configOptions: ConfigOption[],
+): ContextWindowSnapshot | null {
+	const modelLimit = inferModelContextLimit(configOptions)
+
+	if (!usage) {
+		if (!modelLimit) return null
+		return {
+			usedTokens: 0,
+			maxTokens: modelLimit,
+			usedPercent: 0,
+			costUsd: null,
+			breakdown: [],
+			updatedAt: Date.now(),
+		}
+	}
+
+	const maxTokens = usage.maxTokens ?? modelLimit
+	const usedPercent =
+		usage.usedPercent ??
+		(maxTokens && maxTokens > 0 ? clampPercent((usage.usedTokens / maxTokens) * 100) : null)
+
+	return {
+		...usage,
+		maxTokens,
+		usedPercent,
+	}
+}
+
+export function hasContextWindowData(snapshot: ContextWindowSnapshot | null): boolean {
+	return snapshot !== null && (snapshot.maxTokens !== null || snapshot.usedTokens > 0)
+}
+
+export function formatAvailableContextTokens(snapshot: ContextWindowSnapshot): string | null {
+	if (!snapshot.maxTokens) return null
+	const available = Math.max(0, snapshot.maxTokens - snapshot.usedTokens)
+	return formatContextTokens(available)
 }

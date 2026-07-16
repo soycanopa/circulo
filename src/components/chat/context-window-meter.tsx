@@ -4,6 +4,7 @@ import {
 	formatContextTokens,
 	formatCostUsd,
 	deriveMeterPercent,
+	hasContextWindowData,
 	type ContextWindowSnapshot,
 } from "@/lib/context-window"
 import { cn } from "@/lib/utils"
@@ -12,19 +13,56 @@ interface ContextWindowMeterProps {
 	usage: ContextWindowSnapshot | null
 }
 
-function formatUsageHeader(usage: ContextWindowSnapshot): string {
-	const used = formatContextTokens(usage.usedTokens)
+function formatUsageCompact(usage: ContextWindowSnapshot): string {
 	if (usage.maxTokens) {
+		const used = formatContextTokens(usage.usedTokens)
 		const max = formatContextTokens(usage.maxTokens)
-		const percent =
-			usage.usedPercent !== null
-				? usage.usedPercent < 10
-					? `${usage.usedPercent.toFixed(1).replace(/\.0$/, "")}%`
-					: `${Math.round(usage.usedPercent)}%`
-				: null
-		return percent ? `${used}/${max} (${percent})` : `${used}/${max}`
+		if (usage.usedPercent !== null) {
+			const pct =
+				usage.usedPercent < 10
+					? usage.usedPercent.toFixed(1).replace(/\.0$/, "")
+					: `${Math.round(usage.usedPercent)}`
+			return `${used}/${max} · ${pct}%`
+		}
+		return `${used}/${max}`
 	}
-	return `${used} tokens`
+	return formatContextTokens(usage.usedTokens)
+}
+
+function ContextFillBar({
+	percent,
+	className,
+	barClassName,
+}: {
+	percent: number
+	className?: string
+	barClassName?: string
+}) {
+	const clamped = Math.max(0, Math.min(100, percent))
+	const showFill = clamped > 0
+
+	return (
+		<div
+			className={cn(
+				"relative w-full overflow-hidden rounded-full bg-[#414141]",
+				className,
+			)}
+			role="progressbar"
+			aria-valuenow={clamped}
+			aria-valuemin={0}
+			aria-valuemax={100}
+		>
+			{showFill ? (
+				<div
+					className={cn(
+						"absolute inset-y-0 left-0 min-w-[3px] rounded-full bg-[#3B5EF9] transition-[width] duration-500 ease-out",
+						barClassName,
+					)}
+					style={{ width: `${clamped}%` }}
+				/>
+			) : null}
+		</div>
+	)
 }
 
 export function ContextWindowMeter({ usage }: ContextWindowMeterProps) {
@@ -34,7 +72,7 @@ export function ContextWindowMeter({ usage }: ContextWindowMeterProps) {
 	const radius = 6
 	const circumference = 2 * Math.PI * radius
 	const dashOffset = circumference - (percent / 100) * circumference
-	const hasData = usage !== null && usage.usedTokens > 0
+	const hasData = hasContextWindowData(usage)
 
 	return (
 		<>
@@ -48,8 +86,8 @@ export function ContextWindowMeter({ usage }: ContextWindowMeterProps) {
 				)}
 				aria-label={
 					usage
-						? `Ventana de contexto: ${formatUsageHeader(usage)}`
-						: "Ventana de contexto: sin datos"
+						? `Contexto: ${formatUsageCompact(usage)}`
+						: "Contexto: sin datos"
 				}
 			>
 				<span className="relative flex size-4 items-center justify-center">
@@ -87,54 +125,45 @@ export function ContextWindowMeter({ usage }: ContextWindowMeterProps) {
 				open={open}
 				anchorRef={triggerRef}
 				onClose={() => setOpen(false)}
-				className="w-72 p-3"
-				minWidth={288}
+				preferPlacement="above"
+				className="w-[min(14rem,calc(100vw-1rem))] p-2.5"
+				minWidth={200}
 			>
-				<div className="space-y-3">
-					<div className="flex items-center justify-between gap-3">
-						<p className="text-sm font-medium text-foreground">Context windows</p>
-						<p className="text-xs text-muted-foreground">
-							{usage ? formatUsageHeader(usage) : "—"}
+				<div className="space-y-2.5">
+					<div className="flex items-center justify-between gap-2">
+						<p className="text-xs font-medium text-foreground">Contexto</p>
+						<p className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+							{usage ? formatUsageCompact(usage) : "—"}
 						</p>
 					</div>
 
-					<div className="h-1.5 overflow-hidden rounded-full bg-muted/60">
-						<div
-							className="h-full rounded-full bg-[#3B5EF9] transition-[width] duration-500 ease-out"
-							style={{ width: `${hasData ? percent : 0}%` }}
-						/>
-					</div>
+					<ContextFillBar percent={hasData ? percent : 0} className="h-2.5" />
 
 					{usage?.breakdown.length ? (
-						<ul className="space-y-1.5">
+						<ul className="space-y-2">
 							{usage.breakdown.map((item) => (
-								<li
-									key={item.id}
-									className="flex items-center justify-between gap-3 text-xs"
-								>
-									<span className="flex min-w-0 items-center gap-2 text-foreground/90">
-										<span className="size-1.5 shrink-0 rounded-full bg-[#3B5EF9]" />
+								<li key={item.id}>
+									<div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
 										<span className="truncate">{item.label}</span>
-									</span>
-									<span className="shrink-0 tabular-nums text-muted-foreground">
-										{item.percent < 10
-											? `${item.percent.toFixed(1).replace(/\.0$/, "")}%`
-											: `${Math.round(item.percent)}%`}
-									</span>
+										<span className="shrink-0 tabular-nums">
+											{item.percent < 10
+												? `${item.percent.toFixed(1).replace(/\.0$/, "")}%`
+												: `${Math.round(item.percent)}%`}
+										</span>
+									</div>
+									<ContextFillBar
+										percent={item.percent}
+										className="h-1.5"
+										barClassName="bg-[#3B5EF9]/85"
+									/>
 								</li>
 							))}
 						</ul>
-					) : (
-						<p className="text-xs leading-relaxed text-muted-foreground">
-							{usage
-								? "El desglose por categoría aparecerá cuando el agente lo reporte. Uso total arriba."
-								: "Aún no hay datos de contexto para esta sesión."}
-						</p>
-					)}
+					) : null}
 
 					{usage?.costUsd != null ? (
-						<p className="border-t border-border/50 pt-2 text-xs text-muted-foreground">
-							Coste de sesión: {formatCostUsd(usage.costUsd)}
+						<p className="text-[10px] tabular-nums text-muted-foreground">
+							{formatCostUsd(usage.costUsd)}
 						</p>
 					) : null}
 				</div>
