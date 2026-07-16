@@ -7,7 +7,8 @@ use tokio::sync::mpsc;
 use crate::acp::{read_context_file, search_project_files, start_agent_connection};
 use crate::session_store::{store_path_for, ProjectSessionStore};
 use crate::state::{
-    ActiveProject, AgentCapabilitiesDto, AgentCommand, ContextFile, ProjectStatus, SharedState,
+    ActiveProject, AgentCapabilitiesDto, AgentCommand, ContextFile, CredentialResponseDto,
+    ProjectStatus, SharedState,
 };
 
 #[tauri::command]
@@ -32,6 +33,7 @@ pub async fn open_project(
             let _ = existing.cmd_tx.send(AgentCommand::Shutdown).await;
         }
         guard.permission_waiters.clear();
+        guard.credential_waiters.clear();
     }
 
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
@@ -79,6 +81,7 @@ pub async fn close_project(state: State<'_, SharedState>) -> Result<ProjectStatu
         let _ = project.cmd_tx.send(AgentCommand::Shutdown).await;
     }
     guard.permission_waiters.clear();
+    guard.credential_waiters.clear();
     Ok(guard.status())
 }
 
@@ -125,6 +128,23 @@ pub async fn respond_permission(
         Ok(())
     } else {
         Err("Permission request not found".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn respond_credential(
+    state: State<'_, SharedState>,
+    request_id: String,
+    response: CredentialResponseDto,
+) -> Result<(), String> {
+    let mut guard = state.lock().await;
+    if let Some(tx) = guard.credential_waiters.remove(&request_id) {
+        tx.send(response)
+            .map_err(|_| "Credential waiter dropped".to_string())?;
+        Ok(())
+    } else {
+        // UI-only phase: accept response even when no agent waiter is registered yet.
+        Ok(())
     }
 }
 

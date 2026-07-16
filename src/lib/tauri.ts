@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
-import type { AgentCapabilities, ConfigOption, SessionInfo } from "@/types/acp"
+import type {
+	AgentCapabilities,
+	ConfigOption,
+	CredentialResponse,
+	SessionInfo,
+} from "@/types/acp"
 
 export interface ProjectStatus {
 	connected: boolean
@@ -30,6 +35,13 @@ export async function sendPrompt(text: string, contextPaths: string[]): Promise<
 
 export async function respondPermission(requestId: string, optionId: string): Promise<void> {
 	return invoke("respond_permission", { requestId, optionId })
+}
+
+export async function respondCredential(
+	requestId: string,
+	response: CredentialResponse,
+): Promise<void> {
+	return invoke("respond_credential", { requestId, response })
 }
 
 export async function setConfigOption(configId: string, value: string): Promise<void> {
@@ -72,6 +84,7 @@ export function listenAcpEvents(handlers: {
 	}) => void
 	onSessionUpdate?: (payload: unknown) => void
 	onPermissionRequest?: (payload: unknown) => void
+	onCredentialRequest?: (payload: unknown) => void
 	onConfigOptions?: (payload: { configOptions: ConfigOption[] }) => void
 	onPromptComplete?: () => void
 	onError?: (payload: { message: string }) => void
@@ -96,6 +109,9 @@ export function listenAcpEvents(handlers: {
 		}),
 		listen("acp:permission_request", (event) => {
 			handlers.onPermissionRequest?.(event.payload)
+		}),
+		listen("acp:credential_request", (event) => {
+			handlers.onCredentialRequest?.(event.payload)
 		}),
 		listen("acp:config_options", (event) => {
 			handlers.onConfigOptions?.(event.payload as { configOptions: ConfigOption[] })

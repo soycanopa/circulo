@@ -141,9 +141,18 @@ impl ActiveProject {
     }
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialResponseDto {
+    pub action: String,
+    #[serde(default)]
+    pub values: Option<HashMap<String, String>>,
+}
+
 pub struct CirculoState {
     pub project: Option<ActiveProject>,
     pub permission_waiters: HashMap<String, oneshot::Sender<String>>,
+    pub credential_waiters: HashMap<String, oneshot::Sender<CredentialResponseDto>>,
 }
 
 impl CirculoState {
@@ -151,6 +160,7 @@ impl CirculoState {
         Self {
             project: None,
             permission_waiters: HashMap::new(),
+            credential_waiters: HashMap::new(),
         }
     }
 

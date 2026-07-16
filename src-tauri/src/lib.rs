@@ -51,6 +51,7 @@ pub fn run() {
             commands::close_project,
             commands::send_prompt,
             commands::respond_permission,
+            commands::respond_credential,
             commands::set_config_option,
             commands::list_sessions,
             commands::create_session,
