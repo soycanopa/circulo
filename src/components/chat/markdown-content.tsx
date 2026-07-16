@@ -1,43 +1,12 @@
-import { useEffect, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { codeToHtml } from "shiki"
+import { CodeBlock } from "@/components/chat/code-block"
+import { MarkdownDiffBlock } from "@/components/chat/markdown-diff-block"
 import { cn } from "@/lib/utils"
 
 interface MarkdownContentProps {
 	content: string
 	className?: string
-}
-
-function CodeBlock({ language, code }: { language: string; code: string }) {
-	const [html, setHtml] = useState<string>("")
-
-	useEffect(() => {
-		let cancelled = false
-		codeToHtml(code, {
-			lang: language || "text",
-			theme: "github-dark-default",
-		})
-			.then((result) => {
-				if (!cancelled) setHtml(result)
-			})
-			.catch(() => {
-				if (!cancelled) {
-					setHtml(`<pre><code>${code}</code></pre>`)
-				}
-			})
-
-		return () => {
-			cancelled = true
-		}
-	}, [code, language])
-
-	return (
-		<div
-			className="my-2 overflow-x-auto rounded-md border border-border text-xs"
-			dangerouslySetInnerHTML={{ __html: html }}
-		/>
-	)
 }
 
 export function MarkdownContent({ content, className }: MarkdownContentProps) {
@@ -50,6 +19,10 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
 						const match = /language-(\w+)/.exec(codeClassName ?? "")
 						const code = String(children).replace(/\n$/, "")
 						if (match) {
+							const language = match[1].toLowerCase()
+							if (language === "diff") {
+								return <MarkdownDiffBlock code={code} />
+							}
 							return <CodeBlock language={match[1]} code={code} />
 						}
 						return (
