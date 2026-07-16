@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use agent_client_protocol::schema::v1::{AgentCapabilities, SessionInfo};
 use serde::Serialize;
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex, Notify};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -153,6 +153,7 @@ pub struct CirculoState {
     pub project: Option<ActiveProject>,
     pub permission_waiters: HashMap<String, oneshot::Sender<String>>,
     pub credential_waiters: HashMap<String, oneshot::Sender<CredentialResponseDto>>,
+    pub agent_done: Arc<Notify>,
 }
 
 impl CirculoState {
@@ -161,6 +162,7 @@ impl CirculoState {
             project: None,
             permission_waiters: HashMap::new(),
             credential_waiters: HashMap::new(),
+            agent_done: Arc::new(Notify::new()),
         }
     }
 

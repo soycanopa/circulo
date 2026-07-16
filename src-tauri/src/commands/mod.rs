@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use std::time::Duration;
+
 use tauri::{Emitter, Manager, State};
 use tokio::sync::mpsc;
 
@@ -26,6 +28,24 @@ pub async fn get_project_status(state: State<'_, SharedState>) -> Result<Project
     Ok(state.lock().await.status())
 }
 
+async fn shutdown_active_agent(state: &SharedState) {
+    let (cmd_tx, done) = {
+        let mut guard = state.lock().await;
+        let Some(project) = guard.project.take() else {
+            return;
+        };
+        let done = Arc::clone(&guard.agent_done);
+        guard.permission_waiters.clear();
+        guard.credential_waiters.clear();
+        (project.cmd_tx, done)
+    };
+
+    let _ = cmd_tx.send(AgentCommand::Shutdown).await;
+    let _ = tokio::time::timeout(Duration::from_secs(10), done.notified()).await;
+    // Give OpenCode's SQLite a moment to release file locks after process exit.
+    tokio::time::sleep(Duration::from_millis(350)).await;
+}
+
 #[tauri::command]
 pub async fn open_project(
     app: tauri::AppHandle,
@@ -37,14 +57,7 @@ pub async fn open_project(
         return Err(format!("Not a directory: {path}"));
     }
 
-    {
-        let mut guard = state.lock().await;
-        if let Some(existing) = guard.project.take() {
-            let _ = existing.cmd_tx.send(AgentCommand::Shutdown).await;
-        }
-        guard.permission_waiters.clear();
-        guard.credential_waiters.clear();
-    }
+    shutdown_active_agent(state.inner()).await;
 
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
     let session_placeholder = "pending".to_string();
@@ -72,8 +85,13 @@ pub async fn open_project(
     let path_clone = project_path.clone();
 
     tauri::async_runtime::spawn(async move {
-        if let Err(err) = start_agent_connection(app_clone.clone(), shared.clone(), path_clone, cmd_rx).await
+        let result =
+            start_agent_connection(app_clone.clone(), shared.clone(), path_clone, cmd_rx).await;
         {
+            let guard = shared.lock().await;
+            guard.agent_done.notify_waiters();
+        }
+        if let Err(err) = result {
             let _ = app_clone.emit("acp:error", serde_json::json!({ "message": err }));
             let mut guard = shared.lock().await;
             guard.project = None;
@@ -86,13 +104,8 @@ pub async fn open_project(
 
 #[tauri::command]
 pub async fn close_project(state: State<'_, SharedState>) -> Result<ProjectStatus, String> {
-    let mut guard = state.lock().await;
-    if let Some(project) = guard.project.take() {
-        let _ = project.cmd_tx.send(AgentCommand::Shutdown).await;
-    }
-    guard.permission_waiters.clear();
-    guard.credential_waiters.clear();
-    Ok(guard.status())
+    shutdown_active_agent(state.inner()).await;
+    Ok(state.lock().await.status())
 }
 
 #[tauri::command]

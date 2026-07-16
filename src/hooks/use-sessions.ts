@@ -1,5 +1,6 @@
 import { useAtom, useSetAtom } from "jotai"
 import { useCallback } from "react"
+import { setLastProjectPath } from "@/lib/app-bootstrap"
 import { getChatsProjectPath } from "@/lib/app-settings"
 import { isGeneralChatProject } from "@/lib/project-display"
 import {
@@ -85,6 +86,7 @@ export function useSessions() {
 
 	const openProjectForNewThread = useCallback(
 		async (path: string) => {
+			if (!isGeneralChatProject(path)) setLastProjectPath(path)
 			const status = await openProject(path)
 			syncStatus(status)
 			const createStatus = await createSession()
@@ -98,6 +100,7 @@ export function useSessions() {
 			resetChatState()
 			setThreadFolderPickerSessionId(null)
 			if (projectPath !== path) {
+				if (!isGeneralChatProject(path)) setLastProjectPath(path)
 				const status = await openProject(path)
 				syncStatus(status)
 			}

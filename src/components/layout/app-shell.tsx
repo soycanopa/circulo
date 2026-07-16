@@ -7,10 +7,9 @@ import { ChatView } from "@/components/chat/chat-view"
 import { SettingsSidebar } from "@/components/settings/settings-sidebar"
 import { SettingsTitle } from "@/components/settings/settings-title"
 import { SettingsView } from "@/components/settings/settings-view"
+import { bootstrapAppStatus, setLastProjectPath } from "@/lib/app-bootstrap"
 import { addRecentProject } from "@/lib/recent-projects"
-import { getChatsProjectPath } from "@/lib/app-settings"
-import { isGeneralChatProject } from "@/lib/project-display"
-import { closeProject, getProjectStatus, openProject } from "@/lib/tauri"
+import { closeProject, openProject } from "@/lib/tauri"
 import {
 	activeSessionIdAtom,
 	agentCapabilitiesAtom,
@@ -63,17 +62,7 @@ export function AppShell() {
 
 		async function bootstrap() {
 			try {
-				let status = await getProjectStatus()
-				if (!status.connected) {
-					status = await openProject(getChatsProjectPath())
-				}
-				if (
-					status.connected &&
-					status.sessions.length === 0 &&
-					isGeneralChatProject(status.projectPath)
-				) {
-					status = await closeProject()
-				}
+				const status = await bootstrapAppStatus()
 				if (cancelled) return
 				setConnected(status.connected)
 				setProjectPath(status.projectPath)
@@ -95,6 +84,7 @@ export function AppShell() {
 		setLoading(true)
 		try {
 			addRecentProject(path)
+			setLastProjectPath(path)
 			const status = await openProject(path)
 			setConnected(status.connected)
 			setProjectPath(status.projectPath)
@@ -110,6 +100,7 @@ export function AppShell() {
 		setLoading(true)
 		try {
 			const status = await closeProject()
+			setLastProjectPath(null)
 			setConnected(status.connected)
 			setProjectPath(status.projectPath)
 			setSessions(status.sessions)
