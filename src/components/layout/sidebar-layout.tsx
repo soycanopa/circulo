@@ -1,3 +1,4 @@
+import { useSetAtom } from "jotai"
 import {
 	createContext,
 	useCallback,
@@ -12,13 +13,16 @@ import type { LucideIcon } from "lucide-react"
 
 import { AppBar } from "@/components/layout/app-bar"
 import { SidebarResizeHandle } from "@/components/layout/sidebar-resize-handle"
+import { TerminalToggleButton } from "@/components/layout/terminal-toggle-button"
 import { WindowControls } from "@/components/layout/window-controls"
 import { WindowDragStrip } from "@/components/layout/window-drag-strip"
 import { windowDragRegionProps, windowNoDragProps } from "@/hooks/use-window-drag"
 import { useSessions } from "@/hooks/use-sessions"
 
 import { getSidebarWidth } from "@/lib/preferences"
+import { terminalOpenAtom } from "@/stores/atoms"
 import {
+	APP_BAR_CONTROL_PADDING_TOP,
 	APP_BAR_HEIGHT,
 	APP_BAR_TITLE_GAP,
 	APP_BAR_TITLE_INSET_LEFT,
@@ -94,6 +98,24 @@ function LayoutWindowControls({
 	)
 }
 
+function TerminalShortcutListener() {
+	const setTerminalOpen = useSetAtom(terminalOpenAtom)
+
+	useEffect(() => {
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "j" && (event.metaKey || event.ctrlKey)) {
+				event.preventDefault()
+				setTerminalOpen((open) => !open)
+			}
+		}
+
+		window.addEventListener("keydown", handleKeyDown)
+		return () => window.removeEventListener("keydown", handleKeyDown)
+	}, [setTerminalOpen])
+
+	return null
+}
+
 export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps) {
 	const [open, setOpen] = useState(true)
 	const [sidebarWidth, setSidebarWidth] = useState(getSidebarWidth)
@@ -135,6 +157,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 				}
 			>
 				<NarrowWindowCollapser open={open} setOpen={setOpen} />
+				<TerminalShortcutListener />
 
 				<aside
 					data-slot="sidebar"
@@ -200,6 +223,18 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 						</div>
 					</div>
 				) : null}
+				<div
+					data-slot="app-bar-actions-layer"
+					className="pointer-events-none absolute z-[52] flex items-start justify-end"
+					style={{
+						top: 0,
+						right: SHELL_INSET + 12,
+						height: APP_BAR_HEIGHT,
+						paddingTop: APP_BAR_CONTROL_PADDING_TOP,
+					}}
+				>
+					<TerminalToggleButton />
+				</div>
 				<LayoutWindowControls open={open} onToggleSidebar={toggleSidebar} />
 			</div>
 		</SidebarContext.Provider>

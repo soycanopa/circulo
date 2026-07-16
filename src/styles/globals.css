@@ -315,6 +315,15 @@ html[data-tauri] [data-slot="sidebar"] {
 	background: rgba(255, 255, 255, 0.1);
 	color: var(--foreground);
 }
+
+[data-slot="terminal-panel"] .xterm {
+	padding: 0.25rem 0.5rem 0.5rem;
+}
+
+[data-slot="terminal-panel"] .xterm-viewport {
+	scrollbar-width: thin;
+	scrollbar-color: color-mix(in srgb, var(--muted-foreground) 42%, transparent) transparent;
+}
 .loading-shimmer { color: var(--muted-foreground); animation: pulse 1.5s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
 

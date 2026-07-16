@@ -1,10 +1,11 @@
 import { useAtomValue } from "jotai"
 import { ChatInput } from "@/components/chat/chat-input"
 import { MessageList } from "@/components/chat/message-list"
+import { TerminalPanel } from "@/components/terminal/terminal-panel"
 
 import { useAcpSession } from "@/hooks/use-acp-session"
 import { useSessions } from "@/hooks/use-sessions"
-import { errorMessageAtom } from "@/stores/atoms"
+import { errorMessageAtom, terminalOpenAtom } from "@/stores/atoms"
 
 interface ChatViewProps {
 	connected: boolean
@@ -15,6 +16,7 @@ export function ChatView({ connected, onOpenProject }: ChatViewProps) {
 	const { openProjectForNewThread } = useSessions()
 	const { messages, sessionStatus } = useAcpSession()
 	const errorMessage = useAtomValue(errorMessageAtom)
+	const terminalOpen = useAtomValue(terminalOpenAtom)
 
 	return (
 		<div className="flex h-full min-h-0 flex-col">
@@ -31,6 +33,7 @@ export function ChatView({ connected, onOpenProject }: ChatViewProps) {
 				onOpenProject={onOpenProject}
 				onOpenProjectForNewThread={openProjectForNewThread}
 			/>
+			{terminalOpen ? <TerminalPanel /> : null}
 		</div>
 	)
 }

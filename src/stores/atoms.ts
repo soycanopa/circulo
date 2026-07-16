@@ -74,3 +74,9 @@ export const planOverlayAtom = atom<PlanOverlayState | null>(null)
 
 export const settingsOpenAtom = atom(false)
 export const appSettingsAtom = atom<AppSettings>(getAppSettings())
+
+/** Bottom terminal drawer below the chat composer. */
+export const terminalOpenAtom = atom(false)
+
+/** Resizable height (px) for the terminal drawer. */
+export const terminalHeightAtom = atom(240)
