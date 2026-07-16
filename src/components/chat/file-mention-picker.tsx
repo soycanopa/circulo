@@ -4,7 +4,6 @@ import {
 	FileImage,
 	FileJson2,
 	FileText,
-	Folder,
 	Loader2,
 	type LucideIcon,
 } from "lucide-react"
@@ -14,6 +13,7 @@ import {
 	CommandGroup,
 	CommandItem,
 	CommandList,
+	CommandShortcut,
 } from "@/components/ui/command"
 
 interface FileMentionPickerProps {
@@ -83,21 +83,25 @@ export function FileMentionPicker({
 }: FileMentionPickerProps) {
 	const emptyMessage = !hasProject
 		? "Abre un proyecto para buscar archivos."
-		: isLoading
-			? null
-			: query.trim()
-				? "No hay archivos en el proyecto que coincidan."
-				: "Escribe para filtrar archivos del proyecto."
+		: query.trim()
+			? "No hay archivos en el proyecto que coincidan."
+			: "Escribe para filtrar archivos del proyecto."
 
 	return (
-		<ComposerCommandMenu value={selectedValue} onValueChange={onValueChange}>
+		<ComposerCommandMenu
+			value={selectedValue}
+			onValueChange={onValueChange}
+			query={query ? `@${query}` : "@"}
+			placeholder="Buscar archivos del proyecto…"
+		>
 			<CommandList>
 				{isLoading ? (
-					<div className="flex items-center gap-2 px-3 py-4 text-sm text-muted-foreground">
+					<div className="flex items-center gap-2 px-3 py-6 text-sm text-muted-foreground">
 						<Loader2 className="size-4 animate-spin" />
 						Buscando archivos…
 					</div>
 				) : null}
+				{!isLoading ? <CommandEmpty>{emptyMessage}</CommandEmpty> : null}
 				{!isLoading && files.length > 0 ? (
 					<CommandGroup heading="Archivos del proyecto">
 						{files.map((path) => {
@@ -108,25 +112,20 @@ export function FileMentionPicker({
 									key={path}
 									value={path}
 									onSelect={() => onSelect(path)}
+									title={path}
 								>
-									<Icon className="size-4 shrink-0 text-muted-foreground" />
-									<span className="min-w-0 flex-1">
-										<span className="block truncate font-medium text-foreground">
-											{fileName}
-										</span>
-										{directory ? (
-											<span className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
-												<Folder className="size-3 shrink-0" />
-												{directory}
-											</span>
-										) : null}
-									</span>
+									<Icon />
+									<span className="truncate">{fileName}</span>
+									{directory ? (
+										<CommandShortcut className="max-w-[45%] tracking-normal">
+											{directory}
+										</CommandShortcut>
+									) : null}
 								</CommandItem>
 							)
 						})}
 					</CommandGroup>
 				) : null}
-				{!isLoading && emptyMessage ? <CommandEmpty>{emptyMessage}</CommandEmpty> : null}
 			</CommandList>
 		</ComposerCommandMenu>
 	)

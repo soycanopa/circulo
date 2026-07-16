@@ -6,6 +6,8 @@ import {
 	CommandGroup,
 	CommandItem,
 	CommandList,
+	CommandSeparator,
+	CommandShortcut,
 } from "@/components/ui/command"
 import { filterSlashEntries, type SlashEntry } from "@/lib/slash-prompt"
 
@@ -44,19 +46,11 @@ function SlashEntryItem({
 		<CommandItem
 			value={slashEntryKey(entry)}
 			onSelect={() => onSelect(entry)}
+			title={entry.description ?? undefined}
 		>
-			<Icon className="size-4 shrink-0 text-muted-foreground" />
-			<span className="min-w-0 flex-1">
-				<span className="font-medium text-foreground">/{entry.name}</span>
-				{entry.description ? (
-					<span className="mt-0.5 block truncate text-xs text-muted-foreground">
-						{entry.description}
-					</span>
-				) : null}
-				<span className="mt-0.5 block text-[10px] uppercase text-muted-foreground/80">
-					{entry.scope}
-				</span>
-			</span>
+			<Icon />
+			<span>/{entry.name}</span>
+			<CommandShortcut>{entry.scope}</CommandShortcut>
 		</CommandItem>
 	)
 }
@@ -79,9 +73,19 @@ export function SlashCommandPicker({
 	)
 	const mcps = useMemo(() => filtered.filter((entry) => entry.kind === "mcp"), [filtered])
 
+	const showSeparatorBeforeSkills = commands.length > 0 && skills.length > 0
+	const showSeparatorBeforeMcp =
+		(commands.length > 0 || skills.length > 0) && mcps.length > 0
+
 	return (
-		<ComposerCommandMenu value={selectedValue} onValueChange={onValueChange}>
+		<ComposerCommandMenu
+			value={selectedValue}
+			onValueChange={onValueChange}
+			query={query ? `/${query}` : "/"}
+			placeholder="Buscar commands, skills o MCP…"
+		>
 			<CommandList>
+				<CommandEmpty>No hay commands, skills ni MCPs que coincidan.</CommandEmpty>
 				{commands.length > 0 ? (
 					<CommandGroup heading="Commands">
 						{commands.map((entry) => (
@@ -89,6 +93,7 @@ export function SlashCommandPicker({
 						))}
 					</CommandGroup>
 				) : null}
+				{showSeparatorBeforeSkills ? <CommandSeparator /> : null}
 				{skills.length > 0 ? (
 					<CommandGroup heading="Skills">
 						{skills.map((entry) => (
@@ -96,15 +101,13 @@ export function SlashCommandPicker({
 						))}
 					</CommandGroup>
 				) : null}
+				{showSeparatorBeforeMcp ? <CommandSeparator /> : null}
 				{mcps.length > 0 ? (
 					<CommandGroup heading="MCP">
 						{mcps.map((entry) => (
 							<SlashEntryItem key={slashEntryKey(entry)} entry={entry} onSelect={onSelect} />
 						))}
 					</CommandGroup>
-				) : null}
-				{filtered.length === 0 ? (
-					<CommandEmpty>No hay commands, skills ni MCPs que coincidan.</CommandEmpty>
 				) : null}
 			</CommandList>
 		</ComposerCommandMenu>
