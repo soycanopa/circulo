@@ -21,6 +21,7 @@
     "@tauri-apps/plugin-opener": "^2",
     "ansi-to-react": "^6.2.6",
     "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
     "jotai": "^2.20.2",
     "lucide-react": "^1.24.0",
     "motion": "^12.42.2",

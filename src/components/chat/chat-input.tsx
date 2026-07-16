@@ -3,8 +3,12 @@ import { AtSign, CornerDownLeft, Loader2 } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { AgentModeSelector } from "@/components/chat/agent-mode-selector"
 import { ContextWindowMeter } from "@/components/chat/context-window-meter"
+import { FileMentionPicker } from "@/components/chat/file-mention-picker"
 import { ModelSelector } from "@/components/chat/model-selector"
-import { SlashCommandPicker } from "@/components/chat/slash-command-picker"
+import {
+	SlashCommandPicker,
+	slashEntryKey,
+} from "@/components/chat/slash-command-picker"
 import { ThinkingSelector } from "@/components/chat/thinking-selector"
 import { ThreadFolderPicker } from "@/components/chat/thread-folder-picker"
 import { useSlashEntries } from "@/hooks/use-slash-entries"
@@ -63,6 +67,21 @@ function extractMentionPaths(value: string): string[] {
 	return [...value.matchAll(/@([^\s@]+)/g)].map((match) => match[1])
 }
 
+function moveSelection<T>(
+	items: T[],
+	currentValue: string,
+	direction: 1 | -1,
+	getValue: (item: T) => string,
+) {
+	if (items.length === 0) return ""
+	const currentIndex = items.findIndex((item) => getValue(item) === currentValue)
+	const nextIndex =
+		currentIndex < 0
+			? 0
+			: (currentIndex + direction + items.length) % items.length
+	return getValue(items[nextIndex])
+}
+
 export function ChatInput({
 	disabled,
 	sessionStatus,
@@ -103,7 +122,9 @@ export function ChatInput({
 	const [mentionQuery, setMentionQuery] = useState<string | null>(null)
 	const [slashQuery, setSlashQuery] = useState<string | null>(null)
 	const [suggestions, setSuggestions] = useState<string[]>([])
-	const [slashSelectedIndex, setSlashSelectedIndex] = useState(0)
+	const [isSearchingFiles, setIsSearchingFiles] = useState(false)
+	const [mentionSelectedValue, setMentionSelectedValue] = useState("")
+	const [slashSelectedValue, setSlashSelectedValue] = useState("")
 	const [caret, setCaret] = useState(0)
 	const { entries: slashEntries, commands, skills, mcpServers } =
 		useSlashEntries(projectPath)
@@ -120,23 +141,35 @@ export function ChatInput({
 	useEffect(() => {
 		if (mentionQuery === null) {
 			setSuggestions([])
+			setIsSearchingFiles(false)
 			return
 		}
+		setIsSearchingFiles(true)
 		const timeout = setTimeout(() => {
-			searchFiles(mentionQuery).then(setSuggestions).catch(() => setSuggestions([]))
+			searchFiles(mentionQuery)
+				.then((results) => {
+					setSuggestions(results)
+					setMentionSelectedValue(results[0] ?? "")
+				})
+				.catch(() => {
+					setSuggestions([])
+					setMentionSelectedValue("")
+				})
+				.finally(() => setIsSearchingFiles(false))
 		}, 120)
 		return () => clearTimeout(timeout)
 	}, [mentionQuery])
 
-	const visibleSuggestions = useMemo(() => suggestions.slice(0, 8), [suggestions])
 	const visibleSlashEntries = useMemo(
 		() => (slashQuery === null ? [] : filterSlashEntries(slashEntries, slashQuery)),
 		[slashEntries, slashQuery],
 	)
 
 	useEffect(() => {
-		setSlashSelectedIndex(0)
-	}, [slashQuery, visibleSlashEntries.length])
+		setSlashSelectedValue(
+			visibleSlashEntries[0] ? slashEntryKey(visibleSlashEntries[0]) : "",
+		)
+	}, [slashQuery, visibleSlashEntries])
 
 	function updateMentionsFromValue(nextValue: string) {
 		const paths = extractMentionPaths(nextValue)
@@ -172,6 +205,7 @@ export function ChatInput({
 		setCaret(replaced.length)
 		updateMentionsFromValue(nextValue)
 		setMentionQuery(null)
+		textareaRef.current?.focus()
 	}
 
 	function insertSlash(entry: SlashEntry) {
@@ -185,6 +219,69 @@ export function ChatInput({
 		setSlashQuery(null)
 		setMentionQuery(null)
 		textareaRef.current?.focus()
+	}
+
+	function handleComposerPickerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+		if (slashQuery !== null) {
+			if (event.key === "ArrowDown") {
+				event.preventDefault()
+				setSlashSelectedValue((current) =>
+					moveSelection(visibleSlashEntries, current, 1, slashEntryKey),
+				)
+				return true
+			}
+			if (event.key === "ArrowUp") {
+				event.preventDefault()
+				setSlashSelectedValue((current) =>
+					moveSelection(visibleSlashEntries, current, -1, slashEntryKey),
+				)
+				return true
+			}
+			if (event.key === "Enter" && !event.shiftKey) {
+				event.preventDefault()
+				const entry = visibleSlashEntries.find(
+					(item) => slashEntryKey(item) === slashSelectedValue,
+				)
+				if (entry) insertSlash(entry)
+				return true
+			}
+			if (event.key === "Escape") {
+				event.preventDefault()
+				setSlashQuery(null)
+				return true
+			}
+			return false
+		}
+
+		if (mentionQuery !== null) {
+			if (event.key === "ArrowDown") {
+				event.preventDefault()
+				setMentionSelectedValue((current) =>
+					moveSelection(suggestions, current, 1, (path) => path),
+				)
+				return true
+			}
+			if (event.key === "ArrowUp") {
+				event.preventDefault()
+				setMentionSelectedValue((current) =>
+					moveSelection(suggestions, current, -1, (path) => path),
+				)
+				return true
+			}
+			if (event.key === "Enter" && !event.shiftKey && mentionSelectedValue) {
+				event.preventDefault()
+				insertMention(mentionSelectedValue)
+				return true
+			}
+			if (event.key === "Escape") {
+				event.preventDefault()
+				setMentionQuery(null)
+				return true
+			}
+			return false
+		}
+
+		return false
 	}
 
 	async function handleSubmit(event?: React.FormEvent) {
@@ -242,27 +339,24 @@ export function ChatInput({
 	return (
 		<div className="relative z-10 shrink-0 overflow-visible px-4 pb-4 pt-2">
 			<div className="relative mx-auto max-w-3xl">
-				{visibleSuggestions.length > 0 && mentionQuery !== null ? (
-					<div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-lg border border-popover-border bg-popover shadow-lg">
-						{visibleSuggestions.map((path) => (
-							<button
-								key={path}
-								type="button"
-								className="block w-full px-3 py-2 text-left text-sm hover:bg-accent"
-								onClick={() => insertMention(path)}
-							>
-								{path}
-							</button>
-						))}
-					</div>
+				{mentionQuery !== null ? (
+					<FileMentionPicker
+						query={mentionQuery}
+						files={suggestions}
+						isLoading={isSearchingFiles}
+						hasProject={Boolean(projectPath)}
+						selectedValue={mentionSelectedValue}
+						onSelect={insertMention}
+						onValueChange={setMentionSelectedValue}
+					/>
 				) : null}
 				{slashQuery !== null ? (
 					<SlashCommandPicker
 						query={slashQuery}
 						entries={slashEntries}
-						selectedIndex={slashSelectedIndex}
+						selectedValue={slashSelectedValue}
 						onSelect={insertSlash}
-						onHover={setSlashSelectedIndex}
+						onValueChange={setSlashSelectedValue}
 					/>
 				) : null}
 
@@ -316,35 +410,7 @@ export function ChatInput({
 										setCaret((event.target as HTMLTextAreaElement).selectionStart ?? 0)
 									}
 									onKeyDown={(event) => {
-										if (slashQuery !== null && visibleSlashEntries.length > 0) {
-											if (event.key === "ArrowDown") {
-												event.preventDefault()
-												setSlashSelectedIndex(
-													(current) => (current + 1) % visibleSlashEntries.length,
-												)
-												return
-											}
-											if (event.key === "ArrowUp") {
-												event.preventDefault()
-												setSlashSelectedIndex(
-													(current) =>
-														(current - 1 + visibleSlashEntries.length) %
-														visibleSlashEntries.length,
-												)
-												return
-											}
-											if (event.key === "Enter" && !event.shiftKey) {
-												event.preventDefault()
-												const entry = visibleSlashEntries[slashSelectedIndex]
-												if (entry) insertSlash(entry)
-												return
-											}
-											if (event.key === "Escape") {
-												event.preventDefault()
-												setSlashQuery(null)
-												return
-											}
-										}
+										if (handleComposerPickerKeyDown(event)) return
 										if (event.key === "Enter" && !event.shiftKey) {
 											event.preventDefault()
 											void handleSubmit()
