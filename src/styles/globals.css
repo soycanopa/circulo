@@ -301,6 +301,20 @@ html[data-tauri] [data-slot="sidebar"] {
 [data-slot="chat-input-textarea"].scrollbar-thin::-webkit-scrollbar-thumb:hover {
 	background-color: color-mix(in srgb, var(--muted-foreground) 32%, transparent);
 }
+
+[data-slot="command"] {
+	background: var(--card);
+	color: var(--card-foreground);
+}
+
+[data-slot="command-input-wrapper"] {
+	border-color: var(--border);
+}
+
+[data-slot="command-item"][data-selected="true"] {
+	background: rgba(255, 255, 255, 0.1);
+	color: var(--foreground);
+}
 .loading-shimmer { color: var(--muted-foreground); animation: pulse 1.5s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
 

@@ -21,18 +21,13 @@ export function Command({
 
 export function CommandInput({
 	className,
-	wrapperClassName,
 	...props
-}: ComponentProps<typeof CommandPrimitive.Input> & {
-	wrapperClassName?: string
-}) {
+}: ComponentProps<typeof CommandPrimitive.Input>) {
 	return (
 		<div
 			data-slot="command-input-wrapper"
-			className={cn(
-				"flex h-10 items-center gap-2 border-b border-border px-3",
-				wrapperClassName,
-			)}
+			className="flex h-9 items-center gap-2 border-b border-border px-3"
+			cmdk-input-wrapper=""
 		>
 			<Search className="size-4 shrink-0 opacity-50" />
 			<CommandPrimitive.Input
@@ -55,7 +50,7 @@ export function CommandList({
 		<CommandPrimitive.List
 			data-slot="command-list"
 			className={cn(
-				"max-h-[300px] scroll-py-1 overflow-x-hidden overflow-y-auto scrollbar-thin",
+				"max-h-[300px] scroll-py-1 overflow-x-hidden overflow-y-auto",
 				className,
 			)}
 			{...props}
@@ -64,13 +59,12 @@ export function CommandList({
 }
 
 export function CommandEmpty({
-	className,
 	...props
 }: ComponentProps<typeof CommandPrimitive.Empty>) {
 	return (
 		<CommandPrimitive.Empty
 			data-slot="command-empty"
-			className={cn("py-6 text-center text-sm text-muted-foreground", className)}
+			className="py-6 text-center text-sm"
 			{...props}
 		/>
 	)
@@ -113,7 +107,7 @@ export function CommandItem({
 		<CommandPrimitive.Item
 			data-slot="command-item"
 			className={cn(
-				"relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
+				"relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-[rgba(255,255,255,0.1)] data-[selected=true]:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
 				className,
 			)}
 			{...props}
@@ -129,7 +123,7 @@ export function CommandShortcut({
 		<span
 			data-slot="command-shortcut"
 			className={cn(
-				"ml-auto truncate pl-2 text-xs tracking-widest text-muted-foreground",
+				"ml-auto text-xs tracking-widest text-muted-foreground",
 				className,
 			)}
 			{...props}

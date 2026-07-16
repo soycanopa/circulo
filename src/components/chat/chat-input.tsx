@@ -196,6 +196,16 @@ export function ChatInput({
 		setSlashQuery(null)
 	}
 
+	function updateActivePickerQuery(nextQuery: string, trigger: "@" | "/") {
+		const beforeCaret = value.slice(0, caret)
+		const afterCaret = value.slice(caret)
+		const pattern = trigger === "@" ? /@([^\s@]*)$/ : /\/([^\s/]*)$/
+		const replaced = beforeCaret.replace(pattern, `${trigger}${nextQuery}`)
+		const nextValue = `${replaced}${afterCaret}`
+		const nextCaret = replaced.length
+		handleChange(nextValue, nextCaret)
+	}
+
 	function insertMention(path: string) {
 		const beforeCaret = value.slice(0, caret)
 		const afterCaret = value.slice(caret)
@@ -348,6 +358,7 @@ export function ChatInput({
 						selectedValue={mentionSelectedValue}
 						onSelect={insertMention}
 						onValueChange={setMentionSelectedValue}
+						onQueryChange={(nextQuery) => updateActivePickerQuery(nextQuery, "@")}
 					/>
 				) : null}
 				{slashQuery !== null ? (
@@ -357,6 +368,7 @@ export function ChatInput({
 						selectedValue={slashSelectedValue}
 						onSelect={insertSlash}
 						onValueChange={setSlashSelectedValue}
+						onQueryChange={(nextQuery) => updateActivePickerQuery(nextQuery, "/")}
 					/>
 				) : null}
 

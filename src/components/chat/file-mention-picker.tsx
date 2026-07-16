@@ -9,8 +9,10 @@ import {
 } from "lucide-react"
 import { ComposerCommandMenu } from "@/components/chat/composer-command-menu"
 import {
+	Command,
 	CommandEmpty,
 	CommandGroup,
+	CommandInput,
 	CommandItem,
 	CommandList,
 	CommandShortcut,
@@ -24,6 +26,7 @@ interface FileMentionPickerProps {
 	selectedValue: string
 	onSelect: (path: string) => void
 	onValueChange: (value: string) => void
+	onQueryChange: (query: string) => void
 }
 
 function fileIcon(path: string): LucideIcon {
@@ -80,6 +83,7 @@ export function FileMentionPicker({
 	selectedValue,
 	onSelect,
 	onValueChange,
+	onQueryChange,
 }: FileMentionPickerProps) {
 	const emptyMessage = !hasProject
 		? "Abre un proyecto para buscar archivos."
@@ -88,45 +92,54 @@ export function FileMentionPicker({
 			: "Escribe para filtrar archivos del proyecto."
 
 	return (
-		<ComposerCommandMenu
-			value={selectedValue}
-			onValueChange={onValueChange}
-			query={query ? `@${query}` : "@"}
-			placeholder="Buscar archivos del proyecto…"
-		>
-			<CommandList>
-				{isLoading ? (
-					<div className="flex items-center gap-2 px-3 py-6 text-sm text-muted-foreground">
-						<Loader2 className="size-4 animate-spin" />
-						Buscando archivos…
-					</div>
-				) : null}
-				{!isLoading ? <CommandEmpty>{emptyMessage}</CommandEmpty> : null}
-				{!isLoading && files.length > 0 ? (
-					<CommandGroup heading="Archivos del proyecto">
-						{files.map((path) => {
-							const Icon = fileIcon(path)
-							const { fileName, directory } = formatFileLabel(path)
-							return (
-								<CommandItem
-									key={path}
-									value={path}
-									onSelect={() => onSelect(path)}
-									title={path}
-								>
-									<Icon />
-									<span className="truncate">{fileName}</span>
-									{directory ? (
-										<CommandShortcut className="max-w-[45%] tracking-normal">
-											{directory}
-										</CommandShortcut>
-									) : null}
-								</CommandItem>
-							)
-						})}
-					</CommandGroup>
-				) : null}
-			</CommandList>
+		<ComposerCommandMenu>
+			<Command
+				className="w-full rounded-lg border"
+				shouldFilter={false}
+				loop
+				value={selectedValue}
+				onValueChange={onValueChange}
+			>
+				<CommandInput
+					placeholder="Search project files..."
+					value={query}
+					onValueChange={onQueryChange}
+				/>
+				<CommandList>
+					{isLoading ? (
+						<div className="flex items-center gap-2 px-3 py-6 text-sm text-muted-foreground">
+							<Loader2 className="size-4 animate-spin" />
+							Buscando archivos…
+						</div>
+					) : (
+						<CommandEmpty>{emptyMessage}</CommandEmpty>
+					)}
+					{!isLoading && files.length > 0 ? (
+						<CommandGroup heading="Project files">
+							{files.map((path) => {
+								const Icon = fileIcon(path)
+								const { fileName, directory } = formatFileLabel(path)
+								return (
+									<CommandItem
+										key={path}
+										value={path}
+										onSelect={() => onSelect(path)}
+										title={path}
+									>
+										<Icon />
+										<span>{fileName}</span>
+										{directory ? (
+											<CommandShortcut className="max-w-[45%] truncate tracking-normal">
+												{directory}
+											</CommandShortcut>
+										) : null}
+									</CommandItem>
+								)
+							})}
+						</CommandGroup>
+					) : null}
+				</CommandList>
+			</Command>
 		</ComposerCommandMenu>
 	)
 }
