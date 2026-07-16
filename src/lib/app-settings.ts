@@ -78,11 +78,40 @@ export function getShowPinnedInSidebar(): boolean {
 export const SETTINGS_SECTIONS: {
 	id: SettingsSection
 	label: string
+	description: string
 }[] = [
-	{ id: "general", label: "General" },
-	{ id: "profile", label: "Profile" },
-	{ id: "shortcuts", label: "Shortcuts" },
-	{ id: "skills", label: "Skills" },
-	{ id: "mcp", label: "MCP" },
-	{ id: "about", label: "About" },
+	{
+		id: "general",
+		label: "General",
+		description: "Defaults, sidebar layout, and chats folder.",
+	},
+	{
+		id: "profile",
+		label: "Profile",
+		description: "Context usage and session preferences.",
+	},
+	{
+		id: "shortcuts",
+		label: "Shortcuts",
+		description: "Keyboard shortcuts for Circulo.",
+	},
+	{
+		id: "skills",
+		label: "Skills",
+		description: "OpenCode skills available to the agent.",
+	},
+	{
+		id: "mcp",
+		label: "MCP",
+		description: "Model Context Protocol server toggles.",
+	},
+	{
+		id: "about",
+		label: "About",
+		description: "Version, license, and runtime details.",
+	},
 ]
+
+export function getSettingsSectionMeta(section: SettingsSection) {
+	return SETTINGS_SECTIONS.find((entry) => entry.id === section) ?? SETTINGS_SECTIONS[0]!
+}

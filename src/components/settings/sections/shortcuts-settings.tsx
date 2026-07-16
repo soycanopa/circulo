@@ -2,7 +2,7 @@ import { SettingsGroup, SettingsRow, SettingsSectionHeader } from "@/components/
 
 const SHORTCUTS = [
 	{ keys: "⌘ B", description: "Mostrar u ocultar sidebar", windowsKeys: "Ctrl B" },
-	{ keys: "Esc", description: "Cerrar overlays y settings" },
+	{ keys: "Esc", description: "Cerrar overlays o volver al chat desde settings" },
 	{ keys: "Enter", description: "Enviar mensaje en el composer" },
 	{ keys: "Shift Enter", description: "Nueva línea en el composer" },
 ] as const

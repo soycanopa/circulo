@@ -4,6 +4,9 @@ import { SessionTitle } from "@/components/chat/session-title"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { SidebarLayout } from "@/components/layout/sidebar-layout"
 import { ChatView } from "@/components/chat/chat-view"
+import { SettingsSidebar } from "@/components/settings/settings-sidebar"
+import { SettingsTitle } from "@/components/settings/settings-title"
+import { SettingsView } from "@/components/settings/settings-view"
 import { addRecentProject } from "@/lib/recent-projects"
 import { getChatsProjectPath } from "@/lib/app-settings"
 import { isGeneralChatProject } from "@/lib/project-display"
@@ -14,6 +17,7 @@ import {
 	projectPathAtom,
 	sessionStatusAtom,
 	sessionsAtom,
+	settingsOpenAtom,
 } from "@/stores/atoms"
 
 export function AppShell() {
@@ -22,8 +26,23 @@ export function AppShell() {
 	const setActiveSessionId = useSetAtom(activeSessionIdAtom)
 	const setCapabilities = useSetAtom(agentCapabilitiesAtom)
 	const [sessionStatus] = useAtom(sessionStatusAtom)
+	const [settingsOpen, setSettingsOpen] = useAtom(settingsOpenAtom)
 	const [connected, setConnected] = useState(false)
 	const [loading, setLoading] = useState(false)
+
+	useEffect(() => {
+		if (!settingsOpen) return
+
+		function onKeyDown(event: KeyboardEvent) {
+			if (event.key === "Escape") {
+				event.preventDefault()
+				setSettingsOpen(false)
+			}
+		}
+
+		window.addEventListener("keydown", onKeyDown)
+		return () => window.removeEventListener("keydown", onKeyDown)
+	}, [settingsOpen, setSettingsOpen])
 
 	useEffect(() => {
 		setConnected(sessionStatus !== "disconnected")
@@ -93,19 +112,27 @@ export function AppShell() {
 
 	return (
 		<SidebarLayout
-			appBar={<SessionTitle />}
+			appBar={settingsOpen ? <SettingsTitle /> : <SessionTitle />}
 			sidebar={
-				<AppSidebar
-					connected={connected}
-					projectPath={projectPath}
-					sessionStatus={sessionStatus}
-					onOpenProject={handleOpenProject}
-					onCloseProject={handleCloseProject}
-					loading={loading}
-				/>
+				settingsOpen ? (
+					<SettingsSidebar />
+				) : (
+					<AppSidebar
+						connected={connected}
+						projectPath={projectPath}
+						sessionStatus={sessionStatus}
+						onOpenProject={handleOpenProject}
+						onCloseProject={handleCloseProject}
+						loading={loading}
+					/>
+				)
 			}
 		>
-			<ChatView connected={connected} onOpenProject={handleOpenProject} />
+			{settingsOpen ? (
+				<SettingsView />
+			) : (
+				<ChatView connected={connected} onOpenProject={handleOpenProject} />
+			)}
 		</SidebarLayout>
 	)
 }

@@ -1,5 +1,5 @@
 import { atom } from "jotai"
-import { getAppSettings, type AppSettings } from "@/lib/app-settings"
+import { getAppSettings, type AppSettings, type SettingsSection } from "@/lib/app-settings"
 import type { ContextWindowSnapshot } from "@/lib/context-window"
 import type {
 	AgentCapabilities,
@@ -73,6 +73,7 @@ export interface PlanOverlayState {
 export const planOverlayAtom = atom<PlanOverlayState | null>(null)
 
 export const settingsOpenAtom = atom(false)
+export const settingsSectionAtom = atom<SettingsSection>("general")
 export const appSettingsAtom = atom<AppSettings>(getAppSettings())
 
 /** Bottom terminal drawer below the chat composer. */
