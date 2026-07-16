@@ -23,6 +23,12 @@ export const APP_BAR_TITLE_INSET_LEFT_COLLAPSED = 4
 /** Gap between window controls and session title when sidebar is collapsed. */
 export const APP_BAR_TITLE_GAP = 12
 
+/** Right inset for app bar action buttons inside the main column. */
+export const APP_BAR_ACTIONS_INSET_RIGHT = 12
+
+/** Left inset for session title inside the main column when sidebar is expanded. */
+export const APP_BAR_TITLE_INSET_FROM_MAIN = 16 + APP_BAR_TITLE_INSET_LEFT
+
 const isMac =
 	typeof navigator !== "undefined" &&
 	(/Mac|iPhone|iPad|iPod/.test(navigator.platform) ||

@@ -127,10 +127,10 @@ html[data-tauri] [data-slot="sidebar-wrapper"] {
 html[data-tauri] [data-slot="sidebar"] {
 	background: transparent;
 }
-[data-slot="session-title-layer"] {
-	transition: left 320ms cubic-bezier(0.32, 0.72, 0, 1);
+[data-slot="app-bar-chrome"] {
+	transition: padding-left 320ms cubic-bezier(0.32, 0.72, 0, 1);
 }
-[data-slot="session-title-layer"][data-resizing] {
+[data-slot="app-bar-chrome"][data-resizing] {
 	transition: none;
 }
 [data-slot="sidebar-footer"] [data-slot="sidebar-menu-button"] {

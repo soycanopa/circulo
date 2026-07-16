@@ -10,7 +10,7 @@ import {
 } from "react"
 import type { LucideIcon } from "lucide-react"
 
-import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
 import { DiffReviewPanel } from "@/components/diff/diff-review-panel"
 import { AppBar } from "@/components/layout/app-bar"
 import { DiffToggleButton } from "@/components/layout/diff-toggle-button"
@@ -23,17 +23,16 @@ import { useDiffPanelAutoOpen } from "@/hooks/use-diff-panel-auto-open"
 import { windowDragRegionProps, windowNoDragProps } from "@/hooks/use-window-drag"
 import { useSessions } from "@/hooks/use-sessions"
 
-import { panelEase } from "@/lib/motion-presets"
+import { diffPanelSpring } from "@/lib/motion-presets"
 import { getRightPanelWidth, getSidebarWidth } from "@/lib/preferences"
 import { diffPanelOpenAtom, terminalOpenAtom } from "@/stores/atoms"
 import { useAtomValue, useSetAtom } from "jotai"
 import {
-	APP_BAR_CONTROL_PADDING_TOP,
+	APP_BAR_ACTIONS_INSET_RIGHT,
 	APP_BAR_HEIGHT,
 	APP_BAR_TITLE_GAP,
-	APP_BAR_TITLE_INSET_LEFT,
+	APP_BAR_TITLE_INSET_FROM_MAIN,
 	APP_BAR_TITLE_INSET_LEFT_COLLAPSED,
-	APP_BAR_TITLE_PADDING_TOP,
 	SHELL_INSET,
 	SIDEBAR_COLLAPSE_THRESHOLD,
 	WINDOW_CONTROLS_END,
@@ -134,6 +133,47 @@ function DiffPanelAutoOpen() {
 	return null
 }
 
+function MainAppBarChrome({
+	appBar,
+	titleInsetLeft,
+	isResizing,
+}: {
+	appBar?: ReactNode
+	titleInsetLeft: number
+	isResizing: boolean
+}) {
+	return (
+		<div
+			data-slot="app-bar-chrome"
+			data-resizing={isResizing ? "" : undefined}
+			className="pointer-events-none absolute inset-x-0 top-0 z-[52] flex items-center"
+			style={{
+				height: APP_BAR_HEIGHT,
+				paddingLeft: titleInsetLeft,
+				paddingRight: APP_BAR_ACTIONS_INSET_RIGHT,
+			}}
+		>
+			{appBar ? (
+				<div
+					{...windowNoDragProps()}
+					className="pointer-events-auto flex min-w-0 flex-1 items-center"
+				>
+					{appBar}
+				</div>
+			) : (
+				<div className="min-w-0 flex-1" />
+			)}
+			<div
+				{...windowNoDragProps()}
+				className="pointer-events-auto flex shrink-0 items-center gap-0.5"
+			>
+				<DiffToggleButton />
+				<TerminalToggleButton />
+			</div>
+		</div>
+	)
+}
+
 export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps) {
 	const [open, setOpen] = useState(true)
 	const [sidebarWidth, setSidebarWidth] = useState(getSidebarWidth)
@@ -147,9 +187,12 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 		setOpen((value) => !value)
 	}, [])
 
-	const titleLeftInMain = open
-		? 16 + APP_BAR_TITLE_INSET_LEFT
+	const titleInsetLeft = open
+		? APP_BAR_TITLE_INSET_FROM_MAIN
 		: WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP + APP_BAR_TITLE_INSET_LEFT_COLLAPSED
+
+	const diffPanelTransition =
+		isRightResizing || reduceMotion ? { duration: 0 } : diffPanelSpring
 
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
@@ -214,63 +257,43 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 					</div>
 				) : null}
 
-				<main
+				<LayoutGroup id="shell-columns">
+				<motion.main
+					layout={!isResizing}
 					data-slot="sidebar-inset"
+					transition={diffPanelTransition}
 					className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl"
 				>
 					<AppBar />
-					{appBar ? (
-						<div
-							data-slot="session-title-layer"
-							data-resizing={isResizing ? "" : undefined}
-							className="pointer-events-none absolute z-[52] box-border flex items-start overflow-visible"
-							style={{
-								left: titleLeftInMain,
-								top: 0,
-								height: APP_BAR_HEIGHT,
-								right: 12,
-								paddingTop: APP_BAR_TITLE_PADDING_TOP,
-							}}
-						>
-							<div
-								{...windowNoDragProps()}
-								className="pointer-events-auto flex min-w-0 flex-1 items-center overflow-visible"
-							>
-								{appBar}
-							</div>
-						</div>
-					) : null}
-					<div
-						data-slot="app-bar-actions-layer"
-						className="pointer-events-none absolute z-[52] flex items-start justify-end gap-0.5"
-						style={{
-							top: 0,
-							right: 12,
-							height: APP_BAR_HEIGHT,
-							paddingTop: APP_BAR_CONTROL_PADDING_TOP,
-						}}
-					>
-						<DiffToggleButton />
-						<TerminalToggleButton />
-					</div>
+					<MainAppBarChrome
+						appBar={appBar}
+						titleInsetLeft={titleInsetLeft}
+						isResizing={isResizing}
+					/>
 					<div
 						data-slot="content-area"
 						className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
 					>
 						{children}
 					</div>
-				</main>
+				</motion.main>
 
-				<AnimatePresence initial={false}>
+				<AnimatePresence initial={false} mode="popLayout">
 					{diffPanelOpen ? (
 						<motion.div
 							key="diff-panel-shell"
-							initial={reduceMotion ? false : { width: 0, opacity: 0 }}
+							layout
+							initial={reduceMotion ? false : { width: 0, opacity: 0.6 }}
 							animate={{ width: rightPanelWidth + SHELL_INSET, opacity: 1 }}
 							exit={{ width: 0, opacity: 0 }}
-							transition={
-								isRightResizing || reduceMotion ? { duration: 0 } : panelEase
-							}
+							transition={{
+								width: diffPanelTransition,
+								opacity: {
+									duration: reduceMotion ? 0 : 0.22,
+									ease: [0.22, 1, 0.36, 1],
+								},
+								layout: diffPanelTransition,
+							}}
 							data-state="open"
 							className="flex h-full shrink-0 overflow-hidden"
 						>
@@ -289,6 +312,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 						</motion.div>
 					) : null}
 				</AnimatePresence>
+				</LayoutGroup>
 
 				<WindowDragStrip />
 				<LayoutWindowControls open={open} onToggleSidebar={toggleSidebar} />
