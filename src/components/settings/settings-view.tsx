@@ -7,17 +7,21 @@ export function SettingsView() {
 	const section = useAtomValue(settingsSectionAtom)
 	const meta = getSettingsSectionMeta(section)
 
+	const isProfile = section === "profile"
+
 	return (
 		<div className="flex h-full min-h-0 flex-col">
 			<div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-6 py-5 md:px-10 md:py-7">
-				<div className="mx-auto w-full max-w-5xl">
-					<header className="mb-6 border-b border-border/50 pb-5">
-						<p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-							Settings
-						</p>
-						<h1 className="mt-1 text-lg font-medium text-foreground">{meta.label}</h1>
-						<p className="mt-1 text-sm text-muted-foreground">{meta.description}</p>
-					</header>
+				<div className={isProfile ? "mx-auto w-full max-w-3xl" : "mx-auto w-full max-w-5xl"}>
+					{isProfile ? null : (
+						<header className="mb-6 border-b border-border/50 pb-5">
+							<p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+								Settings
+							</p>
+							<h1 className="mt-1 text-lg font-medium text-foreground">{meta.label}</h1>
+							<p className="mt-1 text-sm text-muted-foreground">{meta.description}</p>
+						</header>
+					)}
 					<SettingsPanel section={section} />
 				</div>
 			</div>

@@ -2,6 +2,7 @@ import { useAtom, useSetAtom } from "jotai"
 import { useCallback } from "react"
 import { normalizePlanMarkdown } from "@/lib/plan-markdown"
 import { setPromptInFlightSync } from "@/lib/prompt-flight"
+import { recordProfilePrompt } from "@/lib/profile-activity"
 import { sendPrompt } from "@/lib/tauri"
 import {
 	pendingPlanAtom,
@@ -36,6 +37,7 @@ export function usePlanActions() {
 			const prompt = compactFirst ? `/compact\n\n${acceptBody}` : acceptBody
 			try {
 				await sendPrompt(prompt, [])
+				recordProfilePrompt()
 			} catch {
 				setPromptInFlightSync(false)
 				setPromptInFlight(false)
@@ -58,6 +60,7 @@ export function usePlanActions() {
 		setPromptInFlight(true)
 		try {
 			await sendPrompt("Rechazo el plan propuesto. No procedas con esa propuesta.", [])
+			recordProfilePrompt()
 		} catch {
 			setPromptInFlightSync(false)
 			setPromptInFlight(false)

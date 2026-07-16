@@ -30,6 +30,7 @@ import {
 	filterSlashEntries,
 	type SlashEntry,
 } from "@/lib/slash-prompt"
+import { recordProfilePrompt } from "@/lib/profile-activity"
 import { searchFiles, sendPrompt } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
 import {
@@ -338,6 +339,7 @@ export function ChatInput({
 		setSlashQuery(null)
 		try {
 			await sendPrompt(promptText, contextPaths)
+			recordProfilePrompt()
 		} catch {
 			setPromptInFlightSync(false)
 			setPromptInFlight(false)
