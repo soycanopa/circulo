@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, Loader2 } from "lucide-react"
 import { useState } from "react"
 import { ToolCallCard } from "@/components/tools/tool-call-card"
 import { Badge } from "@/components/ui/badge"
-import { useToolOverlay } from "@/hooks/use-tool-overlay"
+import { useDiffPanel } from "@/hooks/use-diff-panel"
 import { groupStatus, type ToolCallGroup } from "@/lib/tool-call-groups"
 import { hasMultiDiffTools } from "@/lib/tool-preview"
 import { cn } from "@/lib/utils"
@@ -21,7 +21,7 @@ const statusLabel = {
 export function ToolCallGroupCard({ group }: ToolCallGroupCardProps) {
 	const status = groupStatus(group.tools)
 	const [open, setOpen] = useState(false)
-	const { openMultiDiff } = useToolOverlay()
+	const { openDiffs } = useDiffPanel()
 	const count = group.tools.length
 	const showMultiDiff =
 		(group.key === "edit" || group.key === "write") && hasMultiDiffTools(group.tools)
@@ -64,7 +64,7 @@ export function ToolCallGroupCard({ group }: ToolCallGroupCardProps) {
 					{showMultiDiff ? (
 						<button
 							type="button"
-							onClick={() => openMultiDiff(group.tools)}
+							onClick={() => openDiffs(group.tools)}
 							className="mb-1 w-full rounded-md border border-border/60 px-2 py-1.5 text-left text-[11px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
 						>
 							Ver todos los diffs ({group.tools.filter((tool) => tool.diff).length})

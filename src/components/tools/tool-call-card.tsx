@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, Expand, Loader2 } from "lucide-react"
 import { useState } from "react"
 import { InlineDiffBlock } from "@/components/diff/inline-diff-block"
 import { Badge } from "@/components/ui/badge"
-import { useToolOverlay } from "@/hooks/use-tool-overlay"
+import { useDiffPanel } from "@/hooks/use-diff-panel"
 import { canExpandTool } from "@/lib/tool-preview"
 import { cn } from "@/lib/utils"
 import type { ToolCallState } from "@/types/acp"
@@ -22,7 +22,7 @@ const statusLabel: Record<ToolCallState["status"], string> = {
 
 export function ToolCallCard({ toolCall, nested = false }: ToolCallCardProps) {
 	const [open, setOpen] = useState(false)
-	const { openTool } = useToolOverlay()
+	const { openDiff, openDiffFullscreen } = useDiffPanel()
 	const isActive = toolCall.status === "in_progress" || toolCall.status === "pending"
 	const expandable = canExpandTool(toolCall)
 
@@ -60,7 +60,9 @@ export function ToolCallCard({ toolCall, nested = false }: ToolCallCardProps) {
 				{expandable ? (
 					<button
 						type="button"
-						onClick={() => openTool(toolCall)}
+						onClick={() =>
+							toolCall.diff ? openDiff(toolCall) : openDiffFullscreen(toolCall)
+						}
 						className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 						aria-label="Expandir resultado"
 					>

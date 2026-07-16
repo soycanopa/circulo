@@ -8,7 +8,7 @@ import {
 } from "lucide-react"
 import { getToolGroupKey } from "@/lib/tool-call-groups"
 import { canExpandTool, hasMultiDiffTools } from "@/lib/tool-preview"
-import { useToolOverlay } from "@/hooks/use-tool-overlay"
+import { useDiffPanel } from "@/hooks/use-diff-panel"
 import { cn } from "@/lib/utils"
 import type { ToolCallState } from "@/types/acp"
 
@@ -78,7 +78,7 @@ function ActivityTraceRow({
 
 /** Compact in-turn tool activity (Craft-style trace, not full cards). */
 export function ActivityTrace({ toolCalls }: ActivityTraceProps) {
-	const { openTool, openMultiDiff } = useToolOverlay()
+	const { openDiff, openDiffs } = useDiffPanel()
 	if (toolCalls.length === 0) return null
 
 	const showMultiDiff = hasMultiDiffTools(toolCalls)
@@ -89,13 +89,13 @@ export function ActivityTrace({ toolCalls }: ActivityTraceProps) {
 				<ActivityTraceRow
 					key={toolCall.id}
 					toolCall={toolCall}
-					onOpen={() => openTool(toolCall)}
+					onOpen={() => openDiff(toolCall)}
 				/>
 			))}
 			{showMultiDiff ? (
 				<button
 					type="button"
-					onClick={() => openMultiDiff(toolCalls)}
+					onClick={() => openDiffs(toolCalls)}
 					className="mt-1 w-full rounded-md border border-border/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
 				>
 					Ver todos los diffs ({toolCalls.filter((tool) => tool.diff).length})

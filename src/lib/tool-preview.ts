@@ -96,7 +96,7 @@ function pickLineRange(toolCall: ToolCallState): string | undefined {
 	return undefined
 }
 
-function previewBadge(toolCall: ToolCallState): string {
+export function previewBadge(toolCall: ToolCallState): string {
 	const group = getToolGroupKey(toolCall)
 	const labels: Record<string, string> = {
 		read: "Read",

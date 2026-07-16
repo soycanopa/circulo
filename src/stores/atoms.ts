@@ -80,3 +80,9 @@ export const terminalOpenAtom = atom(false)
 
 /** Resizable height (px) for the terminal drawer. */
 export const terminalHeightAtom = atom(240)
+
+/** Right sidebar for session file diffs (Synara-style review panel). */
+export const diffPanelOpenAtom = atom(false)
+
+/** Active tool call id shown in the diff panel. */
+export const activeDiffToolIdAtom = atom<string | null>(null)

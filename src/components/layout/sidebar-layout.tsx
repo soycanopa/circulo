@@ -1,4 +1,3 @@
-import { useSetAtom } from "jotai"
 import {
 	createContext,
 	useCallback,
@@ -11,16 +10,23 @@ import {
 } from "react"
 import type { LucideIcon } from "lucide-react"
 
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { DiffReviewPanel } from "@/components/diff/diff-review-panel"
 import { AppBar } from "@/components/layout/app-bar"
+import { DiffToggleButton } from "@/components/layout/diff-toggle-button"
+import { RightPanelResizeHandle } from "@/components/layout/right-panel-resize-handle"
 import { SidebarResizeHandle } from "@/components/layout/sidebar-resize-handle"
 import { TerminalToggleButton } from "@/components/layout/terminal-toggle-button"
 import { WindowControls } from "@/components/layout/window-controls"
 import { WindowDragStrip } from "@/components/layout/window-drag-strip"
+import { useDiffPanelAutoOpen } from "@/hooks/use-diff-panel-auto-open"
 import { windowDragRegionProps, windowNoDragProps } from "@/hooks/use-window-drag"
 import { useSessions } from "@/hooks/use-sessions"
 
-import { getSidebarWidth } from "@/lib/preferences"
-import { terminalOpenAtom } from "@/stores/atoms"
+import { panelEase } from "@/lib/motion-presets"
+import { getRightPanelWidth, getSidebarWidth } from "@/lib/preferences"
+import { diffPanelOpenAtom, terminalOpenAtom } from "@/stores/atoms"
+import { useAtomValue, useSetAtom } from "jotai"
 import {
 	APP_BAR_CONTROL_PADDING_TOP,
 	APP_BAR_HEIGHT,
@@ -98,28 +104,44 @@ function LayoutWindowControls({
 	)
 }
 
-function TerminalShortcutListener() {
+function ChromeShortcutListener() {
 	const setTerminalOpen = useSetAtom(terminalOpenAtom)
+	const setDiffPanelOpen = useSetAtom(diffPanelOpenAtom)
 
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "j" && (event.metaKey || event.ctrlKey)) {
+			if (!(event.metaKey || event.ctrlKey)) return
+			if (event.key === "j" && !event.shiftKey) {
 				event.preventDefault()
 				setTerminalOpen((open) => !open)
+				return
+			}
+			if (event.key === "d" && event.shiftKey) {
+				event.preventDefault()
+				setDiffPanelOpen((open) => !open)
 			}
 		}
 
 		window.addEventListener("keydown", handleKeyDown)
 		return () => window.removeEventListener("keydown", handleKeyDown)
-	}, [setTerminalOpen])
+	}, [setTerminalOpen, setDiffPanelOpen])
 
+	return null
+}
+
+function DiffPanelAutoOpen() {
+	useDiffPanelAutoOpen()
 	return null
 }
 
 export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps) {
 	const [open, setOpen] = useState(true)
 	const [sidebarWidth, setSidebarWidth] = useState(getSidebarWidth)
+	const [rightPanelWidth, setRightPanelWidth] = useState(getRightPanelWidth)
 	const [isResizing, setIsResizing] = useState(false)
+	const [isRightResizing, setIsRightResizing] = useState(false)
+	const diffPanelOpen = useAtomValue(diffPanelOpenAtom)
+	const reduceMotion = useReducedMotion()
 
 	const toggleSidebar = useCallback(() => {
 		setOpen((value) => !value)
@@ -157,7 +179,8 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 				}
 			>
 				<NarrowWindowCollapser open={open} setOpen={setOpen} />
-				<TerminalShortcutListener />
+				<ChromeShortcutListener />
+				<DiffPanelAutoOpen />
 
 				<aside
 					data-slot="sidebar"
@@ -196,8 +219,39 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 					className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl"
 				>
 					<AppBar />
-					<div data-slot="content-area" className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-						{children}
+					<div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+						<div
+							data-slot="content-area"
+							className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
+						>
+							{children}
+						</div>
+						<AnimatePresence initial={false}>
+							{diffPanelOpen ? (
+								<motion.div
+									key="diff-panel-shell"
+									initial={reduceMotion ? false : { width: 0, opacity: 0 }}
+									animate={{ width: rightPanelWidth + SHELL_INSET, opacity: 1 }}
+									exit={{ width: 0, opacity: 0 }}
+									transition={
+										isRightResizing || reduceMotion ? { duration: 0 } : panelEase
+									}
+									className="flex h-full shrink-0 overflow-hidden"
+								>
+									<RightPanelResizeHandle
+										width={rightPanelWidth}
+										onWidthChange={setRightPanelWidth}
+										onResizingChange={setIsRightResizing}
+									/>
+									<div
+										data-slot="right-panel"
+										className="h-full min-h-0 min-w-0 flex-1 overflow-hidden"
+									>
+										<DiffReviewPanel />
+									</div>
+								</motion.div>
+							) : null}
+						</AnimatePresence>
 					</div>
 				</main>
 
@@ -225,7 +279,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 				) : null}
 				<div
 					data-slot="app-bar-actions-layer"
-					className="pointer-events-none absolute z-[52] flex items-start justify-end"
+					className="pointer-events-none absolute z-[52] flex items-start justify-end gap-0.5"
 					style={{
 						top: 0,
 						right: SHELL_INSET + 12,
@@ -233,6 +287,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 						paddingTop: APP_BAR_CONTROL_PADDING_TOP,
 					}}
 				>
+					<DiffToggleButton />
 					<TerminalToggleButton />
 				</div>
 				<LayoutWindowControls open={open} onToggleSidebar={toggleSidebar} />

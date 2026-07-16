@@ -337,6 +337,14 @@ html[data-tauri] [data-slot="sidebar"] {
 	background-color: var(--terminal-surface) !important;
 }
 
+[data-slot="diff-review-panel"] .pierre-diff-host {
+	min-height: 100%;
+}
+
+[data-slot="right-panel"] {
+	background: var(--card);
+}
+
 [data-slot="terminal-panel"] .xterm-viewport {
 	scrollbar-width: thin;
 	scrollbar-color: color-mix(in srgb, var(--muted-foreground) 42%, transparent) transparent;
