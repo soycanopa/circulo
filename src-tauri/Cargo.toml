@@ -2,7 +2,7 @@
 name = "circulo"
 version = "0.1.0"
 description = "Circulo — desktop AI orchestrator via Agent Client Protocol"
-authors = ["soycanopa"]
+authors = ["Carlos Andres O. P."]
 license = "MIT"
 edition = "2021"
 
