@@ -174,6 +174,20 @@ impl ProjectSessionStore {
     pub fn is_empty(&self) -> bool {
         self.tracked_sessions().is_empty()
     }
+
+    pub fn as_session_dtos(&self, project_path: &Path) -> Vec<SessionInfoDto> {
+        let cwd = project_path.display().to_string();
+        self.tracked_sessions()
+            .into_iter()
+            .map(|stored| SessionInfoDto {
+                session_id: stored.session_id.clone(),
+                cwd: cwd.clone(),
+                additional_directories: Vec::new(),
+                title: stored.title.clone(),
+                updated_at: stored.updated_at.clone(),
+            })
+            .collect()
+    }
 }
 
 pub fn store_path_for(app_data_dir: &Path, project_path: &Path) -> PathBuf {

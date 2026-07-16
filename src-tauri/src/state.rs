@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use agent_client_protocol::schema::v1::{AgentCapabilities, SessionInfo};
@@ -76,6 +76,7 @@ impl From<&SessionInfo> for SessionInfoDto {
 pub struct ProjectStatus {
     pub connected: bool,
     pub project_path: Option<String>,
+    pub agent_id: Option<String>,
     pub session_id: Option<String>,
     pub active_session_id: Option<String>,
     pub sessions: Vec<SessionInfoDto>,
@@ -94,6 +95,7 @@ pub enum AgentCommand {
     },
     ListSessions,
     CreateSession,
+    CreateReserveSession,
     LoadSession {
         id: String,
     },
@@ -113,17 +115,29 @@ pub struct ContextFile {
     pub content: String,
 }
 
-pub struct ActiveProject {
+#[derive(Debug, Clone)]
+pub struct ReserveSession {
+    pub session_id: String,
+    pub config_options: Vec<ConfigOptionDto>,
+    pub session_entry: SessionInfoDto,
+}
+
+pub struct PooledAgent {
     pub project_path: PathBuf,
+    pub agent_id: String,
     pub session_id: String,
     pub cmd_tx: mpsc::Sender<AgentCommand>,
     pub config_options: Vec<ConfigOptionDto>,
     pub sessions: Vec<SessionInfoDto>,
     pub agent_capabilities: AgentCapabilitiesDto,
     pub list_cursor: Option<String>,
+    pub agent_done: Arc<Notify>,
+    pub connected: bool,
+    pub reserve: Option<ReserveSession>,
+    pub reserve_in_flight: bool,
 }
 
-impl ActiveProject {
+impl PooledAgent {
     pub fn supports_list_sessions(&self) -> bool {
         self.agent_capabilities.list_sessions
     }
@@ -141,6 +155,15 @@ impl ActiveProject {
     }
 }
 
+pub struct CirculoState {
+    pub agents: HashMap<String, PooledAgent>,
+    pub active_path: Option<String>,
+    pub lru: Vec<String>,
+    pub permission_waiters: HashMap<String, oneshot::Sender<String>>,
+    pub credential_waiters: HashMap<String, oneshot::Sender<CredentialResponseDto>>,
+    pub session_create_waiter: Option<oneshot::Sender<Result<(), String>>>,
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CredentialResponseDto {
@@ -149,45 +172,81 @@ pub struct CredentialResponseDto {
     pub values: Option<HashMap<String, String>>,
 }
 
-pub struct CirculoState {
-    pub project: Option<ActiveProject>,
-    pub permission_waiters: HashMap<String, oneshot::Sender<String>>,
-    pub credential_waiters: HashMap<String, oneshot::Sender<CredentialResponseDto>>,
-    pub agent_done: Arc<Notify>,
-}
-
 impl CirculoState {
     pub fn new() -> Self {
         Self {
-            project: None,
+            agents: HashMap::new(),
+            active_path: None,
+            lru: Vec::new(),
             permission_waiters: HashMap::new(),
             credential_waiters: HashMap::new(),
-            agent_done: Arc::new(Notify::new()),
+            session_create_waiter: None,
+        }
+    }
+
+    pub fn pool_key(path: &Path) -> String {
+        path.display().to_string()
+    }
+
+    pub fn active_agent(&self) -> Option<&PooledAgent> {
+        let key = self.active_path.as_ref()?;
+        self.agents.get(key)
+    }
+
+    pub fn active_agent_mut(&mut self) -> Option<&mut PooledAgent> {
+        let key = self.active_path.clone()?;
+        self.agents.get_mut(&key)
+    }
+
+    pub fn agent_for_path(&self, path: &Path) -> Option<&PooledAgent> {
+        self.agents.get(&Self::pool_key(path))
+    }
+
+    pub fn agent_for_path_mut(&mut self, path: &Path) -> Option<&mut PooledAgent> {
+        let key = Self::pool_key(path);
+        self.agents.get_mut(&key)
+    }
+
+    pub fn lru_eviction_candidate(&self, incoming_key: &str) -> Option<String> {
+        crate::orchestrator::lru_eviction_candidate(self, incoming_key)
+    }
+
+    fn normalize_session_id(session_id: &str) -> Option<String> {
+        if session_id == "pending" {
+            None
+        } else {
+            Some(session_id.to_string())
         }
     }
 
     pub fn status(&self) -> ProjectStatus {
-        match &self.project {
-            Some(project) => ProjectStatus {
-                connected: true,
-                project_path: Some(project.project_path.display().to_string()),
-                session_id: Some(project.session_id.clone()),
-                active_session_id: Some(project.session_id.clone()),
-                sessions: project.sessions.clone(),
-                capabilities: Some(project.agent_capabilities.clone()),
-                agent_command: "opencode acp".to_string(),
+        match self.active_agent() {
+            Some(agent) => ProjectStatus {
+                connected: agent.connected,
+                project_path: Some(agent.project_path.display().to_string()),
+                agent_id: Some(agent.agent_id.clone()),
+                session_id: Self::normalize_session_id(&agent.session_id),
+                active_session_id: Self::normalize_session_id(&agent.session_id),
+                sessions: agent.sessions.clone(),
+                capabilities: Some(agent.agent_capabilities.clone()),
+                agent_command: crate::agents::agent_command_label(&agent.agent_id).to_string(),
             },
             None => ProjectStatus {
                 connected: false,
                 project_path: None,
+                agent_id: None,
                 session_id: None,
                 active_session_id: None,
                 sessions: Vec::new(),
                 capabilities: None,
-                agent_command: "opencode acp".to_string(),
+                agent_command: crate::agents::agent_command_label(crate::agents::DEFAULT_AGENT_ID)
+                    .to_string(),
             },
         }
     }
 }
 
 pub type SharedState = Arc<Mutex<CirculoState>>;
+
+// Backwards compatibility alias used across the codebase during migration.
+pub type ActiveProject = PooledAgent;

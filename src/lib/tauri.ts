@@ -147,10 +147,6 @@ export async function listStoredSessions(projectPath: string): Promise<SessionIn
 	return invoke<SessionInfo[]>("list_stored_sessions", { projectPath })
 }
 
-export async function prefetchProjectSessions(projectPath: string): Promise<SessionInfo[]> {
-	return invoke<SessionInfo[]>("prefetch_project_sessions", { projectPath })
-}
-
 export async function listSessions(): Promise<ProjectStatus> {
 	return invoke<ProjectStatus>("list_sessions")
 }

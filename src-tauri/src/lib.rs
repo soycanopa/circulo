@@ -1,7 +1,9 @@
 mod acp;
+mod agent_versions;
 mod agents;
 mod commands;
 mod opencode_config;
+mod orchestrator;
 mod skills_cli;
 mod session_store;
 mod state;
@@ -56,6 +58,7 @@ pub fn run() {
             commands::respond_permission,
             commands::respond_credential,
             commands::set_config_option,
+            commands::list_stored_sessions,
             commands::list_sessions,
             commands::create_session,
             commands::load_session,
@@ -68,6 +71,7 @@ pub fn run() {
             commands::set_opencode_mcp_enabled,
             commands::search_skills_sh,
             commands::install_skills_sh_skill,
+            commands::list_agent_provider_versions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,12 +1,16 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-
 use std::time::Duration;
 
 use tauri::{Emitter, Manager, State};
 use tokio::sync::mpsc;
 
 use crate::acp::{read_context_file, search_project_files, start_agent_connection};
+use crate::orchestrator::{
+    activate_path, ensure_pool_capacity, insert_spawning_agent, pool_key, shutdown_active_agent,
+};
+use crate::agent_versions::list_agent_provider_versions as read_agent_provider_versions;
+use crate::agent_versions::AgentVersionInfo;
 use crate::opencode_config::{
     list_opencode_commands as read_opencode_commands,
     list_opencode_mcp_servers as read_opencode_mcp_servers,
@@ -18,32 +22,70 @@ use crate::skills_cli::{
     install_skills_package, search_skills_sh as fetch_skills_sh, SkillsShSearchResultDto,
 };
 use crate::session_store::{store_path_for, ProjectSessionStore};
+use serde::Serialize;
+
 use crate::state::{
-    ActiveProject, AgentCapabilitiesDto, AgentCommand, ContextFile, CredentialResponseDto,
-    ProjectStatus, SharedState,
+    AgentCommand, ContextFile, CredentialResponseDto, ProjectStatus, SessionInfoDto, SharedState,
 };
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloseSessionResult {
+    pub status: ProjectStatus,
+    pub project_path: String,
+    pub sessions: Vec<SessionInfoDto>,
+}
+
+fn emit_sessions_updated(
+    app: &tauri::AppHandle,
+    sessions: &[SessionInfoDto],
+    active_session_id: Option<&str>,
+) {
+    let _ = app.emit(
+        "acp:sessions_updated",
+        serde_json::json!({
+            "sessions": sessions,
+            "activeSessionId": active_session_id,
+            "nextCursor": null,
+        }),
+    );
+}
+
+fn remove_session_from_store(app: &tauri::AppHandle, project_path: &PathBuf, id: &str) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| err.to_string())?;
+    let store_path = store_path_for(&dir, project_path);
+    let mut store = ProjectSessionStore::load(&store_path);
+    store.remove(id);
+    store.save(&store_path)
+}
+
+fn stored_sessions_for(app: &tauri::AppHandle, project_path: &PathBuf) -> Vec<SessionInfoDto> {
+    let dir = app.path().app_data_dir().ok();
+    let store = dir
+        .map(|dir| ProjectSessionStore::load(&store_path_for(&dir, project_path)))
+        .unwrap_or_default();
+    store.as_session_dtos(project_path)
+}
 
 #[tauri::command]
 pub async fn get_project_status(state: State<'_, SharedState>) -> Result<ProjectStatus, String> {
     Ok(state.lock().await.status())
 }
 
-async fn shutdown_active_agent(state: &SharedState) {
-    let (cmd_tx, done) = {
-        let mut guard = state.lock().await;
-        let Some(project) = guard.project.take() else {
-            return;
-        };
-        let done = Arc::clone(&guard.agent_done);
-        guard.permission_waiters.clear();
-        guard.credential_waiters.clear();
-        (project.cmd_tx, done)
-    };
-
-    let _ = cmd_tx.send(AgentCommand::Shutdown).await;
-    let _ = tokio::time::timeout(Duration::from_secs(10), done.notified()).await;
-    // Give OpenCode's SQLite a moment to release file locks after process exit.
-    tokio::time::sleep(Duration::from_millis(350)).await;
+fn emit_agent_ready_from_pool(app: &tauri::AppHandle, status: &ProjectStatus) {
+    if !status.connected {
+        return;
+    }
+    let _ = app.emit(
+        "agent:ready",
+        serde_json::json!({
+            "projectPath": status.project_path,
+            "capabilities": status.capabilities,
+        }),
+    );
 }
 
 #[tauri::command]
@@ -51,50 +93,69 @@ pub async fn open_project(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
     path: String,
+    agent_id: Option<String>,
+    defer_session_bootstrap: Option<bool>,
 ) -> Result<ProjectStatus, String> {
     let project_path = PathBuf::from(&path);
     if !project_path.is_dir() {
         return Err(format!("Not a directory: {path}"));
     }
 
-    shutdown_active_agent(state.inner()).await;
-
-    let (cmd_tx, cmd_rx) = mpsc::channel(32);
-    let session_placeholder = "pending".to_string();
+    let key = pool_key(&project_path);
+    let resolved_agent_id =
+        crate::agents::normalize_agent_id(agent_id.as_deref()).to_string();
 
     {
         let mut guard = state.lock().await;
-        guard.project = Some(ActiveProject {
-            project_path: project_path.clone(),
-            session_id: session_placeholder,
-            cmd_tx: cmd_tx.clone(),
-            config_options: Vec::new(),
-            sessions: Vec::new(),
-            agent_capabilities: AgentCapabilitiesDto {
-                load_session: false,
-                list_sessions: false,
-                resume_session: false,
-                close_session: false,
-            },
-            list_cursor: None,
-        });
+        if guard.agents.contains_key(&key) {
+            activate_path(&mut guard, key.clone());
+            let status = guard.status();
+            drop(guard);
+            if status.connected {
+                emit_agent_ready_from_pool(&app, &status);
+                emit_sessions_updated(
+                    &app,
+                    &status.sessions,
+                    status.active_session_id.as_deref(),
+                );
+            }
+            return Ok(status);
+        }
+    }
+
+    ensure_pool_capacity(state.inner(), &key).await;
+
+    let (cmd_tx, cmd_rx) = mpsc::channel(32);
+
+    {
+        let mut guard = state.lock().await;
+        insert_spawning_agent(
+            &mut guard,
+            project_path.clone(),
+            resolved_agent_id,
+            cmd_tx.clone(),
+        );
     }
 
     let shared: SharedState = Arc::clone(state.inner());
     let app_clone = app.clone();
     let path_clone = project_path.clone();
+    let defer_session_bootstrap = defer_session_bootstrap.unwrap_or(false);
 
     tauri::async_runtime::spawn(async move {
-        let result =
-            start_agent_connection(app_clone.clone(), shared.clone(), path_clone, cmd_rx).await;
-        {
-            let guard = shared.lock().await;
-            guard.agent_done.notify_waiters();
-        }
+        let result = start_agent_connection(
+            app_clone.clone(),
+            shared.clone(),
+            path_clone.clone(),
+            cmd_rx,
+            defer_session_bootstrap,
+        )
+        .await;
+
         if let Err(err) = result {
             let _ = app_clone.emit("acp:error", serde_json::json!({ "message": err }));
             let mut guard = shared.lock().await;
-            guard.project = None;
+            crate::orchestrator::mark_agent_disconnected(&mut guard, &path_clone);
             let _ = app_clone.emit("agent:disconnected", ());
         }
     });
@@ -117,8 +178,7 @@ pub async fn send_prompt(
     let (cmd_tx, project_path) = {
         let guard = state.lock().await;
         let project = guard
-            .project
-            .as_ref()
+            .active_agent()
             .ok_or_else(|| "No project open".to_string())?;
         (project.cmd_tx.clone(), project.project_path.clone())
     };
@@ -180,8 +240,7 @@ pub async fn set_config_option(
     let cmd_tx = {
         let guard = state.lock().await;
         let project = guard
-            .project
-            .as_ref()
+            .active_agent()
             .ok_or_else(|| "No project open".to_string())?;
         project.cmd_tx.clone()
     };
@@ -193,12 +252,25 @@ pub async fn set_config_option(
 }
 
 #[tauri::command]
+pub async fn list_stored_sessions(
+    app: tauri::AppHandle,
+    project_path: String,
+) -> Result<Vec<SessionInfoDto>, String> {
+    let path = PathBuf::from(&project_path);
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| err.to_string())?;
+    let store = ProjectSessionStore::load(&store_path_for(&dir, &path));
+    Ok(store.as_session_dtos(&path))
+}
+
+#[tauri::command]
 pub async fn list_sessions(state: State<'_, SharedState>) -> Result<ProjectStatus, String> {
     let cmd_tx = {
         let guard = state.lock().await;
         let project = guard
-            .project
-            .as_ref()
+            .active_agent()
             .ok_or_else(|| "No project open".to_string())?;
         project.cmd_tx.clone()
     };
@@ -213,21 +285,40 @@ pub async fn list_sessions(state: State<'_, SharedState>) -> Result<ProjectStatu
 
 #[tauri::command]
 pub async fn create_session(state: State<'_, SharedState>) -> Result<ProjectStatus, String> {
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+
     let cmd_tx = {
-        let guard = state.lock().await;
-        let project = guard
-            .project
-            .as_ref()
-            .ok_or_else(|| "No project open".to_string())?;
-        project.cmd_tx.clone()
+        let mut guard = state.lock().await;
+        if guard.session_create_waiter.is_some() {
+            return Err("Ya hay una sesión en creación".to_string());
+        }
+        let cmd_tx = guard
+            .active_agent()
+            .ok_or_else(|| "No project open".to_string())?
+            .cmd_tx
+            .clone();
+        guard.session_create_waiter = Some(done_tx);
+        cmd_tx
     };
 
-    cmd_tx
-        .send(AgentCommand::CreateSession)
-        .await
-        .map_err(|err| format!("Failed to create session: {err}"))?;
+    if let Err(err) = cmd_tx.send(AgentCommand::CreateSession).await {
+        let mut guard = state.lock().await;
+        guard.session_create_waiter = None;
+        return Err(format!("Failed to create session: {err}"));
+    }
 
-    Ok(state.lock().await.status())
+    match tokio::time::timeout(Duration::from_secs(45), done_rx).await {
+        Ok(Ok(Ok(()))) => Ok(state.lock().await.status()),
+        Ok(Ok(Err(message))) => Err(message),
+        Ok(Err(_)) => {
+            state.lock().await.session_create_waiter = None;
+            Err("La creación de sesión se canceló".to_string())
+        }
+        Err(_) => {
+            state.lock().await.session_create_waiter = None;
+            Err("Tiempo de espera agotado al crear la sesión".to_string())
+        }
+    }
 }
 
 #[tauri::command]
@@ -238,8 +329,7 @@ pub async fn load_session(
     let cmd_tx = {
         let guard = state.lock().await;
         let project = guard
-            .project
-            .as_ref()
+            .active_agent()
             .ok_or_else(|| "No project open".to_string())?;
         if !project.supports_load_session() {
             return Err("Agent does not support session/load".to_string());
@@ -257,27 +347,82 @@ pub async fn load_session(
 
 #[tauri::command]
 pub async fn close_session(
+    app: tauri::AppHandle,
     state: State<'_, SharedState>,
     id: String,
-) -> Result<ProjectStatus, String> {
-    let cmd_tx = {
-        let guard = state.lock().await;
-        let project = guard
-            .project
-            .as_ref()
-            .ok_or_else(|| "No project open".to_string())?;
-        if !project.supports_close_session() {
-            return Err("Agent does not support session/close".to_string());
+    project_path: Option<String>,
+) -> Result<CloseSessionResult, String> {
+    let target_path = match project_path {
+        Some(path) => PathBuf::from(path),
+        None => {
+            let guard = state.lock().await;
+            guard
+                .active_agent()
+                .map(|project| project.project_path.clone())
+                .ok_or_else(|| "No project open".to_string())?
         }
-        project.cmd_tx.clone()
     };
 
-    cmd_tx
-        .send(AgentCommand::CloseSession { id })
-        .await
-        .map_err(|err| format!("Failed to close session: {err}"))?;
+    remove_session_from_store(&app, &target_path, &id)?;
 
-    Ok(state.lock().await.status())
+    let (cmd_tx, supports_close) = {
+        let mut guard = state.lock().await;
+        let Some(project) = guard.active_agent_mut() else {
+            let sessions = stored_sessions_for(&app, &target_path);
+            return Ok(CloseSessionResult {
+                status: guard.status(),
+                project_path: target_path.display().to_string(),
+                sessions,
+            });
+        };
+
+        if project.project_path != target_path {
+            return Ok(CloseSessionResult {
+                status: guard.status(),
+                project_path: target_path.display().to_string(),
+                sessions: stored_sessions_for(&app, &target_path),
+            });
+        }
+
+        project.sessions.retain(|entry| entry.session_id != id);
+        if project.session_id == id {
+            project.session_id = project
+                .sessions
+                .first()
+                .map(|entry| entry.session_id.clone())
+                .unwrap_or_else(|| "pending".to_string());
+        }
+
+        let sessions = project.sessions.clone();
+        let active_id = project.session_id.clone();
+        let cmd_tx = project.cmd_tx.clone();
+        let supports_close = project.supports_close_session();
+
+        emit_sessions_updated(
+            &app,
+            &sessions,
+            if active_id == "pending" {
+                None
+            } else {
+                Some(active_id.as_str())
+            },
+        );
+
+        (cmd_tx, supports_close)
+    };
+
+    if supports_close {
+        let _ = cmd_tx.send(AgentCommand::CloseSession { id }).await;
+    }
+
+    let sessions = stored_sessions_for(&app, &target_path);
+    let status = state.lock().await.status();
+
+    Ok(CloseSessionResult {
+        status,
+        project_path: target_path.display().to_string(),
+        sessions,
+    })
 }
 
 #[tauri::command]
@@ -298,8 +443,7 @@ pub async fn rename_session(
     let (project_path, updated_session) = {
         let mut guard = state.lock().await;
         let project = guard
-            .project
-            .as_mut()
+            .active_agent_mut()
             .ok_or_else(|| "No project open".to_string())?;
         let session = project
             .sessions
@@ -329,8 +473,7 @@ pub async fn search_files(
 ) -> Result<Vec<String>, String> {
     let guard = state.lock().await;
     let project = guard
-        .project
-        .as_ref()
+        .active_agent()
         .ok_or_else(|| "No project open".to_string())?;
     Ok(search_project_files(&project.project_path, &query, 50))
 }
@@ -343,8 +486,7 @@ pub async fn list_opencode_commands(
     let fallback = state
         .lock()
         .await
-        .project
-        .as_ref()
+        .active_agent()
         .map(|project| project.project_path.display().to_string());
     Ok(read_opencode_commands(project_path.or(fallback)))
 }
@@ -357,8 +499,7 @@ pub async fn list_opencode_skills(
     let fallback = state
         .lock()
         .await
-        .project
-        .as_ref()
+        .active_agent()
         .map(|project| project.project_path.display().to_string());
     Ok(read_opencode_skills(project_path.or(fallback)))
 }
@@ -371,8 +512,7 @@ pub async fn list_opencode_mcp_servers(
     let fallback = state
         .lock()
         .await
-        .project
-        .as_ref()
+        .active_agent()
         .map(|project| project.project_path.display().to_string());
     Ok(read_opencode_mcp_servers(project_path.or(fallback)))
 }
@@ -386,6 +526,11 @@ pub async fn set_opencode_mcp_enabled(
     config_path: Option<String>,
 ) -> Result<(), String> {
     write_opencode_mcp_enabled(name, scope, enabled, project_path, config_path)
+}
+
+#[tauri::command]
+pub async fn list_agent_provider_versions() -> Result<Vec<AgentVersionInfo>, String> {
+    Ok(read_agent_provider_versions())
 }
 
 #[tauri::command]

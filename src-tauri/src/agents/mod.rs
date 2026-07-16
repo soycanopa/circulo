@@ -2,11 +2,40 @@ use std::path::Path;
 
 use agent_client_protocol::AcpAgent;
 
-pub const DEFAULT_AGENT_COMMAND: &str = "opencode acp";
+pub const AGENT_ID_OPENCODE: &str = "opencode";
+pub const AGENT_ID_GROK: &str = "grok";
+
+pub const DEFAULT_AGENT_ID: &str = AGENT_ID_OPENCODE;
 
 /// Design-oriented MCP servers that should not be available when Circulo runs OpenCode.
 /// Paper/Figma/Craft are for the IDE design workflow (Grok/Cursor), not coding tasks.
 const FORGE_OPENCODE_CONFIG_CONTENT: &str = r#"{"$schema":"https://opencode.ai/config.json","tools":{"paper_*":false,"figma_*":false,"Framelink_Figma_MCP_*":false,"craft-business_*":false,"craft-personal_*":false},"mcp":{"paper":{"enabled":false},"figma":{"enabled":false},"Framelink_Figma_MCP":{"enabled":false},"craft-business":{"enabled":false},"craft-personal":{"enabled":false}}}"#;
+
+pub fn normalize_agent_id(agent_id: Option<&str>) -> &'static str {
+    match agent_id {
+        Some(id) if id == AGENT_ID_GROK => AGENT_ID_GROK,
+        Some(id) if id == AGENT_ID_OPENCODE => AGENT_ID_OPENCODE,
+        Some(_) | None => DEFAULT_AGENT_ID,
+    }
+}
+
+pub fn agent_command_label(agent_id: &str) -> &'static str {
+    match agent_id {
+        AGENT_ID_GROK => "grok agent stdio",
+        _ => "opencode acp",
+    }
+}
+
+pub fn build_agent(agent_id: &str, project_path: &Path) -> Result<AcpAgent, String> {
+    match agent_id {
+        AGENT_ID_OPENCODE => build_opencode_agent(project_path),
+        AGENT_ID_GROK => Err(
+            "Grok Build aún no está conectado por ACP en Circulo. Usa OpenCode por ahora."
+                .to_string(),
+        ),
+        other => Err(format!("Agente no soportado: {other}")),
+    }
+}
 
 pub fn build_opencode_agent(project_path: &Path) -> Result<AcpAgent, String> {
     AcpAgent::from_args([

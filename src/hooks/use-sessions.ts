@@ -192,11 +192,13 @@ export function useSessions() {
 
 			finishOptimisticCreate(generation, async () => {
 				if (needsOpen) {
-					await openProject(path, {
+					const openStatus = await openProject(path, {
 						agentId: getAppSettings().defaultProvider,
 						deferSessionBootstrap: true,
 					})
-					await waitForAgentReady()
+					if (!openStatus.connected) {
+						await waitForAgentReady()
+					}
 				}
 				const status = await createSession()
 				syncStatus(status)
@@ -223,11 +225,13 @@ export function useSessions() {
 
 			finishOptimisticCreate(generation, async () => {
 				if (needsOpen) {
-					await openProject(path, {
+					const openStatus = await openProject(path, {
 						agentId: getAppSettings().defaultProvider,
 						deferSessionBootstrap: true,
 					})
-					await waitForAgentReady()
+					if (!openStatus.connected) {
+						await waitForAgentReady()
+					}
 				}
 				const status = await createSession()
 				syncStatus(status)
@@ -245,11 +249,13 @@ export function useSessions() {
 		finishOptimisticCreate(generation, async () => {
 			setLastProjectPath(null)
 			if (needsOpen) {
-				await openProject(chatsPath, {
+				const openStatus = await openProject(chatsPath, {
 					agentId: getAppSettings().defaultProvider,
 					deferSessionBootstrap: true,
 				})
-				await waitForAgentReady()
+				if (!openStatus.connected) {
+					await waitForAgentReady()
+				}
 			}
 			const status = await createSession()
 			syncStatus(status)
