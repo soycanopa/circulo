@@ -12,6 +12,7 @@ use crate::opencode_config::{
     set_opencode_mcp_enabled as write_opencode_mcp_enabled, CommandEntryDto, McpServerEntryDto,
     SkillEntryDto,
 };
+use crate::skills_cli::install_skills_package;
 use crate::session_store::{store_path_for, ProjectSessionStore};
 use crate::state::{
     ActiveProject, AgentCapabilitiesDto, AgentCommand, ContextFile, CredentialResponseDto,
@@ -370,4 +371,18 @@ pub async fn set_opencode_mcp_enabled(
     config_path: Option<String>,
 ) -> Result<(), String> {
     write_opencode_mcp_enabled(name, scope, enabled, project_path, config_path)
+}
+
+#[tauri::command]
+pub async fn install_skills_sh_skill(
+    package: String,
+    scope: String,
+    project_path: Option<String>,
+) -> Result<String, String> {
+    let project = project_path.map(PathBuf::from);
+    tokio::task::spawn_blocking(move || {
+        install_skills_package(&package, &scope, project.as_deref())
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }

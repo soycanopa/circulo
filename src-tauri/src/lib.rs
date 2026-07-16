@@ -2,6 +2,7 @@ mod acp;
 mod agents;
 mod commands;
 mod opencode_config;
+mod skills_cli;
 mod session_store;
 mod state;
 
@@ -65,6 +66,7 @@ pub fn run() {
             commands::list_opencode_skills,
             commands::list_opencode_mcp_servers,
             commands::set_opencode_mcp_enabled,
+            commands::install_skills_sh_skill,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

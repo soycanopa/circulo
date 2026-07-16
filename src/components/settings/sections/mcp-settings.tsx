@@ -240,19 +240,16 @@ export function McpSettings() {
 		if (servers.length === 0) return
 		setExpandedAgents((current) => {
 			if (Object.keys(current).length > 0) return current
-			const initial: Record<string, boolean> = {}
-			for (const group of buildAgentGroups(servers)) {
-				initial[group.source] = group.source === "opencode"
-			}
-			return initial
+			return Object.fromEntries(
+				buildAgentGroups(servers).map((group) => [group.source, false]),
+			)
 		})
 		setExpandedScopes((current) => {
 			if (Object.keys(current).length > 0) return current
 			const initial: Record<string, boolean> = {}
 			for (const group of buildAgentGroups(servers)) {
 				for (const scope of group.scopes) {
-					const key = `${group.source}:${scope.scope}`
-					initial[key] = group.source === "opencode" && scope.scope === "global"
+					initial[`${group.source}:${scope.scope}`] = false
 				}
 			}
 			return initial

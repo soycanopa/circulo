@@ -218,8 +218,10 @@ pub fn list_opencode_skills(project_path: Option<String>) -> Vec<SkillEntryDto> 
     if let Some(path) = project_path {
         let project = PathBuf::from(path);
         skills.extend(list_skills_in_dir(&project.join(".opencode"), "project"));
+        skills.extend(list_skills_in_dir(&project.join(".agents"), "project"));
     }
 
+    skills.sort_by(|a, b| a.name.cmp(&b.name));
     skills
 }
 

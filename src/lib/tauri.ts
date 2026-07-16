@@ -109,6 +109,14 @@ export async function setOpencodeMcpEnabled(input: {
 	return invoke("set_opencode_mcp_enabled", input)
 }
 
+export async function installSkillsShSkill(input: {
+	package: string
+	scope: "global" | "project"
+	projectPath: string | null
+}): Promise<string> {
+	return invoke<string>("install_skills_sh_skill", input)
+}
+
 export async function listSessions(): Promise<ProjectStatus> {
 	return invoke<ProjectStatus>("list_sessions")
 }

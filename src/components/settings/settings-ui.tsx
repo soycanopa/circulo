@@ -121,6 +121,36 @@ export function SettingsEmptyState({ children }: { children: ReactNode }) {
 	)
 }
 
+export function SettingsTabs<T extends string>({
+	tabs,
+	active,
+	onChange,
+}: {
+	tabs: { id: T; label: string }[]
+	active: T
+	onChange: (id: T) => void
+}) {
+	return (
+		<div className="inline-flex rounded-lg border border-border/60 bg-muted/20 p-0.5">
+			{tabs.map((tab) => (
+				<button
+					key={tab.id}
+					type="button"
+					onClick={() => onChange(tab.id)}
+					className={cn(
+						"rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+						active === tab.id
+							? "bg-background text-foreground shadow-sm"
+							: "text-muted-foreground hover:text-foreground",
+					)}
+				>
+					{tab.label}
+				</button>
+			))}
+		</div>
+	)
+}
+
 export function SettingsBadge({
 	children,
 	tone = "neutral",
