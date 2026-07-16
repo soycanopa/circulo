@@ -12,7 +12,7 @@ import {
 	Settings,
 	Timer,
 } from "lucide-react"
-import { useAtomValue } from "jotai"
+import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { useMemo, useState, type ReactNode } from "react"
 import {
 	Sidebar,
@@ -28,7 +28,7 @@ import { ProjectActionsMenu } from "@/components/layout/project-actions-menu"
 import { SessionActionsMenu } from "@/components/layout/session-actions-menu"
 import { useArchivedSessions } from "@/hooks/use-archived-sessions"
 import { usePinnedSessions } from "@/hooks/use-pinned-sessions"
-import { GENERAL_CHAT_PROJECT } from "@/lib/preferences"
+import { getChatsProjectPath } from "@/lib/app-settings"
 import { getProjectDisplayName, isGeneralChatProject } from "@/lib/project-display"
 import {
 	getProjectSidebarLabel,
@@ -39,7 +39,7 @@ import { getRecentProjects, removeRecentProject } from "@/lib/recent-projects"
 import { sessionTitle } from "@/lib/sessions"
 import { cn } from "@/lib/utils"
 import { useSessions } from "@/hooks/use-sessions"
-import { promptInFlightAtom } from "@/stores/atoms"
+import { appSettingsAtom, promptInFlightAtom, settingsOpenAtom } from "@/stores/atoms"
 import type { SessionInfo, SidebarSessionStatus } from "@/types/acp"
 
 interface AppSidebarProps {
@@ -230,6 +230,8 @@ export function AppSidebar({
 	const { pinnedIds, togglePin, isPinned } = usePinnedSessions()
 	const { isArchived } = useArchivedSessions()
 	const promptInFlight = useAtomValue(promptInFlightAtom)
+	const [appSettings] = useAtom(appSettingsAtom)
+	const setSettingsOpen = useSetAtom(settingsOpenAtom)
 	const [expandedChats, setExpandedChats] = useState(true)
 	const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({})
 	const [recentProjectsVersion, setRecentProjectsVersion] = useState(0)
@@ -260,7 +262,7 @@ export function AppSidebar({
 
 	const projectName = getProjectDisplayName(projectPath)
 	const isGeneralChat = isGeneralChatProject(projectPath)
-	const showChatsFolder = isGeneralChat && visibleSessions.length > 0
+	const showChatsFolder = appSettings.showChatsInSidebar && isGeneralChat
 	const savedProjects = useMemo(() => {
 		void recentProjectsVersion
 		const recent = getRecentProjects()
@@ -307,7 +309,7 @@ export function AppSidebar({
 		if (projectPath !== path) return
 		await runSessionAction(async () => {
 			await onCloseProject()
-			await onOpenProject(GENERAL_CHAT_PROJECT)
+			await onOpenProject(getChatsProjectPath())
 		})
 	}
 
@@ -364,9 +366,10 @@ export function AppSidebar({
 					</SidebarMenu>
 				</SidebarGroup>
 
-				<SidebarGroup label="Pinned" icon={Pin}>
-					<SidebarMenu>
-						{pinnedSessions.map((session) => (
+				{appSettings.showPinnedInSidebar ? (
+					<SidebarGroup label="Pinned" icon={Pin}>
+						<SidebarMenu>
+							{pinnedSessions.map((session) => (
 							<SessionItem
 								key={session.sessionId}
 								session={session}
@@ -389,9 +392,10 @@ export function AppSidebar({
 								onArchive={() => void handleArchive(session.sessionId)}
 								onDelete={() => void handleDelete(session.sessionId)}
 							/>
-						))}
-					</SidebarMenu>
-				</SidebarGroup>
+							))}
+						</SidebarMenu>
+					</SidebarGroup>
+				) : null}
 
 				<SidebarGroup label="Projects" icon={Folders}>
 					<SidebarMenu>
@@ -409,6 +413,11 @@ export function AppSidebar({
 								{expandedChats ? (
 									<div className="ml-3 border-l border-sidebar-border/10 pl-1">
 										<SidebarMenu>
+											{visibleSessions.length === 0 ? (
+												<p className="px-2 py-1.5 text-xs text-muted-foreground/60">
+													No threads yet
+												</p>
+											) : null}
 											{visibleSessions.map((session, index) => (
 												<SessionItem
 													key={session.sessionId}
@@ -515,6 +524,7 @@ export function AppSidebar({
 							<SidebarMenuButton
 								className="ml-auto w-auto min-w-0 text-muted-foreground"
 								disabled={loading}
+								onClick={() => setSettingsOpen(true)}
 							>
 								<Settings className="size-4 shrink-0" />
 								<span className="truncate">Settings</span>
