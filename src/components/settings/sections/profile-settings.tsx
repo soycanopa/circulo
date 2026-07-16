@@ -7,7 +7,6 @@ import { ProfileAvatar } from "@/components/profile/profile-avatar"
 import { getArchivedSessionIds } from "@/lib/archived-sessions"
 import {
 	formatContextTokens,
-	formatCostUsd,
 	hasContextWindowData,
 } from "@/lib/context-window"
 import {
@@ -31,20 +30,7 @@ import {
 } from "@/lib/profile-identity"
 import { getProjectDisplayName } from "@/lib/project-display"
 import { getRecentProjects } from "@/lib/recent-projects"
-import { sessionTitle } from "@/lib/sessions"
-import type { SessionInfo } from "@/types/acp"
-import {
-	activeSessionIdAtom,
-	contextWindowAtom,
-	projectPathAtom,
-	sessionsAtom,
-} from "@/stores/atoms"
-
-function sessionSortTime(session: SessionInfo): number {
-	if (!session.updatedAt) return 0
-	const parsed = Date.parse(session.updatedAt)
-	return Number.isNaN(parsed) ? 0 : parsed
-}
+import { contextWindowAtom, projectPathAtom, sessionsAtom } from "@/stores/atoms"
 
 function StatTile({ label, value }: { label: string; value: string }) {
 	return (
@@ -68,7 +54,6 @@ function InsightRow({ label, value }: { label: string; value: string }) {
 
 export function ProfileSettings() {
 	const sessions = useAtomValue(sessionsAtom)
-	const activeSessionId = useAtomValue(activeSessionIdAtom)
 	const projectPath = useAtomValue(projectPathAtom)
 	const contextWindow = useAtomValue(contextWindowAtom)
 	const [editOpen, setEditOpen] = useState(false)
@@ -96,9 +81,6 @@ export function ProfileSettings() {
 	const activity = useMemo(() => getProfileActivitySummary(), [activityVersion])
 	const heatmap = useMemo(() => selectProfileHeatmap(), [activityVersion])
 
-	const activeIndex = sessions.findIndex((session) => session.sessionId === activeSessionId)
-	const activeSession = activeIndex >= 0 ? sessions[activeIndex] : null
-
 	const mostWorkedProject = useMemo(() => {
 		const counts = new Map<string, number>()
 		for (const session of sessions) {
@@ -116,14 +98,6 @@ export function ProfileSettings() {
 		if (!bestPath) return null
 		return { label: getProjectDisplayName(bestPath), count: bestCount }
 	}, [sessions])
-
-	const recentSessions = useMemo(
-		() =>
-			[...sessions]
-				.sort((a, b) => sessionSortTime(b) - sessionSortTime(a))
-				.slice(0, 5),
-		[sessions],
-	)
 
 	const archivedCount = getArchivedSessionIds().length
 	const pinnedCount = getPinnedSessionIds().length
@@ -219,7 +193,7 @@ export function ProfileSettings() {
 
 			<div className="grid gap-x-12 gap-y-7 md:grid-cols-2">
 				<section className="flex flex-col gap-3">
-					<h3 className="text-sm font-medium">Activity insights</h3>
+					<h3 className="text-sm font-medium">Projects</h3>
 					<dl className="flex flex-col gap-2.5">
 						<InsightRow
 							label="Most worked project"
@@ -233,93 +207,21 @@ export function ProfileSettings() {
 							label="Active project"
 							value={getProjectDisplayName(projectPath)}
 						/>
-						<InsightRow
-							label="Last model"
-							value={getLastModel() ?? "—"}
-						/>
 						<InsightRow label="Saved projects" value={String(projectCount)} />
-						<InsightRow label="Pinned sessions" value={String(pinnedCount)} />
-						<InsightRow label="Archived sessions" value={String(archivedCount)} />
-						<InsightRow label="Favorite models" value={String(favoriteCount)} />
 						<InsightRow label="Total sessions" value={String(sessions.length)} />
 					</dl>
 				</section>
 
 				<section className="flex flex-col gap-3">
-					<h3 className="text-sm font-medium">Active session</h3>
+					<h3 className="text-sm font-medium">Workspace</h3>
 					<dl className="flex flex-col gap-2.5">
-						<InsightRow
-							label="Session"
-							value={
-								activeSession
-									? sessionTitle(activeSession, activeIndex)
-									: "Sin sesión activa"
-							}
-						/>
-						<InsightRow
-							label="Context used"
-							value={
-								hasContextWindowData(contextWindow)
-									? formatContextTokens(contextWindow?.usedTokens)
-									: "—"
-							}
-						/>
-						{hasContextWindowData(contextWindow) ? (
-							<InsightRow
-								label="Estimated cost"
-								value={formatCostUsd(contextWindow?.costUsd)}
-							/>
-						) : null}
+						<InsightRow label="Last model" value={getLastModel() ?? "—"} />
+						<InsightRow label="Favorite models" value={String(favoriteCount)} />
+						<InsightRow label="Pinned sessions" value={String(pinnedCount)} />
+						<InsightRow label="Archived sessions" value={String(archivedCount)} />
 					</dl>
-
-					<h3 className="mt-2 text-sm font-medium">Recent sessions</h3>
-					{recentSessions.length === 0 ? (
-						<p className="text-sm text-muted-foreground">No sessions yet.</p>
-					) : (
-						<ul className="flex flex-col gap-2.5">
-							{recentSessions.map((session, index) => (
-								<li
-									key={session.sessionId}
-									className="flex items-center justify-between gap-3"
-								>
-									<span className="truncate text-sm">
-										{sessionTitle(session, index)}
-									</span>
-									<span className="shrink-0 text-xs text-muted-foreground">
-										{session.sessionId === activeSessionId ? "Active" : ""}
-									</span>
-								</li>
-							))}
-						</ul>
-					)}
 				</section>
 			</div>
-
-			{contextWindow?.breakdown.length ? (
-				<section className="flex flex-col gap-3">
-					<h3 className="text-sm font-medium">Context breakdown</h3>
-					<ul className="grid grid-cols-1 gap-x-12 gap-y-3 sm:grid-cols-2">
-						{contextWindow.breakdown.map((item) => (
-							<li key={item.id} className="flex flex-col gap-1.5">
-								<div className="flex items-center justify-between gap-3 text-sm">
-									<span className="truncate">{item.label}</span>
-									<span className="shrink-0 tabular-nums text-muted-foreground">
-										{Math.round(item.percent)}%
-									</span>
-								</div>
-								<div className="h-1 w-full overflow-hidden rounded-full bg-muted">
-									<div
-										className="h-full rounded-full bg-[var(--info)]"
-										style={{
-											width: `${Math.min(100, Math.max(2, item.percent))}%`,
-										}}
-									/>
-								</div>
-							</li>
-						))}
-					</ul>
-				</section>
-			) : null}
 
 			<EditProfileDialog
 				open={editOpen}
