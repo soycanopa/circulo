@@ -19,6 +19,7 @@ import {
 	SettingsSectionHeader,
 	SettingsToggle,
 } from "@/components/settings/settings-ui"
+import { formatMcpDisplayName } from "@/lib/mcp-display"
 import {
 	listOpencodeMcpServers,
 	setOpencodeMcpEnabled,
@@ -134,6 +135,7 @@ function buildAgentGroups(servers: OpencodeMcpServerEntry[]): AgentGroup[] {
 function matchesQuery(server: OpencodeMcpServerEntry, query: string): boolean {
 	const haystack = [
 		server.name,
+		formatMcpDisplayName(server.name),
 		server.source,
 		server.scope,
 		server.serverType,
@@ -155,10 +157,11 @@ function McpServerRow({
 	onToggle: (server: OpencodeMcpServerEntry, enabled: boolean) => void
 }) {
 	const key = serverKey(server)
+	const displayName = formatMcpDisplayName(server.name)
 
 	return (
 		<SettingsRow
-			label={server.name}
+			label={displayName}
 			description={shortenPath(server.configPath)}
 			className="py-2.5"
 		>
@@ -188,7 +191,7 @@ function McpServerRow({
 					<SettingsToggle
 						checked={server.enabled}
 						disabled={pendingKey === key}
-						ariaLabel={`${server.enabled ? "Desactivar" : "Activar"} ${server.name}`}
+						ariaLabel={`${server.enabled ? "Desactivar" : "Activar"} ${displayName}`}
 						onChange={(checked) => void onToggle(server, checked)}
 					/>
 				)}
