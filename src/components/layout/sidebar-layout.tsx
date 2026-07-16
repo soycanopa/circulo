@@ -23,7 +23,7 @@ import { windowDragRegionProps, windowNoDragProps } from "@/hooks/use-window-dra
 import { useSessions } from "@/hooks/use-sessions"
 
 import { getRightPanelWidth, getSidebarWidth } from "@/lib/preferences"
-import { diffPanelOpenAtom, terminalOpenAtom } from "@/stores/atoms"
+import { diffPanelOpenAtom, settingsOpenAtom, terminalOpenAtom } from "@/stores/atoms"
 import { useAtomValue, useSetAtom } from "jotai"
 import {
 	APP_BAR_ACTIONS_INSET_RIGHT,
@@ -104,9 +104,11 @@ function LayoutWindowControls({
 function ChromeShortcutListener() {
 	const setTerminalOpen = useSetAtom(terminalOpenAtom)
 	const setDiffPanelOpen = useSetAtom(diffPanelOpenAtom)
+	const settingsOpen = useAtomValue(settingsOpenAtom)
 
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
+			if (settingsOpen) return
 			if (!(event.metaKey || event.ctrlKey)) return
 			if (event.key === "j" && !event.shiftKey) {
 				event.preventDefault()
@@ -121,7 +123,7 @@ function ChromeShortcutListener() {
 
 		window.addEventListener("keydown", handleKeyDown)
 		return () => window.removeEventListener("keydown", handleKeyDown)
-	}, [setTerminalOpen, setDiffPanelOpen])
+	}, [settingsOpen, setTerminalOpen, setDiffPanelOpen])
 
 	return null
 }
@@ -140,6 +142,8 @@ function MainAppBarChrome({
 	titleInsetLeft: number
 	isResizing: boolean
 }) {
+	const settingsOpen = useAtomValue(settingsOpenAtom)
+
 	return (
 		<div
 			data-slot="app-bar-chrome"
@@ -161,13 +165,15 @@ function MainAppBarChrome({
 			) : (
 				<div className="min-w-0 flex-1" />
 			)}
-			<div
-				{...windowNoDragProps()}
-				className="pointer-events-auto flex shrink-0 items-center gap-0.5"
-			>
-				<DiffToggleButton />
-				<TerminalToggleButton />
-			</div>
+			{settingsOpen ? null : (
+				<div
+					{...windowNoDragProps()}
+					className="pointer-events-auto flex shrink-0 items-center gap-0.5"
+				>
+					<DiffToggleButton />
+					<TerminalToggleButton />
+				</div>
+			)}
 		</div>
 	)
 }
@@ -179,6 +185,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 	const [isResizing, setIsResizing] = useState(false)
 	const [isRightResizing, setIsRightResizing] = useState(false)
 	const diffPanelOpen = useAtomValue(diffPanelOpenAtom)
+	const settingsOpen = useAtomValue(settingsOpenAtom)
 
 	const toggleSidebar = useCallback(() => {
 		setOpen((value) => !value)
@@ -270,7 +277,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 				</main>
 
 				<AnimatePresence initial={false}>
-					{diffPanelOpen ? (
+					{diffPanelOpen && !settingsOpen ? (
 						<DiffPanel
 							key="diff-panel"
 							width={rightPanelWidth}

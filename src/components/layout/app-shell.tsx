@@ -14,10 +14,12 @@ import { closeProject, getProjectStatus, openProject } from "@/lib/tauri"
 import {
 	activeSessionIdAtom,
 	agentCapabilitiesAtom,
+	diffPanelOpenAtom,
 	projectPathAtom,
 	sessionStatusAtom,
 	sessionsAtom,
 	settingsOpenAtom,
+	terminalOpenAtom,
 } from "@/stores/atoms"
 
 export function AppShell() {
@@ -27,8 +29,16 @@ export function AppShell() {
 	const setCapabilities = useSetAtom(agentCapabilitiesAtom)
 	const [sessionStatus] = useAtom(sessionStatusAtom)
 	const [settingsOpen, setSettingsOpen] = useAtom(settingsOpenAtom)
+	const setDiffPanelOpen = useSetAtom(diffPanelOpenAtom)
+	const setTerminalOpen = useSetAtom(terminalOpenAtom)
 	const [connected, setConnected] = useState(false)
 	const [loading, setLoading] = useState(false)
+
+	useEffect(() => {
+		if (!settingsOpen) return
+		setDiffPanelOpen(false)
+		setTerminalOpen(false)
+	}, [settingsOpen, setDiffPanelOpen, setTerminalOpen])
 
 	useEffect(() => {
 		if (!settingsOpen) return
