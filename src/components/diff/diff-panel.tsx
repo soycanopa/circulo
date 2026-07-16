@@ -32,7 +32,7 @@ export function DiffPanel({
 				width: motionTransition,
 				opacity: motionTransition,
 			}}
-			className="flex h-full shrink-0 overflow-hidden"
+			className="relative z-[50] flex h-full shrink-0 overflow-hidden"
 			{...windowNoDragProps()}
 		>
 			<RightPanelResizeHandle

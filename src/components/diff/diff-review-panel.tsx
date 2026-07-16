@@ -5,7 +5,7 @@ import { DiffFileList } from "@/components/diff/diff-file-list"
 import { DiffStatLabel } from "@/components/chat/diff-stat-label"
 import { PierreFileDiff } from "@/components/diff/pierre-diff-view"
 import { useDiffPanel } from "@/hooks/use-diff-panel"
-import { windowDragRegionProps, windowNoDragProps } from "@/hooks/use-window-drag"
+import { windowNoDragProps } from "@/hooks/use-window-drag"
 import { collectSessionDiffStats } from "@/lib/session-diff-stats"
 import { collectSessionDiffs } from "@/lib/session-diffs"
 import { APP_BAR_HEIGHT } from "@/lib/window-chrome"
@@ -45,8 +45,7 @@ export function DiffReviewPanel() {
 			{...windowNoDragProps()}
 		>
 			<header
-				{...windowDragRegionProps()}
-				className="box-border flex shrink-0 items-center gap-2 border-b border-border/50 px-3"
+				className="relative z-[52] box-border flex shrink-0 items-center gap-2 border-b border-border/50 px-3"
 				style={{ height: APP_BAR_HEIGHT }}
 			>
 				<FileDiff className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
@@ -78,7 +77,10 @@ export function DiffReviewPanel() {
 					) : null}
 					<button
 						type="button"
-						onClick={closeDiffPanel}
+						onClick={(event) => {
+							event.stopPropagation()
+							closeDiffPanel()
+						}}
 						className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent-hover hover:text-foreground"
 						aria-label="Cerrar panel de cambios"
 						title="Cerrar panel (⌘⇧D)"
