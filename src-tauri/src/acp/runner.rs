@@ -39,9 +39,11 @@ fn save_project_store(app: &AppHandle, project_path: &Path, store: &ProjectSessi
 }
 
 fn sessions_from_store(store: &ProjectSessionStore, project_path: &Path) -> Vec<SessionInfoDto> {
+    let tracked_ids = store.ids();
     store
         .sessions
         .iter()
+        .filter(|stored| tracked_ids.contains(&stored.session_id))
         .map(|stored| {
             session_info_from_parts(
                 stored.session_id.clone(),
@@ -51,6 +53,23 @@ fn sessions_from_store(store: &ProjectSessionStore, project_path: &Path) -> Vec<
             )
         })
         .collect()
+}
+
+fn resolve_circulo_sessions(
+    store: &ProjectSessionStore,
+    agent_sessions: &[SessionInfoDto],
+    project_path: &Path,
+) -> Vec<SessionInfoDto> {
+    if store.is_empty() {
+        return Vec::new();
+    }
+
+    let filtered = store.filter_agent_sessions(agent_sessions);
+    if !filtered.is_empty() {
+        return filtered;
+    }
+
+    sessions_from_store(store, project_path)
 }
 
 pub async fn start_agent_connection(
@@ -120,13 +139,15 @@ pub async fn start_agent_connection(
                             .map(|project| project.project_path.clone())
                     };
                     if let Some(project_path) = project_path {
+                        let session_id = notification.session_id.to_string();
                         let mut store = load_project_store(&app_for_notifications, &project_path);
                         if let Some(session) = sessions
                             .iter()
-                            .find(|entry| entry.session_id == notification.session_id.to_string())
+                            .find(|entry| entry.session_id == session_id)
                         {
-                            store.upsert(session);
-                            save_project_store(&app_for_notifications, &project_path, &store);
+                            if store.update_metadata(session) {
+                                save_project_store(&app_for_notifications, &project_path, &store);
+                            }
                         }
                     }
                 }
@@ -204,43 +225,27 @@ pub async fn start_agent_connection(
 
                 let mut session_store = load_project_store(&app, &project_path);
 
-                if agent_capabilities.list_sessions {
-                    let _ = list_sessions_on_connection(
-                        &connection,
-                        &app,
-                        &state,
-                        &project_path,
-                        None,
-                    )
-                    .await;
+                let agent_sessions = if agent_capabilities.list_sessions {
+                    fetch_agent_sessions(&connection, &project_path)
+                        .await
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+
+                if !agent_sessions.is_empty() {
+                    session_store.merge_agent_metadata(&agent_sessions);
+                    save_project_store(&app, &project_path, &session_store);
                 }
 
-                let listed_sessions = {
-                    let guard = state.lock().await;
-                    guard
-                        .project
-                        .as_ref()
-                        .map(|project| project.sessions.clone())
-                        .unwrap_or_default()
-                };
-
-                let app_sessions = if session_store.sessions.is_empty() {
-                    Vec::new()
-                } else if agent_capabilities.list_sessions {
-                    let filtered = session_store.filter_agent_sessions(listed_sessions);
-                    if filtered.is_empty() {
-                        sessions_from_store(&session_store, &project_path)
-                    } else {
-                        filtered
-                    }
-                } else {
-                    sessions_from_store(&session_store, &project_path)
-                };
+                let app_sessions =
+                    resolve_circulo_sessions(&session_store, &agent_sessions, &project_path);
 
                 {
                     let mut guard = state.lock().await;
                     if let Some(project) = guard.project.as_mut() {
                         project.sessions = app_sessions.clone();
+                        project.list_cursor = None;
                     }
                 }
 
@@ -314,7 +319,7 @@ pub async fn start_agent_connection(
                     }
                 };
 
-                session_store.upsert(&session_entry);
+                session_store.register(&session_entry);
                 session_store.set_active(&session_id);
                 save_project_store(&app, &project_path, &session_store);
 
@@ -485,7 +490,7 @@ pub async fn start_agent_connection(
                                         .iter()
                                         .find(|entry| entry.session_id == new_session_id)
                                     {
-                                        store.upsert(session);
+                                        store.register(session);
                                     }
                                     store.set_active(&new_session_id);
                                     save_project_store(&app, &project_path, &store);
@@ -674,65 +679,40 @@ pub async fn start_agent_connection(
     Ok(())
 }
 
-async fn list_sessions_on_connection(
+async fn fetch_agent_sessions(
     connection: &ConnectionTo<Agent>,
-    app: &AppHandle,
-    state: &SharedState,
     project_path: &PathBuf,
-    cursor: Option<String>,
-) -> Result<(), String> {
-    let is_paginated = cursor.is_some();
-    let mut request = ListSessionsRequest::new().cwd(project_path.clone());
-    if let Some(cursor) = cursor {
-        request = request.cursor(cursor);
-    }
+) -> Result<Vec<SessionInfoDto>, String> {
+    let mut all_sessions = Vec::new();
+    let mut cursor: Option<String> = None;
 
-    let response = connection
-        .send_request(request)
-        .block_task()
-        .await
-        .map_err(|err| err.to_string())?;
-
-    let sessions: Vec<SessionInfoDto> = response
-        .sessions
-        .iter()
-        .map(SessionInfoDto::from)
-        .collect();
-    let next_cursor = response.next_cursor.clone();
-
-    let (all_sessions, active_session_id) = {
-        let mut guard = state.lock().await;
-        let Some(project) = guard.project.as_mut() else {
-            return Ok(());
-        };
-
-        if is_paginated {
-            for session in sessions.iter() {
-                if let Some(existing) = project
-                    .sessions
-                    .iter_mut()
-                    .find(|entry| entry.session_id == session.session_id)
-                {
-                    *existing = session.clone();
-                } else {
-                    project.sessions.push(session.clone());
-                }
-            }
-        } else {
-            project.sessions = sessions.clone();
+    loop {
+        let mut request = ListSessionsRequest::new().cwd(project_path.clone());
+        if let Some(next) = cursor.clone() {
+            request = request.cursor(next);
         }
 
-        project.list_cursor = next_cursor.clone();
-        (project.sessions.clone(), project.session_id.clone())
-    };
+        let response = connection
+            .send_request(request)
+            .block_task()
+            .await
+            .map_err(|err| err.to_string())?;
 
-    emit_sessions_updated(
-        app,
-        &all_sessions,
-        Some(&active_session_id),
-        next_cursor,
-    );
-    Ok(())
+        all_sessions.extend(
+            response
+                .sessions
+                .iter()
+                .map(SessionInfoDto::from)
+                .collect::<Vec<_>>(),
+        );
+
+        cursor = response.next_cursor.clone();
+        if cursor.is_none() {
+            break;
+        }
+    }
+
+    Ok(all_sessions)
 }
 
 async fn switch_active_session(

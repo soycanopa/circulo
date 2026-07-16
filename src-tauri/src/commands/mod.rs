@@ -297,7 +297,9 @@ pub async fn rename_session(
     if let Ok(dir) = app.path().app_data_dir() {
         let store_path = store_path_for(&dir, &project_path);
         let mut store = ProjectSessionStore::load(&store_path);
-        store.upsert(&updated_session);
+        if !store.update_metadata(&updated_session) {
+            store.register(&updated_session);
+        }
         store.save(&store_path)?;
     }
 
