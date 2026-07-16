@@ -64,13 +64,13 @@ export function AgentModeSelector() {
 			<InputGroupButton
 				variant="ghost"
 				size="sm"
-				className="h-7 max-w-40 gap-1.5 px-2 text-xs"
+				className="max-w-44 gap-1.5"
 				disabled={!hasChoices}
 				onClick={() => hasChoices && setOpen((value) => !value)}
 			>
 				<CurrentIcon className="size-3.5 shrink-0 opacity-80" />
 				<span className="truncate">{current.title}</span>
-				<ChevronDown className="size-3 shrink-0 opacity-60" />
+				<ChevronDown className="size-3.5 shrink-0 opacity-60" />
 			</InputGroupButton>
 
 			<SelectorPortalMenu
@@ -93,11 +93,11 @@ export function AgentModeSelector() {
 								>
 									<Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
 									<span className="min-w-0">
-										<span className="block text-xs font-medium text-foreground">
+										<span className="block text-sm font-medium text-foreground">
 											{entry.presentation.title}
 										</span>
 										{entry.presentation.description ? (
-											<span className="mt-0.5 block text-[10px] leading-snug text-muted-foreground">
+											<span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
 												{entry.presentation.description}
 											</span>
 										) : null}

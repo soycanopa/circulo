@@ -77,15 +77,15 @@ export function ModelSelector() {
 			<InputGroupButton
 				variant="ghost"
 				size="sm"
-				className="h-7 max-w-52 gap-1.5 px-2 text-xs"
+				className="max-w-52 gap-1.5"
 				disabled={!hasModels}
 				onClick={() => hasModels && setOpen((v) => !v)}
 			>
 				{currentModel ? (
-					<ProviderIcon providerId={currentModel.providerId} />
+					<ProviderIcon providerId={currentModel.providerId} size="sm" />
 				) : null}
 				<span className="truncate">{currentModel?.displayName ?? "Modelo"}</span>
-				<ChevronDown className="size-3 shrink-0 opacity-60" />
+				<ChevronDown className="size-3.5 shrink-0 opacity-60" />
 			</InputGroupButton>
 
 			<SelectorPortalMenu
@@ -100,18 +100,18 @@ export function ModelSelector() {
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 						placeholder="Buscar modelo…"
-						className="h-7 w-full rounded-md border border-popover-border bg-[#222222] px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-[#6a6a6a] focus:ring-1 focus:ring-[#6a6a6a]/35"
+						className="h-8 w-full rounded-md border border-popover-border bg-[#222222] px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-[#6a6a6a] focus:ring-1 focus:ring-[#6a6a6a]/35"
 						autoFocus
 					/>
 				</div>
 				<div className="scrollbar-thin max-h-64 overflow-y-auto p-1">
 					{!hasVisible ? (
-						<p className="px-2 py-2 text-xs text-muted-foreground">Sin resultados</p>
+						<p className="px-2 py-2 text-sm text-muted-foreground">Sin resultados</p>
 					) : (
 						<>
 							{favoriteModels.length > 0 ? (
 								<section className="mb-1">
-									<p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+									<p className="px-2 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 										Favoritos
 									</p>
 									<ul>
@@ -132,7 +132,7 @@ export function ModelSelector() {
 
 							{visibleGroups.map((group) => (
 								<section key={group.name} className="mb-1 last:mb-0">
-									<p className="px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+									<p className="px-2 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 										{group.name}
 									</p>
 									<ul>
@@ -174,7 +174,7 @@ function ModelRow({
 	return (
 		<div className="group/model-row relative">
 			<SelectorMenuItem active={isActive} onClick={onSelect} className="gap-2 pr-8">
-				<ProviderIcon providerId={model.providerId} />
+				<ProviderIcon providerId={model.providerId} size="sm" />
 				<span className="truncate">{model.displayName}</span>
 			</SelectorMenuItem>
 			<button

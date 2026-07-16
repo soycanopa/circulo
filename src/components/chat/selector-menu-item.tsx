@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils"
 
 export const SELECTOR_ITEM_CLASS =
-	"flex w-full items-center rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-white/10 hover:text-foreground"
+	"flex w-full items-center rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-white/10 hover:text-foreground"
 
 export const SELECTOR_ITEM_ACTIVE_CLASS = "bg-white/12 text-foreground"
 

@@ -17,7 +17,7 @@ export function ThinkingSelector() {
 		<ConfigOptionSelector
 			match={match}
 			placeholder="Thinking"
-			maxWidthClass="max-w-28"
+			maxWidthClass="max-w-32"
 		/>
 	)
 }

@@ -131,8 +131,8 @@ export function ContextWindowMeter({ usage }: ContextWindowMeterProps) {
 			>
 				<div className="space-y-2.5">
 					<div className="flex items-center justify-between gap-2">
-						<p className="text-xs font-medium text-foreground">Contexto</p>
-						<p className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+						<p className="text-sm font-medium text-foreground">Contexto</p>
+						<p className="shrink-0 text-xs tabular-nums text-muted-foreground">
 							{usage ? formatUsageCompact(usage) : "—"}
 						</p>
 					</div>
@@ -143,7 +143,7 @@ export function ContextWindowMeter({ usage }: ContextWindowMeterProps) {
 						<ul className="space-y-2">
 							{usage.breakdown.map((item) => (
 								<li key={item.id}>
-									<div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+									<div className="mb-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
 										<span className="truncate">{item.label}</span>
 										<span className="shrink-0 tabular-nums">
 											{item.percent < 10
@@ -162,7 +162,7 @@ export function ContextWindowMeter({ usage }: ContextWindowMeterProps) {
 					) : null}
 
 					{usage?.costUsd != null ? (
-						<p className="text-[10px] tabular-nums text-muted-foreground">
+						<p className="text-xs tabular-nums text-muted-foreground">
 							{formatCostUsd(usage.costUsd)}
 						</p>
 					) : null}

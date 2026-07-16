@@ -116,7 +116,7 @@ export function InputGroupButton({
 			className={cn(
 				"inline-flex shrink-0 items-center justify-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-50",
 				size === "icon-sm" && "size-7",
-				size === "sm" && "h-7 px-2 text-xs",
+				size === "sm" && "h-8 px-2.5 text-sm",
 				variant === "default" && "bg-primary text-primary-foreground hover:bg-primary/90",
 				variant === "ghost" && "text-muted-foreground hover:bg-accent hover:text-foreground",
 				className,

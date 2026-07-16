@@ -64,12 +64,12 @@ export function ConfigOptionSelector({
 			<InputGroupButton
 				variant="ghost"
 				size="sm"
-				className={cn("h-7 gap-1 px-2 text-xs", maxWidthClass)}
+				className={cn("gap-1.5", maxWidthClass)}
 				disabled={!isInteractive}
 				onClick={() => isInteractive && setOpen((value) => !value)}
 			>
 				<span className="truncate">{currentName ?? placeholder}</span>
-				<ChevronDown className="size-3 shrink-0 opacity-60" />
+				<ChevronDown className="size-3.5 shrink-0 opacity-60" />
 			</InputGroupButton>
 
 			<SelectorPortalMenu
@@ -90,7 +90,7 @@ export function ConfigOptionSelector({
 							>
 								<span>{entry.name}</span>
 								{entry.description ? (
-									<span className="text-[10px] text-muted-foreground">{entry.description}</span>
+									<span className="text-xs text-muted-foreground">{entry.description}</span>
 								) : null}
 							</SelectorMenuItem>
 						</li>
