@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client"
 import { App } from "@/App"
 import { isTauri } from "@/lib/window-chrome"
 import "@/styles/globals.css"
+import "@pierre/diffs/web-components"
 
 if (isTauri) {
 	document.documentElement.dataset.tauri = ""

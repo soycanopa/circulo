@@ -10,6 +10,11 @@ export default defineConfig(async () => ({
 	resolve: {
 		alias: {
 			"@": path.resolve(__dirname, "./src"),
+			// @pierre/diffs ships web-components as sideEffects but omits it from exports
+			"@pierre/diffs/web-components": path.resolve(
+				__dirname,
+				"node_modules/@pierre/diffs/dist/components/web-components.js",
+			),
 		},
 	},
 	clearScreen: false,
