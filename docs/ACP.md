@@ -67,8 +67,37 @@ session/set_config_option { configId, value }
 | Grok CLI | según docs | 🔜 |
 | Agy/Antigravity | N/A | ❌ sin ACP nativo aún |
 
+## Límites de ACP y fuentes complementarias
+
+Circulo usa **ACP como canal principal**, pero no asume que el protocolo exponga todo lo que OpenCode (u otros agentes) ofrecen por SDK, CLI o HTTP.
+
+**Principio:** implementar primero con ACP; donde el gap sea estable, complementar con la vía más simple (sin segundo stack de chat).
+
+| Necesidad | ¿ACP? | Alternativa en OpenCode |
+|-----------|-------|-------------------------|
+| Streaming, tool calls, permisos | ✅ | — |
+| Cambio de modelo (`set_config_option`) | ✅ | — |
+| Uso de contexto (tokens, %, coste) | ✅ `usage_update` | — |
+| Desglose por categoría (MCP, Skills, …) | ❌ | `GET /session/:id/context` (servidor HTTP) |
+| Undo / compact conversación | ❌ o limitado | SDK `@opencode-ai/sdk` |
+| Export transcript | parcial | `opencode export` (CLI) |
+| Admin MCP, attachments, settings | ❌ | SDK + `opencode serve` |
+
+**Implementación prevista (anotación):** la capa Rust de Circulo puede, por feature:
+
+1. Seguir solo ACP (preferido).
+2. Invocar **CLI** del agente ya instalado (`opencode …`).
+3. Llamar **HTTP local** al servidor OpenCode si está levantado.
+4. Usar **SDK** solo si CLI/HTTP no bastan (más acoplamiento).
+
+No todo se podrá implementar **solo** con ACP; eso es esperado y no implica abandonar el protocolo.
+
+**Ejemplo ya en el código:** `src/lib/context-window.ts` parsea `usage_update` para totales; el desglose por categoría queda preparado en tipos/parser pero requiere otra fuente cuando se implemente el fallback.
+
 ## Referencias
 
 - Spec: https://agentclientprotocol.com/protocol/v1/overview
 - Rust SDK: https://docs.rs/agent-client-protocol
 - Registry de agentes: https://agentclientprotocol.com/get-started/agents
+- OpenCode ACP: https://opencode.ai/docs/acp/
+- OpenCode SDK: https://opencode.ai/docs/sdk/

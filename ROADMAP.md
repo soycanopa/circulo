@@ -11,7 +11,7 @@ Documento de referencia para decidir qué traer de repos relacionados al **Circu
 | [Emanuele-web04/synara](https://github.com/Emanuele-web04/synara) | Electron + Bun server WebSocket + multi-proveedor directo (Codex app-server, etc.) + SQLite | Competidor cercano en visión “workspace local”; ~2.2k commits, v0.5.4, 1.3k★ |
 | [craft-ai-agents/craft-agents-oss](https://github.com/craft-ai-agents/craft-agents-oss) | Electron + Claude/Pi SDK + `@craft-agent/ui` (Shiki, @pierre/diffs, TipTap) | **Referente #1 de polish en chat** — previews, diffs, planes, credenciales; ~97 commits, Apache 2.0 |
 
-**Circulo hoy (v0.1):** cliente ACP nativo con chat streaming, permisos, tool calls, diffs inline, plan mode, multi-sesión, sidebar de proyectos, frosted glass macOS. **No** tiene settings, review panel, git integrado, automations, ni capa HTTP al agente.
+**Circulo hoy (v0.1):** cliente ACP nativo con chat streaming, permisos, tool calls, diffs inline, plan mode, multi-sesión, sidebar de proyectos, medidor de contexto (totales vía `usage_update`), frosted glass macOS. **No** tiene settings, review panel, git integrado, automations, desglose de contexto por categoría, ni capa HTTP/SDK/CLI complementaria al agente.
 
 **Criterio de priorización:** de **más compleja → más sencilla**, ajustado a nuestro stack ACP/Tauri (no copiar Electron/SDK tal cual si requiere re-arquitectura).
 
@@ -57,16 +57,34 @@ Documento de referencia para decidir qué traer de repos relacionados al **Circu
 
 ---
 
-### 1.3 Cliente dual ACP + OpenCode SDK (HTTP) / multi-proveedor directo
+### 1.3 ACP como canal principal + fuentes complementarias (híbrido selectivo)
 **Fuente:** implícito al comparar los cuatro proyectos  
-**Complejidad:** 🔴 muy alta  
-**Estado nuestro:** solo ACP
+**Complejidad:** 🟡 media (por feature) · 🔴 si se intenta dual stack completo  
+**Estado nuestro:** ACP stdio; complementos puntuales aún no implementados
 
+- **Canal principal:** ACP stdio (`opencode acp`, futuros agentes ACP). Chat, permisos, streaming, tool calls, `usage_update` básico.
+- **Lo que ACP no trae** (o trae incompleto) se obtiene **por otra vía**, sin re-arquitectar el producto:
+  - **OpenCode SDK** (`@opencode-ai/sdk`) — HTTP/SSE al servidor local (`opencode serve`)
+  - **CLI** — `opencode export`, subcomandos de sesión, etc.
+  - **HTTP directo** — p. ej. `GET /session/:id/context` para desglose de tokens por categoría
 - soycanopa/circulo y OpenChamber asumen **servidor OpenCode** con SDK rico (undo, compact, attachments, MCP admin, etc.).
-- **Synara** evita ACP y habla **directo** con cada proveedor (Codex app-server JSON-RPC, Claude Agent, Gemini, Grok, Pi, OpenCode, Cursor, Kilo) vía `apps/server` + WebSocket. `packages/contracts` define discovery, capabilities y eventos por proveedor.
-- Muchas features “fáciles” en esos repos **no existen en ACP** o están incompletas.
+- **Synara** evita ACP y habla **directo** con cada proveedor; no es nuestro modelo, pero confirma que no todo cabe en un solo protocolo.
 
-**Recomendación:** **no** hacer dual stack a corto plazo. Priorizar gaps vía ACP + contribuir al protocolo. Para multi-proveedor, preferir **varios binarios ACP** (`opencode acp`, futuro `cline acp`, etc.) antes de replicar el registry directo de Synara. Reevaluar solo si ACP no cubre undo/attachments en 6 meses.
+**Regla de diseño:** una feature = evaluar ACP primero; si el gap es estable y documentado, añadir **un** fallback acotado en Rust (spawn CLI, HTTP local, o SDK embebido). No mantener dos stacks de chat en paralelo.
+
+**Ejemplos concretos (anotación, no implementados aún):**
+
+| Feature | ACP hoy | Fallback posible |
+|---------|---------|------------------|
+| Medidor de contexto (totales) | ✅ `usage_update` | — |
+| Desglose por categoría (MCP, Skills, etc.) | ❌ no en `usage_update` | HTTP `/session/:id/context` o UI nativa OpenCode |
+| Undo / compact de conversación | ❌ o incompleto | SDK o CLI OpenCode |
+| Admin MCP / credenciales | ❌ | SDK / settings HTTP |
+| Export de transcript | parcial vía eventos | `opencode export` |
+
+**Recomendación:** **no** dual stack completo a corto plazo. Sí **híbrido selectivo** por gap: ACP + contribución al protocolo donde convenga; fallback SDK/CLI/HTTP solo donde ACP no alcance. Multi-proveedor: preferir **varios binarios ACP** antes de replicar el registry directo de Synara.
+
+> Ver también: [docs/ACP.md — Límites de ACP y fuentes complementarias](./docs/ACP.md#límites-de-acp-y-fuentes-complementarias).
 
 ---
 
@@ -420,10 +438,12 @@ Análisis profundo de [craft-agents-oss](https://github.com/craft-ai-agents/craf
 
 ### 3.9 Visibilidad de contexto (tokens, coste, raw messages)
 **Fuente:** OpenChamber  
-**Complejidad:** 🟢 media-baja  
-**Estado nuestro:** no existe
+**Complejidad:** 🟢 media-baja · 🟡 desglose completo (requiere HTTP/SDK)  
+**Estado nuestro:** medidor básico vía ACP `usage_update` (totales + coste); desglose por categoría pendiente
 
-- Panel debug para power users; leer metadata de sesión ACP si está disponible.
+- Medidor en footer del composer (`context-window-meter.tsx`) alimentado por `usage_update`.
+- Desglose MCP / Skills / system prompt **no** llega por ACP hoy → anotado para fallback HTTP `/session/:id/context` o SDK (§1.3).
+- Panel debug opcional para power users (raw messages, metadata extra).
 
 ---
 
