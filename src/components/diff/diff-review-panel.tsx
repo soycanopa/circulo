@@ -88,31 +88,33 @@ export function DiffReviewPanel() {
 				</div>
 			</header>
 
-			<div className="grid min-h-0 flex-1 grid-cols-[minmax(9.5rem,34%)_minmax(0,1fr)]">
-				<div className="min-h-0 border-r border-border/50 bg-muted/20">
-					<DiffFileList
-						entries={entries}
-						activeId={active?.id ?? ""}
-						onSelect={setActiveDiffToolId}
-					/>
+			{entries.length === 0 ? (
+				<div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+					No hay archivos modificados en esta sesión.
 				</div>
-
-				<div className="relative min-h-0 min-w-0 bg-[#141414]">
-					{active ? (
-						<PierreFileDiff
-							path={active.path}
-							oldText={active.oldText}
-							newText={active.newText}
-							fill
-							className="h-full rounded-none border-0"
+			) : (
+				<div className="grid min-h-0 flex-1 grid-cols-[minmax(9.5rem,34%)_minmax(0,1fr)]">
+					<div className="min-h-0 border-r border-border/50 bg-muted/20">
+						<DiffFileList
+							entries={entries}
+							activeId={active?.id ?? ""}
+							onSelect={setActiveDiffToolId}
 						/>
-					) : (
-						<div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
-							Los diffs de archivos editados aparecerán aquí.
-						</div>
-					)}
+					</div>
+
+					<div className="relative min-h-0 min-w-0 bg-[#141414]">
+						{active ? (
+							<PierreFileDiff
+								path={active.path}
+								oldText={active.oldText}
+								newText={active.newText}
+								fill
+								className="h-full rounded-none border-0"
+							/>
+						) : null}
+					</div>
 				</div>
-			</div>
+			)}
 		</aside>
 	)
 }

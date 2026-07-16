@@ -19,13 +19,7 @@ function fileDirectory(path: string) {
 }
 
 export function DiffFileList({ entries, activeId, onSelect }: DiffFileListProps) {
-	if (entries.length === 0) {
-		return (
-			<div className="flex h-full items-center justify-center px-3 text-center text-xs text-muted-foreground">
-				No hay archivos modificados en esta sesión.
-			</div>
-		)
-	}
+	if (entries.length === 0) return null
 
 	return (
 		<ul className="scrollbar-thin flex min-h-0 flex-col gap-0.5 overflow-y-auto p-1.5">
