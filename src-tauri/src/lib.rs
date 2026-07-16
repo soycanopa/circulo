@@ -66,6 +66,7 @@ pub fn run() {
             commands::list_opencode_skills,
             commands::list_opencode_mcp_servers,
             commands::set_opencode_mcp_enabled,
+            commands::search_skills_sh,
             commands::install_skills_sh_skill,
         ])
         .run(tauri::generate_context!())

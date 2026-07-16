@@ -12,7 +12,9 @@ use crate::opencode_config::{
     set_opencode_mcp_enabled as write_opencode_mcp_enabled, CommandEntryDto, McpServerEntryDto,
     SkillEntryDto,
 };
-use crate::skills_cli::install_skills_package;
+use crate::skills_cli::{
+    install_skills_package, search_skills_sh as fetch_skills_sh, SkillsShSearchResultDto,
+};
 use crate::session_store::{store_path_for, ProjectSessionStore};
 use crate::state::{
     ActiveProject, AgentCapabilitiesDto, AgentCommand, ContextFile, CredentialResponseDto,
@@ -371,6 +373,11 @@ pub async fn set_opencode_mcp_enabled(
     config_path: Option<String>,
 ) -> Result<(), String> {
     write_opencode_mcp_enabled(name, scope, enabled, project_path, config_path)
+}
+
+#[tauri::command]
+pub async fn search_skills_sh(query: String) -> Result<Vec<SkillsShSearchResultDto>, String> {
+    fetch_skills_sh(&query).await
 }
 
 #[tauri::command]

@@ -1,6 +1,51 @@
 use std::path::Path;
 use std::process::Command;
 
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillsShSearchResultDto {
+    pub id: String,
+    pub skill_id: String,
+    pub name: String,
+    pub installs: u64,
+    pub source: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SkillsShSearchResponse {
+    skills: Vec<SkillsShSearchResultDto>,
+}
+
+pub async fn search_skills_sh(query: &str) -> Result<Vec<SkillsShSearchResultDto>, String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let response = reqwest::Client::new()
+        .get("https://skills.sh/api/search")
+        .query(&[("q", trimmed)])
+        .send()
+        .await
+        .map_err(|err| format!("No se pudo conectar con skills.sh: {err}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "skills.sh respondió con estado {}",
+            response.status()
+        ));
+    }
+
+    let body: SkillsShSearchResponse = response
+        .json()
+        .await
+        .map_err(|err| format!("Respuesta inválida de skills.sh: {err}"))?;
+
+    Ok(body.skills)
+}
+
 pub fn install_skills_package(
     package: &str,
     scope: &str,
