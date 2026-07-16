@@ -12,13 +12,6 @@ export const panelEase: Transition = {
 	ease: [0.32, 0.72, 0, 1],
 }
 
-export const diffPanelSpring: Transition = {
-	type: "spring",
-	stiffness: 220,
-	damping: 30,
-	mass: 0.95,
-}
-
 export const terminalDrawer: Transition = {
 	duration: 0.34,
 	ease: [0.32, 0.72, 0, 1],

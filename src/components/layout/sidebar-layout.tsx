@@ -10,7 +10,7 @@ import {
 } from "react"
 import type { LucideIcon } from "lucide-react"
 
-import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { DiffReviewPanel } from "@/components/diff/diff-review-panel"
 import { AppBar } from "@/components/layout/app-bar"
 import { DiffToggleButton } from "@/components/layout/diff-toggle-button"
@@ -23,7 +23,7 @@ import { useDiffPanelAutoOpen } from "@/hooks/use-diff-panel-auto-open"
 import { windowDragRegionProps, windowNoDragProps } from "@/hooks/use-window-drag"
 import { useSessions } from "@/hooks/use-sessions"
 
-import { diffPanelSpring } from "@/lib/motion-presets"
+import { terminalDrawer } from "@/lib/motion-presets"
 import { getRightPanelWidth, getSidebarWidth } from "@/lib/preferences"
 import { diffPanelOpenAtom, terminalOpenAtom } from "@/stores/atoms"
 import { useAtomValue, useSetAtom } from "jotai"
@@ -192,7 +192,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 		: WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP + APP_BAR_TITLE_INSET_LEFT_COLLAPSED
 
 	const diffPanelTransition =
-		isRightResizing || reduceMotion ? { duration: 0 } : diffPanelSpring
+		isRightResizing || reduceMotion ? { duration: 0 } : terminalDrawer
 
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
@@ -257,11 +257,8 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 					</div>
 				) : null}
 
-				<LayoutGroup id="shell-columns">
-				<motion.main
-					layout={!isResizing}
+				<main
 					data-slot="sidebar-inset"
-					transition={diffPanelTransition}
 					className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl"
 				>
 					<AppBar />
@@ -276,23 +273,18 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 					>
 						{children}
 					</div>
-				</motion.main>
+				</main>
 
-				<AnimatePresence initial={false} mode="popLayout">
+				<AnimatePresence initial={false}>
 					{diffPanelOpen ? (
 						<motion.div
 							key="diff-panel-shell"
-							layout
-							initial={reduceMotion ? false : { width: 0, opacity: 0.6 }}
+							initial={reduceMotion ? false : { width: 0, opacity: 0 }}
 							animate={{ width: rightPanelWidth + SHELL_INSET, opacity: 1 }}
 							exit={{ width: 0, opacity: 0 }}
 							transition={{
 								width: diffPanelTransition,
-								opacity: {
-									duration: reduceMotion ? 0 : 0.22,
-									ease: [0.22, 1, 0.36, 1],
-								},
-								layout: diffPanelTransition,
+								opacity: diffPanelTransition,
 							}}
 							data-state="open"
 							className="flex h-full shrink-0 overflow-hidden"
@@ -312,7 +304,6 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 						</motion.div>
 					) : null}
 				</AnimatePresence>
-				</LayoutGroup>
 
 				<WindowDragStrip />
 				<LayoutWindowControls open={open} onToggleSidebar={toggleSidebar} />
