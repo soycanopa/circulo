@@ -107,12 +107,23 @@ export function EditProfileDialog({
 						/>
 						<button
 							type="button"
-							onClick={openPhotoPicker}
+							onClick={() => {
+								if (draftImage) {
+									setDraftImage(null)
+									setError(null)
+									return
+								}
+								openPhotoPicker()
+							}}
 							disabled={processing}
-							aria-label="Choose profile photo"
+							aria-label={draftImage ? "Remove profile photo" : "Choose profile photo"}
 							className="absolute bottom-0 end-0 flex size-7 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm transition-colors hover:bg-black/60 disabled:opacity-50"
 						>
-							<Pencil className="size-3" />
+							{draftImage ? (
+								<Trash2 className="size-3" />
+							) : (
+								<Pencil className="size-3" />
+							)}
 						</button>
 					</div>
 
@@ -128,20 +139,6 @@ export function EditProfileDialog({
 					/>
 
 					<div className="flex w-full flex-col items-center gap-3">
-						{draftImage ? (
-							<button
-								type="button"
-								onClick={() => {
-									setDraftImage(null)
-									setError(null)
-								}}
-								className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-							>
-								<Trash2 className="size-3.5" />
-								Remove photo
-							</button>
-						) : null}
-
 						<div className="flex flex-wrap items-center justify-center gap-2">
 							{PROFILE_AVATAR_COLORS.map((color) => (
 								<button
@@ -164,7 +161,7 @@ export function EditProfileDialog({
 							{processing
 								? "Processing photo…"
 								: draftImage
-									? "Tap the pencil to replace the photo. Colors apply when no photo is set."
+									? "Tap the trash icon to remove the photo. Colors apply when no photo is set."
 									: "Tap the pencil to choose a photo, or pick a color."}
 						</p>
 					</div>
