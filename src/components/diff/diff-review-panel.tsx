@@ -41,7 +41,7 @@ export function DiffReviewPanel() {
 	return (
 		<aside
 			data-slot="diff-review-panel"
-			className="flex h-full min-h-0 flex-col overflow-hidden border-l border-border/50 bg-background"
+			className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-l border-border/50 bg-background"
 			{...windowNoDragProps()}
 		>
 			<header
@@ -93,8 +93,8 @@ export function DiffReviewPanel() {
 					No hay archivos modificados en esta sesión.
 				</div>
 			) : (
-				<div className="grid min-h-0 flex-1 grid-cols-[minmax(9.5rem,34%)_minmax(0,1fr)]">
-					<div className="min-h-0 border-r border-border/50 bg-muted/20">
+				<div className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,34%)_minmax(0,1fr)] overflow-hidden">
+					<div className="min-h-0 min-w-0 border-r border-border/50 bg-muted/20">
 						<DiffFileList
 							entries={entries}
 							activeId={active?.id ?? ""}

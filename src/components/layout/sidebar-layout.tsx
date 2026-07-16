@@ -10,11 +10,10 @@ import {
 } from "react"
 import type { LucideIcon } from "lucide-react"
 
-import { AnimatePresence, motion, useReducedMotion } from "motion/react"
-import { DiffReviewPanel } from "@/components/diff/diff-review-panel"
+import { AnimatePresence } from "motion/react"
+import { DiffPanel } from "@/components/diff/diff-panel"
 import { AppBar } from "@/components/layout/app-bar"
 import { DiffToggleButton } from "@/components/layout/diff-toggle-button"
-import { RightPanelResizeHandle } from "@/components/layout/right-panel-resize-handle"
 import { SidebarResizeHandle } from "@/components/layout/sidebar-resize-handle"
 import { TerminalToggleButton } from "@/components/layout/terminal-toggle-button"
 import { WindowControls } from "@/components/layout/window-controls"
@@ -23,7 +22,6 @@ import { useDiffPanelAutoOpen } from "@/hooks/use-diff-panel-auto-open"
 import { windowDragRegionProps, windowNoDragProps } from "@/hooks/use-window-drag"
 import { useSessions } from "@/hooks/use-sessions"
 
-import { terminalDrawer } from "@/lib/motion-presets"
 import { getRightPanelWidth, getSidebarWidth } from "@/lib/preferences"
 import { diffPanelOpenAtom, terminalOpenAtom } from "@/stores/atoms"
 import { useAtomValue, useSetAtom } from "jotai"
@@ -181,7 +179,6 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 	const [isResizing, setIsResizing] = useState(false)
 	const [isRightResizing, setIsRightResizing] = useState(false)
 	const diffPanelOpen = useAtomValue(diffPanelOpenAtom)
-	const reduceMotion = useReducedMotion()
 
 	const toggleSidebar = useCallback(() => {
 		setOpen((value) => !value)
@@ -190,9 +187,6 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 	const titleInsetLeft = open
 		? APP_BAR_TITLE_INSET_FROM_MAIN
 		: WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP + APP_BAR_TITLE_INSET_LEFT_COLLAPSED
-
-	const diffPanelTransition =
-		isRightResizing || reduceMotion ? { duration: 0 } : terminalDrawer
 
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
@@ -277,31 +271,13 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 
 				<AnimatePresence initial={false}>
 					{diffPanelOpen ? (
-						<motion.div
-							key="diff-panel-shell"
-							initial={reduceMotion ? false : { width: 0, opacity: 0 }}
-							animate={{ width: rightPanelWidth + SHELL_INSET, opacity: 1 }}
-							exit={{ width: 0, opacity: 0 }}
-							transition={{
-								width: diffPanelTransition,
-								opacity: diffPanelTransition,
-							}}
-							data-state="open"
-							className="flex h-full shrink-0 overflow-hidden"
-						>
-							<RightPanelResizeHandle
-								width={rightPanelWidth}
-								onWidthChange={setRightPanelWidth}
-								onResizingChange={setIsRightResizing}
-							/>
-							<div
-								data-slot="right-panel"
-								className="h-full min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl"
-								style={{ width: rightPanelWidth }}
-							>
-								<DiffReviewPanel />
-							</div>
-						</motion.div>
+						<DiffPanel
+							key="diff-panel"
+							width={rightPanelWidth}
+							isResizing={isRightResizing}
+							onWidthChange={setRightPanelWidth}
+							onResizingChange={setIsRightResizing}
+						/>
 					) : null}
 				</AnimatePresence>
 
