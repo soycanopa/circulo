@@ -17,7 +17,11 @@ interface ConnectionStatusProps {
 
 function statusColor(connected: boolean, sessionStatus: SessionStatus): string {
 	if (!connected || sessionStatus === "disconnected") return "bg-red-500"
-	if (sessionStatus === "awaiting_permission" || sessionStatus === "generating") {
+	if (
+		sessionStatus === "awaiting_permission" ||
+		sessionStatus === "awaiting_credential" ||
+		sessionStatus === "generating"
+	) {
 		return "bg-amber-400"
 	}
 	return "bg-green-500"
@@ -26,6 +30,7 @@ function statusColor(connected: boolean, sessionStatus: SessionStatus): string {
 function statusLabel(connected: boolean, sessionStatus: SessionStatus): string {
 	if (!connected || sessionStatus === "disconnected") return "Desconectado"
 	if (sessionStatus === "awaiting_permission") return "Esperando permiso"
+	if (sessionStatus === "awaiting_credential") return "Esperando credenciales"
 	if (sessionStatus === "generating") return "Generando respuesta"
 	return "Conectado"
 }

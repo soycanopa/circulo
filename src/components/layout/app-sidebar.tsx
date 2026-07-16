@@ -59,7 +59,9 @@ function sessionStatusFor(
 ): SidebarSessionStatus {
 	if (sessionId !== activeSessionId) return "idle"
 	if (promptInFlight) return "running"
-	if (globalStatus === "awaiting_permission") return "waiting"
+	if (globalStatus === "awaiting_permission" || globalStatus === "awaiting_credential") {
+		return "waiting"
+	}
 	if (globalStatus === "disconnected") return "failed"
 	return "idle"
 }

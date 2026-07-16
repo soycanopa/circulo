@@ -1,14 +1,14 @@
 import { getDefaultStore, useSetAtom } from "jotai"
 import { useEffect, useRef } from "react"
-import { findModeOption, isAgentPlanMode } from "@/lib/agent-mode"
-import { isPlanModeValue } from "@/lib/agent-mode-presentations"
-import { normalizePlanMarkdown } from "@/lib/plan-markdown"
+import { isAgentPlanMode } from "@/lib/agent-mode"
+import { isPlanLikeContent, normalizePlanMarkdown } from "@/lib/plan-markdown"
 import { applySessionInfoUpdate, applySessionUpdate } from "@/lib/acp-parser"
 import { parseUsageUpdate } from "@/lib/context-window"
 import { promptInFlightRef, setPromptInFlightSync } from "@/lib/prompt-flight"
 import { applySessionDefaults } from "@/lib/session-defaults"
 import { listenAcpEvents } from "@/lib/tauri"
 import {
+	activeCredentialAtom,
 	activePermissionAtom,
 	activeSessionIdAtom,
 	agentCapabilitiesAtom,
@@ -26,6 +26,7 @@ import {
 	sessionsAtom,
 	streamingTextAtom,
 } from "@/stores/atoms"
+import { normalizeCredentialRequest } from "@/lib/credential-presentation"
 import type { ConfigOption, PermissionRequest } from "@/types/acp"
 
 /**
@@ -42,6 +43,7 @@ export function useAcpEventBridge() {
 	const setActiveSessionId = useSetAtom(activeSessionIdAtom)
 	const setConfigOptions = useSetAtom(configOptionsAtom)
 	const setActivePermission = useSetAtom(activePermissionAtom)
+	const setActiveCredential = useSetAtom(activeCredentialAtom)
 	const setErrorMessage = useSetAtom(errorMessageAtom)
 	const setSessions = useSetAtom(sessionsAtom)
 	const setCapabilities = useSetAtom(agentCapabilitiesAtom)
@@ -68,6 +70,7 @@ export function useAcpEventBridge() {
 				setStreamingText("")
 				streamingRef.current = ""
 				getDefaultStore().set(pendingPlanAtom, null)
+				getDefaultStore().set(activeCredentialAtom, null)
 				getDefaultStore().set(planCommentModeAtom, false)
 				getDefaultStore().set(contextWindowAtom, null)
 
@@ -140,6 +143,12 @@ export function useAcpEventBridge() {
 				setSessionStatus("awaiting_permission")
 				setActivePermission(payload as PermissionRequest)
 			},
+			onCredentialRequest: (payload) => {
+				const request = normalizeCredentialRequest(payload)
+				if (!request) return
+				setSessionStatus("awaiting_credential")
+				setActiveCredential(request)
+			},
 			onConfigOptions: (payload) => {
 				setConfigOptions(payload.configOptions)
 			},
@@ -148,12 +157,10 @@ export function useAcpEventBridge() {
 				const jotaiStore = getDefaultStore()
 				const configOptions = jotaiStore.get(configOptionsAtom)
 				const planTurnActive = jotaiStore.get(planTurnActiveAtom)
-				const planMode =
-					planTurnActive ||
-					isAgentPlanMode(configOptions) ||
-					isPlanModeValue(findModeOption(configOptions)?.currentValue)
+				const expectsPlan = planTurnActive || isAgentPlanMode(configOptions)
+				const shouldCapturePlan = expectsPlan && stream.trim() && isPlanLikeContent(stream)
 
-				if (planMode && stream.trim()) {
+				if (shouldCapturePlan) {
 					const normalized = normalizePlanMarkdown(stream)
 					jotaiStore.set(pendingPlanAtom, {
 						content: normalized,
@@ -240,6 +247,7 @@ export function useAcpEventBridge() {
 			for (const unlisten of unlisteners) unlisten()
 		}
 	}, [
+		setActiveCredential,
 		setActivePermission,
 		setActiveSessionId,
 		setCapabilities,

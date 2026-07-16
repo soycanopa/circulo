@@ -4,9 +4,11 @@ import type {
 	AgentCapabilities,
 	ChatMessage,
 	ConfigOption,
+	CredentialRequest,
 	PermissionRequest,
 	SessionInfo,
 	SessionStatus,
+	ToolCallState,
 } from "@/types/acp"
 
 export const projectPathAtom = atom<string | null>(null)
@@ -17,6 +19,9 @@ export const messagesAtom = atom<ChatMessage[]>([])
 export const streamingTextAtom = atom<string>("")
 export const configOptionsAtom = atom<ConfigOption[]>([])
 export const activePermissionAtom = atom<PermissionRequest | null>(null)
+
+/** Credential / auth elicitation awaiting user input in the composer. */
+export const activeCredentialAtom = atom<CredentialRequest | null>(null)
 export const errorMessageAtom = atom<string | null>(null)
 export const sessionsAtom = atom<SessionInfo[]>([])
 export const activeSessionIdAtom = atom<string | null>(null)
@@ -44,3 +49,24 @@ export const planTurnActiveAtom = atom(false)
 
 /** Latest context window usage for the active session (from ACP usage_update). */
 export const contextWindowAtom = atom<ContextWindowSnapshot | null>(null)
+
+export type ToolOverlayState =
+	| { type: "single"; toolCall: ToolCallState }
+	| { type: "multi-diff"; toolCalls: ToolCallState[]; activeId?: string }
+	| null
+
+/** Fullscreen preview for tool output (C8). */
+export const toolOverlayAtom = atom<ToolOverlayState>(null)
+
+export interface PlanOverlayState {
+	content: string
+	isStreaming?: boolean
+	actionsEnabled?: boolean
+	onDownload?: () => void
+	onAccept?: () => void
+	onAcceptAndCompact?: () => void
+	onComment?: () => void
+	onReject?: () => void
+}
+
+export const planOverlayAtom = atom<PlanOverlayState | null>(null)

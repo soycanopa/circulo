@@ -6,8 +6,11 @@ import { ContextWindowMeter } from "@/components/chat/context-window-meter"
 import { ModelSelector } from "@/components/chat/model-selector"
 import { ThinkingSelector } from "@/components/chat/thinking-selector"
 import { ThreadFolderPicker } from "@/components/chat/thread-folder-picker"
+import { CredentialPrompt } from "@/components/credentials/credential-prompt"
+import { PermissionPrompt } from "@/components/permissions/permission-prompt"
 import { isAgentPlanMode } from "@/lib/agent-mode"
 import { setPromptInFlightSync } from "@/lib/prompt-flight"
+import { resolveContextWindowDisplay } from "@/lib/context-window"
 import { deriveTitleFromMessage } from "@/lib/sessions"
 import {
 	InputGroup,
@@ -18,6 +21,8 @@ import {
 import { searchFiles, sendPrompt } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
 import {
+	activeCredentialAtom,
+	activePermissionAtom,
 	activeSessionIdAtom,
 	configOptionsAtom,
 	contextWindowAtom,
@@ -64,7 +69,11 @@ export function ChatInput({
 	)
 	const projectPath = useAtomValue(projectPathAtom)
 	const configOptions = useAtomValue(configOptionsAtom)
-	const contextWindow = useAtomValue(contextWindowAtom)
+	const contextWindowUsage = useAtomValue(contextWindowAtom)
+	const contextWindow = useMemo(
+		() => resolveContextWindowDisplay(contextWindowUsage, configOptions),
+		[contextWindowUsage, configOptions],
+	)
 	const setPlanTurnActive = useSetAtom(planTurnActiveAtom)
 	const messageCount = useAtomValue(messagesAtom).length
 	const isPendingNewThreadFolder = pickerSessionId === NEW_THREAD_PICKER_ID
@@ -73,7 +82,11 @@ export function ChatInput({
 		messageCount === 0 &&
 		(isPendingNewThreadFolder || pickerSessionId === activeSessionId)
 	const pickerProjectPath = isPendingNewThreadFolder ? null : projectPath
+	const activeCredential = useAtomValue(activeCredentialAtom)
+	const activePermission = useAtomValue(activePermissionAtom)
 	const [promptInFlight, setPromptInFlight] = useAtom(promptInFlightAtom)
+	const showCredentialPrompt = Boolean(activeCredential)
+	const showPermissionPrompt = Boolean(activePermission) && !showCredentialPrompt
 	const [planCommentMode, setPlanCommentMode] = useAtom(planCommentModeAtom)
 	const setPendingPlan = useSetAtom(pendingPlanAtom)
 	const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -83,7 +96,8 @@ export function ChatInput({
 	const [suggestions, setSuggestions] = useState<string[]>([])
 	const [caret, setCaret] = useState(0)
 
-	const isAwaitingPermission = sessionStatus === "awaiting_permission"
+	const isAwaitingInput =
+		sessionStatus === "awaiting_permission" || sessionStatus === "awaiting_credential"
 	const isSubmitting = promptInFlight
 
 	useEffect(() => {
@@ -130,7 +144,7 @@ export function ChatInput({
 	async function handleSubmit(event?: React.FormEvent) {
 		event?.preventDefault()
 		const trimmed = value.trim()
-		if (!trimmed || disabled || isAwaitingPermission || isSubmitting || isPendingNewThreadFolder) {
+		if (!trimmed || disabled || isAwaitingInput || isSubmitting || isPendingNewThreadFolder) {
 			return
 		}
 
@@ -175,13 +189,13 @@ export function ChatInput({
 		}
 	}
 
-	const inputDisabled = disabled || isAwaitingPermission || isPendingNewThreadFolder
+	const inputDisabled = disabled || isAwaitingInput || isPendingNewThreadFolder
 
 	return (
 		<div className="relative z-10 shrink-0 overflow-visible px-4 pb-4 pt-2">
 			<div className="relative mx-auto max-w-3xl">
 				{visibleSuggestions.length > 0 && query !== null ? (
-					<div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-lg border border-border bg-popover shadow-lg">
+					<div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-lg border border-popover-border bg-popover shadow-lg">
 						{visibleSuggestions.map((path) => (
 							<button
 								key={path}
@@ -208,66 +222,74 @@ export function ChatInput({
 								/>
 							</div>
 						) : null}
-						{mentions.length > 0 ? (
-							<div className="flex flex-wrap gap-1.5 px-3 pt-2">
-								{mentions.map((mention) => (
-									<span
-										key={mention.path}
-										className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
-									>
-										<AtSign className="size-3" />
-										{mention.label}
-									</span>
-								))}
-							</div>
-						) : null}
+						{showCredentialPrompt ? (
+							<CredentialPrompt />
+						) : showPermissionPrompt ? (
+							<PermissionPrompt />
+						) : (
+							<>
+								{mentions.length > 0 ? (
+									<div className="flex flex-wrap gap-1.5 px-3 pt-2">
+										{mentions.map((mention) => (
+											<span
+												key={mention.path}
+												className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
+											>
+												<AtSign className="size-3" />
+												{mention.label}
+											</span>
+										))}
+									</div>
+								) : null}
 
-						<InputGroupTextarea
-							ref={textareaRef}
-							value={value}
-							disabled={inputDisabled}
-							placeholder={
-								planCommentMode
-									? "Comenta el plan: qué cambiar, qué priorizar, qué rechazar…"
-									: "Escribe un mensaje… Usa @ para referenciar archivos"
-							}
-							className={cn(inputDisabled && "opacity-60")}
-							onChange={(event) =>
-								handleChange(event.target.value, event.target.selectionStart ?? 0)
-							}
-							onSelect={(event) =>
-								setCaret((event.target as HTMLTextAreaElement).selectionStart ?? 0)
-							}
-							onKeyDown={(event) => {
-								if (event.key === "Enter" && !event.shiftKey) {
-									event.preventDefault()
-									void handleSubmit()
-								}
-							}}
-						/>
+								<InputGroupTextarea
+									ref={textareaRef}
+									value={value}
+									disabled={inputDisabled}
+									placeholder={
+										planCommentMode
+											? "Comenta el plan: qué cambiar, qué priorizar, qué rechazar…"
+											: "Escribe un mensaje… Usa @ para referenciar archivos"
+									}
+									className={cn(inputDisabled && "opacity-60")}
+									onChange={(event) =>
+										handleChange(event.target.value, event.target.selectionStart ?? 0)
+									}
+									onSelect={(event) =>
+										setCaret((event.target as HTMLTextAreaElement).selectionStart ?? 0)
+									}
+									onKeyDown={(event) => {
+										if (event.key === "Enter" && !event.shiftKey) {
+											event.preventDefault()
+											void handleSubmit()
+										}
+									}}
+								/>
 
-						<InputGroupAddon className="justify-between overflow-visible">
-							<div className="flex min-w-0 flex-wrap items-center gap-1 overflow-visible">
-								<AgentModeSelector />
-								<ThinkingSelector />
-								<ModelSelector />
-							</div>
-							<div className="flex items-center gap-2">
-								<ContextWindowMeter usage={contextWindow} />
-							<InputGroupButton
-								type="submit"
-								variant="default"
-								disabled={inputDisabled || isSubmitting || !value.trim()}
-								aria-label="Enviar mensaje"
-							>
-								{isSubmitting ? (
-									<Loader2 className="size-4 animate-spin text-[#3B5EF9]" />
-								) : (
-									<CornerDownLeft className="size-4" />
-								)}
-							</InputGroupButton>
-							</div>
-						</InputGroupAddon>
+								<InputGroupAddon className="justify-between overflow-visible">
+									<div className="flex min-w-0 flex-wrap items-center gap-1 overflow-visible">
+										<AgentModeSelector />
+										<ModelSelector />
+										<ThinkingSelector />
+										<ContextWindowMeter usage={contextWindow} />
+									</div>
+									<div className="flex items-center gap-2">
+										<InputGroupButton
+											type="submit"
+											variant="default"
+											disabled={inputDisabled || isSubmitting || !value.trim()}
+											aria-label="Enviar mensaje"
+										>
+											{isSubmitting ? (
+												<Loader2 className="size-4 animate-spin text-[#3B5EF9]" />
+											) : (
+												<CornerDownLeft className="size-4" />
+											)}
+										</InputGroupButton>
+									</div>
+								</InputGroupAddon>
+							</>
+						)}
 					</InputGroup>
 				</form>
 			</div>
