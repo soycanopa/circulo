@@ -52,33 +52,24 @@ Criterios: **installs altos**, fuente confiable, y relevancia directa para deskt
 
 ## Tier 2 — Desktop nativo (Tauri / macOS)
 
-### 6. `macos-patterns` *(ya instalado localmente)*
-- **Ruta local:** `~/.agents/skills/macos-patterns/SKILL.md`
+### 6. `macos-patterns` *(instalado en el repo)*
+- **Paquete:** `fayazara/macos-app-skills@macos-patterns`
+- **Ruta:** `.agents/skills/macos-patterns/SKILL.md`
 - **Por qué:** Circulo ya usa vibrancy, titlebar overlay, drag regions y frosted shell. Este skill evita anti-patrones web (z-index mental model, clipboard naive) al añadir tray, notificaciones, keychain y mini-windows.
 
 ---
 
-### 7. `tauri` (claude-skills-generator)
-- **Paquete:** `martinholovsky/claude-skills-generator@tauri`
-- **Installs:** ~507
-- **URL:** https://skills.sh/martinholovsky/claude-skills-generator/tauri
-- **Por qué:** Skill específico Tauri — invoke, capabilities, plugins, build. Más relevante que genéricos para nuestro core Rust + webview.
+### 7. `tauri-v2` *(instalado en el repo)*
+- **Paquete:** `nodnarbnitram/claude-code-extensions@tauri-v2`
+- **Ruta:** `.agents/skills/tauri-v2/SKILL.md`
+- **Por qué:** Foco en Tauri v2 (nuestra versión). Útil para capabilities, plugins PTY, IPC y empaquetado multi-plataforma.
 
 ---
 
-### 8. `tauri-v2`
-- **Paquete:** `smithery.ai@tauri-v2`
-- **Installs:** ~52
-- **URL:** https://skills.sh/smithery.ai/tauri-v2
-- **Por qué:** Foco en Tauri v2 (nuestra versión). Útil para auto-update, deep links, plugins PTY futuro y empaquetado multi-plataforma. Installs bajos pero dominio exacto.
-
----
-
-### 9. `rust-desktop-applications`
-- **Paquete:** `bobmatnyc/claude-mpm-skills@rust-desktop-applications`
-- **Installs:** ~266
-- **URL:** https://skills.sh/bobmatnyc/claude-mpm-skills/rust-desktop-applications
-- **Por qué:** Complementa Tauri en la capa Rust: ACP runner, permisos, subprocess, async Tokio. Ayuda al módulo `acp/runner.rs` y futuro scheduler/automations.
+### 8. `rust-best-practices` *(instalado en el repo)*
+- **Paquete:** `apollographql/skills@rust-best-practices`
+- **Ruta:** `.agents/skills/rust-best-practices/SKILL.md`
+- **Por qué:** Sustituto seguro para patrones Rust en desktop: async, módulos, testing. Cubre `acp/runner.rs` y futuro scheduler sin depender de skills marcados como maliciosos.
 
 ---
 
@@ -185,9 +176,10 @@ npx skills add vercel-labs/agent-skills@web-design-guidelines -g -y
 npx skills add anthropics/skills@frontend-design -g -y
 npx skills add shadcn/ui@shadcn -g -y
 
-# Desktop
-npx skills add martinholovsky/claude-skills-generator@tauri -g -y
-npx skills add smithery.ai@tauri-v2 -g -y
+# Desktop (usar solo paquetes sin alerta de skills.sh)
+npx skills add fayazara/macos-app-skills@macos-patterns -g -y
+npx skills add nodnarbnitram/claude-code-extensions@tauri-v2 -g -y
+npx skills add apollographql/skills@rust-best-practices -g -y
 
 # Calidad y roadmap
 npx skills add obra/superpowers@writing-plans -g -y
@@ -211,10 +203,12 @@ Si clonas o sincronizas ese repo, puedes reutilizar esa carpeta en el proyecto T
 
 | Skill / categoría | Motivo |
 |-------------------|--------|
+| `martinholovsky/claude-skills-generator@tauri` | skills.sh lo marca con patrones maliciosos — usar `tauri-v2` + docs oficiales |
+| `bobmatnyc/claude-mpm-skills@rust-desktop-applications` | skills.sh lo marca con patrones maliciosos — usar `rust-best-practices` |
+| `vercel-react-native-skills` | No hay app móvil nativa; removido del repo |
 | Azure skills (microsoft) | Circulo no usa Azure |
 | Lark/Feishu skills | Integración enterprise CN; fuera de scope |
 | Marketing skills (SEO, copywriting) | Producto devtool, no landing growth aún |
-| `vercel-react-native-skills` | No hay app móvil nativa |
 | Skills con &lt;100 installs sin repo conocido | Riesgo de calidad baja (ver `find-skills` guidelines) |
 
 ---
