@@ -17,6 +17,11 @@ import {
 	seedProfileActivityFromSessions,
 } from "@/lib/profile-activity"
 import { getFavoriteModels } from "@/lib/favorite-models"
+import {
+	buildModelGroups,
+	findModelEntry,
+	formatLastModelLabel,
+} from "@/lib/model-groups"
 import { getLastModel } from "@/lib/preferences"
 import { getPinnedSessionIds } from "@/lib/pinned-sessions"
 import {
@@ -29,8 +34,8 @@ import {
 	useProfileName,
 } from "@/lib/profile-identity"
 import { getProjectDisplayName } from "@/lib/project-display"
-import { getRecentProjects } from "@/lib/recent-projects"
-import { contextWindowAtom, projectPathAtom, sessionsAtom } from "@/stores/atoms"
+import { countActiveProjects, getRecentProjects } from "@/lib/recent-projects"
+import { configOptionsAtom, contextWindowAtom, projectPathAtom, sessionsAtom } from "@/stores/atoms"
 
 function StatTile({ label, value }: { label: string; value: string }) {
 	return (
@@ -56,6 +61,7 @@ export function ProfileSettings() {
 	const sessions = useAtomValue(sessionsAtom)
 	const projectPath = useAtomValue(projectPathAtom)
 	const contextWindow = useAtomValue(contextWindowAtom)
+	const configOptions = useAtomValue(configOptionsAtom)
 	const [editOpen, setEditOpen] = useState(false)
 	const [activityVersion, setActivityVersion] = useState(0)
 
@@ -103,7 +109,22 @@ export function ProfileSettings() {
 	const pinnedCount = getPinnedSessionIds().length
 	const favoriteCount = getFavoriteModels().length
 	const projectCount = getRecentProjects().length
+	const activeProjectCount = countActiveProjects(projectPath)
 	const initials = getProfileInitials(name)
+
+	const lastModelLabel = useMemo(() => {
+		const lastModel = getLastModel()
+		if (!lastModel) return "—"
+		const modelOption = configOptions.find(
+			(option) =>
+				option.category?.toLowerCase().includes("model") || option.id === "model",
+		)
+		if (modelOption) {
+			const entry = findModelEntry(buildModelGroups(modelOption.options), lastModel)
+			if (entry) return entry.displayName
+		}
+		return formatLastModelLabel(lastModel)
+	}, [configOptions])
 
 	const lifetimeTokens =
 		activity.lifetimeTokens > 0
@@ -204,8 +225,8 @@ export function ProfileSettings() {
 							}
 						/>
 						<InsightRow
-							label="Active project"
-							value={getProjectDisplayName(projectPath)}
+							label="Active projects"
+							value={String(activeProjectCount)}
 						/>
 						<InsightRow label="Saved projects" value={String(projectCount)} />
 						<InsightRow label="Total sessions" value={String(sessions.length)} />
@@ -215,7 +236,7 @@ export function ProfileSettings() {
 				<section className="flex flex-col gap-3">
 					<h3 className="text-sm font-medium">Workspace</h3>
 					<dl className="flex flex-col gap-2.5">
-						<InsightRow label="Last model" value={getLastModel() ?? "—"} />
+						<InsightRow label="Last model" value={lastModelLabel} />
 						<InsightRow label="Favorite models" value={String(favoriteCount)} />
 						<InsightRow label="Pinned sessions" value={String(pinnedCount)} />
 						<InsightRow label="Archived sessions" value={String(archivedCount)} />

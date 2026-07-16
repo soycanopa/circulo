@@ -1,4 +1,5 @@
 import { getChatsProjectPath } from "@/lib/app-settings"
+import { isGeneralChatProject } from "@/lib/project-display"
 
 const RECENT_PROJECTS_KEY = "circulo-recent-projects"
 const MAX_STORED_RECENT_PROJECTS = 20
@@ -34,6 +35,23 @@ export function removeRecentProject(path: string): void {
 
 export function getRecentProjectLabel(path: string): string {
 	return path.split("/").pop() ?? path
+}
+
+/** Project folders shown in the sidebar (recent + currently open, excluding Chats). */
+export function getActiveProjectPaths(projectPath: string | null): string[] {
+	const recent = getRecentProjects()
+	if (
+		projectPath &&
+		!isGeneralChatProject(projectPath) &&
+		!recent.includes(projectPath)
+	) {
+		return [projectPath, ...recent]
+	}
+	return recent
+}
+
+export function countActiveProjects(projectPath: string | null): number {
+	return getActiveProjectPaths(projectPath).length
 }
 
 export function filterRecentProjects(projects: string[], query: string): string[] {

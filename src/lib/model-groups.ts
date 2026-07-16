@@ -225,3 +225,10 @@ export function findModelEntry(
 	}
 	return null
 }
+
+/** Short label for profile/history when only the stored model id is available. */
+export function formatLastModelLabel(value: string | null | undefined): string {
+	if (!value?.trim()) return "—"
+	const slug = extractModelSlugFromValue(value) ?? value.trim()
+	return humanizeModelSlug(slug)
+}
