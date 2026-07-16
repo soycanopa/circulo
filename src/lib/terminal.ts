@@ -1,6 +1,7 @@
 export const TERMINAL_MIN_HEIGHT = 140
 export const TERMINAL_MAX_HEIGHT = 520
 export const TERMINAL_DEFAULT_HEIGHT = 240
+export const TERMINAL_SURFACE = "#161616"
 
 export function getDefaultShell(): { file: string; args: string[] } {
 	const platform =

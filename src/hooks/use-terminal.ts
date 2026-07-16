@@ -1,16 +1,16 @@
 import { FitAddon } from "@xterm/addon-fit"
 import { Terminal } from "@xterm/xterm"
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { spawn, type IPty } from "tauri-pty"
-import { getDefaultShell } from "@/lib/terminal"
+import { getDefaultShell, TERMINAL_SURFACE } from "@/lib/terminal"
 
 const TERMINAL_THEME = {
-	background: "#141414",
+	background: TERMINAL_SURFACE,
 	foreground: "#f5f5f5",
 	cursor: "#6fcbf3",
-	cursorAccent: "#141414",
+	cursorAccent: TERMINAL_SURFACE,
 	selectionBackground: "rgba(111, 203, 243, 0.28)",
-	black: "#141414",
+	black: TERMINAL_SURFACE,
 	red: "#fa423e",
 	green: "#40c977",
 	yellow: "#f5c542",
@@ -30,18 +30,17 @@ const TERMINAL_THEME = {
 
 interface UseTerminalOptions {
 	container: HTMLDivElement | null
-	open: boolean
 	cwd: string | null
 }
 
-export function useTerminal({ container, open, cwd }: UseTerminalOptions) {
+export function useTerminal({ container, cwd }: UseTerminalOptions) {
 	const terminalRef = useRef<Terminal | null>(null)
 	const fitAddonRef = useRef<FitAddon | null>(null)
 	const ptyRef = useRef<IPty | null>(null)
 	const disposablesRef = useRef<Array<{ dispose: () => void }>>([])
 
 	useEffect(() => {
-		if (!open || !container) return
+		if (!container) return
 
 		const terminal = new Terminal({
 			cursorBlink: true,
@@ -50,6 +49,7 @@ export function useTerminal({ container, open, cwd }: UseTerminalOptions) {
 			lineHeight: 1.35,
 			scrollback: 4000,
 			theme: TERMINAL_THEME,
+			allowTransparency: false,
 		})
 		const fitAddon = new FitAddon()
 		terminal.loadAddon(fitAddon)
@@ -107,15 +107,18 @@ export function useTerminal({ container, open, cwd }: UseTerminalOptions) {
 			ptyRef.current = null
 			disposablesRef.current = []
 		}
-	}, [open, container, cwd])
+	}, [container, cwd])
 
-	return {
-		fit: () => {
-			fitAddonRef.current?.fit()
-			const terminal = terminalRef.current
-			const pty = ptyRef.current
-			if (terminal && pty) pty.resize(terminal.cols, terminal.rows)
-		},
-		focus: () => terminalRef.current?.focus(),
-	}
+	const fit = useCallback(() => {
+		fitAddonRef.current?.fit()
+		const terminal = terminalRef.current
+		const pty = ptyRef.current
+		if (terminal && pty) pty.resize(terminal.cols, terminal.rows)
+	}, [])
+
+	const focus = useCallback(() => {
+		terminalRef.current?.focus()
+	}, [])
+
+	return { fit, focus }
 }

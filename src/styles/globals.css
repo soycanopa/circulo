@@ -316,8 +316,25 @@ html[data-tauri] [data-slot="sidebar"] {
 	color: var(--foreground);
 }
 
+[data-slot="terminal-panel"] {
+	--terminal-surface: #161616;
+}
+
+[data-slot="terminal-panel"] [data-slot="terminal-viewport"] {
+	background: var(--terminal-surface);
+}
+
 [data-slot="terminal-panel"] .xterm {
-	padding: 0.25rem 0.5rem 0.5rem;
+	height: 100%;
+	width: 100%;
+	padding: 0;
+	background-color: var(--terminal-surface);
+}
+
+[data-slot="terminal-panel"] .xterm .xterm-viewport,
+[data-slot="terminal-panel"] .xterm .xterm-screen,
+[data-slot="terminal-panel"] .xterm .xterm-screen canvas {
+	background-color: var(--terminal-surface) !important;
 }
 
 [data-slot="terminal-panel"] .xterm-viewport {
