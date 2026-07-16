@@ -76,31 +76,85 @@ function humanizeModelSlug(slug: string): string {
 		.join(" ")
 }
 
-export function modelDisplayName(name: string, value: string, providerId: string): string {
+/** Canonical model id from ACP option value (e.g. minimax-coding-plan/MiniMax-M2.1). */
+function extractModelSlugFromValue(value: string): string | null {
+	const trimmed = value.trim()
+	if (!trimmed) return null
+
+	const slash = trimmed.indexOf("/")
+	if (slash >= 0) {
+		const tail = trimmed.slice(slash + 1).trim()
+		if (tail) return tail
+	}
+
+	const colon = trimmed.indexOf(":")
+	if (colon > 0) {
+		const tail = trimmed.slice(colon + 1).trim()
+		if (tail) return tail
+	}
+
+	return null
+}
+
+const MODEL_MARKETING_NOISE =
+	/\b(?:token\s*plan|coding\s*plan|subscription|pay(?:-|\s)?as(?:-|\s)?you(?:-|\s)?go)\b/gi
+
+function stripModelMarketingNoise(text: string): string {
+	return text
+		.replace(/\([^)]*(?:token\s*plan|coding\s*plan|context|subscription)[^)]*\)/gi, "")
+		.replace(MODEL_MARKETING_NOISE, "")
+		.replace(/\s{2,}/g, " ")
+		.trim()
+}
+
+const MODEL_LIKE_PATTERN =
+	/mini-?max|m\d(?:\.\d+)?[a-z]*|gpt-|o\d|claude|gemini|grok|deepseek|sonnet|haiku|opus|llama|qwen/i
+
+function pickModelLikeSegment(text: string): string {
+	const parts = text
+		.split(/\s*[-–—|·]\s*/)
+		.map((part) => part.trim())
+		.filter(Boolean)
+
+	const modelPart = parts.find((part) => MODEL_LIKE_PATTERN.test(part))
+	if (modelPart) return modelPart
+
+	return parts[parts.length - 1] ?? text
+}
+
+function stripProviderPrefix(name: string, providerId: string): string {
 	const label = formatProviderLabel(providerId)
 	const patterns = [
-		new RegExp(`^${label}\\s*[-–—:]\\s*`, "i"),
-		new RegExp(`^${providerId}\\s*[-–—:/]\\s*`, "i"),
+		new RegExp(`^${label}\\s*[-–—:|·]\\s*`, "i"),
+		new RegExp(`^${providerId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[-–—:/|·]\\s*`, "i"),
 		new RegExp(`^${label}\\s+`, "i"),
 	]
 
+	let result = name
 	for (const pattern of patterns) {
-		const stripped = name.replace(pattern, "").trim()
-		if (stripped && stripped !== name) return humanizeModelSlug(stripped)
+		const stripped = result.replace(pattern, "").trim()
+		if (stripped && stripped !== result) {
+			result = stripped
+		}
+	}
+	return result
+}
+
+export function modelDisplayName(name: string, value: string, providerId: string): string {
+	const fromValue = extractModelSlugFromValue(value)
+	if (fromValue) return humanizeModelSlug(fromValue)
+
+	let cleaned = stripModelMarketingNoise(name)
+	cleaned = stripProviderPrefix(cleaned, providerId)
+	cleaned = stripModelMarketingNoise(cleaned)
+
+	if (cleaned.includes(" - ")) {
+		cleaned = pickModelLikeSegment(cleaned.replace(/\s+-\s+/g, " - "))
+	} else {
+		cleaned = pickModelLikeSegment(cleaned)
 	}
 
-	const slash = value.indexOf("/")
-	if (slash > 0) {
-		const tail = value.slice(slash + 1).trim()
-		if (tail) return humanizeModelSlug(tail)
-	}
-
-	if (name.includes(" - ")) {
-		const tail = name.split(" - ").slice(1).join(" - ").trim()
-		if (tail) return humanizeModelSlug(tail)
-	}
-
-	return humanizeModelSlug(name.trim())
+	return humanizeModelSlug(cleaned || name.trim())
 }
 
 export function buildModelGroups(options: ConfigOption["options"]): ModelGroup[] {
