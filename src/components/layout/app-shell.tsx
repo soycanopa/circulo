@@ -6,6 +6,7 @@ import { SidebarLayout } from "@/components/layout/sidebar-layout"
 import { ChatView } from "@/components/chat/chat-view"
 import { addRecentProject } from "@/lib/recent-projects"
 import { getChatsProjectPath } from "@/lib/app-settings"
+import { isGeneralChatProject } from "@/lib/project-display"
 import { closeProject, getProjectStatus, openProject } from "@/lib/tauri"
 import {
 	activeSessionIdAtom,
@@ -36,6 +37,13 @@ export function AppShell() {
 				let status = await getProjectStatus()
 				if (!status.connected) {
 					status = await openProject(getChatsProjectPath())
+				}
+				if (
+					status.connected &&
+					status.sessions.length === 0 &&
+					isGeneralChatProject(status.projectPath)
+				) {
+					status = await closeProject()
 				}
 				if (cancelled) return
 				setConnected(status.connected)
