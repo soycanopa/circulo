@@ -9,3 +9,27 @@ export function normalizePlanMarkdown(content: string): string {
 		.replace(/\n{3,}/g, "\n\n")
 		.trim()
 }
+
+/** True when streamed text looks like a structured plan, not a casual reply. */
+export function isPlanLikeContent(content: string): boolean {
+	const text = normalizePlanMarkdown(content)
+	if (!text) return false
+
+	if (
+		/\b(plan(?:\s+(?:propuesto|de\s+implementación|overview))?|implementation\s+plan)\b/i.test(
+			text,
+		)
+	) {
+		return true
+	}
+
+	const hasHeading = /^#{1,3}\s+\S/m.test(text)
+	const numberedItems = (text.match(/^\d+\.\s+\S/gm) ?? []).length
+	const bulletItems = (text.match(/^[-*+]\s+\S/gm) ?? []).length
+
+	if (hasHeading && (numberedItems >= 2 || bulletItems >= 3)) return true
+	if (numberedItems >= 4) return true
+	if (hasHeading && text.length >= 120) return true
+
+	return false
+}

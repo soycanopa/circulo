@@ -24,22 +24,33 @@ export function usePlanActions() {
 	const setPlanCommentMode = useSetAtom(planCommentModeAtom)
 	const setPromptInFlight = useSetAtom(promptInFlightAtom)
 
+	const submitAcceptedPlan = useCallback(
+		async (compactFirst: boolean) => {
+			if (!pendingPlan?.content.trim()) return
+			const plan = normalizePlanMarkdown(pendingPlan.content)
+			setPendingPlan(null)
+			setPromptInFlightSync(true)
+			setPromptInFlight(true)
+			const acceptBody =
+				"Acepto el plan. Procede con la implementación siguiendo este plan:\n\n" + plan
+			const prompt = compactFirst ? `/compact\n\n${acceptBody}` : acceptBody
+			try {
+				await sendPrompt(prompt, [])
+			} catch {
+				setPromptInFlightSync(false)
+				setPromptInFlight(false)
+			}
+		},
+		[pendingPlan, setPendingPlan, setPromptInFlight],
+	)
+
 	const acceptPlan = useCallback(async () => {
-		if (!pendingPlan?.content.trim()) return
-		const plan = normalizePlanMarkdown(pendingPlan.content)
-		setPendingPlan(null)
-		setPromptInFlightSync(true)
-		setPromptInFlight(true)
-		try {
-			await sendPrompt(
-				"Acepto el plan. Procede con la implementación siguiendo este plan:\n\n" + plan,
-				[],
-			)
-		} catch {
-			setPromptInFlightSync(false)
-			setPromptInFlight(false)
-		}
-	}, [pendingPlan, setPendingPlan, setPromptInFlight])
+		await submitAcceptedPlan(false)
+	}, [submitAcceptedPlan])
+
+	const acceptAndCompactPlan = useCallback(async () => {
+		await submitAcceptedPlan(true)
+	}, [submitAcceptedPlan])
 
 	const rejectPlan = useCallback(async () => {
 		setPendingPlan(null)
@@ -72,6 +83,7 @@ export function usePlanActions() {
 		pendingPlan,
 		setPendingPlan,
 		acceptPlan,
+		acceptAndCompactPlan,
 		rejectPlan,
 		startPlanComment,
 		downloadPlan,
