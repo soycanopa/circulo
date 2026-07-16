@@ -2,10 +2,13 @@ import { useAtom, useAtomValue } from "jotai"
 import { Expand, FileDiff, X } from "lucide-react"
 import { useEffect, useMemo } from "react"
 import { DiffFileList } from "@/components/diff/diff-file-list"
+import { DiffStatLabel } from "@/components/chat/diff-stat-label"
 import { PierreFileDiff } from "@/components/diff/pierre-diff-view"
 import { useDiffPanel } from "@/hooks/use-diff-panel"
-import { windowNoDragProps } from "@/hooks/use-window-drag"
+import { windowDragRegionProps, windowNoDragProps } from "@/hooks/use-window-drag"
+import { collectSessionDiffStats } from "@/lib/session-diff-stats"
 import { collectSessionDiffs } from "@/lib/session-diffs"
+import { APP_BAR_HEIGHT } from "@/lib/window-chrome"
 import { activeDiffToolIdAtom, messagesAtom } from "@/stores/atoms"
 import type { ChatMessage, ToolCallState } from "@/types/acp"
 
@@ -24,6 +27,7 @@ export function DiffReviewPanel() {
 	const { closeDiffPanel, openDiffFullscreen } = useDiffPanel()
 
 	const entries = useMemo(() => collectSessionDiffs(messages), [messages])
+	const stats = useMemo(() => collectSessionDiffStats(messages), [messages])
 	const active =
 		entries.find((entry) => entry.id === activeDiffToolId) ?? entries[entries.length - 1]
 
@@ -37,44 +41,55 @@ export function DiffReviewPanel() {
 	return (
 		<aside
 			data-slot="diff-review-panel"
-			className="flex h-full min-h-0 flex-col overflow-hidden border-l border-border bg-card"
+			className="flex h-full min-h-0 flex-col overflow-hidden border-l border-border/50 bg-background"
 			{...windowNoDragProps()}
 		>
-			<header className="flex h-7 shrink-0 items-center gap-2 border-b border-border/60 px-2">
-				<FileDiff className="size-3 shrink-0 text-muted-foreground" />
+			<header
+				{...windowDragRegionProps()}
+				className="box-border flex shrink-0 items-center gap-2 border-b border-border/50 px-3"
+				style={{ height: APP_BAR_HEIGHT }}
+			>
+				<FileDiff className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
 				<span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground">
 					Cambios
 					{entries.length > 0 ? (
-						<span className="ml-1 text-muted-foreground">({entries.length})</span>
+						<span className="ml-1.5 text-muted-foreground">({entries.length})</span>
 					) : null}
 				</span>
-				{active ? (
+				<DiffStatLabel
+					additions={stats.additions}
+					deletions={stats.deletions}
+					className="shrink-0 text-[11px]"
+				/>
+				<div {...windowNoDragProps()} className="flex shrink-0 items-center gap-0.5">
+					{active ? (
+						<button
+							type="button"
+							onClick={() => {
+								const toolCall = findToolCallById(messages, active.id)
+								if (toolCall) openDiffFullscreen(toolCall)
+							}}
+							className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent-hover hover:text-foreground"
+							title="Pantalla completa"
+							aria-label="Abrir diff en pantalla completa"
+						>
+							<Expand className="size-3.5" />
+						</button>
+					) : null}
 					<button
 						type="button"
-						onClick={() => {
-							const toolCall = findToolCallById(messages, active.id)
-							if (toolCall) openDiffFullscreen(toolCall)
-						}}
-						className="flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-[rgba(255,255,255,0.06)] hover:text-foreground"
-						title="Pantalla completa"
-						aria-label="Abrir diff en pantalla completa"
+						onClick={closeDiffPanel}
+						className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent-hover hover:text-foreground"
+						aria-label="Cerrar panel de cambios"
+						title="Cerrar panel (⌘⇧D)"
 					>
-						<Expand className="size-3" />
+						<X className="size-3.5" />
 					</button>
-				) : null}
-				<button
-					type="button"
-					onClick={closeDiffPanel}
-					className="flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-[rgba(255,255,255,0.06)] hover:text-foreground"
-					aria-label="Cerrar panel de cambios"
-					title="Cerrar panel (⌘⇧D)"
-				>
-					<X className="size-3" />
-				</button>
+				</div>
 			</header>
 
 			<div className="grid min-h-0 flex-1 grid-cols-[minmax(9.5rem,34%)_minmax(0,1fr)]">
-				<div className="min-h-0 border-r border-border/60 bg-background/40">
+				<div className="min-h-0 border-r border-border/50 bg-muted/20">
 					<DiffFileList
 						entries={entries}
 						activeId={active?.id ?? ""}

@@ -13,7 +13,6 @@ import type { LucideIcon } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { DiffReviewPanel } from "@/components/diff/diff-review-panel"
 import { AppBar } from "@/components/layout/app-bar"
-import { DiffToggleButton } from "@/components/layout/diff-toggle-button"
 import { RightPanelResizeHandle } from "@/components/layout/right-panel-resize-handle"
 import { SidebarResizeHandle } from "@/components/layout/sidebar-resize-handle"
 import { TerminalToggleButton } from "@/components/layout/terminal-toggle-button"
@@ -151,6 +150,9 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 		? sidebarWidth + SHELL_INSET + 16 + APP_BAR_TITLE_INSET_LEFT
 		: WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP + APP_BAR_TITLE_INSET_LEFT_COLLAPSED
 
+	const chromeRightInset =
+		SHELL_INSET + 12 + (diffPanelOpen ? rightPanelWidth + SHELL_INSET : 0)
+
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if (event.key === "b" && (event.metaKey || event.ctrlKey)) {
@@ -219,41 +221,42 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 					className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl"
 				>
 					<AppBar />
-					<div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-						<div
-							data-slot="content-area"
-							className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
-						>
-							{children}
-						</div>
-						<AnimatePresence initial={false}>
-							{diffPanelOpen ? (
-								<motion.div
-									key="diff-panel-shell"
-									initial={reduceMotion ? false : { width: 0, opacity: 0 }}
-									animate={{ width: rightPanelWidth + SHELL_INSET, opacity: 1 }}
-									exit={{ width: 0, opacity: 0 }}
-									transition={
-										isRightResizing || reduceMotion ? { duration: 0 } : panelEase
-									}
-									className="flex h-full shrink-0 overflow-hidden"
-								>
-									<RightPanelResizeHandle
-										width={rightPanelWidth}
-										onWidthChange={setRightPanelWidth}
-										onResizingChange={setIsRightResizing}
-									/>
-									<div
-										data-slot="right-panel"
-										className="h-full min-h-0 min-w-0 flex-1 overflow-hidden"
-									>
-										<DiffReviewPanel />
-									</div>
-								</motion.div>
-							) : null}
-						</AnimatePresence>
+					<div
+						data-slot="content-area"
+						className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
+					>
+						{children}
 					</div>
 				</main>
+
+				<AnimatePresence initial={false}>
+					{diffPanelOpen ? (
+						<motion.div
+							key="diff-panel-shell"
+							initial={reduceMotion ? false : { width: 0, opacity: 0 }}
+							animate={{ width: rightPanelWidth + SHELL_INSET, opacity: 1 }}
+							exit={{ width: 0, opacity: 0 }}
+							transition={
+								isRightResizing || reduceMotion ? { duration: 0 } : panelEase
+							}
+							data-state="open"
+							className="flex h-full shrink-0 overflow-hidden"
+						>
+							<RightPanelResizeHandle
+								width={rightPanelWidth}
+								onWidthChange={setRightPanelWidth}
+								onResizingChange={setIsRightResizing}
+							/>
+							<div
+								data-slot="right-panel"
+								className="h-full min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl"
+								style={{ width: rightPanelWidth }}
+							>
+								<DiffReviewPanel />
+							</div>
+						</motion.div>
+					) : null}
+				</AnimatePresence>
 
 				<WindowDragStrip />
 				{appBar ? (
@@ -265,7 +268,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 							left: titleLeft,
 							top: 0,
 							height: APP_BAR_HEIGHT,
-							right: SHELL_INSET + 12,
+							right: chromeRightInset,
 							paddingTop: APP_BAR_TITLE_PADDING_TOP,
 						}}
 					>
@@ -282,12 +285,11 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 					className="pointer-events-none absolute z-[52] flex items-start justify-end gap-0.5"
 					style={{
 						top: 0,
-						right: SHELL_INSET + 12,
+						right: chromeRightInset,
 						height: APP_BAR_HEIGHT,
 						paddingTop: APP_BAR_CONTROL_PADDING_TOP,
 					}}
 				>
-					<DiffToggleButton />
 					<TerminalToggleButton />
 				</div>
 				<LayoutWindowControls open={open} onToggleSidebar={toggleSidebar} />
