@@ -1,3 +1,4 @@
+import { AnimatePresence } from "motion/react"
 import { useAtomValue } from "jotai"
 import { ChatInput } from "@/components/chat/chat-input"
 import { MessageList } from "@/components/chat/message-list"
@@ -33,7 +34,9 @@ export function ChatView({ connected, onOpenProject }: ChatViewProps) {
 				onOpenProject={onOpenProject}
 				onOpenProjectForNewThread={openProjectForNewThread}
 			/>
-			{terminalOpen ? <TerminalPanel /> : null}
+			<AnimatePresence initial={false}>
+				{terminalOpen ? <TerminalPanel key="terminal-drawer" /> : null}
+			</AnimatePresence>
 		</div>
 	)
 }

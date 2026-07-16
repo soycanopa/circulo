@@ -1,8 +1,10 @@
 import { useAtom, useAtomValue } from "jotai"
 import { Plus, TerminalSquare, X } from "lucide-react"
+import { motion, useReducedMotion } from "motion/react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { TerminalTabPane } from "@/components/terminal/terminal-tab-pane"
 import { windowNoDragProps } from "@/hooks/use-window-drag"
+import { terminalDrawer } from "@/lib/motion-presets"
 import { clampTerminalHeight, TERMINAL_SURFACE } from "@/lib/terminal"
 import { isTauri } from "@/lib/window-chrome"
 import { cn } from "@/lib/utils"
@@ -36,6 +38,8 @@ export function TerminalPanel() {
 	const [activeTabId, setActiveTabId] = useState(() => tabs[0]?.id ?? "")
 	const tabApisRef = useRef(new Map<string, TerminalTabApi>())
 	const resizeStateRef = useRef<{ startY: number; startHeight: number } | null>(null)
+	const [isResizing, setIsResizing] = useState(false)
+	const reduceMotion = useReducedMotion()
 
 	useEffect(() => {
 		if (!activeTabId && tabs[0]) setActiveTabId(tabs[0].id)
@@ -75,6 +79,7 @@ export function TerminalPanel() {
 
 	function handleResizePointerDown(event: React.PointerEvent<HTMLDivElement>) {
 		event.preventDefault()
+		setIsResizing(true)
 		resizeStateRef.current = { startY: event.clientY, startHeight: height }
 
 		function handlePointerMove(moveEvent: PointerEvent) {
@@ -87,6 +92,7 @@ export function TerminalPanel() {
 
 		function handlePointerUp() {
 			resizeStateRef.current = null
+			setIsResizing(false)
 			window.removeEventListener("pointermove", handlePointerMove)
 			window.removeEventListener("pointerup", handlePointerUp)
 		}
@@ -95,11 +101,22 @@ export function TerminalPanel() {
 		window.addEventListener("pointerup", handlePointerUp)
 	}
 
+	const motionTransition =
+		isResizing || reduceMotion ? { duration: 0 } : terminalDrawer
+
 	return (
-		<section
+		<motion.section
 			data-slot="terminal-panel"
 			className="relative z-20 flex shrink-0 flex-col overflow-hidden border-t border-border"
-			style={{ height, backgroundColor: TERMINAL_SURFACE }}
+			style={{ backgroundColor: TERMINAL_SURFACE }}
+			initial={reduceMotion ? false : { height: 0, opacity: 0 }}
+			animate={{ height, opacity: 1 }}
+			exit={{ height: 0, opacity: 0 }}
+			transition={{
+				height: motionTransition,
+				opacity: motionTransition,
+			}}
+			onAnimationComplete={fitActiveTab}
 			{...windowNoDragProps()}
 		>
 			<div
@@ -190,6 +207,6 @@ export function TerminalPanel() {
 					</div>
 				)}
 			</div>
-		</section>
+		</motion.section>
 	)
 }

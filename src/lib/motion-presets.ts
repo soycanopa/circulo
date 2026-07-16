@@ -12,6 +12,11 @@ export const panelEase: Transition = {
 	ease: [0.32, 0.72, 0, 1],
 }
 
+export const terminalDrawer: Transition = {
+	duration: 0.34,
+	ease: [0.32, 0.72, 0, 1],
+}
+
 export const fadeSlideUp = {
 	initial: { opacity: 0, y: 6 },
 	animate: { opacity: 1, y: 0 },
