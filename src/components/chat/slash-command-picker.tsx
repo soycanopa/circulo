@@ -1,4 +1,4 @@
-import { Sparkles, Terminal } from "lucide-react"
+import { Plug, Sparkles, Terminal, type LucideIcon } from "lucide-react"
 import { useMemo } from "react"
 import { filterSlashEntries, type SlashEntry } from "@/lib/slash-prompt"
 import { cn } from "@/lib/utils"
@@ -27,14 +27,18 @@ export function SlashCommandPicker({
 		() => filtered.filter((entry) => entry.kind === "skill"),
 		[filtered],
 	)
+	const mcps = useMemo(() => filtered.filter((entry) => entry.kind === "mcp"), [filtered])
 
 	if (filtered.length === 0) {
 		return (
 			<div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-lg border border-popover-border bg-popover px-3 py-2 text-xs text-muted-foreground shadow-lg">
-				No hay commands ni skills que coincidan.
+				No hay commands, skills ni MCPs que coincidan.
 			</div>
 		)
 	}
+
+	const skillsStart = commands.length
+	const mcpsStart = skillsStart + skills.length
 
 	return (
 		<div className="absolute bottom-full left-0 z-20 mb-2 max-h-64 w-full overflow-y-auto rounded-lg border border-popover-border bg-popover shadow-lg">
@@ -53,13 +57,34 @@ export function SlashCommandPicker({
 					label="Skills"
 					entries={skills}
 					selectedIndex={selectedIndex}
-					startIndex={commands.length}
+					startIndex={skillsStart}
+					onSelect={onSelect}
+					onHover={onHover}
+				/>
+			) : null}
+			{mcps.length > 0 ? (
+				<SlashGroup
+					label="MCP"
+					entries={mcps}
+					selectedIndex={selectedIndex}
+					startIndex={mcpsStart}
 					onSelect={onSelect}
 					onHover={onHover}
 				/>
 			) : null}
 		</div>
 	)
+}
+
+function slashEntryIcon(kind: SlashEntry["kind"]): LucideIcon {
+	switch (kind) {
+		case "command":
+			return Terminal
+		case "skill":
+			return Sparkles
+		case "mcp":
+			return Plug
+	}
 }
 
 function SlashGroup({
@@ -84,7 +109,7 @@ function SlashGroup({
 			</p>
 			{entries.map((entry, index) => {
 				const absoluteIndex = startIndex + index
-				const Icon = entry.kind === "command" ? Terminal : Sparkles
+				const Icon = slashEntryIcon(entry.kind)
 				return (
 					<button
 						key={`${entry.kind}-${entry.scope}-${entry.name}`}

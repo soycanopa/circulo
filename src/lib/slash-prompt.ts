@@ -1,6 +1,10 @@
-import type { OpencodeCommandEntry, OpencodeSkillEntry } from "@/lib/tauri"
+import type {
+	OpencodeCommandEntry,
+	OpencodeMcpServerEntry,
+	OpencodeSkillEntry,
+} from "@/lib/tauri"
 
-export type SlashEntryKind = "command" | "skill"
+export type SlashEntryKind = "command" | "skill" | "mcp"
 
 export interface SlashEntry {
 	name: string
@@ -9,7 +13,7 @@ export interface SlashEntry {
 	kind: SlashEntryKind
 }
 
-const SLASH_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/i
+const SLASH_INVOKE_PATTERN = /^\/([^\s/]+)(?:\s+([\s\S]*))?$/i
 
 export function extractSlashQuery(value: string, caret: number): string | null {
 	const beforeCaret = value.slice(0, caret)
@@ -17,9 +21,15 @@ export function extractSlashQuery(value: string, caret: number): string | null {
 	return match ? match[1] : null
 }
 
+function formatMcpDescription(entry: OpencodeMcpServerEntry): string | null {
+	const parts = [entry.serverType, entry.scope].filter(Boolean)
+	return parts.length > 0 ? parts.join(" · ") : null
+}
+
 export function buildSlashEntries(
 	commands: OpencodeCommandEntry[],
 	skills: OpencodeSkillEntry[],
+	mcpServers: OpencodeMcpServerEntry[],
 ): SlashEntry[] {
 	const commandEntries: SlashEntry[] = commands.map((entry) => ({
 		name: entry.name,
@@ -33,7 +43,17 @@ export function buildSlashEntries(
 		scope: entry.scope,
 		kind: "skill",
 	}))
-	return [...commandEntries, ...skillEntries].sort((a, b) => a.name.localeCompare(b.name))
+	const mcpEntries: SlashEntry[] = mcpServers
+		.filter((entry) => entry.enabled)
+		.map((entry) => ({
+			name: entry.name,
+			description: formatMcpDescription(entry),
+			scope: entry.scope,
+			kind: "mcp",
+		}))
+	return [...commandEntries, ...skillEntries, ...mcpEntries].sort((a, b) =>
+		a.name.localeCompare(b.name),
+	)
 }
 
 export function filterSlashEntries(entries: SlashEntry[], query: string): SlashEntry[] {
@@ -49,53 +69,67 @@ export function insertSlashEntry(value: string, caret: number, entry: SlashEntry
 	return `${replaced}${afterCaret}`
 }
 
-function findCommandName(
-	text: string,
-	commands: OpencodeCommandEntry[],
-): OpencodeCommandEntry | null {
-	const match = /^\/([a-z0-9]+(?:-[a-z0-9]+)*)(?:\s|$)/i.exec(text.trim())
+function parseSlashInvoke(text: string): { name: string; args: string | null } | null {
+	const match = SLASH_INVOKE_PATTERN.exec(text.trim())
 	if (!match) return null
-	const name = match[1].toLowerCase()
-	const project = commands.find(
-		(entry) => entry.scope === "project" && entry.name.toLowerCase() === name,
-	)
-	if (project) return project
-	return commands.find((entry) => entry.name.toLowerCase() === name) ?? null
+	return { name: match[1], args: match[2]?.trim() ?? null }
 }
 
-function findSkillName(text: string, skills: OpencodeSkillEntry[]): OpencodeSkillEntry | null {
-	const match = /^\/([a-z0-9]+(?:-[a-z0-9]+)*)(?:\s+([\s\S]*))?$/i.exec(text.trim())
-	if (!match || !SLASH_NAME_PATTERN.test(match[1])) return null
-	const name = match[1].toLowerCase()
-	const project = skills.find(
-		(entry) => entry.scope === "project" && entry.name.toLowerCase() === name,
+function findByName<T extends { name: string; scope: string }>(
+	entries: T[],
+	name: string,
+): T | null {
+	const normalized = name.toLowerCase()
+	const project = entries.find(
+		(entry) => entry.scope === "project" && entry.name.toLowerCase() === normalized,
 	)
 	if (project) return project
-	return skills.find((entry) => entry.name.toLowerCase() === name) ?? null
+	return entries.find((entry) => entry.name.toLowerCase() === normalized) ?? null
 }
 
-/** OpenCode commands pass through; skills expand to an agent-friendly prompt. */
-export function expandSlashPrompt(
-	text: string,
-	commands: OpencodeCommandEntry[],
-	skills: OpencodeSkillEntry[],
-): string {
-	const trimmed = text.trim()
-	if (!trimmed.startsWith("/")) return text
-
-	if (findCommandName(trimmed, commands)) {
-		return trimmed
-	}
-
-	const skillMatch = /^\/([a-z0-9]+(?:-[a-z0-9]+)*)(?:\s+([\s\S]*))?$/i.exec(trimmed)
-	if (!skillMatch) return trimmed
-
-	const skill = findSkillName(trimmed, skills)
-	if (!skill) return trimmed
-
-	const args = skillMatch[2]?.trim()
+function expandSkillPrompt(skill: OpencodeSkillEntry, args: string | null): string {
 	if (args) {
 		return `Use the "${skill.name}" skill for this task:\n\n${args}`
 	}
 	return `Use the "${skill.name}" skill for this task.`
+}
+
+function expandMcpPrompt(mcp: OpencodeMcpServerEntry, args: string | null): string {
+	if (args) {
+		return `Use the "${mcp.name}" MCP server and its tools for this task:\n\n${args}`
+	}
+	return `Use the "${mcp.name}" MCP server and its tools for this task.`
+}
+
+/** OpenCode commands pass through; skills and MCPs expand to agent-friendly prompts. */
+export function expandSlashPrompt(
+	text: string,
+	commands: OpencodeCommandEntry[],
+	skills: OpencodeSkillEntry[],
+	mcpServers: OpencodeMcpServerEntry[],
+): string {
+	const trimmed = text.trim()
+	if (!trimmed.startsWith("/")) return text
+
+	const invoke = parseSlashInvoke(trimmed)
+	if (!invoke) return trimmed
+
+	if (findByName(commands, invoke.name)) {
+		return trimmed
+	}
+
+	const skill = findByName(skills, invoke.name)
+	if (skill) {
+		return expandSkillPrompt(skill, invoke.args)
+	}
+
+	const mcp = findByName(
+		mcpServers.filter((entry) => entry.enabled),
+		invoke.name,
+	)
+	if (mcp) {
+		return expandMcpPrompt(mcp, invoke.args)
+	}
+
+	return trimmed
 }

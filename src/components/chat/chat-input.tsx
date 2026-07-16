@@ -105,7 +105,8 @@ export function ChatInput({
 	const [suggestions, setSuggestions] = useState<string[]>([])
 	const [slashSelectedIndex, setSlashSelectedIndex] = useState(0)
 	const [caret, setCaret] = useState(0)
-	const { entries: slashEntries, commands, skills } = useSlashEntries(projectPath)
+	const { entries: slashEntries, commands, skills, mcpServers } =
+		useSlashEntries(projectPath)
 
 	const isAwaitingInput =
 		sessionStatus === "awaiting_permission" || sessionStatus === "awaiting_credential"
@@ -195,7 +196,7 @@ export function ChatInput({
 
 		const expanded = planCommentMode
 			? `Comentarios sobre el plan:\n\n${trimmed}`
-			: expandSlashPrompt(trimmed, commands, skills)
+			: expandSlashPrompt(trimmed, commands, skills, mcpServers)
 		const promptText = expanded
 		const contextPaths = mentions.map((mention) => mention.path)
 		setMessages((current) => [
@@ -305,7 +306,7 @@ export function ChatInput({
 									placeholder={
 										planCommentMode
 											? "Comenta el plan: qué cambiar, qué priorizar, qué rechazar…"
-											: "Escribe un mensaje… @ archivos · / commands y skills"
+											: "Escribe un mensaje… @ archivos · / commands, skills y MCP"
 									}
 									className={cn(inputDisabled && "opacity-60")}
 									onChange={(event) =>

@@ -55,6 +55,7 @@ export function McpSettings() {
 						: entry,
 				),
 			)
+			window.dispatchEvent(new CustomEvent("circulo:mcp-changed"))
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "No se pudo actualizar el MCP")
 		} finally {
