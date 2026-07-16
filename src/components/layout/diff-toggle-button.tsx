@@ -9,7 +9,7 @@ import { diffPanelOpenAtom, messagesAtom } from "@/stores/atoms"
 import { useMemo } from "react"
 
 const chipClassName =
-	"inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border-0 px-1.5 pr-2.5 text-[11px] font-normal transition-colors text-muted-foreground hover:bg-sidebar-accent-hover hover:text-foreground data-pressed:bg-sidebar-accent data-pressed:text-sidebar-accent-foreground"
+	"pointer-events-auto inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border-0 px-1.5 pr-2.5 text-[11px] font-normal transition-colors text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
 
 export function DiffToggleButton() {
 	const [diffPanelOpen, setDiffPanelOpen] = useAtom(diffPanelOpenAtom)

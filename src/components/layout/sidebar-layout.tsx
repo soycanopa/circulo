@@ -13,6 +13,7 @@ import type { LucideIcon } from "lucide-react"
 import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { DiffReviewPanel } from "@/components/diff/diff-review-panel"
 import { AppBar } from "@/components/layout/app-bar"
+import { DiffToggleButton } from "@/components/layout/diff-toggle-button"
 import { RightPanelResizeHandle } from "@/components/layout/right-panel-resize-handle"
 import { SidebarResizeHandle } from "@/components/layout/sidebar-resize-handle"
 import { TerminalToggleButton } from "@/components/layout/terminal-toggle-button"
@@ -290,6 +291,7 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 						paddingTop: APP_BAR_CONTROL_PADDING_TOP,
 					}}
 				>
+					<DiffToggleButton />
 					<TerminalToggleButton />
 				</div>
 				<LayoutWindowControls open={open} onToggleSidebar={toggleSidebar} />

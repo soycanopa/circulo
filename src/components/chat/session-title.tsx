@@ -1,6 +1,5 @@
 import { Home } from "lucide-react"
 import { useAtomValue } from "jotai"
-import { DiffToggleButton } from "@/components/layout/diff-toggle-button"
 import { SessionTitleMenu } from "@/components/chat/session-title-menu"
 import { useSessions } from "@/hooks/use-sessions"
 import { getProjectDirectoryLabel } from "@/lib/project-display"
@@ -28,23 +27,20 @@ export function SessionTitle() {
 	const title = sessionTitle(activeSession, activeIndex)
 
 	return (
-		<span className="flex min-w-0 flex-1 items-center gap-2 text-xs leading-none">
-			<span className="flex min-w-0 items-center">
-				<span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground/80">
-					<Home className="size-3" />
-					{directoryLabel}
-				</span>
-				<span className="mx-1.5 shrink-0 text-muted-foreground/40">/</span>
-				<span className="flex min-w-0 items-center gap-1">
-					<span className="truncate text-foreground/90">{title}</span>
-					<SessionTitleMenu
-						sessionId={activeSessionId}
-						title={title}
-						onRename={renameSession}
-					/>
-				</span>
+		<span className="flex min-w-0 flex-1 items-center text-xs leading-none">
+			<span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground/80">
+				<Home className="size-3" />
+				{directoryLabel}
 			</span>
-			<DiffToggleButton />
+			<span className="mx-1.5 shrink-0 text-muted-foreground/40">/</span>
+			<span className="flex min-w-0 items-center gap-1">
+				<span className="truncate text-foreground/90">{title}</span>
+				<SessionTitleMenu
+					sessionId={activeSessionId}
+					title={title}
+					onRename={renameSession}
+				/>
+			</span>
 		</span>
 	)
 }
