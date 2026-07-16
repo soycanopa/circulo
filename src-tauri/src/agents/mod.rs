@@ -2,6 +2,8 @@ use std::path::Path;
 
 use agent_client_protocol::AcpAgent;
 
+use crate::cli_resolve::resolve_opencode;
+
 pub const AGENT_ID_OPENCODE: &str = "opencode";
 pub const AGENT_ID_GROK: &str = "grok";
 
@@ -38,9 +40,10 @@ pub fn build_agent(agent_id: &str, project_path: &Path) -> Result<AcpAgent, Stri
 }
 
 pub fn build_opencode_agent(project_path: &Path) -> Result<AcpAgent, String> {
+    let opencode = resolve_opencode()?;
     AcpAgent::from_args([
         format!("OPENCODE_CONFIG_CONTENT={FORGE_OPENCODE_CONFIG_CONTENT}"),
-        "opencode".to_string(),
+        opencode.display().to_string(),
         "acp".to_string(),
         "--cwd".to_string(),
         project_path.display().to_string(),

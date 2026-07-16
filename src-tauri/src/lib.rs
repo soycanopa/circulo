@@ -1,6 +1,7 @@
 mod acp;
 mod agent_versions;
 mod agents;
+mod cli_resolve;
 mod commands;
 mod opencode_config;
 mod opencode_sidecar;

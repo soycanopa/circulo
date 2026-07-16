@@ -1,6 +1,9 @@
+use std::path::Path;
 use std::process::Command;
 
 use serde::Serialize;
+
+use crate::cli_resolve::{display_command, resolve_grok, resolve_opencode};
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -13,7 +16,7 @@ pub struct AgentVersionInfo {
     pub error: Option<String>,
 }
 
-fn probe_command(id: &str, label: &str, program: &str, args: &[&str]) -> AgentVersionInfo {
+fn probe_resolved(id: &str, label: &str, program: &Path, args: &[&str]) -> AgentVersionInfo {
     let output = Command::new(program).args(args).output();
 
     match output {
@@ -30,7 +33,7 @@ fn probe_command(id: &str, label: &str, program: &str, args: &[&str]) -> AgentVe
             AgentVersionInfo {
                 id: id.to_string(),
                 label: label.to_string(),
-                command: format!("{program} {}", args.join(" ")),
+                command: display_command(program, args),
                 installed: true,
                 version: Some(version),
                 error: None,
@@ -49,7 +52,7 @@ fn probe_command(id: &str, label: &str, program: &str, args: &[&str]) -> AgentVe
             AgentVersionInfo {
                 id: id.to_string(),
                 label: label.to_string(),
-                command: format!("{program} {}", args.join(" ")),
+                command: display_command(program, args),
                 installed: false,
                 version: None,
                 error: Some(message),
@@ -58,7 +61,7 @@ fn probe_command(id: &str, label: &str, program: &str, args: &[&str]) -> AgentVe
         Err(err) => AgentVersionInfo {
             id: id.to_string(),
             label: label.to_string(),
-            command: format!("{program} {}", args.join(" ")),
+            command: display_command(program, args),
             installed: false,
             version: None,
             error: Some(err.to_string()),
@@ -68,7 +71,27 @@ fn probe_command(id: &str, label: &str, program: &str, args: &[&str]) -> AgentVe
 
 pub fn list_agent_provider_versions() -> Vec<AgentVersionInfo> {
     vec![
-        probe_command("opencode", "OpenCode", "opencode", &["--version"]),
-        probe_command("grok", "Grok Build", "grok", &["--version"]),
+        match resolve_opencode() {
+            Ok(path) => probe_resolved("opencode", "OpenCode", &path, &["--version"]),
+            Err(err) => AgentVersionInfo {
+                id: "opencode".to_string(),
+                label: "OpenCode".to_string(),
+                command: "opencode --version".to_string(),
+                installed: false,
+                version: None,
+                error: Some(err),
+            },
+        },
+        match resolve_grok() {
+            Ok(path) => probe_resolved("grok", "Grok Build", &path, &["--version"]),
+            Err(err) => AgentVersionInfo {
+                id: "grok".to_string(),
+                label: "Grok Build".to_string(),
+                command: "grok --version".to_string(),
+                installed: false,
+                version: None,
+                error: Some(err),
+            },
+        },
     ]
 }

@@ -4,6 +4,7 @@ use std::process::Stdio;
 use serde::Deserialize;
 use tokio::process::Command;
 
+use crate::cli_resolve::resolve_opencode;
 use crate::state::SessionInfoDto;
 
 #[derive(Debug, Deserialize)]
@@ -20,7 +21,8 @@ struct CliSessionRow {
 /// Fast session metadata via `opencode session list --format json`.
 /// Complements ACP when the agent is still spawning or for sidebar prefetch.
 pub async fn list_sessions_cli(project_path: &Path, max_count: usize) -> Result<Vec<SessionInfoDto>, String> {
-    let output = Command::new("opencode")
+    let opencode = resolve_opencode()?;
+    let output = Command::new(&opencode)
         .arg("session")
         .arg("list")
         .arg("--format")

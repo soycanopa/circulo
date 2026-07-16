@@ -1,6 +1,6 @@
 [package]
 name = "circulo"
-version = "0.1.3"
+version = "0.1.4"
 description = "Circulo — desktop AI orchestrator via Agent Client Protocol"
 authors = ["Carlos Andres O. P."]
 license = "MIT"
