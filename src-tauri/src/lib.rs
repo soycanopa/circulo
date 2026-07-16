@@ -3,6 +3,7 @@ mod agent_versions;
 mod agents;
 mod commands;
 mod opencode_config;
+mod opencode_sidecar;
 mod orchestrator;
 mod skills_cli;
 mod session_store;
@@ -59,6 +60,7 @@ pub fn run() {
             commands::respond_credential,
             commands::set_config_option,
             commands::list_stored_sessions,
+            commands::prefetch_project_sessions,
             commands::list_sessions,
             commands::create_session,
             commands::load_session,

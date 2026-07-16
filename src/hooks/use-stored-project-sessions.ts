@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from "react"
-import { listStoredSessions } from "@/lib/tauri"
+import { listStoredSessions, prefetchProjectSessions } from "@/lib/tauri"
 import type { SessionInfo } from "@/types/acp"
+
+async function loadSessionsForProject(path: string): Promise<SessionInfo[]> {
+	try {
+		const prefetched = await prefetchProjectSessions(path)
+		if (prefetched.length > 0) return prefetched
+	} catch {
+		// CLI prefetch is best-effort; fall back to Circulo store.
+	}
+	return listStoredSessions(path)
+}
 
 export function useStoredProjectSessions(projectPaths: string[]) {
 	const [storedByProject, setStoredByProject] = useState<Record<string, SessionInfo[]>>({})
@@ -17,7 +27,7 @@ export function useStoredProjectSessions(projectPaths: string[]) {
 		void Promise.all(
 			projectPaths.map(async (path) => {
 				try {
-					const sessions = await listStoredSessions(path)
+					const sessions = await loadSessionsForProject(path)
 					return [path, sessions] as const
 				} catch {
 					return [path, []] as const

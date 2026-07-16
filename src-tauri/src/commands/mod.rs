@@ -6,6 +6,7 @@ use tauri::{Emitter, Manager, State};
 use tokio::sync::mpsc;
 
 use crate::acp::{read_context_file, search_project_files, start_agent_connection};
+use crate::opencode_sidecar::list_sessions_cli;
 use crate::orchestrator::{
     activate_path, ensure_pool_capacity, insert_spawning_agent, pool_key, shutdown_active_agent,
 };
@@ -167,6 +168,17 @@ pub async fn open_project(
 pub async fn close_project(state: State<'_, SharedState>) -> Result<ProjectStatus, String> {
     shutdown_active_agent(state.inner()).await;
     Ok(state.lock().await.status())
+}
+
+#[tauri::command]
+pub async fn prefetch_project_sessions(
+    project_path: String,
+) -> Result<Vec<SessionInfoDto>, String> {
+    let path = PathBuf::from(project_path);
+    if !path.is_dir() {
+        return Err("Not a directory".to_string());
+    }
+    list_sessions_cli(&path, 50).await
 }
 
 #[tauri::command]
