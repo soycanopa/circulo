@@ -92,14 +92,15 @@ export function ModelSelector() {
 				open={open && Boolean(modelOption)}
 				anchorRef={rootRef}
 				onClose={() => setOpen(false)}
+				preferPlacement="above"
 				minWidth={288}
 			>
-				<div className="border-b border-border p-2">
+				<div className="border-b border-popover-border/70 p-2">
 					<input
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 						placeholder="Buscar modelo…"
-						className="h-7 w-full rounded-md border border-input bg-muted/40 px-2 text-xs outline-none focus:ring-1 focus:ring-ring/40"
+						className="h-7 w-full rounded-md border border-popover-border bg-[#222222] px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-[#6a6a6a] focus:ring-1 focus:ring-[#6a6a6a]/35"
 						autoFocus
 					/>
 				</div>

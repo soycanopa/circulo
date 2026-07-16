@@ -17,7 +17,12 @@ export interface ModelGroup {
 
 const PROVIDER_LABELS: Record<string, string> = {
 	opencode: "OpenCode Go",
+	"opencode-go": "OpenCode Go",
 	minimax: "Minimax",
+	"minimax-coding-plan": "Minimax",
+	zai: "Z.ai",
+	"zai-coding-plan": "Z.ai",
+	xai: "xAI",
 	anthropic: "Anthropic",
 	openai: "OpenAI",
 	google: "Google",
