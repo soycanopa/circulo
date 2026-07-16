@@ -1,0 +1,21 @@
+schema: spec-driven
+
+context: |
+  Project: Circulo — desktop AI orchestrator (Tauri v2 + Rust + React 19 + Bun).
+  Protocol: ACP (Agent Client Protocol) over JSON-RPC/stdio; first agent is OpenCode (`opencode acp`).
+  MCP is for agent tools only — do not confuse with ACP.
+  Stack: Jotai state, Tailwind v4, Vite. Visual reference: Palot (no Palot HTTP/SSE backend).
+  Security: never bypass permission gate; scope `@` file reads to project root; minimal Tauri capabilities.
+  Conventions: granular commits, plan before large multi-file changes, verify ACP protocol fields.
+  Docs: AGENTS.md, docs/ARCHITECTURE.md, docs/ACP.md, ROADMAP.md, SKILLS.md.
+
+rules:
+  proposal:
+    - Include a "Non-goals" section
+    - Call out ACP/security implications when the change touches agent I/O or filesystem access
+  design:
+    - Separate Rust (src-tauri) vs React (src) boundaries explicitly
+    - Note permission and path-scoping behavior for any tool or file-access feature
+  tasks:
+    - Break into chunks of max 2 hours
+    - Prefer frontend-only tasks runnable with `bun run dev` before Tauri integration
