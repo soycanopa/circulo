@@ -147,12 +147,9 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 		setOpen((value) => !value)
 	}, [])
 
-	const titleLeft = open
-		? sidebarWidth + SHELL_INSET + 16 + APP_BAR_TITLE_INSET_LEFT
+	const titleLeftInMain = open
+		? 16 + APP_BAR_TITLE_INSET_LEFT
 		: WINDOW_CONTROLS_END + APP_BAR_TITLE_GAP + APP_BAR_TITLE_INSET_LEFT_COLLAPSED
-
-	const chromeRightInset =
-		SHELL_INSET + 12 + (diffPanelOpen ? rightPanelWidth + SHELL_INSET : 0)
 
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
@@ -219,9 +216,43 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 
 				<main
 					data-slot="sidebar-inset"
-					className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl"
+					className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl"
 				>
 					<AppBar />
+					{appBar ? (
+						<div
+							data-slot="session-title-layer"
+							data-resizing={isResizing ? "" : undefined}
+							className="pointer-events-none absolute z-[52] box-border flex items-start overflow-visible"
+							style={{
+								left: titleLeftInMain,
+								top: 0,
+								height: APP_BAR_HEIGHT,
+								right: 12,
+								paddingTop: APP_BAR_TITLE_PADDING_TOP,
+							}}
+						>
+							<div
+								{...windowNoDragProps()}
+								className="pointer-events-auto flex min-w-0 flex-1 items-center overflow-visible"
+							>
+								{appBar}
+							</div>
+						</div>
+					) : null}
+					<div
+						data-slot="app-bar-actions-layer"
+						className="pointer-events-none absolute z-[52] flex items-start justify-end gap-0.5"
+						style={{
+							top: 0,
+							right: 12,
+							height: APP_BAR_HEIGHT,
+							paddingTop: APP_BAR_CONTROL_PADDING_TOP,
+						}}
+					>
+						<DiffToggleButton />
+						<TerminalToggleButton />
+					</div>
 					<div
 						data-slot="content-area"
 						className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
@@ -260,40 +291,6 @@ export function SidebarLayout({ sidebar, children, appBar }: SidebarLayoutProps)
 				</AnimatePresence>
 
 				<WindowDragStrip />
-				{appBar ? (
-					<div
-						data-slot="session-title-layer"
-						data-resizing={isResizing ? "" : undefined}
-						className="pointer-events-none absolute z-[52] box-border flex items-start overflow-visible"
-						style={{
-							left: titleLeft,
-							top: 0,
-							height: APP_BAR_HEIGHT,
-							right: chromeRightInset,
-							paddingTop: APP_BAR_TITLE_PADDING_TOP,
-						}}
-					>
-						<div
-							{...windowNoDragProps()}
-							className="pointer-events-auto flex min-w-0 flex-1 items-center overflow-visible"
-						>
-							{appBar}
-						</div>
-					</div>
-				) : null}
-				<div
-					data-slot="app-bar-actions-layer"
-					className="pointer-events-none absolute z-[52] flex items-start justify-end gap-0.5"
-					style={{
-						top: 0,
-						right: chromeRightInset,
-						height: APP_BAR_HEIGHT,
-						paddingTop: APP_BAR_CONTROL_PADDING_TOP,
-					}}
-				>
-					<DiffToggleButton />
-					<TerminalToggleButton />
-				</div>
 				<LayoutWindowControls open={open} onToggleSidebar={toggleSidebar} />
 			</div>
 		</SidebarContext.Provider>
