@@ -375,7 +375,13 @@ pub async fn start_agent_connection(
                     }
                 } else {
                     info!("ACP connected with deferred session bootstrap");
-                    emit_sessions_updated(&app, &app_sessions, None, None);
+                    let preferred = session_store.preferred_active_id(&app_sessions);
+                    emit_sessions_updated(
+                        &app,
+                        &app_sessions,
+                        preferred.as_deref(),
+                        None,
+                    );
                 }
 
                 emit_agent_ready(&app, &project_path, &agent_capabilities);

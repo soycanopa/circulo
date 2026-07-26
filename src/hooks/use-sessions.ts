@@ -18,6 +18,11 @@ import {
 import { normalizeSessionId } from "@/lib/session-id"
 import { addRecentProject } from "@/lib/recent-projects"
 import { flushPendingPrompt } from "@/lib/pending-prompt"
+import {
+	cacheSessionMessages,
+	clearCachedSessionMessages,
+	getCachedSessionMessages,
+} from "@/lib/session-messages-cache"
 import { waitForAgentReady } from "@/lib/wait-for-agent-ready"
 import {
 	closeProject,
@@ -64,6 +69,7 @@ export function useSessions() {
 	const setThreadFolderPickerSessionId = useSetAtom(threadFolderPickerSessionIdAtom)
 	const setCreatingSession = useSetAtom(creatingSessionAtom)
 	const createGenerationRef = useRef(0)
+	const switchGenerationRef = useRef(0)
 
 	const syncStatus = useCallback(
 		(status: Awaited<ReturnType<typeof createSession>>) => {
@@ -139,31 +145,61 @@ export function useSessions() {
 
 	const selectSession = useCallback(
 		async (id: string) => {
-			if (isOptimisticSessionId(id) || id === activeSessionId) return
+			if (isOptimisticSessionId(id)) return
+
+			const generation = ++switchGenerationRef.current
+			const store = getDefaultStore()
+			const previousSessionId = normalizeSessionId(activeSessionId)
+			if (previousSessionId && previousSessionId !== id) {
+				cacheSessionMessages(previousSessionId, store.get(messagesAtom))
+			}
 
 			if (isOptimisticSessionId(activeSessionId)) {
 				createGenerationRef.current += 1
 				setCreatingSession(false)
-				getDefaultStore().set(pendingPromptAtom, null)
+				store.set(pendingPromptAtom, null)
 				removeOptimisticSession(setSessions, setActiveSessionId)
 			}
 
 			setThreadFolderPickerSessionId(null)
-			resetChatState()
-			setReplayingHistory(true)
 			setActiveSessionId(id)
-			const status = await loadSession(id)
-			syncStatus(status)
+
+			const cachedMessages = getCachedSessionMessages(id)
+			if (cachedMessages) {
+				setMessages(cachedMessages)
+				setStreamingText("")
+				setConfigOptions([])
+			} else {
+				resetChatState()
+			}
+
+			setReplayingHistory(true)
+
+			try {
+				const status = await loadSession(id)
+				if (generation !== switchGenerationRef.current) return
+				syncStatus(status)
+			} catch (error) {
+				if (generation !== switchGenerationRef.current) return
+				store.set(
+					errorMessageAtom,
+					error instanceof Error ? error.message : "No se pudo cargar la sesión",
+				)
+				setReplayingHistory(false)
+			}
 		},
 		[
 			activeSessionId,
+			resetChatState,
 			setActiveSessionId,
+			setConfigOptions,
 			setCreatingSession,
+			setMessages,
 			setReplayingHistory,
 			setSessions,
+			setStreamingText,
 			setThreadFolderPickerSessionId,
 			syncStatus,
-			resetChatState,
 		],
 	)
 
@@ -289,6 +325,7 @@ export function useSessions() {
 			}
 
 			const result = await closeSession(id, sessionProjectPath)
+			clearCachedSessionMessages(id)
 			unpinSessionId(id)
 			removeArchivedSessionId(id)
 

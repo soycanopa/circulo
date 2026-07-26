@@ -1,14 +1,9 @@
 import { useEffect, useMemo, useState } from "react"
-import { listStoredSessions, prefetchProjectSessions } from "@/lib/tauri"
+import { listStoredSessions } from "@/lib/tauri"
 import type { SessionInfo } from "@/types/acp"
 
 async function loadSessionsForProject(path: string): Promise<SessionInfo[]> {
-	try {
-		const prefetched = await prefetchProjectSessions(path)
-		if (prefetched.length > 0) return prefetched
-	} catch {
-		// CLI prefetch is best-effort; fall back to Circulo store.
-	}
+	// Circulo store is the source of truth — only sessions created in Circulo.
 	return listStoredSessions(path)
 }
 

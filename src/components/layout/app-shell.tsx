@@ -14,7 +14,8 @@ import { normalizeSessionId } from "@/lib/session-id"
 import { addRecentProject } from "@/lib/recent-projects"
 import { isGeneralChatProject } from "@/lib/project-display"
 import type { OpenProjectOptions } from "@/lib/open-project"
-import { closeProject, openProject } from "@/lib/tauri"
+import { closeProject, getProjectStatus, loadSession, openProject } from "@/lib/tauri"
+import { waitForAgentReady } from "@/lib/wait-for-agent-ready"
 import {
 	activeAgentIdAtom,
 	activeSessionIdAtom,
@@ -24,6 +25,7 @@ import {
 	diffPanelOpenAtom,
 	messagesAtom,
 	projectPathAtom,
+	replayingHistoryAtom,
 	sessionStatusAtom,
 	sessionsAtom,
 	settingsOpenAtom,
@@ -41,14 +43,17 @@ function applyProjectStatus(
 		setCapabilities: (value: typeof status.capabilities) => void
 		setActiveAgentId: (value: AgentProviderId) => void
 	},
+	options?: { skipActiveSession?: boolean },
 ) {
 	handlers.setAgentConnected(status.connected)
 	handlers.setProjectPath(status.projectPath)
 	handlers.setSessions(status.sessions)
-	const sessionId = normalizeSessionId(status.activeSessionId ?? status.sessionId)
-	handlers.setActiveSessionId(sessionId)
-	handlers.setCapabilities(status.capabilities)
+	if (!options?.skipActiveSession) {
+		const sessionId = normalizeSessionId(status.activeSessionId ?? status.sessionId)
+		handlers.setActiveSessionId(sessionId)
+	}
 	if (status.agentId) handlers.setActiveAgentId(status.agentId as AgentProviderId)
+	handlers.setCapabilities(status.capabilities)
 }
 
 export function AppShell() {
@@ -61,6 +66,7 @@ export function AppShell() {
 	const setMessages = useSetAtom(messagesAtom)
 	const setStreamingText = useSetAtom(streamingTextAtom)
 	const setConfigOptions = useSetAtom(configOptionsAtom)
+	const setReplayingHistory = useSetAtom(replayingHistoryAtom)
 	const [sessionStatus] = useAtom(sessionStatusAtom)
 	const [settingsOpen, setSettingsOpen] = useAtom(settingsOpenAtom)
 	const setDiffPanelOpen = useSetAtom(diffPanelOpenAtom)
@@ -102,6 +108,57 @@ export function AppShell() {
 					setCapabilities,
 					setActiveAgentId,
 				})
+
+				if (!status.connected) {
+					try {
+						await waitForAgentReady()
+					} catch {
+						return
+					}
+				}
+
+				if (cancelled) return
+
+				const latest = await getProjectStatus()
+				if (cancelled) return
+
+				if (
+					latest.connected &&
+					latest.sessions.length === 0 &&
+					isGeneralChatProject(latest.projectPath)
+				) {
+					const closed = await closeProject()
+					if (cancelled) return
+					applyProjectStatus(closed, {
+						setAgentConnected,
+						setProjectPath,
+						setSessions,
+						setActiveSessionId,
+						setCapabilities,
+						setActiveAgentId,
+					})
+					return
+				}
+
+				applyProjectStatus(latest, {
+					setAgentConnected,
+					setProjectPath,
+					setSessions,
+					setActiveSessionId,
+					setCapabilities,
+					setActiveAgentId,
+				})
+
+				const sessionId = normalizeSessionId(
+					latest.activeSessionId ?? latest.sessionId,
+				)
+				const hasTrackedSession = latest.sessions.some(
+					(session) => session.sessionId === sessionId,
+				)
+				if (!sessionId || !hasTrackedSession) return
+
+				setReplayingHistory(true)
+				await loadSession(sessionId)
 			} catch {
 				if (!cancelled) setAgentConnected(false)
 			}
@@ -118,6 +175,7 @@ export function AppShell() {
 		setCapabilities,
 		setActiveAgentId,
 		setAgentConnected,
+		setReplayingHistory,
 	])
 
 	async function handleOpenProject(path: string, options?: OpenProjectOptions) {
@@ -153,7 +211,7 @@ export function AppShell() {
 				setActiveSessionId,
 				setCapabilities,
 				setActiveAgentId,
-			})
+			}, { skipActiveSession: true })
 		} finally {
 			setLoading(false)
 		}

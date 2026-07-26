@@ -9,6 +9,10 @@ import { AGENT_READY_EVENT } from "@/lib/wait-for-agent-ready"
 import { applySessionDefaults } from "@/lib/session-defaults"
 import { isOptimisticSessionId } from "@/lib/optimistic-session"
 import { flushPendingPrompt } from "@/lib/pending-prompt"
+import {
+	cacheSessionMessages,
+	getCachedSessionMessages,
+} from "@/lib/session-messages-cache"
 import { normalizeSessionId } from "@/lib/session-id"
 import { listenAcpEvents } from "@/lib/tauri"
 import {
@@ -112,6 +116,10 @@ export function useAcpEventBridge() {
 					)
 				}
 
+				if (sessionChanged && previousSessionId) {
+					cacheSessionMessages(previousSessionId, store.get(messagesAtom))
+				}
+
 				setProjectPath(payload.projectPath)
 				setConfigOptions(payload.configOptions)
 				setActiveSessionId(nextSessionId)
@@ -120,9 +128,16 @@ export function useAcpEventBridge() {
 				setErrorMessage(null)
 
 				if (sessionChanged) {
-					setMessages([])
-					setStreamingText("")
-					streamingRef.current = ""
+					const cachedMessages = getCachedSessionMessages(nextSessionId)
+					if (cachedMessages) {
+						setMessages(cachedMessages)
+						setStreamingText("")
+						streamingRef.current = ""
+					} else {
+						setMessages([])
+						setStreamingText("")
+						streamingRef.current = ""
+					}
 					setPromptInFlight(false)
 					setPromptInFlightSync(false)
 				}
@@ -218,6 +233,11 @@ export function useAcpEventBridge() {
 						scheduleReplayEnd(setReplayingHistory)
 					}
 
+					const sessionId = resolveAcceptedSessionId()
+					if (sessionId) {
+						cacheSessionMessages(sessionId, result.messages)
+					}
+
 					return result.messages
 				})
 
@@ -264,6 +284,8 @@ export function useAcpEventBridge() {
 						) {
 							next.pop()
 						}
+						const sessionId = resolveAcceptedSessionId()
+						if (sessionId) cacheSessionMessages(sessionId, next)
 						return next
 					})
 				} else {
@@ -287,6 +309,8 @@ export function useAcpEventBridge() {
 								timestamp: Date.now(),
 							})
 						}
+						const sessionId = resolveAcceptedSessionId()
+						if (sessionId) cacheSessionMessages(sessionId, next)
 						return next
 					})
 				}
