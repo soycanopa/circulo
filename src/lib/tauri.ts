@@ -1,0 +1,117 @@
+import { invoke } from "@tauri-apps/api/core"
+import { listen, type UnlistenFn } from "@tauri-apps/api/event"
+import type {
+	AgentCapabilities,
+	ConfigOption,
+	PermissionRequest,
+	ProjectStatus,
+} from "@/types/acp"
+
+export async function getProjectStatus(): Promise<ProjectStatus> {
+	return invoke("get_project_status")
+}
+
+export async function openProject(
+	path: string,
+	agentId?: string,
+): Promise<ProjectStatus> {
+	return invoke("open_project", { path, agentId: agentId ?? null })
+}
+
+export async function closeProject(): Promise<ProjectStatus> {
+	return invoke("close_project")
+}
+
+export async function createSession(): Promise<ProjectStatus> {
+	return invoke("create_session")
+}
+
+export async function sendPrompt(
+	text: string,
+	contextPaths: string[],
+): Promise<void> {
+	return invoke("send_prompt", { text, contextPaths })
+}
+
+export async function respondPermission(
+	requestId: string,
+	optionId: string,
+): Promise<void> {
+	return invoke("respond_permission", { requestId, optionId })
+}
+
+export async function setConfigOption(
+	configId: string,
+	value: string,
+): Promise<void> {
+	return invoke("set_config_option", { configId, value })
+}
+
+export async function searchFiles(query: string): Promise<string[]> {
+	return invoke("search_files", { query })
+}
+
+export async function pickDirectory(): Promise<string | null> {
+	return invoke("pick_directory")
+}
+
+export function listenAcpEvents(handlers: {
+	onAgentReady?: (payload: {
+		projectPath: string
+		capabilities: AgentCapabilities
+	}) => void
+	onSessionReady?: (payload: {
+		sessionId: string
+		projectPath: string
+		configOptions: ConfigOption[]
+	}) => void
+	onSessionUpdate?: (payload: unknown) => void
+	onPermissionRequest?: (payload: PermissionRequest) => void
+	onConfigOptions?: (payload: {
+		configOptions: ConfigOption[]
+		sessionId?: string
+	}) => void
+	onPromptComplete?: (payload?: { sessionId?: string }) => void
+	onError?: (payload: { message: string; sessionId?: string }) => void
+	onDisconnected?: () => void
+}): Promise<UnlistenFn[]> {
+	return Promise.all([
+		listen("agent:ready", (event) => {
+			handlers.onAgentReady?.(
+				event.payload as {
+					projectPath: string
+					capabilities: AgentCapabilities
+				},
+			)
+		}),
+		listen("acp:session_ready", (event) => {
+			handlers.onSessionReady?.(
+				event.payload as {
+					sessionId: string
+					projectPath: string
+					configOptions: ConfigOption[]
+				},
+			)
+		}),
+		listen("acp:session_update", (event) => {
+			handlers.onSessionUpdate?.(event.payload)
+		}),
+		listen("acp:permission_request", (event) => {
+			handlers.onPermissionRequest?.(event.payload as PermissionRequest)
+		}),
+		listen("acp:config_options", (event) => {
+			handlers.onConfigOptions?.(
+				event.payload as { configOptions: ConfigOption[]; sessionId?: string },
+			)
+		}),
+		listen("acp:prompt_complete", (event) => {
+			handlers.onPromptComplete?.(event.payload as { sessionId?: string })
+		}),
+		listen("acp:error", (event) => {
+			handlers.onError?.(event.payload as { message: string; sessionId?: string })
+		}),
+		listen("agent:disconnected", () => {
+			handlers.onDisconnected?.()
+		}),
+	])
+}
