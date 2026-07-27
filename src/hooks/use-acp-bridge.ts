@@ -1,4 +1,4 @@
-import { useSetAtom } from "jotai"
+import { getDefaultStore, useSetAtom } from "jotai"
 import { useEffect, useRef } from "react"
 import {
 	appendStreamToMessages,
@@ -22,7 +22,10 @@ import {
 
 /**
  * Single root registration for ACP events.
- * Call once from AppShell / App root.
+ * Call once from App root.
+ *
+ * Per ACP prompt-turn: session/update (agent_message_chunk) arrives *during*
+ * session/prompt — paint immediately; do not wait for prompt_complete.
  */
 export function useAcpBridge() {
 	const setMessages = useSetAtom(messagesAtom)
@@ -40,6 +43,7 @@ export function useAcpBridge() {
 
 	const streamingRef = useRef("")
 	const sessionIdRef = useRef<string | null>(null)
+	const firstChunkLogged = useRef(false)
 
 	useEffect(() => {
 		let cancelled = false
@@ -50,13 +54,13 @@ export function useAcpBridge() {
 				setConnected(true)
 				setProjectPath(payload.projectPath)
 				setCapabilities(payload.capabilities)
-				// Agent warm only — no session yet.
 				setStatus("idle")
 				setProgress(null)
 				setError(null)
 			},
 			onSessionReady: (payload) => {
 				sessionIdRef.current = payload.sessionId
+				firstChunkLogged.current = false
 				setSessionId(payload.sessionId)
 				setProjectPath(payload.projectPath)
 				setConfig(payload.configOptions ?? [])
@@ -86,16 +90,27 @@ export function useAcpBridge() {
 					return
 				}
 
-				setMessages((current) => {
-					const result = applySessionUpdate(
-						current,
-						streamingRef.current,
-						payload,
-					)
-					streamingRef.current = result.streamingText
-					setStreaming(result.streamingText)
-					return result.messages
-				})
+				const store = getDefaultStore()
+				const current = store.get(messagesAtom)
+				const result = applySessionUpdate(
+					current,
+					streamingRef.current,
+					payload,
+				)
+				streamingRef.current = result.streamingText
+
+				// Never nest setState inside another updater — paint stream immediately.
+				store.set(messagesAtom, result.messages)
+				store.set(streamingTextAtom, result.streamingText)
+
+				if (result.didStream) {
+					store.set(sessionStatusAtom, "generating")
+					store.set(promptInFlightAtom, true)
+					if (!firstChunkLogged.current) {
+						firstChunkLogged.current = true
+						store.set(progressMessageAtom, null)
+					}
+				}
 			},
 			onPermissionRequest: (payload) => {
 				if (
@@ -126,15 +141,17 @@ export function useAcpBridge() {
 				) {
 					return
 				}
-				setMessages((current) => {
-					const next = appendStreamToMessages(current, streamingRef.current)
-					streamingRef.current = ""
-					setStreaming("")
-					return next
-				})
-				setPromptInFlight(false)
-				setStatus("idle")
-				setPermission(null)
+				const store = getDefaultStore()
+				const current = store.get(messagesAtom)
+				const next = appendStreamToMessages(current, streamingRef.current)
+				streamingRef.current = ""
+				firstChunkLogged.current = false
+				store.set(messagesAtom, next)
+				store.set(streamingTextAtom, "")
+				store.set(promptInFlightAtom, false)
+				store.set(sessionStatusAtom, "idle")
+				store.set(activePermissionAtom, null)
+				store.set(progressMessageAtom, null)
 			},
 			onError: (payload) => {
 				if (
@@ -149,6 +166,7 @@ export function useAcpBridge() {
 				setStatus("idle")
 				streamingRef.current = ""
 				setStreaming("")
+				setProgress(null)
 			},
 			onDisconnected: () => {
 				setConnected(false)
@@ -160,6 +178,7 @@ export function useAcpBridge() {
 				setPermission(null)
 				setConfig([])
 				setCapabilities(null)
+				setProgress(null)
 			},
 		}).then((list) => {
 			if (cancelled) {

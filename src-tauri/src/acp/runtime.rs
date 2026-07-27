@@ -47,6 +47,8 @@ pub async fn start_agent_connection(
         .name("circulo")
         .on_receive_notification(
             async move |notification: SessionNotification, _cx| {
+                // Forward immediately — UI must stream agent_message_chunk before
+                // session/prompt RPC resolves (ACP prompt-turn lifecycle).
                 let payload = serde_json::to_value(&notification).unwrap_or(Value::Null);
                 let _ = app_for_notifications.emit("acp:session_update", payload);
                 Ok(())

@@ -40,16 +40,21 @@ export function MessageList() {
 					) : null}
 				</div>
 			))}
-			{(streaming || inFlight) && (
+			{inFlight &&
+			messages[messages.length - 1]?.role !== "assistant" &&
+			!streaming ? (
+				<div className="mx-auto max-w-3xl text-sm text-muted">Thinking…</div>
+			) : null}
+			{streaming ? (
 				<div className="mx-auto max-w-3xl">
 					<div className="mb-1 text-[11px] uppercase tracking-wide text-muted">
 						Agent
 					</div>
 					<div className="whitespace-pre-wrap text-sm leading-relaxed text-fg">
-						{streaming || (inFlight ? "…" : "")}
+						{streaming}
 					</div>
 				</div>
-			)}
+			) : null}
 		</div>
 	)
 }
