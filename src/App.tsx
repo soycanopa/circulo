@@ -17,6 +17,7 @@ import {
 	agentConnectedAtom,
 	errorMessageAtom,
 	messagesAtom,
+	progressMessageAtom,
 	projectPathAtom,
 	sessionIdAtom,
 	sessionStatusAtom,
@@ -36,6 +37,7 @@ export default function App() {
 	const connected = useAtomValue(agentConnectedAtom)
 	const status = useAtomValue(sessionStatusAtom)
 	const error = useAtomValue(errorMessageAtom)
+	const progress = useAtomValue(progressMessageAtom)
 	const setError = useSetAtom(errorMessageAtom)
 	const setStatus = useSetAtom(sessionStatusAtom)
 	const setMessages = useSetAtom(messagesAtom)
@@ -112,9 +114,9 @@ export default function App() {
 			: "Starting…"
 
 	const statusLabel = warming
-		? "Warming OpenCode (first launch can take a bit)…"
+		? progress || "Warming OpenCode…"
 		: status === "connecting"
-			? "Creating session…"
+			? progress || "Creating session…"
 			: status === "generating"
 				? "Agent working…"
 				: status === "awaiting_permission"

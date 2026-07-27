@@ -78,6 +78,7 @@ export function listenAcpEvents(handlers: {
 	onPromptComplete?: (payload?: { sessionId?: string }) => void
 	onError?: (payload: { message: string; sessionId?: string }) => void
 	onDisconnected?: () => void
+	onProgress?: (payload: { phase: string; message?: string }) => void
 }): Promise<UnlistenFn[]> {
 	return Promise.all([
 		listen("agent:ready", (event) => {
@@ -116,6 +117,9 @@ export function listenAcpEvents(handlers: {
 		}),
 		listen("agent:disconnected", () => {
 			handlers.onDisconnected?.()
+		}),
+		listen("agent:progress", (event) => {
+			handlers.onProgress?.(event.payload as { phase: string; message?: string })
 		}),
 	])
 }

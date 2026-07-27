@@ -90,9 +90,8 @@ pub async fn open_project(
         }
     });
 
-    // Wait until the first session exists (initialize + session/new), not merely connected.
-    // Returning early after initialize allowed New Chat to queue a second session/new.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    // Wait until the first session exists (initialize + session/new).
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(45);
     loop {
         {
             let guard = state.lock().await;
@@ -117,20 +116,19 @@ pub async fn open_project(
     }
 
     let status = state.lock().await.status();
-    if status.session_id.is_none() && status.connected {
+    if status.session_id.is_some() && status.connected {
+        return Ok(status);
+    }
+    if status.connected && status.session_id.is_none() {
         return Err(
-            "El agente conectó pero la sesión tarda demasiado. Usa un proyecto más pequeño (no Desktop/Home)."
+            "El agente conectó pero session/new no terminó a tiempo. Reintenta o elige un proyecto más pequeño."
                 .to_string(),
         );
     }
-    if !status.connected {
-        return Err(
-            "No se pudo conectar al agente (OpenCode). ¿Está instalado? `opencode --version`"
-                .to_string(),
-        );
-    }
-
-    Ok(status)
+    Err(
+        "No se pudo conectar al agente (OpenCode). Verifica `opencode --version` y que `opencode acp` funcione."
+            .to_string(),
+    )
 }
 
 #[tauri::command]

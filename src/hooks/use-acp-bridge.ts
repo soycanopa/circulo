@@ -12,6 +12,7 @@ import {
 	configOptionsAtom,
 	errorMessageAtom,
 	messagesAtom,
+	progressMessageAtom,
 	projectPathAtom,
 	promptInFlightAtom,
 	sessionIdAtom,
@@ -35,6 +36,7 @@ export function useAcpBridge() {
 	const setCapabilities = useSetAtom(capabilitiesAtom)
 	const setPermission = useSetAtom(activePermissionAtom)
 	const setError = useSetAtom(errorMessageAtom)
+	const setProgress = useSetAtom(progressMessageAtom)
 
 	const streamingRef = useRef("")
 	const sessionIdRef = useRef<string | null>(null)
@@ -48,7 +50,8 @@ export function useAcpBridge() {
 				setConnected(true)
 				setProjectPath(payload.projectPath)
 				setCapabilities(payload.capabilities)
-				setStatus("idle")
+				// Stay "connecting" until session:ready — ready ≠ session yet.
+				setProgress("Agent connected, creating session…")
 				setError(null)
 			},
 			onSessionReady: (payload) => {
@@ -62,7 +65,11 @@ export function useAcpBridge() {
 				setPromptInFlight(false)
 				setPermission(null)
 				setStatus("idle")
+				setProgress(null)
 				setError(null)
+			},
+			onProgress: (payload) => {
+				if (payload.message) setProgress(payload.message)
 			},
 			onSessionUpdate: (payload) => {
 				const root = payload as Record<string, unknown>
@@ -177,5 +184,6 @@ export function useAcpBridge() {
 		setSessionId,
 		setStatus,
 		setStreaming,
+		setProgress,
 	])
 }

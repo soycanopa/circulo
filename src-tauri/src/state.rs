@@ -147,6 +147,12 @@ impl CirculoState {
             .as_mut()
             .filter(|agent| agent.project_path == path)
     }
+
+    /// MVP is single-agent: always mutate the active agent when present.
+    /// Path equality can fail across canonicalize/string forms and left the UI stuck warming.
+    pub fn active_agent_mut(&mut self) -> Option<&mut ActiveAgent> {
+        self.agent.as_mut()
+    }
 }
 
 fn normalize_session_id(session_id: &str) -> Option<String> {

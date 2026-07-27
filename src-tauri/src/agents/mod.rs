@@ -33,10 +33,12 @@ pub fn build_agent(agent_id: &str, project_path: &Path) -> Result<AcpAgent, Stri
 
 pub fn build_opencode_agent(project_path: &Path) -> Result<AcpAgent, String> {
     let opencode = resolve_opencode()?;
+    // --pure skips external plugins for a faster ACP cold start in Circulo.
     AcpAgent::from_args([
         format!("OPENCODE_CONFIG_CONTENT={OPENCODE_CONFIG_CONTENT}"),
         opencode.display().to_string(),
         "acp".to_string(),
+        "--pure".to_string(),
         "--cwd".to_string(),
         project_path.display().to_string(),
     ])

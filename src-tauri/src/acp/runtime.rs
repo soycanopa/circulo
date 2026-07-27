@@ -92,6 +92,13 @@ pub async fn start_agent_connection(
 
             async move {
                 info!(path = %project_path.display(), "Initializing ACP agent");
+                let _ = app.emit(
+                    "agent:progress",
+                    serde_json::json!({
+                        "phase": "initialize",
+                        "message": "Connecting to OpenCode…",
+                    }),
+                );
                 let init_started = Instant::now();
                 let init_response = match connection
                     .send_request(InitializeRequest::new(ProtocolVersion::V1))
@@ -110,6 +117,12 @@ pub async fn start_agent_connection(
                             "acp:error",
                             serde_json::json!({ "message": format!("ACP initialize failed: {err}") }),
                         );
+                        // Unblock open_project waiters.
+                        let mut guard = state.lock().await;
+                        if let Some(agent) = guard.active_agent_mut() {
+                            agent.connected = false;
+                            agent.agent_done.notify_waiters();
+                        }
                         return Ok(());
                     }
                 };
@@ -124,9 +137,10 @@ pub async fn start_agent_connection(
 
                 {
                     let mut guard = state.lock().await;
-                    if let Some(agent) = guard.agent_for_path_mut(&project_path) {
+                    if let Some(agent) = guard.active_agent_mut() {
                         agent.agent_capabilities = agent_capabilities.clone();
                         agent.connected = true;
+                        agent.project_path = project_path.clone();
                     }
                 }
 
@@ -135,6 +149,13 @@ pub async fn start_agent_connection(
                     serde_json::json!({
                         "projectPath": project_path.display().to_string(),
                         "capabilities": agent_capabilities,
+                    }),
+                );
+                let _ = app.emit(
+                    "agent:progress",
+                    serde_json::json!({
+                        "phase": "initialized",
+                        "message": "Agent connected, creating session…",
                     }),
                 );
 
@@ -153,7 +174,7 @@ pub async fn start_agent_connection(
                 {
                     Ok(()) => {
                         let mut guard = state.lock().await;
-                        if let Some(agent) = guard.agent_for_path_mut(&project_path) {
+                        if let Some(agent) = guard.active_agent_mut() {
                             agent.agent_done.notify_waiters();
                         }
                     }
@@ -164,7 +185,7 @@ pub async fn start_agent_connection(
                             serde_json::json!({ "message": err }),
                         );
                         let mut guard = state.lock().await;
-                        if let Some(agent) = guard.agent_for_path_mut(&project_path) {
+                        if let Some(agent) = guard.active_agent_mut() {
                             agent.agent_done.notify_waiters();
                         }
                     }
@@ -247,9 +268,7 @@ pub async fn start_agent_connection(
                                 Ok(response) => {
                                     let mapped =
                                         map_config_options(Some(&response.config_options));
-                                    if let Some(agent) =
-                                        state.lock().await.agent_for_path_mut(&project_path)
-                                    {
+                                    if let Some(agent) = state.lock().await.active_agent_mut() {
                                         agent.config_options = mapped.clone();
                                     }
                                     let _ = app.emit(
@@ -320,9 +339,10 @@ async fn create_session_on_connection(
     *active_session_id.lock().await = session_id.clone();
     {
         let mut guard = state.lock().await;
-        if let Some(agent) = guard.agent_for_path_mut(project_path) {
+        if let Some(agent) = guard.active_agent_mut() {
             agent.session_id = session_id.clone();
             agent.config_options = config_options.clone();
+            agent.project_path = project_path.clone();
         }
     }
 
