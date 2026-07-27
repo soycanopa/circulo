@@ -23,6 +23,7 @@ pub fn run() {
         .manage(shared_state)
         .invoke_handler(tauri::generate_handler![
             commands::get_project_status,
+            commands::get_default_chats_path,
             commands::open_project,
             commands::close_project,
             commands::create_session,

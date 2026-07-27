@@ -15,6 +15,16 @@ pub async fn get_project_status(state: State<'_, SharedState>) -> Result<Project
     Ok(state.lock().await.status())
 }
 
+/// Small dedicated workspace for general chats (never $HOME).
+#[tauri::command]
+pub async fn get_default_chats_path() -> Result<String, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let path = PathBuf::from(home).join(".circulo").join("chats");
+    std::fs::create_dir_all(&path)
+        .map_err(|err| format!("Could not create chats dir: {err}"))?;
+    Ok(path.display().to_string())
+}
+
 #[tauri::command]
 pub async fn open_project(
     app: AppHandle,
@@ -80,12 +90,17 @@ pub async fn open_project(
         }
     });
 
-    // Wait until initialize sets connected, or timeout.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(45);
+    // Wait until the first session exists (initialize + session/new), not merely connected.
+    // Returning early after initialize allowed New Chat to queue a second session/new.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
     loop {
         {
             let guard = state.lock().await;
-            if guard.agent.as_ref().is_some_and(|a| a.connected) {
+            if guard
+                .agent
+                .as_ref()
+                .is_some_and(|a| a.connected && !a.session_id.is_empty())
+            {
                 break;
             }
             if guard.agent.is_none() {
@@ -97,11 +112,25 @@ pub async fn open_project(
         }
         tokio::select! {
             _ = agent_done.notified() => {}
-            _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+            _ = tokio::time::sleep(Duration::from_millis(50)) => {}
         }
     }
 
-    Ok(state.lock().await.status())
+    let status = state.lock().await.status();
+    if status.session_id.is_none() && status.connected {
+        return Err(
+            "El agente conectó pero la sesión tarda demasiado. Usa un proyecto más pequeño (no Desktop/Home)."
+                .to_string(),
+        );
+    }
+    if !status.connected {
+        return Err(
+            "No se pudo conectar al agente (OpenCode). ¿Está instalado? `opencode --version`"
+                .to_string(),
+        );
+    }
+
+    Ok(status)
 }
 
 #[tauri::command]

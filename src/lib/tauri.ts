@@ -11,6 +11,10 @@ export async function getProjectStatus(): Promise<ProjectStatus> {
 	return invoke("get_project_status")
 }
 
+export async function getDefaultChatsPath(): Promise<string> {
+	return invoke("get_default_chats_path")
+}
+
 export async function openProject(
 	path: string,
 	agentId?: string,

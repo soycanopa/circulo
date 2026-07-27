@@ -80,7 +80,7 @@ export function ChatInput() {
 						rows={3}
 						placeholder={
 							!sessionId
-								? "Open a project to start chatting…"
+								? "Waiting for agent to warm up…"
 								: permission
 									? "Respond to the permission request…"
 									: "Message the agent…"

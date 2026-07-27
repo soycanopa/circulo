@@ -92,12 +92,19 @@ pub async fn start_agent_connection(
 
             async move {
                 info!(path = %project_path.display(), "Initializing ACP agent");
+                let init_started = Instant::now();
                 let init_response = match connection
                     .send_request(InitializeRequest::new(ProtocolVersion::V1))
                     .block_task()
                     .await
                 {
-                    Ok(response) => response,
+                    Ok(response) => {
+                        info!(
+                            elapsed_ms = init_started.elapsed().as_millis() as u64,
+                            "ACP initialize RPC completed"
+                        );
+                        response
+                    }
                     Err(err) => {
                         let _ = app.emit(
                             "acp:error",
@@ -110,12 +117,16 @@ pub async fn start_agent_connection(
                 let agent_capabilities =
                     AgentCapabilitiesDto::from_capabilities(&init_response.agent_capabilities);
 
+                info!(
+                    path = %project_path.display(),
+                    "ACP initialize completed"
+                );
+
                 {
                     let mut guard = state.lock().await;
                     if let Some(agent) = guard.agent_for_path_mut(&project_path) {
                         agent.agent_capabilities = agent_capabilities.clone();
                         agent.connected = true;
-                        agent.agent_done.notify_waiters();
                     }
                 }
 
@@ -128,6 +139,8 @@ pub async fn start_agent_connection(
                 );
 
                 // Create the first session immediately (no reserve / pre-warm).
+                // Only notify open_project waiters after session is ready so the UI
+                // does not enable New Chat mid-create (which caused a second session/new).
                 let active_session_id = Arc::new(Mutex::new(String::new()));
                 match create_session_on_connection(
                     &connection,
@@ -138,13 +151,22 @@ pub async fn start_agent_connection(
                 )
                 .await
                 {
-                    Ok(()) => {}
+                    Ok(()) => {
+                        let mut guard = state.lock().await;
+                        if let Some(agent) = guard.agent_for_path_mut(&project_path) {
+                            agent.agent_done.notify_waiters();
+                        }
+                    }
                     Err(err) => {
                         error!(?err, "Initial session/new failed");
                         let _ = app.emit(
                             "acp:error",
                             serde_json::json!({ "message": err }),
                         );
+                        let mut guard = state.lock().await;
+                        if let Some(agent) = guard.agent_for_path_mut(&project_path) {
+                            agent.agent_done.notify_waiters();
+                        }
                     }
                 }
 
@@ -168,6 +190,12 @@ pub async fn start_agent_connection(
                             let blocks = build_prompt_blocks(&text, &context_files);
                             let prompt_connection = connection.clone();
                             let app = app.clone();
+                            info!(
+                                session_id = %session_id,
+                                chars = text.len(),
+                                "Sending session/prompt"
+                            );
+                            let started = Instant::now();
                             tokio::spawn(async move {
                                 match prompt_connection
                                     .send_request(PromptRequest::new(session_id.clone(), blocks))
@@ -175,13 +203,25 @@ pub async fn start_agent_connection(
                                     .await
                                 {
                                     Ok(_) => {
+                                        info!(
+                                            session_id = %session_id,
+                                            elapsed_ms = started.elapsed().as_millis() as u64,
+                                            "session/prompt completed"
+                                        );
                                         let _ = app.emit(
                                             "acp:prompt_complete",
-                                            serde_json::json!({ "sessionId": session_id }),
+                                            serde_json::json!({
+                                                "sessionId": session_id,
+                                                "elapsedMs": started.elapsed().as_millis() as u64,
+                                            }),
                                         );
                                     }
                                     Err(err) => {
-                                        error!(?err, "Prompt failed");
+                                        error!(
+                                            ?err,
+                                            elapsed_ms = started.elapsed().as_millis() as u64,
+                                            "Prompt failed"
+                                        );
                                         let _ = app.emit(
                                             "acp:error",
                                             serde_json::json!({
