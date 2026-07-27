@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::acp::{read_context_file, search_project_files, start_agent_connection};
@@ -18,6 +18,10 @@ pub async fn get_project_status(state: State<'_, SharedState>) -> Result<Project
 /// Small dedicated workspace for general chats (never $HOME).
 #[tauri::command]
 pub async fn get_default_chats_path() -> Result<String, String> {
+    default_chats_path()
+}
+
+pub fn default_chats_path() -> Result<String, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
     let path = PathBuf::from(home).join(".circulo").join("chats");
     std::fs::create_dir_all(&path)
@@ -25,10 +29,20 @@ pub async fn get_default_chats_path() -> Result<String, String> {
     Ok(path.display().to_string())
 }
 
+/// Start (or reuse) the agent process for a project. Does **not** create an ACP session.
 #[tauri::command]
 pub async fn open_project(
     app: AppHandle,
     state: State<'_, SharedState>,
+    path: String,
+    agent_id: Option<String>,
+) -> Result<ProjectStatus, String> {
+    open_project_inner(app, state.inner(), path, agent_id).await
+}
+
+pub async fn open_project_inner(
+    app: AppHandle,
+    state: &SharedState,
     path: String,
     agent_id: Option<String>,
 ) -> Result<ProjectStatus, String> {
@@ -42,7 +56,7 @@ pub async fn open_project(
     let resolved_agent_id =
         crate::agents::normalize_agent_id(agent_id.as_deref()).to_string();
 
-    // Reuse if already open on the same path.
+    // Reuse if already open on the same path and connected (agent warm, session optional).
     {
         let guard = state.lock().await;
         if let Some(agent) = &guard.agent {
@@ -52,8 +66,7 @@ pub async fn open_project(
         }
     }
 
-    // Shutdown previous agent if any.
-    shutdown_agent(state.inner()).await;
+    shutdown_agent(state).await;
 
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
     let agent_done = Arc::new(tokio::sync::Notify::new());
@@ -72,34 +85,31 @@ pub async fn open_project(
         });
     }
 
-    let shared: SharedState = Arc::clone(state.inner());
+    let shared: SharedState = Arc::clone(state);
     let app_clone = app.clone();
     let path_clone = project_path.clone();
 
     tauri::async_runtime::spawn(async move {
-        let result = start_agent_connection(app_clone.clone(), shared.clone(), path_clone, cmd_rx)
-            .await;
+        let result =
+            start_agent_connection(app_clone.clone(), shared.clone(), path_clone, cmd_rx).await;
 
         if let Err(err) = result {
             let _ = app_clone.emit("acp:error", serde_json::json!({ "message": err }));
             let mut guard = shared.lock().await;
             if let Some(agent) = &mut guard.agent {
                 agent.connected = false;
+                agent.agent_done.notify_waiters();
             }
             let _ = app_clone.emit("agent:disconnected", ());
         }
     });
 
-    // Wait until the first session exists (initialize + session/new).
+    // Wait only for ACP initialize (agent warm). Sessions start via create_session.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(45);
     loop {
         {
             let guard = state.lock().await;
-            if guard
-                .agent
-                .as_ref()
-                .is_some_and(|a| a.connected && !a.session_id.is_empty())
-            {
+            if guard.agent.as_ref().is_some_and(|a| a.connected) {
                 break;
             }
             if guard.agent.is_none() {
@@ -116,19 +126,25 @@ pub async fn open_project(
     }
 
     let status = state.lock().await.status();
-    if status.session_id.is_some() && status.connected {
+    if status.connected {
         return Ok(status);
-    }
-    if status.connected && status.session_id.is_none() {
-        return Err(
-            "El agente conectó pero session/new no terminó a tiempo. Reintenta o elige un proyecto más pequeño."
-                .to_string(),
-        );
     }
     Err(
         "No se pudo conectar al agente (OpenCode). Verifica `opencode --version` y que `opencode acp` funcione."
             .to_string(),
     )
+}
+
+/// Spawn default chats agent as early as possible (Tauri setup), before the UI loads.
+pub fn spawn_eager_agent_warm(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let Ok(path) = default_chats_path() else {
+            return;
+        };
+        let state = app.state::<SharedState>();
+        let _ = open_project_inner(app.clone(), state.inner(), path, None).await;
+    });
 }
 
 #[tauri::command]
@@ -179,7 +195,7 @@ pub async fn send_prompt(
             .as_ref()
             .ok_or_else(|| "No project open".to_string())?;
         if agent.session_id.is_empty() {
-            return Err("No active session".to_string());
+            return Err("No active session — usa New Chat primero".to_string());
         }
         (agent.cmd_tx.clone(), agent.project_path.clone())
     };

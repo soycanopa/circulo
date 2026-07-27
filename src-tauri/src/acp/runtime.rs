@@ -154,42 +154,20 @@ pub async fn start_agent_connection(
                 let _ = app.emit(
                     "agent:progress",
                     serde_json::json!({
-                        "phase": "initialized",
-                        "message": "Agent connected, creating session…",
+                        "phase": "ready",
+                        "message": "Agent ready — New Chat to start a session",
                     }),
                 );
 
-                // Create the first session immediately (no reserve / pre-warm).
-                // Only notify open_project waiters after session is ready so the UI
-                // does not enable New Chat mid-create (which caused a second session/new).
-                let active_session_id = Arc::new(Mutex::new(String::new()));
-                match create_session_on_connection(
-                    &connection,
-                    &app,
-                    &state,
-                    &project_path,
-                    &active_session_id,
-                )
-                .await
+                // Agent only: do NOT session/new here. Sessions start on New Chat / first prompt.
                 {
-                    Ok(()) => {
-                        let mut guard = state.lock().await;
-                        if let Some(agent) = guard.active_agent_mut() {
-                            agent.agent_done.notify_waiters();
-                        }
-                    }
-                    Err(err) => {
-                        error!(?err, "Initial session/new failed");
-                        let _ = app.emit(
-                            "acp:error",
-                            serde_json::json!({ "message": err }),
-                        );
-                        let mut guard = state.lock().await;
-                        if let Some(agent) = guard.active_agent_mut() {
-                            agent.agent_done.notify_waiters();
-                        }
+                    let mut guard = state.lock().await;
+                    if let Some(agent) = guard.active_agent_mut() {
+                        agent.agent_done.notify_waiters();
                     }
                 }
+
+                let active_session_id = Arc::new(Mutex::new(String::new()));
 
                 while let Some(command) = cmd_rx.recv().await {
                     match command {

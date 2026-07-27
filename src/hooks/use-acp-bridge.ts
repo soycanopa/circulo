@@ -50,8 +50,9 @@ export function useAcpBridge() {
 				setConnected(true)
 				setProjectPath(payload.projectPath)
 				setCapabilities(payload.capabilities)
-				// Stay "connecting" until session:ready — ready ≠ session yet.
-				setProgress("Agent connected, creating session…")
+				// Agent warm only — no session yet.
+				setStatus("idle")
+				setProgress(null)
 				setError(null)
 			},
 			onSessionReady: (payload) => {

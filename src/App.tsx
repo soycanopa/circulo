@@ -45,11 +45,11 @@ export default function App() {
 	const [, setSessionId] = useAtom(sessionIdAtom)
 
 	const [busy, setBusy] = useState(false)
-	const warming = status === "connecting" && !sessionId
-	const ready = Boolean(sessionId && connected)
+	const agentWarm = connected
+	const hasSession = Boolean(sessionId)
 
 	async function ensureAgentWarm(): Promise<void> {
-		if (connected && sessionId && projectPath) return
+		if (connected && projectPath) return
 		const chatsPath = await getDefaultChatsPath()
 		await openProject(chatsPath)
 	}
@@ -72,12 +72,14 @@ export default function App() {
 		setStreaming("")
 		setSessionId(null)
 		try {
+			// Agent only — no session until New Chat.
 			await openProject(path)
 			if (largeRoot) {
 				setError(
-					"Sesión lista. Carpetas grandes (Desktop/Home) hacen el arranque lento — prefiera un repo concreto.",
+					"Agente listo. Carpetas grandes (Desktop/Home) hacen el arranque lento — prefiera un repo concreto.",
 				)
 			}
+			setStatus("idle")
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to open project")
 			setStatus("idle")
@@ -93,12 +95,11 @@ export default function App() {
 		setMessages([])
 		setStreaming("")
 		try {
-			// Always allowed: warm agent on chats workspace if needed, then session/new.
 			if (!connected || !projectPath) {
 				await ensureAgentWarm()
-			} else {
-				await createSession()
 			}
+			// Explicit session/new — never auto-created on agent start.
+			await createSession()
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to create session")
 			setStatus("idle")
@@ -111,19 +112,20 @@ export default function App() {
 		? "General Chat"
 		: projectPath
 			? projectPath.split("/").filter(Boolean).slice(-2).join("/")
-			: "Starting…"
+			: "—"
 
-	const statusLabel = warming
-		? progress || "Warming OpenCode…"
-		: status === "connecting"
-			? progress || "Creating session…"
-			: status === "generating"
-				? "Agent working…"
-				: status === "awaiting_permission"
-					? "Waiting for permission…"
-					: ready
-						? "Ready"
-						: "Idle"
+	const statusLabel =
+		status === "generating"
+			? "Agent working…"
+			: status === "awaiting_permission"
+				? "Waiting for permission…"
+				: status === "connecting"
+					? progress || "Working…"
+					: hasSession
+						? "Session ready"
+						: agentWarm
+							? "Agent ready — New Chat to begin"
+							: progress || "Agent warming in background…"
 
 	return (
 		<AppShell
@@ -136,10 +138,10 @@ export default function App() {
 						<button
 							type="button"
 							onClick={() => void handleNewChat()}
-							disabled={busy || warming}
-							className="flex items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-fg/90 transition hover:bg-white/5 disabled:opacity-40"
+							disabled={busy}
+							className="flex items-center gap-2 rounded-md bg-white/10 px-2.5 py-2 text-left text-sm font-medium text-fg transition hover:bg-white/15 disabled:opacity-40"
 						>
-							{busy || warming ? (
+							{busy && status === "connecting" ? (
 								<Loader2 className="size-4 shrink-0 animate-spin" />
 							) : (
 								<MessageSquarePlus className="size-4 shrink-0" />
@@ -149,7 +151,7 @@ export default function App() {
 						<button
 							type="button"
 							onClick={() => void handleOpenProject()}
-							disabled={busy || warming}
+							disabled={busy}
 							className="flex items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-fg/90 transition hover:bg-white/5 disabled:opacity-50"
 						>
 							<FolderOpen className="size-4 shrink-0" />
@@ -163,10 +165,12 @@ export default function App() {
 							<p className="mt-1 truncate px-2.5 font-mono text-[10px] text-muted/70">
 								{sessionId}
 							</p>
-						) : null}
+						) : (
+							<p className="mt-1 px-2.5 text-[10px] text-muted/70">No session</p>
+						)}
 					</div>
 					<div className="border-t border-border px-4 py-3 text-[11px] text-muted">
-						{ready ? "Agent warm" : warming ? "Warming…" : "Agent idle"} · ACP
+						{agentWarm ? "Agent warm" : "Agent starting…"} · ACP
 					</div>
 				</>
 			}
@@ -182,15 +186,27 @@ export default function App() {
 				</div>
 			) : null}
 
-			{warming && !sessionId ? (
+			{!hasSession ? (
 				<div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
-					<Loader2 className="size-6 animate-spin text-muted" />
-					<p className="text-sm font-medium">Starting agent…</p>
-					<p className="max-w-md text-xs text-muted">
-						OpenCode se calienta al abrir la app en{" "}
-						<code className="text-fg/80">~/.circulo/chats</code>. Después New Chat y
-						el composer quedan listos sin abrir un proyecto.
+					<p className="text-lg font-medium tracking-tight">Circulo</p>
+					<p className="max-w-md text-sm text-muted">
+						{agentWarm
+							? "Agent is ready. Start a conversation with New Chat — no session is created until then."
+							: "Agent is warming in the background. You can still click New Chat; it will wait until the agent is up."}
 					</p>
+					<button
+						type="button"
+						onClick={() => void handleNewChat()}
+						disabled={busy}
+						className="mt-2 inline-flex items-center gap-2 rounded-md bg-white/10 px-3 py-1.5 text-sm text-fg transition hover:bg-white/15 disabled:opacity-40"
+					>
+						{busy ? (
+							<Loader2 className="size-4 animate-spin" />
+						) : (
+							<MessageSquarePlus className="size-4" />
+						)}
+						New chat
+					</button>
 				</div>
 			) : (
 				<MessageList />

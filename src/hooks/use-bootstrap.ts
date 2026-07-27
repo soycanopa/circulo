@@ -1,40 +1,55 @@
-import { useSetAtom } from "jotai"
+import { useSetAtom, useAtomValue } from "jotai"
 import { useEffect } from "react"
-import { getDefaultChatsPath, openProject } from "@/lib/tauri"
-import { errorMessageAtom, sessionStatusAtom } from "@/stores/atoms"
+import { getDefaultChatsPath, getProjectStatus, openProject } from "@/lib/tauri"
+import {
+	agentConnectedAtom,
+	errorMessageAtom,
+	progressMessageAtom,
+	sessionStatusAtom,
+} from "@/stores/atoms"
 
-/** Dedupe concurrent bootstrap (React Strict Mode remounts the effect). */
+/** Dedupe concurrent bootstrap (React Strict Mode + Rust eager warm). */
 let bootstrapPromise: Promise<void> | null = null
 
 async function warmDefaultAgent(): Promise<void> {
+	// Prefer reusing agent already started from Tauri setup().
+	const status = await getProjectStatus()
+	if (status.connected) {
+		return
+	}
 	const chatsPath = await getDefaultChatsPath()
 	await openProject(chatsPath)
 }
 
 /**
- * Warm OpenCode as soon as the app opens so General Chat works without
- * waiting for the user to pick a project folder.
+ * Ensure the agent process is warm. Does not create a chat session.
+ * Session starts only via New Chat (or first message).
  */
 export function useBootstrapAgent() {
+	const connected = useAtomValue(agentConnectedAtom)
 	const setStatus = useSetAtom(sessionStatusAtom)
 	const setError = useSetAtom(errorMessageAtom)
+	const setProgress = useSetAtom(progressMessageAtom)
 
 	useEffect(() => {
+		if (connected) return
+
 		let cancelled = false
 
 		void (async () => {
-			setStatus("connecting")
+			setProgress("Warming agent in background…")
 			try {
 				if (!bootstrapPromise) {
-					bootstrapPromise = warmDefaultAgent().finally(() => {
-						// Keep resolved promise so remounts reuse success; clear on failure so retry works.
+					bootstrapPromise = warmDefaultAgent().catch((err) => {
+						bootstrapPromise = null
+						throw err
 					})
 				}
 				await bootstrapPromise
-				// session:ready sets idle + sessionId; if still connecting, leave it —
-				// openProject only resolves after session is ready.
+				if (cancelled) return
+				// agent:ready event sets connected; no session yet is correct.
+				setProgress(null)
 			} catch (err) {
-				bootstrapPromise = null
 				if (cancelled) return
 				setError(
 					err instanceof Error
@@ -42,13 +57,12 @@ export function useBootstrapAgent() {
 						: "No se pudo iniciar el agente al arrancar",
 				)
 				setStatus("idle")
+				setProgress(null)
 			}
 		})()
 
 		return () => {
-			// Do not cancel the in-flight warm — only ignore late UI updates via cancelled
-			// for error handling. In-flight openProject must finish so the agent stays warm.
 			cancelled = true
 		}
-	}, [setError, setStatus])
+	}, [connected, setError, setProgress, setStatus])
 }
