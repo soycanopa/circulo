@@ -66,20 +66,19 @@ export function AppShell({
 	return (
 		<div className={cn("flex h-full min-h-0 w-full overflow-hidden", className)}>
 			{/*
-			  Side chrome: transparent only (native vibrancy).
-			  No CSS backdrop-filter here — stacking native blur + CSS blur flickers
-			  at the edge with the solid chat card while dragging the window.
+			  Side chrome: inherits fixed gray frost from #root (no desktop tint).
+			  No CSS backdrop-filter — avoids edge flicker with the solid chat card.
 			*/}
 			<aside
 				className={cn(
-					"flex h-full shrink-0 flex-col overflow-hidden bg-transparent",
+					"chrome-frost flex h-full shrink-0 flex-col overflow-hidden",
 					resizing !== "sidebar" && shellTransition,
 				)}
 				style={{ width: sidebarOpen ? sidebarWidth : 0 }}
 			>
 				<div
 					className={cn(
-						"flex h-full flex-col bg-transparent",
+						"flex h-full flex-col",
 						!sidebarOpen && "pointer-events-none",
 					)}
 					style={{ width: sidebarWidth }}
@@ -92,7 +91,7 @@ export function AppShell({
 				<ResizeHandle onPointerDown={sidebarResize.onPointerDown} />
 			) : null}
 			{/* Solid chat surface + app bar — opaque layer, simple border (no soft shadow). */}
-			<main className="solid-content relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-border">
+			<main className="solid-content relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[12px]">
 				{children}
 			</main>
 			{panel && panelOpen ? (
@@ -101,14 +100,14 @@ export function AppShell({
 			{panel ? (
 				<aside
 					className={cn(
-						"flex h-full shrink-0 flex-col overflow-hidden bg-transparent",
+						"chrome-frost flex h-full shrink-0 flex-col overflow-hidden",
 						resizing !== "diff" && shellTransition,
 					)}
 					style={{ width: panelOpen ? diffPanelWidth : 0 }}
 				>
 					<div
 						className={cn(
-							"flex h-full flex-col bg-transparent",
+							"flex h-full flex-col",
 							!panelOpen && "pointer-events-none",
 						)}
 						style={{ width: diffPanelWidth }}

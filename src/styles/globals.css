@@ -9,22 +9,27 @@
   --color-muted: color-mix(in oklab, white 55%, transparent);
   --color-fg: #f3f3f3;
   --color-accent: #6ea8fe;
+  /* Neutral gray frost plate (hue locked; opacity controls see-through). */
+  --color-frost-rgb: 20 20 22;
+  --color-frost-elevated-rgb: 28 28 31;
 }
 
 /*
- * CSS blur only for floating overlays (palette / modals).
- * Sidebars use native HudWindow only — CSS backdrop-filter there caused
- * flicker at the solid-chat edge while dragging the window.
+ * How much desktop shows through the frost.
+ * Higher = more opaque gray / less wallpaper color bleed.
+ * ~0.78–0.88 keeps frost readable while muting background hue.
  */
 :root {
   --glass-blur: 56px;
+  --frost-opacity: 0.82;
+  --frost-elevated-opacity: 0.9;
 }
 
 html,
 body {
   height: 100%;
   margin: 0;
-  /* Must be transparent for native window vibrancy / frosted glass. */
+  /* Transparent so native vibrancy + gray veil can composite. */
   background: transparent;
 }
 
@@ -33,10 +38,15 @@ body {
   height: 100%;
   padding: 6px;
   /*
-   * Soft black veil over native vibrancy (Dark).
-   * Higher opacity = less frosted / less see-through.
+   * Frost: semi-transparent neutral gray over native blur.
+   * Gray plate dominates hue; residual transparency keeps soft frost depth.
    */
-  background: rgba(0, 0, 0, 0.85);
+  background-color: rgb(var(--color-frost-rgb) / var(--frost-opacity));
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in oklab, white 5%, transparent) 0%,
+    transparent 32%
+  );
 }
 
 body {
@@ -56,15 +66,25 @@ body {
 }
 
 /**
- * Overlay panels only (command palette, modals, tooltips).
- * Not used on sidebars.
+ * Side chrome shares the shell frost (inherits #root plate).
+ * No extra backdrop-filter here (avoids edge flicker with solid chat).
+ */
+.chrome-frost {
+  background-color: transparent;
+}
+
+/**
+ * Overlay panels — same neutral gray idea, slightly denser.
+ * Low saturate so blurred in-app content doesn't shift hue much.
  */
 .frosted-strong {
-  background-color: rgba(8, 8, 10, 0.72);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
-  backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
+  background-color: rgb(
+    var(--color-frost-elevated-rgb) / var(--frost-elevated-opacity)
+  );
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.05);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.05);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 color-mix(in oklab, white 7%, transparent),
     0 12px 40px rgba(0, 0, 0, 0.45);
 }
 
@@ -89,3 +109,73 @@ body {
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
+
+/* Workspace drag ghost — radar pulse while the circle follows the cursor. */
+.workspace-radar {
+  width: 28px;
+  height: 28px;
+}
+
+.workspace-radar-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 9999px;
+  background: #f3f3f3;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.45);
+  animation: workspace-radar-core-pulse 1s ease-in-out infinite;
+}
+
+.workspace-radar-core--danger {
+  background: #f87171;
+  box-shadow: 0 0 12px rgba(248, 113, 113, 0.55);
+}
+
+.workspace-radar-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(243, 243, 243, 0.85);
+  animation: workspace-radar-ping 1.15s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.workspace-radar-ring--delay {
+  animation-delay: 0.45s;
+}
+
+.workspace-radar-ring--danger {
+  border-color: rgba(248, 113, 113, 0.9);
+}
+
+@keyframes workspace-radar-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  75%,
+  100% {
+    transform: scale(2.75);
+    opacity: 0;
+  }
+}
+
+@keyframes workspace-radar-core-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.75;
+  }
+}
+
+

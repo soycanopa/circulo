@@ -26,9 +26,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(shared_state)
         .setup(|app| {
-            // Native frosted glass under transparent chrome (sidebars: no CSS fill/blur).
-            // Dark sits between UltraDark (too heavy) and HudWindow (too see-through).
-            // Chat / app bar stay opaque in CSS. Requires transparent window + macOSPrivateApi.
+            // Native blur for frost depth; CSS applies a strong neutral gray veil so
+            // wallpaper hue barely tints sidebars (gray plate + some transparency).
             if let Some(window) = app.get_webview_window("main") {
                 use tauri::window::{Effect, EffectState, EffectsBuilder};
                 #[allow(deprecated)]
