@@ -179,6 +179,31 @@ Optional: `RUST_LOG=circulo_lib=info` for timing logs.
 
 ---
 
+## F9 — Daily usability (phase 5)
+
+| Step | Expected |
+|------|----------|
+| Hover chat → pencil | Inline rename; title updates in sidebar |
+| Export button / ⌘⇧E | Downloads `.md` transcript |
+| Assistant reply with `#` heading or `-` list | Renders headings and lists |
+| `⌘N` | New Chat |
+| `⌘K` | Command palette opens |
+| Empty workspace sidebar | Shows helpful empty-state copy |
+
+
+---
+
+## F10 — Diff panel & palette (phase 6)
+
+| Step | Expected |
+|------|----------|
+| Tool call with diff content | Click header → right panel shows full diff |
+| Close diff panel | X clears panel |
+| `⌘K` → Export / Settings | Palette actions work |
+
+
+---
+
 ## PRD success criteria
 
 - [x] No “no active session” after successful New Chat + send  
