@@ -139,6 +139,20 @@ Optional: `RUST_LOG=circulo_lib=info` for timing logs.
 
 
 
+## F6 — Persistence & history
+
+| Step | Expected |
+|------|----------|
+| New Chat + send messages | Chat appears in sidebar **Chats** list |
+| Restart app | Saved chats still listed for workspace |
+| Click saved chat | Transcript loads; banner says history / New Chat to continue |
+| New Chat from history view | Live session; composer enabled |
+| Open another project | **Recent** lists previous workspace |
+| Settings (gear) | Shows agent command, chats folder, version |
+
+
+---
+
 ## PRD success criteria
 
 - [x] No “no active session” after successful New Chat + send  
