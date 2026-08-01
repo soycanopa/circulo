@@ -2,6 +2,7 @@ mod acp;
 mod agents;
 mod cli_resolve;
 mod commands;
+mod persistence;
 mod state;
 
 use std::sync::Arc;
@@ -43,6 +44,11 @@ pub fn run() {
             commands::set_config_option,
             commands::search_files,
             commands::pick_directory,
+            commands::persistence::get_app_settings,
+            commands::persistence::set_app_settings,
+            commands::persistence::list_chat_sessions_cmd,
+            commands::persistence::load_chat_transcript_cmd,
+            commands::persistence::save_chat_transcript_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

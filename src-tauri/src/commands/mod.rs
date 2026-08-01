@@ -6,6 +6,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, oneshot};
 use tracing::info;
 
+pub mod persistence;
+
 use serde::Serialize;
 
 use crate::acp::{read_context_file, search_project_files, start_agent_connection};
@@ -152,6 +154,8 @@ pub async fn open_project_inner(
 
     // Non-blocking: UI must not sit on "Agent starting" for OpenCode cold start.
     // `agent:ready` / `create_session` wait when the user actually needs the agent.
+    let _ = crate::persistence::touch_recent_project(&project_path);
+
     Ok(state.lock().await.status())
 }
 

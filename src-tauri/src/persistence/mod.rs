@@ -1,0 +1,16 @@
+mod config;
+mod transcripts;
+
+pub use config::{load_settings, save_settings, touch_recent_project, AppSettings, RecentProject};
+pub use transcripts::{
+    list_chat_sessions, load_chat_transcript, save_chat_transcript, ChatSessionSummary,
+    StoredChatMessage, StoredToolCall, StoredTranscript,
+};
+
+pub fn circulo_data_dir() -> Result<std::path::PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let dir = std::path::PathBuf::from(home).join(".circulo");
+    std::fs::create_dir_all(&dir)
+        .map_err(|err| format!("Could not create ~/.circulo: {err}"))?;
+    Ok(dir)
+}
