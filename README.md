@@ -55,6 +55,7 @@ bun run tauri dev
 | `bun run tauri dev` | Full desktop app |
 | `bun run build` | Frontend production build |
 | `bun run check-types` | `tsc --noEmit` |
+| `bun run test` | Unit tests (ACP parser, mentions) |
 | `bun run tauri build` | Packaged app |
 
 ## License

@@ -153,6 +153,19 @@ Optional: `RUST_LOG=circulo_lib=info` for timing logs.
 
 ---
 
+## F7 — Polish (phase 3)
+
+| Step | Expected |
+|------|----------|
+| Assistant reply with fenced code blocks | Code renders in a monospace panel |
+| Long chat while streaming | Message list auto-scrolls to the bottom |
+| Tool output with diff content | Card uses diff styling (sky border) |
+| macOS window | Overlay titlebar; sidebar header is draggable |
+| `bun run test` | Parser unit tests pass |
+
+
+---
+
 ## PRD success criteria
 
 - [x] No “no active session” after successful New Chat + send  
