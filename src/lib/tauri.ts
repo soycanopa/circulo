@@ -126,6 +126,14 @@ export async function deleteChatTranscript(
 	return invoke("delete_chat_transcript_cmd", { projectPath, sessionId })
 }
 
+export async function renameChatTranscript(
+	projectPath: string,
+	sessionId: string,
+	title: string,
+): Promise<ChatSessionSummary> {
+	return invoke("rename_chat_transcript_cmd", { projectPath, sessionId, title })
+}
+
 function toStoredMessages(messages: ChatMessage[]): StoredChatMessage[] {
 	return messages.map((m) => ({
 		id: m.id,

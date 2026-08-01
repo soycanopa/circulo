@@ -8,6 +8,7 @@ import type {
 	OpencodeStatus,
 	PermissionRequest,
 	SessionStatus,
+	ToolCall,
 } from "@/types/acp"
 
 export const projectPathAtom = atom<string | null>(null)
@@ -27,6 +28,7 @@ export const chatSessionsAtom = atom<ChatSessionSummary[]>([])
 /** Saved chat opened for read-only history (no live ACP session). */
 export const historyViewSessionIdAtom = atom<string | null>(null)
 export const appSettingsAtom = atom<AppSettings | null>(null)
+export const selectedDiffToolAtom = atom<ToolCall | null>(null)
 
 /** Clear chat/session UI when switching workspace (not when re-opening the same path). */
 export const resetWorkspaceUiAtom = atom(null, (_get, set) => {

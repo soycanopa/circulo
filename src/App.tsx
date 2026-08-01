@@ -1,18 +1,23 @@
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
-import { Loader2, MessageSquarePlus } from "lucide-react"
-import { useState } from "react"
+import { Download, Loader2, MessageSquarePlus } from "lucide-react"
+import { useCallback, useMemo, useState } from "react"
 import { ChatInput } from "@/components/chat/chat-input"
 import { ConfigSelectors } from "@/components/chat/config-selector"
 import { MessageList } from "@/components/chat/message-list"
+import { CommandPalette } from "@/components/layout/command-palette"
 import { AppShell } from "@/components/layout/app-shell"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { OpencodeSetupBanner } from "@/components/onboarding/opencode-setup"
 import { SettingsPanel } from "@/components/settings/settings-panel"
+import { DiffPanel } from "@/components/tools/diff-panel"
 import { useAcpBridge } from "@/hooks/use-acp-bridge"
 import { useAppSettings } from "@/hooks/use-app-settings"
+import { useAppShortcuts } from "@/hooks/use-app-shortcuts"
 import { useBootstrapAgent } from "@/hooks/use-bootstrap"
 import { useChatPersistence } from "@/hooks/use-chat-persistence"
+import { exportTranscriptMarkdown } from "@/lib/export-transcript"
 import {
+	closeSession,
 	createSession,
 	deleteChatTranscript,
 	getDefaultChatsPath,
@@ -20,9 +25,9 @@ import {
 	getHomePath,
 	loadChatTranscript,
 	loadSession,
-	closeSession,
 	openProject,
 	pickDirectory,
+	renameChatTranscript,
 } from "@/lib/tauri"
 import {
 	agentConnectedAtom,
@@ -63,6 +68,7 @@ export default function App() {
 	const chatSessions = useAtomValue(chatSessionsAtom)
 	const capabilities = useAtomValue(capabilitiesAtom)
 	const appSettings = useAtomValue(appSettingsAtom)
+	const messages = useAtomValue(messagesAtom)
 	const setError = useSetAtom(errorMessageAtom)
 	const setStatus = useSetAtom(sessionStatusAtom)
 	const setMessages = useSetAtom(messagesAtom)
@@ -77,18 +83,51 @@ export default function App() {
 
 	const [busy, setBusy] = useState(false)
 	const [settingsOpen, setSettingsOpen] = useState(false)
+	const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
 	const [agentCommand, setAgentCommand] = useState("opencode acp")
 
 	const agentWarm = connected
 	const hasLiveSession = Boolean(sessionId)
 	const viewingHistory = Boolean(historyViewSessionId && !sessionId)
 	const showChat = hasLiveSession || viewingHistory
+	const activeChatId = sessionId ?? historyViewSessionId
+	const activeChatTitle =
+		chatSessions.find((chat) => chat.sessionId === activeChatId)?.title ??
+		"chat"
 
-	async function ensureAgentWarm(): Promise<void> {
-		if (projectPath) return
-		const chatsPath = await getDefaultChatsPath()
-		await openProject(chatsPath)
-	}
+	const handleExportTranscript = useCallback(() => {
+		if (messages.length === 0) return
+		exportTranscriptMarkdown(activeChatTitle, messages)
+	}, [activeChatTitle, messages])
+
+	const handleNewChat = useCallback(async () => {
+		setError(null)
+		setBusy(true)
+		setStatus("connecting")
+		setMessages([])
+		setStreaming("")
+		setHistoryView(null)
+		try {
+			if (!projectPath) {
+				const chatsPath = await getDefaultChatsPath()
+				await openProject(chatsPath)
+			}
+			await createSession()
+			setStatus("idle")
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to create session")
+			setStatus("idle")
+		} finally {
+			setBusy(false)
+		}
+	}, [
+		projectPath,
+		setError,
+		setHistoryView,
+		setMessages,
+		setStatus,
+		setStreaming,
+	])
 
 	async function openWorkspacePath(path: string) {
 		const [homePath, base] = await Promise.all([
@@ -138,6 +177,60 @@ export default function App() {
 		const path = await pickDirectory()
 		if (!path) return
 		await openWorkspacePath(path)
+	}
+
+	useAppShortcuts({
+		onNewChat: () => {
+			if (!busy) void handleNewChat()
+		},
+		onOpenProject: () => {
+			if (!busy) void handleOpenProject()
+		},
+		onOpenSettings: () => setSettingsOpen(true),
+		onOpenCommandPalette: () => setCommandPaletteOpen(true),
+		onExportTranscript: () => handleExportTranscript(),
+	})
+
+	const commandItems = useMemo(
+		() => [
+			{
+				id: "new-chat",
+				label: "New Chat",
+				shortcut: "⌘N",
+				onSelect: () => void handleNewChat(),
+			},
+			{
+				id: "open-project",
+				label: "Open Project",
+				onSelect: () => void handleOpenProject(),
+			},
+			{
+				id: "settings",
+				label: "Settings",
+				onSelect: () => setSettingsOpen(true),
+			},
+			...(messages.length > 0
+				? [
+						{
+							id: "export",
+							label: "Export Transcript",
+							shortcut: "⌘⇧E",
+							onSelect: () => handleExportTranscript(),
+						},
+					]
+				: []),
+		],
+		[handleExportTranscript, handleNewChat, messages.length],
+	)
+
+	async function handleRenameChat(targetSessionId: string, title: string) {
+		if (!projectPath) return
+		try {
+			await renameChatTranscript(projectPath, targetSessionId, title)
+			await refreshSessions()
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to rename chat")
+		}
 	}
 
 	async function handleOpenRecentProject(path: string) {
@@ -217,27 +310,6 @@ export default function App() {
 		}
 	}
 
-	async function handleNewChat() {
-		setError(null)
-		setBusy(true)
-		setStatus("connecting")
-		setMessages([])
-		setStreaming("")
-		setHistoryView(null)
-		try {
-			if (!projectPath) {
-				await ensureAgentWarm()
-			}
-			await createSession()
-			setStatus("idle")
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to create session")
-			setStatus("idle")
-		} finally {
-			setBusy(false)
-		}
-	}
-
 	const workspaceLabel = isChatsWorkspace(projectPath)
 		? "General Chat"
 		: projectPath
@@ -259,32 +331,51 @@ export default function App() {
 							: "Ready"
 
 	return (
-		<AppShell
-			sidebar={
-				<AppSidebar
-					workspaceLabel={workspaceLabel}
-					sessionId={sessionId}
-					historyViewSessionId={historyViewSessionId}
-					agentWarm={agentWarm}
-					progress={progress}
-					busy={busy}
-					statusConnecting={status === "connecting"}
-					chatSessions={chatSessions}
-					recentProjects={appSettings?.recentProjects ?? []}
-					currentProjectPath={projectPath}
-					onNewChat={() => void handleNewChat()}
-					onOpenProject={() => void handleOpenProject()}
-					onOpenSettings={() => setSettingsOpen(true)}
-					onOpenChat={(id) => void handleOpenChat(id)}
-					onDeleteChat={(id) => void handleDeleteChat(id)}
-					onOpenRecentProject={(path) => void handleOpenRecentProject(path)}
-				/>
-			}
-		>
-			<div className="flex h-12 items-center justify-between gap-3 border-b border-border px-4" data-tauri-drag-region>
-				<div className="min-w-0 text-xs text-muted">{statusLabel}</div>
-				<ConfigSelectors />
-			</div>
+		<>
+			<AppShell
+				panel={<DiffPanel />}
+				sidebar={
+					<AppSidebar
+						workspaceLabel={workspaceLabel}
+						sessionId={sessionId}
+						historyViewSessionId={historyViewSessionId}
+						agentWarm={agentWarm}
+						progress={progress}
+						busy={busy}
+						statusConnecting={status === "connecting"}
+						chatSessions={chatSessions}
+						recentProjects={appSettings?.recentProjects ?? []}
+						currentProjectPath={projectPath}
+						onNewChat={() => void handleNewChat()}
+						onOpenProject={() => void handleOpenProject()}
+						onOpenSettings={() => setSettingsOpen(true)}
+						onOpenChat={(id) => void handleOpenChat(id)}
+						onRenameChat={(id, title) => void handleRenameChat(id, title)}
+						onDeleteChat={(id) => void handleDeleteChat(id)}
+						onOpenRecentProject={(path) => void handleOpenRecentProject(path)}
+					/>
+				}
+			>
+				<div
+					className="flex h-12 items-center justify-between gap-3 border-b border-border px-4"
+					data-tauri-drag-region
+				>
+					<div className="min-w-0 text-xs text-muted">{statusLabel}</div>
+					<div className="flex items-center gap-2">
+						{showChat && messages.length > 0 ? (
+							<button
+								type="button"
+								onClick={handleExportTranscript}
+								className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted transition hover:bg-white/5 hover:text-fg"
+								title="Export transcript (⌘⇧E)"
+							>
+								<Download className="size-3.5" />
+								Export
+							</button>
+						) : null}
+						<ConfigSelectors />
+					</div>
+				</div>
 
 			{opencodeStatus && !opencodeStatus.available ? (
 				<OpencodeSetupBanner status={opencodeStatus} />
@@ -346,6 +437,12 @@ export default function App() {
 				onClose={() => setSettingsOpen(false)}
 				agentCommand={agentCommand}
 			/>
-		</AppShell>
+			</AppShell>
+			<CommandPalette
+				open={commandPaletteOpen}
+				items={commandItems}
+				onClose={() => setCommandPaletteOpen(false)}
+			/>
+		</>
 	)
 }

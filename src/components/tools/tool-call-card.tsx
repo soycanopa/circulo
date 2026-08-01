@@ -9,7 +9,12 @@ function isDiffTool(tool: ToolCall): boolean {
 	)
 }
 
-export function ToolCallCard({ tool }: { tool: ToolCall }) {
+interface ToolCallCardProps {
+	tool: ToolCall
+	onOpenDiff?: (tool: ToolCall) => void
+}
+
+export function ToolCallCard({ tool, onOpenDiff }: ToolCallCardProps) {
 	const diff = isDiffTool(tool)
 
 	return (
@@ -19,7 +24,15 @@ export function ToolCallCard({ tool }: { tool: ToolCall }) {
 				diff ? "border-sky-500/25" : "border-border",
 			)}
 		>
-			<div className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs">
+			<button
+				type="button"
+				disabled={!diff || !onOpenDiff}
+				onClick={() => diff && onOpenDiff?.(tool)}
+				className={cn(
+					"flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-xs",
+					diff && onOpenDiff && "cursor-pointer hover:bg-white/5",
+				)}
+			>
 				<span className="truncate font-medium text-fg/90">
 					{diff ? `Diff · ${tool.title}` : tool.title}
 				</span>
@@ -35,7 +48,7 @@ export function ToolCallCard({ tool }: { tool: ToolCall }) {
 				>
 					{tool.status}
 				</span>
-			</div>
+			</button>
 			{tool.content ? (
 				<pre
 					className={cn(
@@ -47,6 +60,11 @@ export function ToolCallCard({ tool }: { tool: ToolCall }) {
 				>
 					{tool.content.slice(0, 4000)}
 				</pre>
+			) : null}
+			{diff && onOpenDiff ? (
+				<div className="border-t border-sky-500/20 px-2.5 py-1 text-[10px] text-muted">
+					Click header to open full diff panel
+				</div>
 			) : null}
 		</div>
 	)

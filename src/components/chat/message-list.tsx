@@ -1,10 +1,11 @@
-import { useAtomValue } from "jotai"
+import { useAtomValue, useSetAtom } from "jotai"
 import { useEffect, useRef } from "react"
 import { ToolCallCard } from "@/components/tools/tool-call-card"
 import { SimpleMarkdown } from "@/lib/simple-markdown"
 import {
 	messagesAtom,
 	promptInFlightAtom,
+	selectedDiffToolAtom,
 	streamingTextAtom,
 } from "@/stores/atoms"
 
@@ -12,6 +13,7 @@ export function MessageList() {
 	const messages = useAtomValue(messagesAtom)
 	const streaming = useAtomValue(streamingTextAtom)
 	const inFlight = useAtomValue(promptInFlightAtom)
+	const setSelectedDiff = useSetAtom(selectedDiffToolAtom)
 	const scrollRef = useRef<HTMLDivElement>(null)
 	const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -72,7 +74,11 @@ export function MessageList() {
 						{message.toolCalls.length > 0 ? (
 							<div className="mt-2 space-y-1.5">
 								{message.toolCalls.map((tool) => (
-									<ToolCallCard key={tool.id} tool={tool} />
+									<ToolCallCard
+										key={tool.id}
+										tool={tool}
+										onOpenDiff={setSelectedDiff}
+									/>
 								))}
 							</div>
 						) : null}
