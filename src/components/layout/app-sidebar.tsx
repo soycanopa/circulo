@@ -38,6 +38,8 @@ interface AppSidebarProps {
 	activeWorkspaceId: string | null
 	currentProjectPath: string | null
 	onNewChat: () => void
+	/** New chat nested under this project path. */
+	onNewChatInProject: (projectPath: string) => void
 	onOpenProject: () => void
 	onOpenSettings: () => void
 	onOpenChat: (sessionId: string, ownerPath: string) => void
@@ -68,6 +70,7 @@ export function AppSidebar({
 	activeWorkspaceId,
 	currentProjectPath,
 	onNewChat,
+	onNewChatInProject,
 	onOpenProject,
 	onOpenSettings,
 	onOpenChat,
@@ -187,8 +190,9 @@ export function AppSidebar({
 	}
 
 	function onDotPointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
+		// Use ref only — React state (draggingId) is often still stale on first moves.
 		const origin = dragOrigin.current
-		if (!origin || origin.id !== draggingId) return
+		if (!origin) return
 
 		setDragPos({ x: event.clientX, y: event.clientY })
 
@@ -263,10 +267,7 @@ export function AppSidebar({
 		return (
 			<div
 				key={editKey}
-				className={cn(
-					"group flex items-start gap-1 rounded-md transition",
-					active ? "bg-white/10" : "hover:bg-white/5",
-				)}
+				className="group flex items-start gap-1 rounded-md transition-colors hover:bg-white/[0.06]"
 			>
 				{editing ? (
 					<input
@@ -345,7 +346,7 @@ export function AppSidebar({
 						type="button"
 						onClick={onNewChat}
 						disabled={busy}
-						className="flex shrink-0 items-center gap-2 rounded-md bg-white/10 px-2.5 py-2 text-left text-sm font-medium text-fg transition hover:bg-white/15 disabled:opacity-40"
+						className="flex shrink-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm font-medium text-fg transition hover:bg-white/[0.06] disabled:opacity-40"
 					>
 						<MessageSquarePlus className="size-4 shrink-0" />
 						New chat
@@ -354,7 +355,7 @@ export function AppSidebar({
 						type="button"
 						onClick={onOpenProject}
 						disabled={busy}
-						className="flex shrink-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-fg/90 transition hover:bg-white/5 disabled:opacity-50"
+						className="flex shrink-0 items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-fg/90 transition hover:bg-white/[0.06] disabled:opacity-50"
 					>
 						<FolderOpen className="size-4 shrink-0" />
 						Open project
@@ -409,12 +410,7 @@ export function AppSidebar({
 
 								return (
 									<div key={path} className="flex flex-col gap-0.5">
-										<div
-											className={cn(
-												"group flex items-center gap-0.5 rounded-md",
-												isActive ? "bg-white/10" : "hover:bg-white/5",
-											)}
-										>
+										<div className="group flex items-center gap-0.5 rounded-md transition-colors hover:bg-white/[0.06]">
 											<button
 												type="button"
 												onClick={() => toggleProject(path)}
@@ -435,11 +431,28 @@ export function AppSidebar({
 												disabled={busy}
 												title={path}
 												className={cn(
-													"min-w-0 flex-1 truncate py-1.5 pr-2 text-left text-xs disabled:opacity-50",
+													"min-w-0 flex-1 truncate py-1.5 pr-1 text-left text-xs disabled:opacity-50",
 													isActive ? "font-medium text-fg" : "text-fg/85",
 												)}
 											>
 												{projectName(path)}
+											</button>
+											<button
+												type="button"
+												onClick={(event) => {
+													event.stopPropagation()
+													setExpanded((prev) => ({
+														...prev,
+														[path]: true,
+													}))
+													onNewChatInProject(path)
+												}}
+												disabled={busy}
+												title="New chat in this project"
+												aria-label={`New chat in ${projectName(path)}`}
+												className="mr-0.5 rounded p-1 text-muted opacity-0 transition hover:bg-white/10 hover:text-fg group-hover:opacity-100 disabled:opacity-40"
+											>
+												<Plus className="size-3.5" />
 											</button>
 										</div>
 										{isOpen ? (
@@ -493,7 +506,7 @@ export function AppSidebar({
 									className={cn(
 										"flex size-5 touch-none items-center justify-center rounded-full transition disabled:opacity-40",
 										"hover:bg-white/5",
-										// Slot stays; ghost follows the cursor while dragging.
+										// Dim slot only; radar pulse lives on the floating ghost, not neighbors.
 										dragging && "opacity-25",
 									)}
 								>
@@ -521,19 +534,34 @@ export function AppSidebar({
 				</div>
 			</div>
 
-			{/* Floating drag ghost — follows the mouse */}
+			{/* Floating radar ghost — follows the mouse; pulses only while dragging */}
 			{draggingId && dragPos ? (
 				<div
-					className="pointer-events-none fixed z-[100] -translate-x-1/2 -translate-y-1/2"
-					style={{ left: dragPos.x, top: dragPos.y }}
+					className="workspace-radar pointer-events-none fixed z-[200]"
+					style={{
+						left: dragPos.x,
+						top: dragPos.y,
+						// Inline transform so it isn't fought by Tailwind/animation.
+						transform: "translate(-50%, -50%)",
+					}}
 					aria-hidden
 				>
 					<span
 						className={cn(
-							"block size-2 rounded-full shadow-lg ring-2 transition-colors",
-							willDelete
-								? "bg-red-400 ring-red-400/40"
-								: "bg-fg ring-white/20",
+							"workspace-radar-ring",
+							willDelete && "workspace-radar-ring--danger",
+						)}
+					/>
+					<span
+						className={cn(
+							"workspace-radar-ring workspace-radar-ring--delay",
+							willDelete && "workspace-radar-ring--danger",
+						)}
+					/>
+					<span
+						className={cn(
+							"workspace-radar-core",
+							willDelete && "workspace-radar-core--danger",
 						)}
 					/>
 				</div>

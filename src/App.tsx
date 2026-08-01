@@ -4,7 +4,6 @@ import { WindowChromeControls } from "@/components/layout/window-chrome-controls
 import { cn } from "@/lib/utils"
 import { useCallback, useMemo, useState } from "react"
 import { ChatInput } from "@/components/chat/chat-input"
-import { ConfigSelectors } from "@/components/chat/config-selector"
 import { MessageList } from "@/components/chat/message-list"
 import { CommandPalette } from "@/components/layout/command-palette"
 import { AppShell } from "@/components/layout/app-shell"
@@ -192,39 +191,6 @@ export default function App() {
 		status,
 	])
 
-	const handleNewChat = useCallback(async () => {
-		setError(null)
-		setBusy(true)
-		setStatus("connecting")
-		setMessages([])
-		setStreaming("")
-		setHistoryView(null)
-		try {
-			if (!projectPath) {
-				const chatsPath = await getDefaultChatsPath()
-				await openProject(chatsPath)
-			}
-			await createSession()
-			setStatus("idle")
-			await refreshSessions()
-			await refreshAllWorkspaceLists()
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to create session")
-			setStatus("idle")
-		} finally {
-			setBusy(false)
-		}
-	}, [
-		projectPath,
-		refreshAllWorkspaceLists,
-		refreshSessions,
-		setError,
-		setHistoryView,
-		setMessages,
-		setStatus,
-		setStreaming,
-	])
-
 	async function resolveWorkspacePath(rawPath: string): Promise<string> {
 		const trimmed = rawPath.trim()
 		if (trimmed === "~" || trimmed.startsWith("~/")) {
@@ -287,6 +253,40 @@ export default function App() {
 			throw err
 		} finally {
 			if (manageBusy) setBusy(false)
+		}
+	}
+
+	/** New chat in current context, or in a specific project path. */
+	async function handleNewChat(targetProjectPath?: string) {
+		setError(null)
+		setBusy(true)
+		setStatus("connecting")
+		setMessages([])
+		setStreaming("")
+		setHistoryView(null)
+		try {
+			const desired =
+				targetProjectPath ??
+				projectPath ??
+				(await getDefaultChatsPath())
+			if (projectPath !== desired) {
+				await openWorkspacePath(desired, { manageBusy: false })
+			} else if (!projectPath) {
+				await openProject(desired)
+			}
+			const status = await createSession()
+			// Event bridge also sets these; apply return payload so model/mode
+			// selects appear even if the event is late or missed.
+			if (status.sessionId) setSessionId(status.sessionId)
+			if (status.configOptions?.length) setConfig(status.configOptions)
+			setStatus("idle")
+			await refreshSessions()
+			await refreshAllWorkspaceLists()
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to create session")
+			setStatus("idle")
+		} finally {
+			setBusy(false)
 		}
 	}
 
@@ -379,7 +379,9 @@ export default function App() {
 				id: "new-chat",
 				label: "New Chat",
 				shortcut: "⌘N",
-				onSelect: () => void handleNewChat(),
+				onSelect: () => {
+					void handleNewChat()
+				},
 			},
 			{
 				id: "open-project",
@@ -559,6 +561,7 @@ export default function App() {
 						activeWorkspaceId={appSettings?.activeWorkspaceId ?? null}
 						currentProjectPath={projectPath}
 						onNewChat={() => void handleNewChat()}
+						onNewChatInProject={(path) => void handleNewChat(path)}
 						onOpenProject={() => handleOpenProject()}
 						onOpenSettings={() => setSettingsOpen(true)}
 						onOpenChat={(id, ownerPath) => void handleOpenChat(id, ownerPath)}
@@ -643,7 +646,6 @@ export default function App() {
 								Export
 							</button>
 						) : null}
-						<ConfigSelectors />
 					</div>
 				</div>
 			{opencodeStatus && !opencodeStatus.available ? (
