@@ -2,9 +2,14 @@ import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import type {
 	AgentCapabilities,
+	AppSettings,
+	ChatMessage,
+	ChatSessionSummary,
 	ConfigOption,
 	PermissionRequest,
 	ProjectStatus,
+	StoredChatMessage,
+	StoredTranscript,
 } from "@/types/acp"
 
 export async function getProjectStatus(): Promise<ProjectStatus> {
@@ -75,6 +80,57 @@ export async function searchFiles(query: string): Promise<string[]> {
 
 export async function pickDirectory(): Promise<string | null> {
 	return invoke("pick_directory")
+}
+
+export async function getAppSettings(): Promise<AppSettings> {
+	return invoke("get_app_settings")
+}
+
+export async function listChatSessions(
+	projectPath: string,
+): Promise<ChatSessionSummary[]> {
+	return invoke("list_chat_sessions_cmd", { projectPath })
+}
+
+export async function loadChatTranscript(
+	projectPath: string,
+	sessionId: string,
+): Promise<StoredTranscript> {
+	return invoke("load_chat_transcript_cmd", { projectPath, sessionId })
+}
+
+export async function saveChatTranscript(
+	projectPath: string,
+	sessionId: string,
+	messages: StoredChatMessage[],
+): Promise<ChatSessionSummary> {
+	return invoke("save_chat_transcript_cmd", {
+		projectPath,
+		sessionId,
+		messages,
+	})
+}
+
+function toStoredMessages(messages: ChatMessage[]): StoredChatMessage[] {
+	return messages.map((m) => ({
+		id: m.id,
+		role: m.role,
+		content: m.content,
+		toolCalls: m.toolCalls,
+		timestamp: m.timestamp,
+	}))
+}
+
+export async function persistChatTranscript(
+	projectPath: string,
+	sessionId: string,
+	messages: ChatMessage[],
+): Promise<ChatSessionSummary> {
+	return saveChatTranscript(
+		projectPath,
+		sessionId,
+		toStoredMessages(messages),
+	)
 }
 
 export function listenAcpEvents(handlers: {

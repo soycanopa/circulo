@@ -11,6 +11,7 @@ import {
 	capabilitiesAtom,
 	configOptionsAtom,
 	errorMessageAtom,
+	historyViewSessionIdAtom,
 	messagesAtom,
 	progressMessageAtom,
 	projectPathAtom,
@@ -40,6 +41,7 @@ export function useAcpBridge() {
 	const setPermission = useSetAtom(activePermissionAtom)
 	const setError = useSetAtom(errorMessageAtom)
 	const setProgress = useSetAtom(progressMessageAtom)
+	const setHistoryView = useSetAtom(historyViewSessionIdAtom)
 
 	const streamingRef = useRef("")
 	const sessionIdRef = useRef<string | null>(null)
@@ -62,6 +64,7 @@ export function useAcpBridge() {
 				sessionIdRef.current = payload.sessionId
 				firstChunkLogged.current = false
 				setSessionId(payload.sessionId)
+				setHistoryView(null)
 				setProjectPath(payload.projectPath)
 				setConfig(payload.configOptions ?? [])
 				setMessages([])
@@ -205,5 +208,6 @@ export function useAcpBridge() {
 		setStatus,
 		setStreaming,
 		setProgress,
+		setHistoryView,
 	])
 }

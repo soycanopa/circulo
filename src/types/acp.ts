@@ -73,3 +73,36 @@ export interface OpencodeStatus {
 	path: string | null
 	installHint: string
 }
+
+export interface ChatSessionSummary {
+	sessionId: string
+	title: string
+	updatedAt: number
+}
+
+export interface StoredChatMessage {
+	id: string
+	role: "user" | "assistant"
+	content: string
+	toolCalls: ToolCall[]
+	timestamp: number
+}
+
+export interface StoredTranscript {
+	sessionId: string
+	projectPath: string
+	title: string
+	createdAt: number
+	updatedAt: number
+	messages: StoredChatMessage[]
+}
+
+export interface RecentProject {
+	path: string
+	lastOpenedAt: number
+}
+
+export interface AppSettings {
+	version: number
+	recentProjects: RecentProject[]
+}
