@@ -15,89 +15,130 @@ Optional: `RUST_LOG=circulo_lib=info` for timing logs.
 
 ## F0 — App launch (eager warm)
 
-| Step | Expected |
-|------|----------|
-| App opens | UI visible immediately (no 15–20s block) |
-| Sidebar footer | Shows “OpenCode warming · ACP” then “OpenCode ready · ACP” |
-| Center | “New Chat” CTA; composer disabled (“New Chat first…”) |
-| No session id in sidebar | “No session” until user clicks New Chat |
+
+| Step                     | Expected                                                   |
+| ------------------------ | ---------------------------------------------------------- |
+| App opens                | UI visible immediately (no 15–20s block)                   |
+| Sidebar footer           | Shows “OpenCode warming · ACP” then “OpenCode ready · ACP” |
+| Center                   | “New Chat” CTA; composer disabled (“New Chat first…”)      |
+| No session id in sidebar | “No session” until user clicks New Chat                    |
+
 
 ---
+
+
 
 ## F1 — Open project
 
-| Step | Expected |
-|------|----------|
-| Open project → pick a repo folder | Returns immediately; workspace label updates |
-| Wait for warm | Footer shows OpenCode ready |
-| Session | Still “No session” until New Chat |
-| Pick `$HOME` / Desktop / Documents | Non-blocking warning banner (large folder) |
+
+| Step                               | Expected                                     |
+| ---------------------------------- | -------------------------------------------- |
+| Open project → pick a repo folder  | Returns immediately; workspace label updates |
+| Wait for warm                      | Footer shows OpenCode ready                  |
+| Session                            | Still “No session” until New Chat            |
+| Pick `$HOME` / Desktop / Documents | Non-blocking warning banner (large folder)   |
+
 
 ---
+
+
 
 ## F4 — New chat
 
-| Step | Expected |
-|------|----------|
+
+| Step                        | Expected                                            |
+| --------------------------- | --------------------------------------------------- |
 | Click New Chat (agent warm) | Usually fast (prewarmed session) or ≤10s first time |
-| Sidebar | Real `sessionId` appears |
-| Composer | Enabled |
-| Center | Empty chat, “Send a message…” |
+| Sidebar                     | Real `sessionId` appears                            |
+| Composer                    | Enabled                                             |
+| Center                      | Empty chat, “Send a message…”                       |
+
 
 ---
+
+
 
 ## F2 — Send prompt
 
-| Step | Expected |
-|------|----------|
-| Send a short message | User bubble + assistant streams text |
-| Status bar | “Streaming…” then “Ready” |
-| Second message | Same session; no “no active session” error |
+
+| Step                 | Expected                                   |
+| -------------------- | ------------------------------------------ |
+| Send a short message | User bubble + assistant streams text       |
+| Status bar           | “Streaming…” then “Ready”                  |
+| Second message       | Same session; no “no active session” error |
+
+### @ file mentions
+
+| Step                          | Expected                              |
+| ----------------------------- | ------------------------------------- |
+| Type `@` in composer          | File picker appears above input       |
+| Filter with partial path      | Results update; ↑/↓ moves highlight   |
+| Enter or Tab on a result      | `@relative/path` inserted in text     |
+| Send with `@src/App.tsx` etc. | Agent responds using file context     |
+| Invalid / escaped path        | Error banner (not silent failure)     |
 
 ---
+
+
 
 ## F3 — Permission
 
-| Step | Expected |
-|------|----------|
-| Trigger a tool that needs approval | Amber permission card in composer |
-| Approve | Agent continues; card disappears |
-| Deny (if offered) | Agent stops or reports failure; no hang |
+
+| Step                               | Expected                                |
+| ---------------------------------- | --------------------------------------- |
+| Trigger a tool that needs approval | Amber permission card in composer       |
+| Approve                            | Agent continues; card disappears        |
+| Deny (if offered)                  | Agent stops or reports failure; no hang |
+
 
 ---
+
+
 
 ## F4 again — New chat (same project)
 
-| Step | Expected |
-|------|----------|
+
+| Step                             | Expected                          |
+| -------------------------------- | --------------------------------- |
 | New Chat while in a conversation | Messages cleared; new `sessionId` |
-| Send message | Works on new session |
+| Send message                     | Works on new session              |
+
 
 ---
+
+
 
 ## F5 — Switch project
 
-| Step | Expected |
-|------|----------|
+
+| Step                    | Expected                                          |
+| ----------------------- | ------------------------------------------------- |
 | Open a different folder | Previous session cleared; workspace label updates |
-| New Chat | Session created for new cwd |
-| Send message | Agent context matches new project |
+| New Chat                | Session created for new cwd                       |
+| Send message            | Agent context matches new project                 |
+
 
 ---
+
+
 
 ## Error paths
 
-| Step | Expected |
-|------|----------|
-| Send without New Chat | Error: no active session |
-| `OPENCODE_BIN` invalid / missing binary | Clear error (banner or invoke error) |
+
+| Step                                     | Expected                                          |
+| ---------------------------------------- | ------------------------------------------------- |
+| Send without New Chat                    | Error: no active session                          |
+| `OPENCODE_BIN` invalid / missing binary  | Clear error (banner or invoke error)              |
 | New Chat before cold initialize finishes | Waits up to ~60s, then session or timeout message |
+
 
 ---
 
+
+
 ## PRD success criteria
 
-- [ ] No “no active session” after successful New Chat + send  
-- [ ] No silent `session not found` on first prompt of a new session  
-- [ ] Permission gate never auto-approved  
-- [ ] Warm agent: New Chat → first token typically under ~5s (after process is warm)
+- [x] No “no active session” after successful New Chat + send  
+- [x] No silent `session not found` on first prompt of a new session  
+- [x] Permission gate never auto-approved  
+- [x] Warm agent: New Chat → first token typically under ~5s (after process is warm)
