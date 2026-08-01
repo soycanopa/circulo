@@ -3,6 +3,7 @@ import type {
 	AgentCapabilities,
 	ChatMessage,
 	ConfigOption,
+	OpencodeStatus,
 	PermissionRequest,
 	SessionStatus,
 } from "@/types/acp"
@@ -19,3 +20,4 @@ export const capabilitiesAtom = atom<AgentCapabilities | null>(null)
 export const activePermissionAtom = atom<PermissionRequest | null>(null)
 export const errorMessageAtom = atom<string | null>(null)
 export const progressMessageAtom = atom<string | null>(null)
+export const opencodeStatusAtom = atom<OpencodeStatus | null>(null)

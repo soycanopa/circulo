@@ -67,3 +67,9 @@ export type SessionStatus =
 	| "generating"
 	| "awaiting_permission"
 	| "disconnected"
+
+export interface OpencodeStatus {
+	available: boolean
+	path: string | null
+	installHint: string
+}

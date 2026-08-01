@@ -33,6 +33,7 @@ pub fn run() {
             commands::get_project_status,
             commands::get_default_chats_path,
             commands::get_home_path,
+            commands::check_opencode,
             commands::open_project,
             commands::close_project,
             commands::create_session,

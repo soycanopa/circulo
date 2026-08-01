@@ -5,6 +5,7 @@ import { ChatInput } from "@/components/chat/chat-input"
 import { ConfigSelectors } from "@/components/chat/config-selector"
 import { MessageList } from "@/components/chat/message-list"
 import { AppShell } from "@/components/layout/app-shell"
+import { OpencodeSetupBanner } from "@/components/onboarding/opencode-setup"
 import { useAcpBridge } from "@/hooks/use-acp-bridge"
 import { useBootstrapAgent } from "@/hooks/use-bootstrap"
 import {
@@ -20,6 +21,7 @@ import {
 	errorMessageAtom,
 	messagesAtom,
 	progressMessageAtom,
+	opencodeStatusAtom,
 	projectPathAtom,
 	sessionIdAtom,
 	sessionStatusAtom,
@@ -40,6 +42,7 @@ export default function App() {
 	const status = useAtomValue(sessionStatusAtom)
 	const error = useAtomValue(errorMessageAtom)
 	const progress = useAtomValue(progressMessageAtom)
+	const opencodeStatus = useAtomValue(opencodeStatusAtom)
 	const setError = useSetAtom(errorMessageAtom)
 	const setStatus = useSetAtom(sessionStatusAtom)
 	const setMessages = useSetAtom(messagesAtom)
@@ -197,6 +200,10 @@ export default function App() {
 				<div className="min-w-0 text-xs text-muted">{statusLabel}</div>
 				<ConfigSelectors />
 			</div>
+
+			{opencodeStatus && !opencodeStatus.available ? (
+				<OpencodeSetupBanner status={opencodeStatus} />
+			) : null}
 
 			{error ? (
 				<div className="mx-4 mt-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">

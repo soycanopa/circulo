@@ -15,6 +15,16 @@ export async function getDefaultChatsPath(): Promise<string> {
 	return invoke("get_default_chats_path")
 }
 
+export interface OpencodeStatus {
+	available: boolean
+	path: string | null
+	installHint: string
+}
+
+export async function checkOpencode(): Promise<OpencodeStatus> {
+	return invoke("check_opencode")
+}
+
 export async function getHomePath(): Promise<string> {
 	return invoke("get_home_path")
 }

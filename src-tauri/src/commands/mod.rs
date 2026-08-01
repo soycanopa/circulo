@@ -6,6 +6,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, oneshot};
 use tracing::info;
 
+use serde::Serialize;
+
 use crate::acp::{read_context_file, search_project_files, start_agent_connection};
 use crate::state::{
     ActiveAgent, AgentCapabilitiesDto, AgentCommand, ContextFile, ProjectStatus, SharedState,
@@ -20,6 +22,30 @@ pub async fn get_project_status(state: State<'_, SharedState>) -> Result<Project
 #[tauri::command]
 pub async fn get_default_chats_path() -> Result<String, String> {
     default_chats_path()
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpencodeStatus {
+    pub available: bool,
+    pub path: Option<String>,
+    pub install_hint: String,
+}
+
+#[tauri::command]
+pub fn check_opencode() -> OpencodeStatus {
+    match crate::cli_resolve::resolve_opencode() {
+        Ok(path) => OpencodeStatus {
+            available: true,
+            path: Some(path.display().to_string()),
+            install_hint: String::new(),
+        },
+        Err(_) => OpencodeStatus {
+            available: false,
+            path: None,
+            install_hint: "Install OpenCode from https://opencode.ai or set OPENCODE_BIN to the full binary path.".to_string(),
+        },
+    }
 }
 
 #[tauri::command]
@@ -64,6 +90,8 @@ pub async fn open_project_inner(
 
     let resolved_agent_id =
         crate::agents::normalize_agent_id(agent_id.as_deref()).to_string();
+
+    crate::cli_resolve::resolve_opencode().map_err(|err| err)?;
 
     // --- Single-flight: never kill a warming agent for the same path ---
     {
@@ -171,6 +199,10 @@ fn paths_equal(a: &std::path::Path, b: &std::path::Path) -> bool {
 pub fn spawn_eager_agent_warm(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        if crate::cli_resolve::resolve_opencode().is_err() {
+            tracing::warn!("OpenCode binary not found — skipping eager agent warm");
+            return;
+        }
         let Ok(path) = default_chats_path() else {
             return;
         };

@@ -1,9 +1,15 @@
 import { useSetAtom, useAtomValue } from "jotai"
 import { useEffect } from "react"
-import { getDefaultChatsPath, getProjectStatus, openProject } from "@/lib/tauri"
+import {
+	checkOpencode,
+	getDefaultChatsPath,
+	getProjectStatus,
+	openProject,
+} from "@/lib/tauri"
 import {
 	agentConnectedAtom,
 	errorMessageAtom,
+	opencodeStatusAtom,
 	progressMessageAtom,
 } from "@/stores/atoms"
 
@@ -11,26 +17,27 @@ import {
 let bootstrapPromise: Promise<void> | null = null
 
 async function warmDefaultAgent(): Promise<void> {
-	// Prefer reusing agent already started from Tauri setup() (single-flight in Rust).
-	// open_project will wait on the in-flight warm instead of killing it.
+	const opencode = await checkOpencode()
+	if (!opencode.available) {
+		return
+	}
+
 	const status = await getProjectStatus()
 	if (status.connected) {
 		return
 	}
 	const chatsPath = await getDefaultChatsPath()
-	// Agent only (initialize). session/new is New Chat — ACP session-setup.
 	await openProject(chatsPath)
 }
 
 /**
- * Kick agent warm without blocking the UI.
- * OpenCode cold start is ~15–20s on the agent process — we never hold the shell on that.
- * `agent:ready` (via bridge) flips connected when initialize finishes.
+ * Verify OpenCode is installed, then kick agent warm without blocking the UI.
  */
 export function useBootstrapAgent() {
 	const connected = useAtomValue(agentConnectedAtom)
 	const setError = useSetAtom(errorMessageAtom)
 	const setProgress = useSetAtom(progressMessageAtom)
+	const setOpencodeStatus = useSetAtom(opencodeStatusAtom)
 
 	useEffect(() => {
 		if (connected) {
@@ -38,12 +45,20 @@ export function useBootstrapAgent() {
 			return
 		}
 
-		// Non-blocking: open_project returns as soon as spawn is queued.
 		if (!bootstrapPromise) {
-			setProgress("Agent warming in background…")
-			bootstrapPromise = warmDefaultAgent()
+			setProgress("Checking OpenCode…")
+			bootstrapPromise = checkOpencode()
+				.then((status) => {
+					setOpencodeStatus(status)
+					if (!status.available) {
+						setProgress(null)
+						return
+					}
+					setProgress("Agent warming in background…")
+					return warmDefaultAgent()
+				})
 				.then(() => {
-					// Stay quiet — agent:ready clears progress when initialize completes.
+					// agent:ready clears progress when initialize completes.
 				})
 				.catch((err) => {
 					bootstrapPromise = null
@@ -55,5 +70,5 @@ export function useBootstrapAgent() {
 					setProgress(null)
 				})
 		}
-	}, [connected, setError, setProgress])
+	}, [connected, setError, setOpencodeStatus, setProgress])
 }
