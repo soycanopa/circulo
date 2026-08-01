@@ -65,7 +65,7 @@ export function useBootstrapAgent() {
 					setError(
 						err instanceof Error
 							? err.message
-							: "No se pudo iniciar el agente al arrancar",
+							: "Failed to start agent on launch",
 					)
 					setProgress(null)
 				})

@@ -24,7 +24,7 @@ pub fn agent_command_label(agent_id: &str) -> &'static str {
 pub fn build_agent(agent_id: &str, _project_path: &Path) -> Result<AcpAgent, String> {
     match agent_id {
         AGENT_ID_OPENCODE => build_opencode_agent(),
-        other => Err(format!("Agente no soportado todavía: {other}")),
+        other => Err(format!("Unsupported agent: {other}")),
     }
 }
 

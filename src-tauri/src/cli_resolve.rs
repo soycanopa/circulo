@@ -11,7 +11,7 @@ pub fn resolve_binary(program: &str, env_override: &str) -> Result<PathBuf, Stri
                 return Ok(candidate);
             }
             return Err(format!(
-                "{env_override} apunta a una ruta inválida: {trimmed}"
+                "{env_override} points to an invalid path: {trimmed}"
             ));
         }
     }
@@ -31,7 +31,7 @@ pub fn resolve_binary(program: &str, env_override: &str) -> Result<PathBuf, Stri
     }
 
     Err(format!(
-        "No se encontró `{program}`. Instálalo o define {env_override} con la ruta completa."
+        "Could not find `{program}`. Install it or set {env_override} to the full binary path."
     ))
 }
 

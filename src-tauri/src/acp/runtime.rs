@@ -261,7 +261,7 @@ pub async fn start_agent_connection(
                                 let _ = app.emit(
                                     "acp:error",
                                     serde_json::json!({
-                                        "message": "No hay sesión ACP activa — usa New Chat primero"
+                                        "message": "No active ACP session — use New Chat first"
                                     }),
                                 );
                                 continue;

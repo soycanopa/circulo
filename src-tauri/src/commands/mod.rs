@@ -259,8 +259,8 @@ pub async fn create_session(state: State<'_, SharedState>) -> Result<ProjectStat
     match tokio::time::timeout(Duration::from_secs(45), done_rx).await {
         Ok(Ok(Ok(()))) => Ok(state.lock().await.status()),
         Ok(Ok(Err(message))) => Err(message),
-        Ok(Err(_)) => Err("La creación de sesión se canceló".to_string()),
-        Err(_) => Err("Tiempo de espera agotado al crear la sesión".to_string()),
+        Ok(Err(_)) => Err("Session creation was cancelled".to_string()),
+        Err(_) => Err("Timed out while creating session".to_string()),
     }
 }
 
@@ -277,7 +277,7 @@ pub async fn send_prompt(
             .as_ref()
             .ok_or_else(|| "No project open".to_string())?;
         if !agent.session_ready_for_ui || agent.session_id.is_empty() {
-            return Err("No active session — usa New Chat primero".to_string());
+            return Err("No active session — use New Chat first".to_string());
         }
         (agent.cmd_tx.clone(), agent.project_path.clone())
     };
