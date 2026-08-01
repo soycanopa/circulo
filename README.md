@@ -23,6 +23,7 @@ Circulo is a native **Tauri** client for coding agents that speak ACP over stdio
 - [UX](./docs/UX.md) — UI direction  
 - [Flows](./docs/FLOWS.md) — core user flows  
 - [ACP](./docs/ACP.md) — protocol mapping  
+- [QA](./docs/QA.md) — manual test checklist  
 
 ## Requirements
 

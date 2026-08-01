@@ -15,6 +15,10 @@ export async function getDefaultChatsPath(): Promise<string> {
 	return invoke("get_default_chats_path")
 }
 
+export async function getHomePath(): Promise<string> {
+	return invoke("get_home_path")
+}
+
 export async function openProject(
 	path: string,
 	agentId?: string,

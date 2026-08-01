@@ -22,6 +22,11 @@ pub async fn get_default_chats_path() -> Result<String, String> {
     default_chats_path()
 }
 
+#[tauri::command]
+pub async fn get_home_path() -> Result<String, String> {
+    std::env::var("HOME").map_err(|_| "HOME not set".to_string())
+}
+
 pub fn default_chats_path() -> Result<String, String> {
     let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
     let path = PathBuf::from(home).join(".circulo").join("chats");

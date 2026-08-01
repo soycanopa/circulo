@@ -10,11 +10,13 @@ import { useBootstrapAgent } from "@/hooks/use-bootstrap"
 import {
 	createSession,
 	getDefaultChatsPath,
+	getHomePath,
 	openProject,
 	pickDirectory,
 } from "@/lib/tauri"
 import {
 	agentConnectedAtom,
+	configOptionsAtom,
 	errorMessageAtom,
 	messagesAtom,
 	progressMessageAtom,
@@ -43,6 +45,9 @@ export default function App() {
 	const setMessages = useSetAtom(messagesAtom)
 	const setStreaming = useSetAtom(streamingTextAtom)
 	const [, setSessionId] = useAtom(sessionIdAtom)
+	const setConnected = useSetAtom(agentConnectedAtom)
+	const setProjectPath = useSetAtom(projectPathAtom)
+	const setConfig = useSetAtom(configOptionsAtom)
 
 	const [busy, setBusy] = useState(false)
 	const agentWarm = connected
@@ -60,20 +65,28 @@ export default function App() {
 		const path = await pickDirectory()
 		if (!path) return
 
-		const base = path.split("/").filter(Boolean).pop() ?? path
+		const [homePath, base] = await Promise.all([
+			getHomePath(),
+			Promise.resolve(path.split("/").filter(Boolean).pop() ?? path),
+		])
 		const largeRoot =
 			base === "Desktop" ||
 			base === "Documents" ||
 			base === "Downloads" ||
-			path === "/Users/soycanopa"
+			path === homePath
 
 		setBusy(true)
 		setMessages([])
 		setStreaming("")
 		setSessionId(null)
+		setConfig([])
 		try {
 			// Spawn only — returns immediately; warm continues in background.
-			await openProject(path)
+			const status = await openProject(path)
+			setProjectPath(status.projectPath)
+			setConnected(status.connected)
+			setSessionId(status.sessionId)
+			setConfig(status.configOptions)
 			if (largeRoot) {
 				setError(
 					"Workspace set. Large folders (Desktop/Home) can slow OpenCode session setup — prefer a repo.",
