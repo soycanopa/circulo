@@ -1,7 +1,7 @@
 use crate::persistence::{
-    list_chat_sessions, load_chat_transcript, load_settings, save_chat_transcript,
-    save_settings, touch_recent_project, AppSettings, ChatSessionSummary, StoredChatMessage,
-    StoredTranscript,
+    delete_chat_transcript, list_chat_sessions, load_chat_transcript, load_settings,
+    save_chat_transcript, save_settings, touch_recent_project, AppSettings, ChatSessionSummary,
+    StoredChatMessage, StoredTranscript,
 };
 
 #[tauri::command]
@@ -35,4 +35,12 @@ pub fn save_chat_transcript_cmd(
     messages: Vec<StoredChatMessage>,
 ) -> Result<ChatSessionSummary, String> {
     save_chat_transcript(&project_path, &session_id, messages)
+}
+
+#[tauri::command]
+pub fn delete_chat_transcript_cmd(
+    project_path: String,
+    session_id: String,
+) -> Result<(), String> {
+    delete_chat_transcript(&project_path, &session_id)
 }

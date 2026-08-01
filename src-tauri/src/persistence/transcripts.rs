@@ -210,3 +210,19 @@ pub fn save_chat_transcript(
 
     Ok(summary)
 }
+
+pub fn delete_chat_transcript(project_path: &str, session_id: &str) -> Result<(), String> {
+    if session_id.is_empty() || session_id == "pending" {
+        return Err("Invalid session id".to_string());
+    }
+
+    let path = PathBuf::from(project_path);
+    let file = session_path(&path, session_id)?;
+    if file.is_file() {
+        std::fs::remove_file(&file).map_err(|err| err.to_string())?;
+    }
+
+    let mut index = load_index(&path)?;
+    index.chats.retain(|c| c.session_id != session_id);
+    save_index(&path, &index)
+}
