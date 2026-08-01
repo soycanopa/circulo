@@ -7,12 +7,14 @@ interface FileMentionPickerProps {
 	query: string
 	selectedIndex: number
 	onSelect: (path: string) => void
+	onResultsChange?: (paths: string[]) => void
 }
 
 export function FileMentionPicker({
 	query,
 	selectedIndex,
 	onSelect,
+	onResultsChange,
 }: FileMentionPickerProps) {
 	const [results, setResults] = useState<string[]>([])
 	const [loading, setLoading] = useState(false)
@@ -27,11 +29,14 @@ export function FileMentionPicker({
 			void searchFiles(query)
 				.then((paths) => {
 					if (cancelled) return
-					setResults(paths.slice(0, 8))
+					const next = paths.slice(0, 8)
+					setResults(next)
+					onResultsChange?.(next)
 				})
 				.catch((err) => {
 					if (cancelled) return
 					setResults([])
+					onResultsChange?.([])
 					setError(
 						err instanceof Error ? err.message : "Could not search files",
 					)
@@ -45,7 +50,7 @@ export function FileMentionPicker({
 			cancelled = true
 			window.clearTimeout(timer)
 		}
-	}, [query])
+	}, [query, onResultsChange])
 
 	return (
 		<div className="absolute bottom-full left-0 right-0 z-20 mb-1 overflow-hidden rounded-md border border-border bg-sidebar shadow-lg">
