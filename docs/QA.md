@@ -166,6 +166,19 @@ Optional: `RUST_LOG=circulo_lib=info` for timing logs.
 
 ---
 
+## F8 — Session resume & delete (phase 4)
+
+| Step | Expected |
+|------|----------|
+| Click saved chat (agent supports load) | Transcript loads; composer enabled; can send follow-up |
+| Click saved chat (load fails) | Read-only transcript + banner; New Chat still works |
+| New Chat while in a live session | Previous session closed on agent; fresh session |
+| Hover chat in sidebar → trash | Chat removed from list and disk |
+| Delete active live chat | Session cleared; composer disabled until New Chat |
+
+
+---
+
 ## PRD success criteria
 
 - [x] No “no active session” after successful New Chat + send  

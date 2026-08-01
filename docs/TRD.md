@@ -29,7 +29,9 @@ Agent process (registry → OpenCode first)
 
 **Agent → Client:** `session/update`, `session/request_permission`  
 
-Optional later: `session/load`, `session/list`, `session/close`, `session/cancel`.
+Optional later: `session/list`, client `fs/*`, `terminal/*`, elicitation.
+
+Implemented post-MVP: `session/load`, `session/close`, `session/cancel`.
 
 ## OpenCode spawn (source of truth)
 
