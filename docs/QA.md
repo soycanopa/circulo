@@ -66,6 +66,7 @@ Optional: `RUST_LOG=circulo_lib=info` for timing logs.
 | Send a short message | User bubble + assistant streams text       |
 | Status bar           | “Streaming…” then “Ready”                  |
 | Second message       | Same session; no “no active session” error |
+| Click **Stop** while streaming | Turn ends; composer returns to idle |
 
 ### @ file mentions
 
@@ -114,6 +115,7 @@ Optional: `RUST_LOG=circulo_lib=info` for timing logs.
 | Step                    | Expected                                          |
 | ----------------------- | ------------------------------------------------- |
 | Open a different folder | Previous session cleared; workspace label updates |
+| Re-open the **same** folder | Chat/session preserved (no wipe) |
 | New Chat                | Session created for new cwd                       |
 | Send message            | Agent context matches new project                 |
 
@@ -127,6 +129,7 @@ Optional: `RUST_LOG=circulo_lib=info` for timing logs.
 
 | Step                                     | Expected                                          |
 | ---------------------------------------- | ------------------------------------------------- |
+| OpenCode not on PATH (fresh install)     | Amber setup banner with install / `OPENCODE_BIN`  |
 | Send without New Chat                    | Error: no active session                          |
 | `OPENCODE_BIN` invalid / missing binary  | Clear error (banner or invoke error)              |
 | New Chat before cold initialize finishes | Waits up to ~60s, then session or timeout message |
