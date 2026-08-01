@@ -265,6 +265,84 @@ pub async fn create_session(state: State<'_, SharedState>) -> Result<ProjectStat
 }
 
 #[tauri::command]
+pub async fn load_session(
+    state: State<'_, SharedState>,
+    session_id: String,
+) -> Result<ProjectStatus, String> {
+    if session_id.is_empty() {
+        return Err("Session id is required".to_string());
+    }
+
+    {
+        let guard = state.lock().await;
+        if guard.agent.is_none() {
+            return Err("No agent process — open a project or wait for warm".to_string());
+        }
+    }
+    wait_until_agent_connected(state.inner()).await?;
+
+    let (done_tx, done_rx) = oneshot::channel();
+    let cmd_tx = {
+        let guard = state.lock().await;
+        let agent = guard
+            .agent
+            .as_ref()
+            .ok_or_else(|| "No agent process — wait for warm or open a project".to_string())?;
+        agent.cmd_tx.clone()
+    };
+
+    cmd_tx
+        .send(AgentCommand::LoadSession {
+            session_id,
+            done: done_tx,
+        })
+        .await
+        .map_err(|err| format!("Failed to load session: {err}"))?;
+
+    match tokio::time::timeout(Duration::from_secs(45), done_rx).await {
+        Ok(Ok(Ok(()))) => Ok(state.lock().await.status()),
+        Ok(Ok(Err(message))) => Err(message),
+        Ok(Err(_)) => Err("Session load was cancelled".to_string()),
+        Err(_) => Err("Timed out while loading session".to_string()),
+    }
+}
+
+#[tauri::command]
+pub async fn close_session_cmd(
+    state: State<'_, SharedState>,
+    session_id: String,
+) -> Result<ProjectStatus, String> {
+    if session_id.is_empty() {
+        return Err("Session id is required".to_string());
+    }
+
+    let (done_tx, done_rx) = oneshot::channel();
+    let cmd_tx = {
+        let guard = state.lock().await;
+        let agent = guard
+            .agent
+            .as_ref()
+            .ok_or_else(|| "No project open".to_string())?;
+        agent.cmd_tx.clone()
+    };
+
+    cmd_tx
+        .send(AgentCommand::CloseSession {
+            session_id,
+            done: done_tx,
+        })
+        .await
+        .map_err(|err| format!("Failed to close session: {err}"))?;
+
+    match tokio::time::timeout(Duration::from_secs(15), done_rx).await {
+        Ok(Ok(Ok(()))) => Ok(state.lock().await.status()),
+        Ok(Ok(Err(message))) => Err(message),
+        Ok(Err(_)) => Err("Session close was cancelled".to_string()),
+        Err(_) => Err("Timed out while closing session".to_string()),
+    }
+}
+
+#[tauri::command]
 pub async fn send_prompt(
     state: State<'_, SharedState>,
     text: String,

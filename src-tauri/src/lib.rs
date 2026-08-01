@@ -38,6 +38,8 @@ pub fn run() {
             commands::open_project,
             commands::close_project,
             commands::create_session,
+            commands::load_session,
+            commands::close_session_cmd,
             commands::send_prompt,
             commands::cancel_prompt,
             commands::respond_permission,
@@ -49,6 +51,7 @@ pub fn run() {
             commands::persistence::list_chat_sessions_cmd,
             commands::persistence::load_chat_transcript_cmd,
             commands::persistence::save_chat_transcript_cmd,
+            commands::persistence::delete_chat_transcript_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

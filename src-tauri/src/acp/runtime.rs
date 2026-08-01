@@ -4,10 +4,10 @@ use std::time::Instant;
 
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
-    CancelNotification, ContentBlock, InitializeRequest, NewSessionRequest, PromptRequest, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions, SessionNotification,
-    SetSessionConfigOptionRequest, TextContent,
+    CancelNotification, CloseSessionRequest, ContentBlock, InitializeRequest, LoadSessionRequest,
+    NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
+    RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigKind, SessionConfigOption,
+    SessionConfigSelectOptions, SessionNotification, SetSessionConfigOptionRequest, TextContent,
 };
 use agent_client_protocol::{Agent, ConnectionTo};
 use serde_json::Value;
@@ -223,6 +223,7 @@ pub async fn start_agent_connection(
                             &project_path,
                             &active_session_id,
                             /* publish_to_ui */ false,
+                            /* resume */ false,
                         )
                         .await
                         {
@@ -376,6 +377,29 @@ pub async fn start_agent_connection(
                             .await;
                             let _ = done.send(result);
                         }
+                        AgentCommand::LoadSession { session_id, done } => {
+                            let _ops = session_ops.lock().await;
+                            let result = load_session_on_connection(
+                                &connection,
+                                &app,
+                                &state,
+                                &project_path,
+                                &active_session_id,
+                                &session_id,
+                            )
+                            .await;
+                            let _ = done.send(result);
+                        }
+                        AgentCommand::CloseSession { session_id, done } => {
+                            let result = close_session_on_connection(
+                                &connection,
+                                &state,
+                                &active_session_id,
+                                &session_id,
+                            )
+                            .await;
+                            let _ = done.send(result);
+                        }
                         AgentCommand::CancelPrompt => {
                             let session_id = {
                                 let guard = state.lock().await;
@@ -439,11 +463,32 @@ async fn publish_or_create_session(
                         "sessionId": session_id,
                         "projectPath": project_path.display().to_string(),
                         "configOptions": config_options,
+                        "resume": false,
                     }),
                 );
                 return Ok(());
             }
         }
+    }
+
+    // Close any UI-bound session before creating a fresh one.
+    let previous_session_id = {
+        let guard = state.lock().await;
+        guard
+            .agent
+            .as_ref()
+            .filter(|a| a.session_ready_for_ui && !a.session_id.is_empty())
+            .map(|a| a.session_id.clone())
+            .unwrap_or_default()
+    };
+    if !previous_session_id.is_empty() {
+        close_session_on_connection(
+            connection,
+            state,
+            active_session_id,
+            &previous_session_id,
+        )
+        .await?;
     }
 
     // Fresh session/new (subsequent New Chat, or prewarm missed/failed).
@@ -454,6 +499,7 @@ async fn publish_or_create_session(
         project_path,
         active_session_id,
         /* publish_to_ui */ true,
+        /* resume */ false,
     )
     .await
 }
@@ -467,6 +513,7 @@ async fn create_session_on_connection(
     project_path: &PathBuf,
     active_session_id: &Arc<Mutex<String>>,
     publish_to_ui: bool,
+    resume: bool,
 ) -> Result<(), String> {
     info!(
         path = %project_path.display(),
@@ -509,8 +556,155 @@ async fn create_session_on_connection(
                 "sessionId": session_id,
                 "projectPath": project_path.display().to_string(),
                 "configOptions": config_options,
+                "resume": resume,
             }),
         );
+    }
+
+    Ok(())
+}
+
+/// ACP `session/load` — resume an existing agent session by id.
+async fn load_session_on_connection(
+    connection: &ConnectionTo<Agent>,
+    app: &AppHandle,
+    state: &SharedState,
+    project_path: &PathBuf,
+    active_session_id: &Arc<Mutex<String>>,
+    session_id: &str,
+) -> Result<(), String> {
+    let capabilities = {
+        let guard = state.lock().await;
+        guard
+            .agent
+            .as_ref()
+            .map(|a| a.agent_capabilities.clone())
+            .ok_or_else(|| "No agent process".to_string())?
+    };
+    if !capabilities.load_session {
+        return Err("Agent does not support session/load".to_string());
+    }
+
+    let current_session_id = {
+        let guard = state.lock().await;
+        guard
+            .agent
+            .as_ref()
+            .map(|a| a.session_id.clone())
+            .unwrap_or_default()
+    };
+    if current_session_id == session_id {
+        let mut guard = state.lock().await;
+        if let Some(agent) = guard.active_agent_mut() {
+            agent.session_ready_for_ui = true;
+            let config_options = agent.config_options.clone();
+            let _ = app.emit(
+                "acp:session_ready",
+                serde_json::json!({
+                    "sessionId": session_id,
+                    "projectPath": project_path.display().to_string(),
+                    "configOptions": config_options,
+                    "resume": true,
+                }),
+            );
+        }
+        return Ok(());
+    }
+
+    if !current_session_id.is_empty() {
+        close_session_on_connection(
+            connection,
+            state,
+            active_session_id,
+            &current_session_id,
+        )
+        .await?;
+    }
+
+    info!(
+        session_id = %session_id,
+        path = %project_path.display(),
+        "Loading ACP session (session/load)"
+    );
+    let started = Instant::now();
+
+    let response = connection
+        .send_request(LoadSessionRequest::new(
+            session_id.to_string(),
+            project_path.clone(),
+        ))
+        .block_task()
+        .await
+        .map_err(|err| format!("session/load failed: {err}"))?;
+
+    let config_options = map_config_options(response.config_options.as_deref());
+
+    info!(
+        session_id = %session_id,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "ACP session/load completed"
+    );
+
+    *active_session_id.lock().await = session_id.to_string();
+    {
+        let mut guard = state.lock().await;
+        if let Some(agent) = guard.active_agent_mut() {
+            agent.session_id = session_id.to_string();
+            agent.config_options = config_options.clone();
+            agent.project_path = project_path.clone();
+            agent.session_ready_for_ui = true;
+        }
+    }
+
+    let _ = app.emit(
+        "acp:session_ready",
+        serde_json::json!({
+            "sessionId": session_id,
+            "projectPath": project_path.display().to_string(),
+            "configOptions": config_options,
+            "resume": true,
+        }),
+    );
+
+    Ok(())
+}
+
+async fn close_session_on_connection(
+    connection: &ConnectionTo<Agent>,
+    state: &SharedState,
+    active_session_id: &Arc<Mutex<String>>,
+    session_id: &str,
+) -> Result<(), String> {
+    if session_id.is_empty() {
+        return Ok(());
+    }
+
+    let close_supported = {
+        let guard = state.lock().await;
+        guard
+            .agent
+            .as_ref()
+            .map(|a| a.agent_capabilities.close_session)
+            .unwrap_or(false)
+    };
+
+    if close_supported {
+        connection
+            .send_request(CloseSessionRequest::new(session_id.to_string()))
+            .block_task()
+            .await
+            .map_err(|err| format!("session/close failed: {err}"))?;
+        info!(session_id = %session_id, "ACP session/close completed");
+    }
+
+    *active_session_id.lock().await = String::new();
+    let mut guard = state.lock().await;
+    if let Some(agent) = guard.active_agent_mut() {
+        if agent.session_id == session_id {
+            agent.session_id = String::new();
+            agent.session_ready_for_ui = false;
+            agent.config_options = Vec::new();
+        }
     }
 
     Ok(())
