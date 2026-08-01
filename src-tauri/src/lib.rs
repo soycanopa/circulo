@@ -52,6 +52,7 @@ pub fn run() {
             commands::persistence::load_chat_transcript_cmd,
             commands::persistence::save_chat_transcript_cmd,
             commands::persistence::delete_chat_transcript_cmd,
+            commands::persistence::rename_chat_transcript_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

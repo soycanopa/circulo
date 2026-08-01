@@ -226,3 +226,53 @@ pub fn delete_chat_transcript(project_path: &str, session_id: &str) -> Result<()
     index.chats.retain(|c| c.session_id != session_id);
     save_index(&path, &index)
 }
+
+pub fn rename_chat_transcript(
+    project_path: &str,
+    session_id: &str,
+    title: &str,
+) -> Result<ChatSessionSummary, String> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err("Title cannot be empty".to_string());
+    }
+    if session_id.is_empty() || session_id == "pending" {
+        return Err("Invalid session id".to_string());
+    }
+
+    let path = PathBuf::from(project_path);
+    let file = session_path(&path, session_id)?;
+    if !file.is_file() {
+        return Err("Chat transcript not found".to_string());
+    }
+
+    let mut transcript: StoredTranscript =
+        serde_json::from_str(&std::fs::read_to_string(&file).map_err(|e| e.to_string())?)
+            .map_err(|e| format!("Invalid transcript: {e}"))?;
+    let now = now_ms();
+    transcript.title = title.to_string();
+    transcript.updated_at = now;
+
+    let raw = serde_json::to_string_pretty(&transcript).map_err(|err| err.to_string())?;
+    std::fs::write(&file, raw).map_err(|err| err.to_string())?;
+
+    let summary = ChatSessionSummary {
+        session_id: session_id.to_string(),
+        title: title.to_string(),
+        updated_at: now,
+    };
+
+    let mut index = load_index(&path)?;
+    if let Some(entry) = index
+        .chats
+        .iter_mut()
+        .find(|c| c.session_id == session_id)
+    {
+        *entry = summary.clone();
+    } else {
+        index.chats.push(summary.clone());
+    }
+    save_index(&path, &index)?;
+
+    Ok(summary)
+}

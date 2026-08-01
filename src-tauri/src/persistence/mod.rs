@@ -3,8 +3,8 @@ mod transcripts;
 
 pub use config::{load_settings, save_settings, touch_recent_project, AppSettings, RecentProject};
 pub use transcripts::{
-    delete_chat_transcript, list_chat_sessions, load_chat_transcript, save_chat_transcript,
-    ChatSessionSummary, StoredChatMessage, StoredToolCall, StoredTranscript,
+    delete_chat_transcript, list_chat_sessions, load_chat_transcript, rename_chat_transcript,
+    save_chat_transcript, ChatSessionSummary, StoredChatMessage, StoredToolCall, StoredTranscript,
 };
 
 pub fn circulo_data_dir() -> Result<std::path::PathBuf, String> {
