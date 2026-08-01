@@ -47,7 +47,10 @@ export function AppSidebar({
 
 	return (
 		<>
-			<div className="flex h-12 items-center justify-between border-b border-border px-4">
+			<div
+				className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4"
+				data-tauri-drag-region
+			>
 				<span className="text-sm font-medium tracking-tight">Circulo</span>
 				<button
 					type="button"

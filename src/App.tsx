@@ -227,7 +227,7 @@ export default function App() {
 				/>
 			}
 		>
-			<div className="flex h-12 items-center justify-between gap-3 border-b border-border px-4">
+			<div className="flex h-12 items-center justify-between gap-3 border-b border-border px-4" data-tauri-drag-region>
 				<div className="min-w-0 text-xs text-muted">{statusLabel}</div>
 				<ConfigSelectors />
 			</div>
