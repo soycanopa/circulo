@@ -51,6 +51,10 @@ export async function sendPrompt(
 	return invoke("send_prompt", { text, contextPaths })
 }
 
+export async function cancelPrompt(): Promise<void> {
+	return invoke("cancel_prompt")
+}
+
 export async function respondPermission(
 	requestId: string,
 	optionId: string,

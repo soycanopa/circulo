@@ -1,5 +1,5 @@
 import { useAtomValue, useSetAtom } from "jotai"
-import { CornerDownLeft, Loader2 } from "lucide-react"
+import { CornerDownLeft, Loader2, Square } from "lucide-react"
 import { useRef, useState } from "react"
 import { FileMentionPicker } from "@/components/chat/file-mention-picker"
 import { PermissionPrompt } from "@/components/permissions/permission-prompt"
@@ -8,7 +8,7 @@ import {
 	getActiveMention,
 	insertMention,
 } from "@/lib/mention-parser"
-import { sendPrompt } from "@/lib/tauri"
+import { cancelPrompt, sendPrompt } from "@/lib/tauri"
 import {
 	activePermissionAtom,
 	errorMessageAtom,
@@ -115,6 +115,14 @@ export function ChatInput() {
 		}
 	}
 
+	async function handleCancel() {
+		try {
+			await cancelPrompt()
+		} catch (error) {
+			setError(error instanceof Error ? error.message : "Failed to cancel")
+		}
+	}
+
 	return (
 		<div className="shrink-0 border-t border-border px-4 py-3">
 			<div className="mx-auto max-w-3xl">
@@ -189,7 +197,17 @@ export function ChatInput() {
 						}
 						className="w-full resize-none bg-transparent px-3 py-2.5 text-sm text-fg outline-none placeholder:text-muted disabled:opacity-50"
 					/>
-					<div className="flex items-center justify-end border-t border-border px-2 py-1.5">
+					<div className="flex items-center justify-end gap-1.5 border-t border-border px-2 py-1.5">
+						{promptInFlight ? (
+							<button
+								type="button"
+								onClick={() => void handleCancel()}
+								className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-fg transition hover:bg-white/5"
+							>
+								<Square className="size-3 fill-current" />
+								Stop
+							</button>
+						) : null}
 						<button
 							type="submit"
 							disabled={disabled || !value.trim()}

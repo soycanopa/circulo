@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
-    ContentBlock, InitializeRequest, NewSessionRequest, PromptRequest, RequestPermissionOutcome,
+    CancelNotification, ContentBlock, InitializeRequest, NewSessionRequest, PromptRequest, RequestPermissionOutcome,
     RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
     SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions, SessionNotification,
     SetSessionConfigOptionRequest, TextContent,
@@ -375,6 +375,33 @@ pub async fn start_agent_connection(
                             )
                             .await;
                             let _ = done.send(result);
+                        }
+                        AgentCommand::CancelPrompt => {
+                            let session_id = {
+                                let guard = state.lock().await;
+                                match &guard.agent {
+                                    Some(a) if a.session_ready_for_ui => {
+                                        a.session_id.clone()
+                                    }
+                                    _ => String::new(),
+                                }
+                            };
+                            if session_id.is_empty() {
+                                continue;
+                            }
+                            match connection
+                                .send_notification(CancelNotification::new(session_id.clone()))
+                            {
+                                Ok(()) => {
+                                    info!(session_id = %session_id, "Sent session/cancel");
+                                }
+                                Err(err) => {
+                                    let _ = app.emit(
+                                        "acp:error",
+                                        serde_json::json!({ "message": err.to_string() }),
+                                    );
+                                }
+                            }
                         }
                         AgentCommand::Shutdown => break,
                     }

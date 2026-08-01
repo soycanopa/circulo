@@ -294,6 +294,26 @@ pub async fn send_prompt(
 }
 
 #[tauri::command]
+pub async fn cancel_prompt(state: State<'_, SharedState>) -> Result<(), String> {
+    let cmd_tx = {
+        let guard = state.lock().await;
+        let agent = guard
+            .agent
+            .as_ref()
+            .ok_or_else(|| "No project open".to_string())?;
+        if !agent.session_ready_for_ui || agent.session_id.is_empty() {
+            return Err("No active session".to_string());
+        }
+        agent.cmd_tx.clone()
+    };
+
+    cmd_tx
+        .send(AgentCommand::CancelPrompt)
+        .await
+        .map_err(|err| format!("Failed to cancel prompt: {err}"))
+}
+
+#[tauri::command]
 pub async fn respond_permission(
     state: State<'_, SharedState>,
     request_id: String,

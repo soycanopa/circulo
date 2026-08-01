@@ -38,6 +38,7 @@ pub fn run() {
             commands::close_project,
             commands::create_session,
             commands::send_prompt,
+            commands::cancel_prompt,
             commands::respond_permission,
             commands::set_config_option,
             commands::search_files,

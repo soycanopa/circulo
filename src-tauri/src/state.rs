@@ -78,6 +78,7 @@ pub enum AgentCommand {
     CreateSession {
         done: oneshot::Sender<Result<(), String>>,
     },
+    CancelPrompt,
     Shutdown,
 }
 
