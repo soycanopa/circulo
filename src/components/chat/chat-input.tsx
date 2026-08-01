@@ -1,6 +1,7 @@
 import { useAtomValue, useSetAtom } from "jotai"
 import { CornerDownLeft, Loader2, Square } from "lucide-react"
 import { useRef, useState } from "react"
+import { ConfigSelectors } from "@/components/chat/config-selector"
 import { FileMentionPicker } from "@/components/chat/file-mention-picker"
 import { PermissionPrompt } from "@/components/permissions/permission-prompt"
 import {
@@ -124,7 +125,7 @@ export function ChatInput() {
 	}
 
 	return (
-		<div className="shrink-0 border-t border-border px-4 py-3">
+		<div className="shrink-0 px-4 py-3">
 			<div className="mx-auto max-w-3xl">
 				<PermissionPrompt />
 				<form
@@ -206,29 +207,36 @@ export function ChatInput() {
 						}
 						className="w-full resize-none bg-transparent px-3 py-2.5 text-sm text-fg outline-none placeholder:text-muted disabled:opacity-50"
 					/>
-					<div className="flex items-center justify-end gap-1.5 border-t border-border px-2 py-1.5">
-						{promptInFlight ? (
-							<button
-								type="button"
-								onClick={() => void handleCancel()}
-								className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-fg transition hover:bg-white/5"
-							>
-								<Square className="size-3 fill-current" />
-								Stop
-							</button>
-						) : null}
-						<button
-							type="submit"
-							disabled={disabled || !value.trim()}
-							className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1 text-xs font-medium text-fg transition hover:bg-white/15 disabled:opacity-40"
-						>
+					{/* Model / mode + send — same row, no divider line above */}
+					<div className="flex items-center gap-2 px-2.5 pb-2 pt-0.5">
+						<div className="min-w-0 flex-1">
+							<ConfigSelectors />
+						</div>
+						<div className="flex shrink-0 items-center gap-1.5">
 							{promptInFlight ? (
-								<Loader2 className="size-3.5 animate-spin" />
-							) : (
-								<CornerDownLeft className="size-3.5" />
-							)}
-							Send
-						</button>
+								<button
+									type="button"
+									onClick={() => void handleCancel()}
+									className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs font-medium text-fg transition hover:bg-white/5"
+								>
+									<Square className="size-3 fill-current" />
+									Stop
+								</button>
+							) : null}
+							<button
+								type="submit"
+								disabled={disabled || !value.trim()}
+								title="Send"
+								aria-label="Send"
+								className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-white/10 text-fg transition hover:bg-white/15 disabled:opacity-40"
+							>
+								{promptInFlight ? (
+									<Loader2 className="size-4 animate-spin" />
+								) : (
+									<CornerDownLeft className="size-4" />
+								)}
+							</button>
+						</div>
 					</div>
 				</form>
 			</div>
