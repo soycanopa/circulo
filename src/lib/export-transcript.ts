@@ -1,4 +1,5 @@
 import type { ChatMessage } from "@/types/acp"
+import { exportTranscript } from "@/lib/tauri"
 
 function sanitizeFilename(name: string): string {
 	const base = name.trim().slice(0, 64) || "chat"
@@ -35,14 +36,18 @@ export function downloadTextFile(filename: string, content: string): void {
 	const anchor = document.createElement("a")
 	anchor.href = url
 	anchor.download = filename
+	document.body.appendChild(anchor)
 	anchor.click()
+	anchor.remove()
 	URL.revokeObjectURL(url)
 }
 
-export function exportTranscriptMarkdown(
+/** Save via native dialog in Tauri; returns true when a file was written. */
+export async function exportTranscriptMarkdown(
 	title: string,
 	messages: ChatMessage[],
-): void {
+): Promise<boolean> {
 	const markdown = formatTranscriptMarkdown(title, messages)
-	downloadTextFile(`${sanitizeFilename(title)}.md`, markdown)
+	const filename = `${sanitizeFilename(title)}.md`
+	return exportTranscript(filename, markdown)
 }

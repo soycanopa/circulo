@@ -1,5 +1,7 @@
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
-import { Download, Loader2, MessageSquarePlus } from "lucide-react"
+import { Download, FileDiff, Loader2, MessageSquarePlus } from "lucide-react"
+import { WindowChromeControls } from "@/components/layout/window-chrome-controls"
+import { cn } from "@/lib/utils"
 import { useCallback, useMemo, useState } from "react"
 import { ChatInput } from "@/components/chat/chat-input"
 import { ConfigSelectors } from "@/components/chat/config-selector"
@@ -16,6 +18,13 @@ import { useAppShortcuts } from "@/hooks/use-app-shortcuts"
 import { useBootstrapAgent } from "@/hooks/use-bootstrap"
 import { useChatPersistence } from "@/hooks/use-chat-persistence"
 import { exportTranscriptMarkdown } from "@/lib/export-transcript"
+import {
+	agentLabel,
+	resolveAgentConnectionStatus,
+	resolveAgentDetail,
+	type AgentRuntimeState,
+} from "@/lib/agent-registry"
+import { collectDiffTools } from "@/lib/diff-tools"
 import {
 	closeSession,
 	createSession,
@@ -35,6 +44,7 @@ import {
 	capabilitiesAtom,
 	chatSessionsAtom,
 	configOptionsAtom,
+	diffPanelOpenAtom,
 	errorMessageAtom,
 	historyViewSessionIdAtom,
 	messagesAtom,
@@ -42,8 +52,10 @@ import {
 	progressMessageAtom,
 	projectPathAtom,
 	resetWorkspaceUiAtom,
+	selectedDiffToolAtom,
 	sessionIdAtom,
 	sessionStatusAtom,
+	sidebarOpenAtom,
 	streamingTextAtom,
 } from "@/stores/atoms"
 
@@ -69,6 +81,11 @@ export default function App() {
 	const capabilities = useAtomValue(capabilitiesAtom)
 	const appSettings = useAtomValue(appSettingsAtom)
 	const messages = useAtomValue(messagesAtom)
+	const diffPanelOpen = useAtomValue(diffPanelOpenAtom)
+	const sidebarOpen = useAtomValue(sidebarOpenAtom)
+	const setDiffPanelOpen = useSetAtom(diffPanelOpenAtom)
+	const setSidebarOpen = useSetAtom(sidebarOpenAtom)
+	const setSelectedDiff = useSetAtom(selectedDiffToolAtom)
 	const setError = useSetAtom(errorMessageAtom)
 	const setStatus = useSetAtom(sessionStatusAtom)
 	const setMessages = useSetAtom(messagesAtom)
@@ -85,6 +102,7 @@ export default function App() {
 	const [settingsOpen, setSettingsOpen] = useState(false)
 	const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
 	const [agentCommand, setAgentCommand] = useState("opencode acp")
+	const [agentId, setAgentId] = useState<string | null>("opencode")
 
 	const agentWarm = connected
 	const hasLiveSession = Boolean(sessionId)
@@ -95,10 +113,58 @@ export default function App() {
 		chatSessions.find((chat) => chat.sessionId === activeChatId)?.title ??
 		"chat"
 
-	const handleExportTranscript = useCallback(() => {
+	const handleExportTranscript = useCallback(async () => {
 		if (messages.length === 0) return
-		exportTranscriptMarkdown(activeChatTitle, messages)
-	}, [activeChatTitle, messages])
+		try {
+			const saved = await exportTranscriptMarkdown(activeChatTitle, messages)
+			if (!saved) return
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to export transcript")
+		}
+	}, [activeChatTitle, messages, setError])
+
+	const toggleDiffPanel = useCallback(() => {
+		setDiffPanelOpen((open) => !open)
+	}, [setDiffPanelOpen])
+
+	const closeDiffPanel = useCallback(() => {
+		setDiffPanelOpen(false)
+	}, [setDiffPanelOpen])
+
+	const diffToolCount = useMemo(() => collectDiffTools(messages).length, [messages])
+
+	const agentRuntimes = useMemo((): AgentRuntimeState[] => {
+		const available = opencodeStatus?.available ?? true
+		const id = agentId ?? "opencode"
+		return [
+			{
+				id,
+				label: agentLabel(id),
+				command: agentCommand,
+				status: resolveAgentConnectionStatus({
+					connected,
+					statusConnecting: status === "connecting",
+					progress,
+					available,
+				}),
+				detail: resolveAgentDetail({
+					connected,
+					statusConnecting: status === "connecting",
+					progress,
+					available,
+					installHint: opencodeStatus?.installHint ?? null,
+					sessionStatus: status,
+				}),
+			},
+		]
+	}, [
+		agentCommand,
+		agentId,
+		connected,
+		opencodeStatus,
+		progress,
+		status,
+	])
 
 	const handleNewChat = useCallback(async () => {
 		setError(null)
@@ -152,6 +218,7 @@ export default function App() {
 			setProjectPath(status.projectPath)
 			setConnected(status.connected)
 			setAgentCommand(status.agentCommand)
+			setAgentId(status.agentId)
 			if (isNewWorkspace) {
 				setSessionId(status.sessionId)
 				setConfig(status.configOptions)
@@ -188,7 +255,9 @@ export default function App() {
 		},
 		onOpenSettings: () => setSettingsOpen(true),
 		onOpenCommandPalette: () => setCommandPaletteOpen(true),
-		onExportTranscript: () => handleExportTranscript(),
+		onExportTranscript: () => {
+			void handleExportTranscript()
+		},
 	})
 
 	const commandItems = useMemo(
@@ -209,18 +278,29 @@ export default function App() {
 				label: "Settings",
 				onSelect: () => setSettingsOpen(true),
 			},
+			{
+				id: "diff-panel",
+				label: diffPanelOpen ? "Close Diff Panel" : "Open Diff Panel",
+				onSelect: () => toggleDiffPanel(),
+			},
 			...(messages.length > 0
 				? [
 						{
 							id: "export",
 							label: "Export Transcript",
 							shortcut: "⌘⇧E",
-							onSelect: () => handleExportTranscript(),
+							onSelect: () => void handleExportTranscript(),
 						},
 					]
 				: []),
 		],
-		[handleExportTranscript, handleNewChat, messages.length],
+		[
+			diffPanelOpen,
+			handleExportTranscript,
+			handleNewChat,
+			messages.length,
+			toggleDiffPanel,
+		],
 	)
 
 	async function handleRenameChat(targetSessionId: string, title: string) {
@@ -333,16 +413,23 @@ export default function App() {
 	return (
 		<>
 			<AppShell
-				panel={<DiffPanel />}
+				sidebarOpen={sidebarOpen}
+				panelOpen={diffPanelOpen}
+				panel={
+					<DiffPanel
+						onClose={() => {
+							closeDiffPanel()
+							setSelectedDiff(null)
+						}}
+					/>
+				}
 				sidebar={
 					<AppSidebar
 						workspaceLabel={workspaceLabel}
 						sessionId={sessionId}
 						historyViewSessionId={historyViewSessionId}
-						agentWarm={agentWarm}
-						progress={progress}
+						agentRuntimes={agentRuntimes}
 						busy={busy}
-						statusConnecting={status === "connecting"}
 						chatSessions={chatSessions}
 						recentProjects={appSettings?.recentProjects ?? []}
 						currentProjectPath={projectPath}
@@ -353,21 +440,71 @@ export default function App() {
 						onRenameChat={(id, title) => void handleRenameChat(id, title)}
 						onDeleteChat={(id) => void handleDeleteChat(id)}
 						onOpenRecentProject={(path) => void handleOpenRecentProject(path)}
+						onHideSidebar={() => setSidebarOpen(false)}
 					/>
 				}
 			>
 				<div
-					className="flex h-12 items-center justify-between gap-3 border-b border-border px-4"
-					data-tauri-drag-region
+					className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border pb-0.5"
+					data-tauri-drag-region="deep"
 				>
-					<div className="min-w-0 text-xs text-muted">{statusLabel}</div>
-					<div className="flex items-center gap-2">
+					<div className="flex min-w-0 flex-1 items-center">
+						{!sidebarOpen ? (
+							<div className="flex shrink-0 items-center gap-1.5">
+								<WindowChromeControls
+									sidebarOpen={false}
+									layout="inline"
+									onToggleSidebar={() => setSidebarOpen(true)}
+								/>
+								<button
+									type="button"
+									onClick={() => void handleNewChat()}
+									disabled={busy}
+									className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted transition hover:bg-white/5 hover:text-fg disabled:opacity-40"
+									title="New chat (⌘N)"
+									data-tauri-drag-region="false"
+								>
+									<MessageSquarePlus className="size-3.5" />
+									New chat
+								</button>
+							</div>
+						) : null}
+						<div
+							className={cn(
+								"min-w-0 flex-1 truncate text-xs text-muted",
+								sidebarOpen ? "px-4" : "pl-2 pr-4",
+							)}
+						>
+							{statusLabel}
+						</div>
+					</div>
+					<div className="flex shrink-0 items-center gap-2 pr-4">
+						<button
+							type="button"
+							onClick={toggleDiffPanel}
+							className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition ${
+								diffPanelOpen
+									? "border-sky-500/40 bg-sky-500/10 text-sky-200"
+									: "border-border text-muted hover:bg-white/5 hover:text-fg"
+							}`}
+							title="Toggle diff panel"
+							data-tauri-drag-region="false"
+						>
+							<FileDiff className="size-3.5" />
+							Diff
+							{diffToolCount > 0 ? (
+								<span className="rounded bg-white/10 px-1 text-[10px]">
+									{diffToolCount}
+								</span>
+							) : null}
+						</button>
 						{showChat && messages.length > 0 ? (
 							<button
 								type="button"
-								onClick={handleExportTranscript}
+								onClick={() => void handleExportTranscript()}
 								className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] text-muted transition hover:bg-white/5 hover:text-fg"
 								title="Export transcript (⌘⇧E)"
+								data-tauri-drag-region="false"
 							>
 								<Download className="size-3.5" />
 								Export
@@ -376,7 +513,6 @@ export default function App() {
 						<ConfigSelectors />
 					</div>
 				</div>
-
 			{opencodeStatus && !opencodeStatus.available ? (
 				<OpencodeSetupBanner status={opencodeStatus} />
 			) : null}

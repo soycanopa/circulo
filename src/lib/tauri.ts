@@ -134,6 +134,13 @@ export async function renameChatTranscript(
 	return invoke("rename_chat_transcript_cmd", { projectPath, sessionId, title })
 }
 
+export async function exportTranscript(
+	filename: string,
+	content: string,
+): Promise<boolean> {
+	return invoke("export_transcript_cmd", { filename, content })
+}
+
 function toStoredMessages(messages: ChatMessage[]): StoredChatMessage[] {
 	return messages.map((m) => ({
 		id: m.id,

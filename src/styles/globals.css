@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @theme {
+  --color-frame: #0c0c0c;
   --color-sidebar: #282828;
   --color-content: #161616;
   --color-surface: #1e1e1e;
@@ -11,14 +12,19 @@
 }
 
 html,
-body,
-#root {
+body {
   height: 100%;
   margin: 0;
 }
 
+#root {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 6px;
+}
+
 body {
-  background: var(--color-content);
+  background: var(--color-frame);
   color: var(--color-fg);
   font-family:
     ui-sans-serif,
@@ -32,4 +38,16 @@ body {
 
 * {
   box-sizing: border-box;
+}
+
+[data-tauri-drag-region],
+[data-tauri-drag-region="true"],
+[data-tauri-drag-region="deep"] {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+[data-tauri-drag-region="false"] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }

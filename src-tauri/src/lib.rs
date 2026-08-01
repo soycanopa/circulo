@@ -46,6 +46,7 @@ pub fn run() {
             commands::set_config_option,
             commands::search_files,
             commands::pick_directory,
+            commands::export_transcript_cmd,
             commands::persistence::get_app_settings,
             commands::persistence::set_app_settings,
             commands::persistence::list_chat_sessions_cmd,

@@ -18,7 +18,11 @@
         "minWidth": 900,
         "minHeight": 600,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 19,
+          "y": 30
+        }
       }
     ],
     "security": {

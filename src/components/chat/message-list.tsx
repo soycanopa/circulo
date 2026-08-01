@@ -2,7 +2,9 @@ import { useAtomValue, useSetAtom } from "jotai"
 import { useEffect, useRef } from "react"
 import { ToolCallCard } from "@/components/tools/tool-call-card"
 import { SimpleMarkdown } from "@/lib/simple-markdown"
+import type { ToolCall } from "@/types/acp"
 import {
+	diffPanelOpenAtom,
 	messagesAtom,
 	promptInFlightAtom,
 	selectedDiffToolAtom,
@@ -14,6 +16,12 @@ export function MessageList() {
 	const streaming = useAtomValue(streamingTextAtom)
 	const inFlight = useAtomValue(promptInFlightAtom)
 	const setSelectedDiff = useSetAtom(selectedDiffToolAtom)
+	const setDiffPanelOpen = useSetAtom(diffPanelOpenAtom)
+
+	function openDiffPanel(tool: ToolCall) {
+		setSelectedDiff(tool)
+		setDiffPanelOpen(true)
+	}
 	const scrollRef = useRef<HTMLDivElement>(null)
 	const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -77,7 +85,7 @@ export function MessageList() {
 									<ToolCallCard
 										key={tool.id}
 										tool={tool}
-										onOpenDiff={setSelectedDiff}
+										onOpenDiff={openDiffPanel}
 									/>
 								))}
 							</div>

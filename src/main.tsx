@@ -5,6 +5,8 @@ import "./styles/globals.css"
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 	<React.StrictMode>
-		<App />
+		<div className="h-full min-h-0 overflow-hidden">
+			<App />
+		</div>
 	</React.StrictMode>,
 )

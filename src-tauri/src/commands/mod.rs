@@ -459,6 +459,34 @@ pub async fn pick_directory(app: AppHandle) -> Result<Option<String>, String> {
     Ok(folder.map(|p| p.to_string()))
 }
 
+#[tauri::command]
+pub async fn export_transcript_cmd(
+    app: AppHandle,
+    filename: String,
+    content: String,
+) -> Result<bool, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let path = app
+        .dialog()
+        .file()
+        .set_title("Export transcript")
+        .set_file_name(&filename)
+        .add_filter("Markdown", &["md"])
+        .blocking_save_file();
+
+    match path {
+        Some(p) => {
+            let file_path = p
+                .into_path()
+                .map_err(|err| format!("Invalid save path: {err}"))?;
+            std::fs::write(&file_path, content.as_bytes())
+                .map_err(|err| format!("Could not write file: {err}"))?;
+            Ok(true)
+        }
+        None => Ok(false),
+    }
+}
+
 async fn shutdown_agent(state: &SharedState) {
     let cmd_tx = {
         let mut guard = state.lock().await;

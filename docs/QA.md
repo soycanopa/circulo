@@ -184,22 +184,23 @@ Optional: `RUST_LOG=circulo_lib=info` for timing logs.
 | Step | Expected |
 |------|----------|
 | Hover chat → pencil | Inline rename; title updates in sidebar |
-| Export button / ⌘⇧E | Downloads `.md` transcript |
+| Export button / ⌘⇧E | Native save dialog writes `.md` file |
 | Assistant reply with `#` heading or `-` list | Renders headings and lists |
-| `⌘N` | New Chat |
-| `⌘K` | Command palette opens |
+| `⌘N` / `⌘K` | New Chat / command palette |
 | Empty workspace sidebar | Shows helpful empty-state copy |
 
 
 ---
 
-## F10 — Diff panel & palette (phase 6)
+## F10 — Diff panel (phase 6)
 
 | Step | Expected |
 |------|----------|
-| Tool call with diff content | Click header → right panel shows full diff |
-| Close diff panel | X clears panel |
-| `⌘K` → Export / Settings | Palette actions work |
+| App bar **Diff** button (any screen) | Right sidebar opens, empty when no diffs |
+| Tool call with diff content | Click header → sidebar opens with full diff |
+| Sidebar list | Shows all diff tools in current chat |
+| Close (X) on sidebar | Panel closes |
+| `⌘K` → Open Diff Panel | Palette toggles sidebar |
 
 
 ---

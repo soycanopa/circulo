@@ -1,13 +1,6 @@
 import type { ToolCall } from "@/types/acp"
 import { cn } from "@/lib/utils"
-
-function isDiffTool(tool: ToolCall): boolean {
-	return (
-		tool.kind === "diff" ||
-		Boolean(tool.content?.startsWith("[diff ")) ||
-		tool.title.toLowerCase().includes("diff")
-	)
-}
+import { isDiffTool } from "@/lib/diff-tools"
 
 interface ToolCallCardProps {
 	tool: ToolCall
@@ -63,7 +56,7 @@ export function ToolCallCard({ tool, onOpenDiff }: ToolCallCardProps) {
 			) : null}
 			{diff && onOpenDiff ? (
 				<div className="border-t border-sky-500/20 px-2.5 py-1 text-[10px] text-muted">
-					Click header to open full diff panel
+					Click header to open diff panel
 				</div>
 			) : null}
 		</div>

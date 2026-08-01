@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 
 function isModKey(event: KeyboardEvent): boolean {
 	return event.metaKey || event.ctrlKey
@@ -24,29 +24,35 @@ interface AppShortcutHandlers {
 }
 
 export function useAppShortcuts(handlers: AppShortcutHandlers) {
+	const handlersRef = useRef(handlers)
+	handlersRef.current = handlers
+
 	useEffect(() => {
 		function onKeyDown(event: KeyboardEvent) {
-			if (isTypingTarget(event.target) && !isModKey(event)) return
+			const mod = isModKey(event)
+			if (isTypingTarget(event.target) && !mod) return
 
-			if (isModKey(event) && event.key.toLowerCase() === "n") {
+			const key = event.key.toLowerCase()
+
+			if (mod && key === "n") {
 				event.preventDefault()
-				handlers.onNewChat()
+				handlersRef.current.onNewChat()
 				return
 			}
 
-			if (isModKey(event) && event.key.toLowerCase() === "k") {
+			if (mod && key === "k") {
 				event.preventDefault()
-				handlers.onOpenCommandPalette()
+				handlersRef.current.onOpenCommandPalette()
 				return
 			}
 
-			if (isModKey(event) && event.shiftKey && event.key.toLowerCase() === "e") {
+			if (mod && event.shiftKey && key === "e") {
 				event.preventDefault()
-				handlers.onExportTranscript?.()
+				handlersRef.current.onExportTranscript?.()
 			}
 		}
 
-		window.addEventListener("keydown", onKeyDown)
-		return () => window.removeEventListener("keydown", onKeyDown)
-	}, [handlers])
+		window.addEventListener("keydown", onKeyDown, { capture: true })
+		return () => window.removeEventListener("keydown", onKeyDown, { capture: true })
+	}, [])
 }

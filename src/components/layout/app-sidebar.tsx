@@ -7,7 +7,10 @@ import {
 	Trash2,
 } from "lucide-react"
 import { useState } from "react"
+import { WindowChromeControls } from "@/components/layout/window-chrome-controls"
+import { AgentStatusIndicator } from "@/components/layout/agent-status-indicator"
 import { cn } from "@/lib/utils"
+import type { AgentRuntimeState } from "@/lib/agent-registry"
 import type { ChatSessionSummary, RecentProject } from "@/types/acp"
 
 function projectLabel(path: string): string {
@@ -20,10 +23,8 @@ interface AppSidebarProps {
 	workspaceLabel: string
 	sessionId: string | null
 	historyViewSessionId: string | null
-	agentWarm: boolean
-	progress: string | null
+	agentRuntimes: AgentRuntimeState[]
 	busy: boolean
-	statusConnecting: boolean
 	chatSessions: ChatSessionSummary[]
 	recentProjects: RecentProject[]
 	currentProjectPath: string | null
@@ -34,16 +35,15 @@ interface AppSidebarProps {
 	onRenameChat: (sessionId: string, title: string) => void
 	onDeleteChat: (sessionId: string) => void
 	onOpenRecentProject: (path: string) => void
+	onHideSidebar: () => void
 }
 
 export function AppSidebar({
 	workspaceLabel,
 	sessionId,
 	historyViewSessionId,
-	agentWarm,
-	progress,
+	agentRuntimes,
 	busy,
-	statusConnecting,
 	chatSessions,
 	recentProjects,
 	currentProjectPath,
@@ -54,6 +54,7 @@ export function AppSidebar({
 	onRenameChat,
 	onDeleteChat,
 	onOpenRecentProject,
+	onHideSidebar,
 }: AppSidebarProps) {
 	const otherRecents = recentProjects.filter((p) => p.path !== currentProjectPath)
 	const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
@@ -72,21 +73,18 @@ export function AppSidebar({
 	}
 
 	return (
-		<>
+		<div className="flex h-full min-h-0 flex-col">
 			<div
-				className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4"
-				data-tauri-drag-region
+				className="flex h-12 shrink-0 items-center border-b border-border pb-0.5"
+				data-tauri-drag-region="deep"
 			>
-				<span className="text-sm font-medium tracking-tight">Circulo</span>
-				<button
-					type="button"
-					onClick={onOpenSettings}
-					className="rounded p-1 text-muted transition hover:bg-white/5 hover:text-fg"
-					title="Settings"
-				>
-					<Settings className="size-4" />
-				</button>
+				<WindowChromeControls
+					sidebarOpen
+					layout="sidebar"
+					onToggleSidebar={onHideSidebar}
+				/>
 			</div>
+
 			<div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3">
 				<button
 					type="button"
@@ -224,15 +222,21 @@ export function AppSidebar({
 					</>
 				) : null}
 			</div>
-			<div className="shrink-0 border-t border-border px-4 py-3 text-[11px] text-muted">
-				{statusConnecting
-					? progress || "Opening session…"
-					: agentWarm
-						? "OpenCode ready · ACP"
-						: progress
-							? "OpenCode warming · ACP"
-							: "Ready · ACP"}
+
+			<div className="shrink-0 border-t border-border px-3 py-2.5">
+				<div className="flex items-center justify-between gap-2">
+					<AgentStatusIndicator agents={agentRuntimes} />
+					<button
+						type="button"
+						onClick={onOpenSettings}
+						className="shrink-0 rounded p-1 text-muted transition hover:bg-white/5 hover:text-fg"
+						title="Settings"
+						data-tauri-drag-region="false"
+					>
+						<Settings className="size-4" />
+					</button>
+				</div>
 			</div>
-		</>
+		</div>
 	)
 }
