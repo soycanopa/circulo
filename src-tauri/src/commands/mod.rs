@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, oneshot};
+use tracing::info;
 
 use crate::acp::{read_context_file, search_project_files, start_agent_connection};
 use crate::state::{
@@ -29,7 +30,10 @@ pub fn default_chats_path() -> Result<String, String> {
     Ok(path.display().to_string())
 }
 
-/// Start (or reuse) the agent process for a project. Does **not** create an ACP session.
+/// Start (or reuse) the agent subprocess. Does **not** call session/new.
+/// Returns **immediately** after spawn is queued — does not wait for OpenCode
+/// cold start (~15–20s). Listen for `agent:ready` for connected state.
+/// Per ACP: initialize once, then session/new only when the user starts a chat.
 #[tauri::command]
 pub async fn open_project(
     app: AppHandle,
@@ -56,16 +60,23 @@ pub async fn open_project_inner(
     let resolved_agent_id =
         crate::agents::normalize_agent_id(agent_id.as_deref()).to_string();
 
-    // Reuse if already open on the same path and connected (agent warm, session optional).
+    // --- Single-flight: never kill a warming agent for the same path ---
     {
         let guard = state.lock().await;
         if let Some(agent) = &guard.agent {
-            if agent.project_path == project_path && agent.connected {
+            if paths_equal(&agent.project_path, &project_path) {
+                // Already spawning or ready — return now (no 20s wait).
+                info!(
+                    path = %project_path.display(),
+                    connected = agent.connected,
+                    "Reusing agent process (non-blocking)"
+                );
                 return Ok(guard.status());
             }
         }
     }
 
+    // Different path (or no agent): shut down previous and start one process.
     shutdown_agent(state).await;
 
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
@@ -77,6 +88,7 @@ pub async fn open_project_inner(
             project_path: project_path.clone(),
             agent_id: resolved_agent_id,
             session_id: String::new(),
+            session_ready_for_ui: false,
             cmd_tx: cmd_tx.clone(),
             config_options: Vec::new(),
             agent_capabilities: AgentCapabilitiesDto::empty(),
@@ -89,6 +101,7 @@ pub async fn open_project_inner(
     let app_clone = app.clone();
     let path_clone = project_path.clone();
 
+    info!(path = %project_path.display(), "Spawning single OpenCode ACP process (opencode acp)");
     tauri::async_runtime::spawn(async move {
         let result =
             start_agent_connection(app_clone.clone(), shared.clone(), path_clone, cmd_rx).await;
@@ -104,38 +117,52 @@ pub async fn open_project_inner(
         }
     });
 
-    // Wait only for ACP initialize (agent warm). Sessions start via create_session.
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(45);
-    loop {
-        {
-            let guard = state.lock().await;
-            if guard.agent.as_ref().is_some_and(|a| a.connected) {
-                break;
-            }
-            if guard.agent.is_none() {
-                break;
-            }
-        }
-        if tokio::time::Instant::now() >= deadline {
-            break;
-        }
-        tokio::select! {
-            _ = agent_done.notified() => {}
-            _ = tokio::time::sleep(Duration::from_millis(50)) => {}
-        }
-    }
-
-    let status = state.lock().await.status();
-    if status.connected {
-        return Ok(status);
-    }
-    Err(
-        "No se pudo conectar al agente (OpenCode). Verifica `opencode --version` y que `opencode acp` funcione."
-            .to_string(),
-    )
+    // Non-blocking: UI must not sit on "Agent starting" for OpenCode cold start.
+    // `agent:ready` / `create_session` wait when the user actually needs the agent.
+    Ok(state.lock().await.status())
 }
 
-/// Spawn default chats agent as early as possible (Tauri setup), before the UI loads.
+/// Wait until ACP initialize finished (connected), or error/timeout.
+async fn wait_until_agent_connected(state: &SharedState) -> Result<(), String> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    loop {
+        let (connected, done, gone) = {
+            let guard = state.lock().await;
+            match &guard.agent {
+                Some(a) => (a.connected, a.agent_done.clone(), false),
+                None => (false, Arc::new(tokio::sync::Notify::new()), true),
+            }
+        };
+        if connected {
+            return Ok(());
+        }
+        if gone {
+            return Err("No agent process".to_string());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(
+                "OpenCode still starting (cold start ~15–20s). Try again in a moment.".to_string(),
+            );
+        }
+        tokio::select! {
+            _ = done.notified() => {}
+            _ = tokio::time::sleep(Duration::from_millis(40)) => {}
+        }
+    }
+}
+
+fn paths_equal(a: &std::path::Path, b: &std::path::Path) -> bool {
+    if a == b {
+        return true;
+    }
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(ca), Ok(cb)) => ca == cb,
+        _ => a == b,
+    }
+}
+
+/// Spawn default chats agent once at app start (overlaps with webview load).
+/// Non-blocking: returns as soon as the process is queued.
 pub fn spawn_eager_agent_warm(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -143,7 +170,13 @@ pub fn spawn_eager_agent_warm(app: &AppHandle) {
             return;
         };
         let state = app.state::<SharedState>();
-        let _ = open_project_inner(app.clone(), state.inner(), path, None).await;
+        match open_project_inner(app.clone(), state.inner(), path, None).await {
+            Ok(status) => info!(
+                connected = status.connected,
+                "Eager agent warm queued (non-blocking)"
+            ),
+            Err(err) => tracing::error!(%err, "Eager agent warm failed"),
+        }
     });
 }
 
@@ -153,8 +186,19 @@ pub async fn close_project(state: State<'_, SharedState>) -> Result<ProjectStatu
     Ok(state.lock().await.status())
 }
 
+/// ACP `session/new` with absolute cwd (session-setup). Only call when the user starts a chat.
+/// Waits for in-flight warm if needed (so New Chat works while OpenCode is still booting).
 #[tauri::command]
 pub async fn create_session(state: State<'_, SharedState>) -> Result<ProjectStatus, String> {
+    // Ensure a process exists; if not, caller should have opened a project first.
+    {
+        let guard = state.lock().await;
+        if guard.agent.is_none() {
+            return Err("No agent process — open a project or wait for warm".to_string());
+        }
+    }
+    wait_until_agent_connected(state.inner()).await?;
+
     let (done_tx, done_rx) = oneshot::channel();
 
     let cmd_tx = {
@@ -162,10 +206,7 @@ pub async fn create_session(state: State<'_, SharedState>) -> Result<ProjectStat
         let agent = guard
             .agent
             .as_ref()
-            .ok_or_else(|| "No project open".to_string())?;
-        if !agent.connected {
-            return Err("Agent not connected".to_string());
-        }
+            .ok_or_else(|| "No agent process — wait for warm or open a project".to_string())?;
         agent.cmd_tx.clone()
     };
 
@@ -194,7 +235,7 @@ pub async fn send_prompt(
             .agent
             .as_ref()
             .ok_or_else(|| "No project open".to_string())?;
-        if agent.session_id.is_empty() {
+        if !agent.session_ready_for_ui || agent.session_id.is_empty() {
             return Err("No active session — usa New Chat primero".to_string());
         }
         (agent.cmd_tx.clone(), agent.project_path.clone())
@@ -289,6 +330,9 @@ async fn shutdown_agent(state: &SharedState) {
     if let Some(tx) = cmd_tx {
         let _ = tx.send(AgentCommand::Shutdown).await;
     }
+
+    // Brief yield so the process can exit before we spawn another.
+    tokio::time::sleep(Duration::from_millis(50)).await;
 
     let mut guard = state.lock().await;
     guard.agent = None;

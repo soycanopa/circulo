@@ -41,6 +41,11 @@ pub async fn start_agent_connection(
     let app_for_notifications = app.clone();
     let state_for_permissions = state.clone();
     let app_for_permissions = app.clone();
+    // Time-to-first-token for the current prompt (set when prompt is sent).
+    let prompt_started_at: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
+    let first_chunk_logged: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    let prompt_started_for_notify = prompt_started_at.clone();
+    let first_chunk_for_notify = first_chunk_logged.clone();
 
     agent_client_protocol::Client
         .builder()
@@ -50,6 +55,28 @@ pub async fn start_agent_connection(
                 // Forward immediately — UI must stream agent_message_chunk before
                 // session/prompt RPC resolves (ACP prompt-turn lifecycle).
                 let payload = serde_json::to_value(&notification).unwrap_or(Value::Null);
+
+                // Log time-to-first agent_message_chunk (Palot-feel metric).
+                if let Some(update) = payload.get("update") {
+                    let kind = update
+                        .get("sessionUpdate")
+                        .or_else(|| update.get("session_update"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if kind == "agent_message_chunk" {
+                        let mut logged = first_chunk_for_notify.lock().await;
+                        if !*logged {
+                            if let Some(started) = *prompt_started_for_notify.lock().await {
+                                info!(
+                                    elapsed_ms = started.elapsed().as_millis() as u64,
+                                    "First agent_message_chunk (time-to-first-token)"
+                                );
+                            }
+                            *logged = true;
+                        }
+                    }
+                }
+
                 let _ = app_for_notifications.emit("acp:session_update", payload);
                 Ok(())
             },
@@ -157,11 +184,11 @@ pub async fn start_agent_connection(
                     "agent:progress",
                     serde_json::json!({
                         "phase": "ready",
-                        "message": "Agent ready — New Chat to start a session",
+                        "message": "Agent ready — preparing first session in background…",
                     }),
                 );
 
-                // Agent only: do NOT session/new here. Sessions start on New Chat / first prompt.
+                // Unblock open_project waiters after initialize only (ACP: agent ready, no UI session yet).
                 {
                     let mut guard = state.lock().await;
                     if let Some(agent) = guard.active_agent_mut() {
@@ -170,6 +197,51 @@ pub async fn start_agent_connection(
                 }
 
                 let active_session_id = Arc::new(Mutex::new(String::new()));
+                // Serializes session/new (prewarm + New Chat) on this agent process.
+                let session_ops = Arc::new(Mutex::new(()));
+
+                // Background session/new prewarm (ACP session-setup). OpenCode pays ~6–10s on
+                // the first session/new per process (context + configured MCP). We do not emit
+                // acp:session_ready until the user clicks New Chat — UI still shows "no session".
+                {
+                    let connection = connection.clone();
+                    let app = app.clone();
+                    let state = state.clone();
+                    let project_path = project_path.clone();
+                    let active_session_id = active_session_id.clone();
+                    let session_ops = session_ops.clone();
+                    tokio::spawn(async move {
+                        let _ops = session_ops.lock().await;
+                        // Skip if New Chat already created a session.
+                        if !active_session_id.lock().await.is_empty() {
+                            return;
+                        }
+                        match create_session_on_connection(
+                            &connection,
+                            &app,
+                            &state,
+                            &project_path,
+                            &active_session_id,
+                            /* publish_to_ui */ false,
+                        )
+                        .await
+                        {
+                            Ok(()) => {
+                                info!("Session prewarm complete (not published to UI yet)");
+                                let _ = app.emit(
+                                    "agent:progress",
+                                    serde_json::json!({
+                                        "phase": "ready",
+                                        "message": "Agent ready — New Chat to start",
+                                    }),
+                                );
+                            }
+                            Err(err) => {
+                                error!(%err, "Session prewarm failed (New Chat will create on demand)");
+                            }
+                        }
+                    });
+                }
 
                 while let Some(command) = cmd_rx.recv().await {
                     match command {
@@ -177,12 +249,19 @@ pub async fn start_agent_connection(
                             text,
                             context_files,
                         } => {
-                            let session_id = active_session_id.lock().await.clone();
-                            if session_id.is_empty() {
+                            // Prompts require a UI-published session.
+                            let (session_id, ready) = {
+                                let guard = state.lock().await;
+                                match &guard.agent {
+                                    Some(a) => (a.session_id.clone(), a.session_ready_for_ui),
+                                    None => (String::new(), false),
+                                }
+                            };
+                            if !ready || session_id.is_empty() {
                                 let _ = app.emit(
                                     "acp:error",
                                     serde_json::json!({
-                                        "message": "No hay sesión ACP activa"
+                                        "message": "No hay sesión ACP activa — usa New Chat primero"
                                     }),
                                 );
                                 continue;
@@ -191,12 +270,24 @@ pub async fn start_agent_connection(
                             let blocks = build_prompt_blocks(&text, &context_files);
                             let prompt_connection = connection.clone();
                             let app = app.clone();
+                            let prompt_started_at = prompt_started_at.clone();
+                            let first_chunk_logged = first_chunk_logged.clone();
                             info!(
                                 session_id = %session_id,
                                 chars = text.len(),
                                 "Sending session/prompt"
                             );
                             let started = Instant::now();
+                            *prompt_started_at.lock().await = Some(started);
+                            *first_chunk_logged.lock().await = false;
+                            // Tell UI the prompt left the client immediately (before LLM tokens).
+                            let _ = app.emit(
+                                "acp:prompt_started",
+                                serde_json::json!({
+                                    "sessionId": session_id,
+                                    "chars": text.len(),
+                                }),
+                            );
                             tokio::spawn(async move {
                                 match prompt_connection
                                     .send_request(PromptRequest::new(session_id.clone(), blocks))
@@ -235,8 +326,14 @@ pub async fn start_agent_connection(
                             });
                         }
                         AgentCommand::SetConfigOption { config_id, value } => {
-                            let session_id = active_session_id.lock().await.clone();
-                            if session_id.is_empty() {
+                            let (session_id, ready) = {
+                                let guard = state.lock().await;
+                                match &guard.agent {
+                                    Some(a) => (a.session_id.clone(), a.session_ready_for_ui),
+                                    None => (String::new(), false),
+                                }
+                            };
+                            if !ready || session_id.is_empty() {
                                 continue;
                             }
                             let request = SetSessionConfigOptionRequest::new(
@@ -268,7 +365,8 @@ pub async fn start_agent_connection(
                             }
                         }
                         AgentCommand::CreateSession { done } => {
-                            let result = create_session_on_connection(
+                            let _ops = session_ops.lock().await;
+                            let result = publish_or_create_session(
                                 &connection,
                                 &app,
                                 &state,
@@ -291,14 +389,63 @@ pub async fn start_agent_connection(
     Ok(())
 }
 
-async fn create_session_on_connection(
+/// New Chat: promote a prewarmed session (no extra RPC) or call session/new.
+async fn publish_or_create_session(
     connection: &ConnectionTo<Agent>,
     app: &AppHandle,
     state: &SharedState,
     project_path: &PathBuf,
     active_session_id: &Arc<Mutex<String>>,
 ) -> Result<(), String> {
-    info!(path = %project_path.display(), "Creating ACP session (session/new)");
+    // If prewarm finished and UI has not claimed it, publish without another session/new.
+    {
+        let mut guard = state.lock().await;
+        if let Some(agent) = guard.active_agent_mut() {
+            if !agent.session_id.is_empty() && !agent.session_ready_for_ui {
+                agent.session_ready_for_ui = true;
+                let session_id = agent.session_id.clone();
+                let config_options = agent.config_options.clone();
+                info!(session_id = %session_id, "Publishing prewarmed ACP session to UI");
+                let _ = app.emit(
+                    "acp:session_ready",
+                    serde_json::json!({
+                        "sessionId": session_id,
+                        "projectPath": project_path.display().to_string(),
+                        "configOptions": config_options,
+                    }),
+                );
+                return Ok(());
+            }
+        }
+    }
+
+    // Fresh session/new (subsequent New Chat, or prewarm missed/failed).
+    create_session_on_connection(
+        connection,
+        app,
+        state,
+        project_path,
+        active_session_id,
+        /* publish_to_ui */ true,
+    )
+    .await
+}
+
+/// ACP `session/new` with absolute cwd (session-setup).
+/// When `publish_to_ui` is false, the session is held for New Chat (prewarm).
+async fn create_session_on_connection(
+    connection: &ConnectionTo<Agent>,
+    app: &AppHandle,
+    state: &SharedState,
+    project_path: &PathBuf,
+    active_session_id: &Arc<Mutex<String>>,
+    publish_to_ui: bool,
+) -> Result<(), String> {
+    info!(
+        path = %project_path.display(),
+        publish_to_ui,
+        "Creating ACP session (session/new)"
+    );
     let started = Instant::now();
 
     let response = connection
@@ -313,6 +460,7 @@ async fn create_session_on_connection(
     info!(
         session_id = %session_id,
         elapsed_ms = started.elapsed().as_millis() as u64,
+        publish_to_ui,
         "ACP session/new completed"
     );
 
@@ -323,17 +471,20 @@ async fn create_session_on_connection(
             agent.session_id = session_id.clone();
             agent.config_options = config_options.clone();
             agent.project_path = project_path.clone();
+            agent.session_ready_for_ui = publish_to_ui;
         }
     }
 
-    let _ = app.emit(
-        "acp:session_ready",
-        serde_json::json!({
-            "sessionId": session_id,
-            "projectPath": project_path.display().to_string(),
-            "configOptions": config_options,
-        }),
-    );
+    if publish_to_ui {
+        let _ = app.emit(
+            "acp:session_ready",
+            serde_json::json!({
+                "sessionId": session_id,
+                "projectPath": project_path.display().to_string(),
+                "configOptions": config_options,
+            }),
+        );
+    }
 
     Ok(())
 }

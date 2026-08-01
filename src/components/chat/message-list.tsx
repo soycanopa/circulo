@@ -19,32 +19,49 @@ export function MessageList() {
 		)
 	}
 
+	const last = messages[messages.length - 1]
+	const showCaret =
+		inFlight &&
+		last?.role === "assistant" &&
+		!last.content &&
+		last.toolCalls.length === 0 &&
+		!streaming
+
 	return (
 		<div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-			{messages.map((message) => (
-				<div key={message.id} className="mx-auto max-w-3xl">
-					<div className="mb-1 text-[11px] uppercase tracking-wide text-muted">
-						{message.role === "user" ? "You" : "Agent"}
+			{messages.map((message) => {
+				const isLiveAssistant =
+					inFlight &&
+					message.role === "assistant" &&
+					message.id === last?.id
+				return (
+					<div key={message.id} className="mx-auto max-w-3xl">
+						<div className="mb-1 text-[11px] uppercase tracking-wide text-muted">
+							{message.role === "user" ? "You" : "Agent"}
+						</div>
+						{message.content ? (
+							<div className="whitespace-pre-wrap text-sm leading-relaxed text-fg">
+								{message.content}
+								{isLiveAssistant ? (
+									<span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-fg/70" />
+								) : null}
+							</div>
+						) : message.role === "assistant" && showCaret && message.id === last?.id ? (
+							<div className="flex items-center gap-2 text-sm text-muted">
+								<span className="inline-block h-3.5 w-1.5 animate-pulse bg-fg/70" />
+								<span>Thinking…</span>
+							</div>
+						) : null}
+						{message.toolCalls.length > 0 ? (
+							<div className="mt-2 space-y-1.5">
+								{message.toolCalls.map((tool) => (
+									<ToolCallCard key={tool.id} tool={tool} />
+								))}
+							</div>
+						) : null}
 					</div>
-					{message.content ? (
-						<div className="whitespace-pre-wrap text-sm leading-relaxed text-fg">
-							{message.content}
-						</div>
-					) : null}
-					{message.toolCalls.length > 0 ? (
-						<div className="mt-2 space-y-1.5">
-							{message.toolCalls.map((tool) => (
-								<ToolCallCard key={tool.id} tool={tool} />
-							))}
-						</div>
-					) : null}
-				</div>
-			))}
-			{inFlight &&
-			messages[messages.length - 1]?.role !== "assistant" &&
-			!streaming ? (
-				<div className="mx-auto max-w-3xl text-sm text-muted">Thinking…</div>
-			) : null}
+				)
+			})}
 			{streaming ? (
 				<div className="mx-auto max-w-3xl">
 					<div className="mb-1 text-[11px] uppercase tracking-wide text-muted">
@@ -52,6 +69,7 @@ export function MessageList() {
 					</div>
 					<div className="whitespace-pre-wrap text-sm leading-relaxed text-fg">
 						{streaming}
+						<span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-fg/70" />
 					</div>
 				</div>
 			) : null}

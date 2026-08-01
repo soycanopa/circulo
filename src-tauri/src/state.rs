@@ -91,7 +91,11 @@ pub struct ContextFile {
 pub struct ActiveAgent {
     pub project_path: PathBuf,
     pub agent_id: String,
+    /// ACP session id if one exists on the agent process.
     pub session_id: String,
+    /// Only true after New Chat publishes the session to the UI.
+    /// Prewarm may hold a session_id while this stays false.
+    pub session_ready_for_ui: bool,
     pub cmd_tx: mpsc::Sender<AgentCommand>,
     pub config_options: Vec<ConfigOptionDto>,
     pub agent_capabilities: AgentCapabilitiesDto,
@@ -118,7 +122,12 @@ impl CirculoState {
                 connected: agent.connected,
                 project_path: Some(agent.project_path.display().to_string()),
                 agent_id: Some(agent.agent_id.clone()),
-                session_id: normalize_session_id(&agent.session_id),
+                // Hide prewarmed sessions until New Chat publishes them.
+                session_id: if agent.session_ready_for_ui {
+                    normalize_session_id(&agent.session_id)
+                } else {
+                    None
+                },
                 config_options: agent.config_options.clone(),
                 capabilities: Some(agent.agent_capabilities.clone()),
                 agent_command: crate::agents::agent_command_label(&agent.agent_id).to_string(),

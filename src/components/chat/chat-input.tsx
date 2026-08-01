@@ -35,12 +35,20 @@ export function ChatInput() {
 		const trimmed = value.trim()
 		if (!trimmed || disabled) return
 
+		// Optimistic user + empty assistant so the stream bubble is instant (Palot-like).
 		setMessages((current) => [
 			...current,
 			{
 				id: crypto.randomUUID(),
 				role: "user",
 				content: trimmed,
+				toolCalls: [],
+				timestamp: Date.now(),
+			},
+			{
+				id: crypto.randomUUID(),
+				role: "assistant",
+				content: "",
 				toolCalls: [],
 				timestamp: Date.now(),
 			},
@@ -51,6 +59,7 @@ export function ChatInput() {
 		setError(null)
 
 		try {
+			// send_prompt queues and returns; tokens arrive via session/update events.
 			await sendPrompt(trimmed, [])
 		} catch (error) {
 			setPromptInFlight(false)

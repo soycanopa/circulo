@@ -49,8 +49,9 @@ export default function App() {
 	const hasSession = Boolean(sessionId)
 
 	async function ensureAgentWarm(): Promise<void> {
-		if (connected && projectPath) return
+		if (projectPath) return
 		const chatsPath = await getDefaultChatsPath()
+		// Non-blocking spawn; create_session waits for initialize if still cold.
 		await openProject(chatsPath)
 	}
 
@@ -67,16 +68,15 @@ export default function App() {
 			path === "/Users/soycanopa"
 
 		setBusy(true)
-		setStatus("connecting")
 		setMessages([])
 		setStreaming("")
 		setSessionId(null)
 		try {
-			// Agent only — no session until New Chat.
+			// Spawn only — returns immediately; warm continues in background.
 			await openProject(path)
 			if (largeRoot) {
 				setError(
-					"Agente listo. Carpetas grandes (Desktop/Home) hacen el arranque lento — prefiera un repo concreto.",
+					"Workspace set. Large folders (Desktop/Home) can slow OpenCode session setup — prefer a repo.",
 				)
 			}
 			setStatus("idle")
@@ -95,11 +95,12 @@ export default function App() {
 		setMessages([])
 		setStreaming("")
 		try {
-			if (!connected || !projectPath) {
+			if (!projectPath) {
 				await ensureAgentWarm()
 			}
-			// Explicit session/new — never auto-created on agent start.
+			// create_session waits for warm if needed, then publishes/prewarms session.
 			await createSession()
+			setStatus("idle")
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to create session")
 			setStatus("idle")
@@ -116,16 +117,16 @@ export default function App() {
 
 	const statusLabel =
 		status === "generating"
-			? "Agent working…"
+			? "Streaming…"
 			: status === "awaiting_permission"
 				? "Waiting for permission…"
 				: status === "connecting"
-					? progress || "Working…"
+					? progress || "Opening session…"
 					: hasSession
-						? "Session ready"
+						? "Ready"
 						: agentWarm
-							? "Agent ready — New Chat to begin"
-							: progress || "Agent warming in background…"
+							? "Ready — New Chat"
+							: "Ready"
 
 	return (
 		<AppShell
@@ -170,7 +171,11 @@ export default function App() {
 						)}
 					</div>
 					<div className="border-t border-border px-4 py-3 text-[11px] text-muted">
-						{agentWarm ? "Agent warm" : "Agent starting…"} · ACP
+						{agentWarm
+							? "OpenCode ready · ACP"
+							: progress
+								? "OpenCode warming · ACP"
+								: "Ready · ACP"}
 					</div>
 				</>
 			}
@@ -191,8 +196,8 @@ export default function App() {
 					<p className="text-lg font-medium tracking-tight">Circulo</p>
 					<p className="max-w-md text-sm text-muted">
 						{agentWarm
-							? "Agent is ready. Start a conversation with New Chat — no session is created until then."
-							: "Agent is warming in the background. You can still click New Chat; it will wait until the agent is up."}
+							? "Start a conversation with New Chat."
+							: "App is ready. OpenCode warms in the background — New Chat waits only if you click before it’s up."}
 					</p>
 					<button
 						type="button"

@@ -57,20 +57,6 @@ function mergeStreamText(current: string, chunk: string): string {
 	return `${current}${chunk}`
 }
 
-function ensureAssistantMessage(messages: ChatMessage[]): ChatMessage {
-	const last = messages[messages.length - 1]
-	if (last?.role === "assistant") return last
-	const created: ChatMessage = {
-		id: crypto.randomUUID(),
-		role: "assistant",
-		content: "",
-		toolCalls: [],
-		timestamp: Date.now(),
-	}
-	messages.push(created)
-	return created
-}
-
 function mapToolFromUpdate(update: Record<string, unknown>): ToolCall {
 	const id =
 		asString(update.toolCallId) ??
@@ -117,9 +103,23 @@ export function applySessionUpdate(
 	if (sessionUpdate === "agent_message_chunk") {
 		const chunk = extractTextFromContent(update.content)
 		if (chunk) {
-			// Paint into the assistant message immediately (not only a side buffer).
-			const assistant = ensureAssistantMessage(nextMessages)
-			assistant.content = mergeStreamText(assistant.content, chunk)
+			// Immutable update — paint into assistant message immediately (not a side buffer).
+			const idx = nextMessages.length - 1
+			const last = nextMessages[idx]
+			if (last?.role === "assistant") {
+				nextMessages[idx] = {
+					...last,
+					content: mergeStreamText(last.content, chunk),
+				}
+			} else {
+				nextMessages.push({
+					id: crypto.randomUUID(),
+					role: "assistant",
+					content: chunk,
+					toolCalls: [],
+					timestamp: Date.now(),
+				})
+			}
 			nextStreaming = ""
 			didStream = true
 		}
@@ -137,21 +137,36 @@ export function applySessionUpdate(
 	}
 
 	if (sessionUpdate === "tool_call" || sessionUpdate === "tool_call_update") {
-		const assistant = ensureAssistantMessage(nextMessages)
 		const tool = mapToolFromUpdate(update)
-		const tools = [...assistant.toolCalls]
-		const idx = tools.findIndex((t) => t.id === tool.id)
-		if (idx >= 0) {
-			tools[idx] = {
-				...tools[idx],
+		const lastIdx = nextMessages.length - 1
+		const last = nextMessages[lastIdx]
+		const base: ChatMessage =
+			last?.role === "assistant"
+				? last
+				: {
+						id: crypto.randomUUID(),
+						role: "assistant",
+						content: "",
+						toolCalls: [],
+						timestamp: Date.now(),
+					}
+		const tools = [...base.toolCalls]
+		const tIdx = tools.findIndex((t) => t.id === tool.id)
+		if (tIdx >= 0) {
+			tools[tIdx] = {
+				...tools[tIdx],
 				...tool,
-				content: tool.content || tools[idx].content,
+				content: tool.content || tools[tIdx].content,
 			}
 		} else {
 			tools.push(tool)
 		}
-		const last = nextMessages[nextMessages.length - 1]!
-		nextMessages[nextMessages.length - 1] = { ...last, toolCalls: tools }
+		const nextAssistant = { ...base, toolCalls: tools }
+		if (last?.role === "assistant") {
+			nextMessages[lastIdx] = nextAssistant
+		} else {
+			nextMessages.push(nextAssistant)
+		}
 		didStream = true
 		return { messages: nextMessages, streamingText: nextStreaming, didStream }
 	}
