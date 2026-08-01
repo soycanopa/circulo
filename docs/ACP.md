@@ -46,6 +46,8 @@ Per [OpenCode ACP docs](https://opencode.ai/docs/acp/) (Zed / JetBrains / nvim):
 `session/list`, client `fs/*`, `terminal/*`, elicitation.
 
 ## Lifecycle (must match ACP)
+
+1. Spawn agent subprocess **once** (`opencode acp`).
 2. `initialize` → agent process ready (UI: warm, no chat session).
 3. Background prewarm (optional, Circulo): `session/new` with absolute `cwd` — **not** shown in UI until New Chat.
 4. User New Chat → publish prewarmed session **or** `session/new` if none.
