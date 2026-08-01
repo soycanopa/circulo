@@ -181,7 +181,16 @@ export function ChatInput() {
 								}
 							}
 
-							if (e.key === "Enter" && !e.shiftKey) {
+							if (e.key === "Enter" && !e.shiftKey && !(e.metaKey || e.ctrlKey)) {
+								e.preventDefault()
+								void handleSubmit()
+							}
+
+							if (
+								e.key === "Enter" &&
+								(e.metaKey || e.ctrlKey) &&
+								!e.shiftKey
+							) {
 								e.preventDefault()
 								void handleSubmit()
 							}
