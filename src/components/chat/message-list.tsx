@@ -1,15 +1,23 @@
 import { useAtomValue } from "jotai"
+import { useEffect, useRef } from "react"
+import { ToolCallCard } from "@/components/tools/tool-call-card"
+import { SimpleMarkdown } from "@/lib/simple-markdown"
 import {
 	messagesAtom,
 	promptInFlightAtom,
 	streamingTextAtom,
 } from "@/stores/atoms"
-import { ToolCallCard } from "@/components/tools/tool-call-card"
 
 export function MessageList() {
 	const messages = useAtomValue(messagesAtom)
 	const streaming = useAtomValue(streamingTextAtom)
 	const inFlight = useAtomValue(promptInFlightAtom)
+	const scrollRef = useRef<HTMLDivElement>(null)
+	const bottomRef = useRef<HTMLDivElement>(null)
+
+	useEffect(() => {
+		bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" })
+	}, [messages, streaming, inFlight])
 
 	if (messages.length === 0 && !streaming) {
 		return (
@@ -28,7 +36,10 @@ export function MessageList() {
 		!streaming
 
 	return (
-		<div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+		<div
+			ref={scrollRef}
+			className="flex-1 space-y-4 overflow-y-auto px-4 py-4"
+		>
 			{messages.map((message) => {
 				const isLiveAssistant =
 					inFlight &&
@@ -40,13 +51,19 @@ export function MessageList() {
 							{message.role === "user" ? "You" : "Agent"}
 						</div>
 						{message.content ? (
-							<div className="whitespace-pre-wrap text-sm leading-relaxed text-fg">
-								{message.content}
+							<div className="text-sm leading-relaxed text-fg">
+								{message.role === "assistant" ? (
+									<SimpleMarkdown text={message.content} />
+								) : (
+									<p className="whitespace-pre-wrap">{message.content}</p>
+								)}
 								{isLiveAssistant ? (
 									<span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-fg/70" />
 								) : null}
 							</div>
-						) : message.role === "assistant" && showCaret && message.id === last?.id ? (
+						) : message.role === "assistant" &&
+						  showCaret &&
+						  message.id === last?.id ? (
 							<div className="flex items-center gap-2 text-sm text-muted">
 								<span className="inline-block h-3.5 w-1.5 animate-pulse bg-fg/70" />
 								<span>Thinking…</span>
@@ -67,12 +84,13 @@ export function MessageList() {
 					<div className="mb-1 text-[11px] uppercase tracking-wide text-muted">
 						Agent
 					</div>
-					<div className="whitespace-pre-wrap text-sm leading-relaxed text-fg">
-						{streaming}
+					<div className="text-sm leading-relaxed text-fg">
+						<SimpleMarkdown text={streaming} />
 						<span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-fg/70" />
 					</div>
 				</div>
 			) : null}
+			<div ref={bottomRef} aria-hidden className="h-px shrink-0" />
 		</div>
 	)
 }
