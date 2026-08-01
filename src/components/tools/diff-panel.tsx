@@ -14,7 +14,7 @@ export function DiffPanel({ onClose }: DiffPanelProps) {
 	const diffTools = collectDiffTools(messages)
 
 	return (
-		<aside className="flex h-full w-full flex-col overflow-hidden rounded-tr-[8px] rounded-br-[8px] bg-frame">
+		<aside className="flex h-full w-full flex-col overflow-hidden rounded-tr-[8px] rounded-br-[8px]">
 			<div
 				className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4 pb-0.5"
 				data-tauri-drag-region="deep"

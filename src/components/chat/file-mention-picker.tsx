@@ -53,7 +53,7 @@ export function FileMentionPicker({
 	}, [query, onResultsChange])
 
 	return (
-		<div className="absolute bottom-full left-0 right-0 z-20 mb-1 overflow-hidden rounded-md border border-border bg-sidebar shadow-lg">
+		<div className="frosted-strong absolute bottom-full left-0 right-0 z-20 mb-1 overflow-hidden rounded-md border border-border shadow-lg">
 			<div className="border-b border-border px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-muted">
 				Files in project
 			</div>

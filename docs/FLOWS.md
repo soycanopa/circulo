@@ -48,6 +48,23 @@
 2. Run F1 for the new path.  
 3. UI clears session id and messages; waits for New Chat.
 
+## F6 — Sidebar: Chats vs Projects (within a space)
+
+1. Sidebar always shows two sections: **Chats** (general for the active space) and **Projects**.  
+2. General chats are listed only under **Chats**; project chats nest under their project path.  
+3. Clicking a project row switches agent cwd (F5) without creating a session.  
+4. Clicking **Chats** header switches cwd to that space’s general chats folder.  
+5. **New chat** uses the **active** cwd (general → Chats list; project → nested under that project).  
+6. Opening a nested chat switches project if needed, then loads the transcript.
+
+## F7 — Spaces (workspace dots)
+
+1. Footer (above ACP) shows one **dot per space** + **+** to add a space.  
+2. **Add space** creates an empty workspace (own general chats dir + empty projects list) and switches to it.  
+3. Clicking a **dot** sets `activeWorkspaceId`, opens that space’s last path (or its general chats), and reloads Chats/Projects for that space only.  
+4. Projects opened while a space is active are stored on that space only.  
+5. Default space reuses legacy `~/.circulo/chats`; additional spaces use `~/.circulo/spaces/{id}/chats`.
+
 ## State machine
 
 ```

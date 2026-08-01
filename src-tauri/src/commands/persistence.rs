@@ -1,7 +1,8 @@
 use crate::persistence::{
-    delete_chat_transcript, list_chat_sessions, load_chat_transcript, load_settings,
-    rename_chat_transcript, save_chat_transcript, save_settings, AppSettings, ChatSessionSummary,
-    StoredChatMessage, StoredTranscript,
+    create_workspace, delete_chat_transcript, delete_workspace, list_chat_sessions,
+    load_chat_transcript, load_settings, rename_chat_transcript, save_chat_transcript,
+    save_settings, set_active_workspace, workspace_chats_dir, workspace_entry_path, AppSettings,
+    ChatSessionSummary, StoredChatMessage, StoredTranscript,
 };
 
 #[tauri::command]
@@ -13,6 +14,42 @@ pub fn get_app_settings() -> Result<AppSettings, String> {
 pub fn set_app_settings(settings: AppSettings) -> Result<AppSettings, String> {
     save_settings(&settings)?;
     load_settings()
+}
+
+#[tauri::command]
+pub fn create_workspace_cmd() -> Result<AppSettings, String> {
+    create_workspace()
+}
+
+#[tauri::command]
+pub fn set_active_workspace_cmd(workspace_id: String) -> Result<AppSettings, String> {
+    set_active_workspace(workspace_id)
+}
+
+#[tauri::command]
+pub fn delete_workspace_cmd(workspace_id: String) -> Result<AppSettings, String> {
+    delete_workspace(workspace_id)
+}
+
+/// General chats path + preferred open path when entering a workspace.
+#[tauri::command]
+pub fn get_workspace_paths_cmd(
+    workspace_id: String,
+) -> Result<WorkspacePathsDto, String> {
+    let settings = load_settings()?;
+    let chats_path = workspace_chats_dir(&workspace_id)?.display().to_string();
+    let entry_path = workspace_entry_path(&settings, &workspace_id)?;
+    Ok(WorkspacePathsDto {
+        chats_path,
+        entry_path,
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspacePathsDto {
+    pub chats_path: String,
+    pub entry_path: String,
 }
 
 #[tauri::command]

@@ -90,8 +90,51 @@ export async function pickDirectory(): Promise<string | null> {
 	return invoke("pick_directory")
 }
 
+export interface DirectoryCompletion {
+	path: string
+	name: string
+}
+
+/**
+ * Directory autocomplete for Open Project.
+ * Absolute paths (`/…`, `~/…`) complete path segments;
+ * free text (`Volumes`, `circulo`) searches common locations by name.
+ */
+export async function completeDirectoryPath(
+	partial: string,
+): Promise<DirectoryCompletion[]> {
+	return invoke("complete_directory_path", { partial })
+}
+
 export async function getAppSettings(): Promise<AppSettings> {
 	return invoke("get_app_settings")
+}
+
+export async function createWorkspace(): Promise<AppSettings> {
+	return invoke("create_workspace_cmd")
+}
+
+export async function setActiveWorkspace(
+	workspaceId: string,
+): Promise<AppSettings> {
+	return invoke("set_active_workspace_cmd", { workspaceId })
+}
+
+export async function deleteWorkspace(
+	workspaceId: string,
+): Promise<AppSettings> {
+	return invoke("delete_workspace_cmd", { workspaceId })
+}
+
+export interface WorkspacePaths {
+	chatsPath: string
+	entryPath: string
+}
+
+export async function getWorkspacePaths(
+	workspaceId: string,
+): Promise<WorkspacePaths> {
+	return invoke("get_workspace_paths_cmd", { workspaceId })
 }
 
 export async function listChatSessions(

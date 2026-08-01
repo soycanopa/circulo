@@ -1,12 +1,14 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 use super::circulo_data_dir;
 
-const SETTINGS_VERSION: u32 = 1;
-const MAX_RECENT_PROJECTS: usize = 8;
+const SETTINGS_VERSION: u32 = 2;
+const MAX_RECENT_PROJECTS: usize = 24;
+const MAX_WORKSPACES: usize = 12;
+const DEFAULT_WORKSPACE_ID: &str = "default";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,41 +17,149 @@ pub struct RecentProject {
     pub last_opened_at: u64,
 }
 
+/// One isolated space: own general chats folder + own project list.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceEntry {
+    pub id: String,
+    /// Absolute paths of projects belonging only to this space (not general chats).
+    #[serde(default)]
+    pub project_paths: Vec<String>,
+    /// Last active cwd in this space (project or general chats).
+    #[serde(default)]
+    pub last_path: Option<String>,
+    pub created_at: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub version: u32,
+    /// Global open-project history (palette); not the sidebar Projects tree.
+    #[serde(default)]
     pub recent_projects: Vec<RecentProject>,
+    #[serde(default)]
+    pub workspaces: Vec<WorkspaceEntry>,
+    #[serde(default)]
+    pub active_workspace_id: Option<String>,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
-        Self {
+        let mut settings = Self {
             version: SETTINGS_VERSION,
             recent_projects: Vec::new(),
-        }
+            workspaces: Vec::new(),
+            active_workspace_id: None,
+        };
+        let _ = ensure_workspaces(&mut settings);
+        settings
     }
 }
 
-fn settings_path() -> Result<std::path::PathBuf, String> {
+fn settings_path() -> Result<PathBuf, String> {
     Ok(circulo_data_dir()?.join("config.json"))
 }
 
 pub fn load_settings() -> Result<AppSettings, String> {
     let path = settings_path()?;
-    if !path.is_file() {
-        return Ok(AppSettings::default());
+    let mut settings = if !path.is_file() {
+        AppSettings {
+            version: SETTINGS_VERSION,
+            recent_projects: Vec::new(),
+            workspaces: Vec::new(),
+            active_workspace_id: None,
+        }
+    } else {
+        let raw = std::fs::read_to_string(&path).map_err(|err| err.to_string())?;
+        serde_json::from_str(&raw).map_err(|err| format!("Invalid config.json: {err}"))?
+    };
+    ensure_workspaces(&mut settings)?;
+    // Persist migration (v1 → v2 workspaces) once.
+    if settings.version < SETTINGS_VERSION || path_needs_rewrite(&settings) {
+        save_settings(&settings)?;
     }
-    let raw = std::fs::read_to_string(&path).map_err(|err| err.to_string())?;
-    serde_json::from_str(&raw).map_err(|err| format!("Invalid config.json: {err}"))
+    Ok(settings)
+}
+
+fn path_needs_rewrite(settings: &AppSettings) -> bool {
+    settings.workspaces.is_empty() || settings.active_workspace_id.is_none()
 }
 
 pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
     let path = settings_path()?;
     let mut next = settings.clone();
     next.version = SETTINGS_VERSION;
+    ensure_workspaces(&mut next)?;
     let raw = serde_json::to_string_pretty(&next).map_err(|err| err.to_string())?;
     std::fs::write(path, raw).map_err(|err| err.to_string())
+}
+
+/// Ensure at least one workspace exists; migrate flat recents into default space once.
+pub fn ensure_workspaces(settings: &mut AppSettings) -> Result<(), String> {
+    if settings.workspaces.is_empty() {
+        let mut project_paths: Vec<String> = settings
+            .recent_projects
+            .iter()
+            .filter(|p| !is_general_chats_path(&p.path))
+            .map(|p| p.path.clone())
+            .collect();
+        project_paths.truncate(MAX_RECENT_PROJECTS);
+
+        settings.workspaces.push(WorkspaceEntry {
+            id: DEFAULT_WORKSPACE_ID.to_string(),
+            project_paths,
+            last_path: None,
+            created_at: now_ms(),
+        });
+        settings.active_workspace_id = Some(DEFAULT_WORKSPACE_ID.to_string());
+    }
+
+    if settings
+        .active_workspace_id
+        .as_ref()
+        .map(|id| settings.workspaces.iter().any(|w| &w.id == id))
+        != Some(true)
+    {
+        settings.active_workspace_id = settings.workspaces.first().map(|w| w.id.clone());
+    }
+
+    // Ensure general chats dirs exist for every space.
+    for ws in &settings.workspaces {
+        let _ = workspace_chats_dir(&ws.id)?;
+    }
+    Ok(())
+}
+
+fn is_general_chats_path(path: &str) -> bool {
+    path.contains("/.circulo/chats")
+        || path.contains("/.circulo/spaces/") && path.ends_with("/chats")
+}
+
+/// General chats folder for a workspace.
+/// Default space keeps legacy `~/.circulo/chats`; others use `~/.circulo/spaces/{id}/chats`.
+pub fn workspace_chats_dir(workspace_id: &str) -> Result<PathBuf, String> {
+    let path = if workspace_id == DEFAULT_WORKSPACE_ID {
+        let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+        PathBuf::from(home).join(".circulo").join("chats")
+    } else {
+        circulo_data_dir()?
+            .join("spaces")
+            .join(workspace_id)
+            .join("chats")
+    };
+    std::fs::create_dir_all(&path)
+        .map_err(|err| format!("Could not create workspace chats dir: {err}"))?;
+    Ok(path)
+}
+
+pub fn active_workspace_chats_path() -> Result<String, String> {
+    let settings = load_settings()?;
+    let id = settings
+        .active_workspace_id
+        .as_deref()
+        .unwrap_or(DEFAULT_WORKSPACE_ID);
+    Ok(workspace_chats_dir(id)?.display().to_string())
 }
 
 pub fn touch_recent_project(project_path: &Path) -> Result<AppSettings, String> {
@@ -64,13 +174,101 @@ pub fn touch_recent_project(project_path: &Path) -> Result<AppSettings, String> 
     settings.recent_projects.insert(
         0,
         RecentProject {
-            path: path_str,
+            path: path_str.clone(),
             last_opened_at: now,
         },
     );
     settings.recent_projects.truncate(MAX_RECENT_PROJECTS);
+
+    // Attach real projects to the active workspace (never general chats folder).
+    if !is_general_chats_path(&path_str) {
+        if let Some(id) = settings.active_workspace_id.clone() {
+            if let Some(ws) = settings.workspaces.iter_mut().find(|w| w.id == id) {
+                ws.project_paths.retain(|p| p != &path_str);
+                ws.project_paths.insert(0, path_str.clone());
+                ws.project_paths.truncate(MAX_RECENT_PROJECTS);
+                ws.last_path = Some(path_str.clone());
+            }
+        }
+    } else if let Some(id) = settings.active_workspace_id.clone() {
+        if let Some(ws) = settings.workspaces.iter_mut().find(|w| w.id == id) {
+            ws.last_path = Some(path_str);
+        }
+    }
+
     save_settings(&settings)?;
     Ok(settings)
+}
+
+/// Create a new empty workspace and make it active.
+pub fn create_workspace() -> Result<AppSettings, String> {
+    let mut settings = load_settings()?;
+    if settings.workspaces.len() >= MAX_WORKSPACES {
+        return Err(format!("Maximum of {MAX_WORKSPACES} workspaces"));
+    }
+
+    let id = format!("ws_{}", now_ms());
+    let _ = workspace_chats_dir(&id)?;
+    settings.workspaces.push(WorkspaceEntry {
+        id: id.clone(),
+        project_paths: Vec::new(),
+        last_path: None,
+        created_at: now_ms(),
+    });
+    settings.active_workspace_id = Some(id);
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+/// Switch active workspace (does not spawn agent — UI opens last/general path).
+pub fn set_active_workspace(workspace_id: String) -> Result<AppSettings, String> {
+    let mut settings = load_settings()?;
+    if !settings.workspaces.iter().any(|w| w.id == workspace_id) {
+        return Err(format!("Unknown workspace: {workspace_id}"));
+    }
+    settings.active_workspace_id = Some(workspace_id);
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+/// Remove a workspace. Cannot delete the last remaining space.
+/// Does not delete on-disk chat transcripts (safe); only the space membership.
+pub fn delete_workspace(workspace_id: String) -> Result<AppSettings, String> {
+    let mut settings = load_settings()?;
+    if settings.workspaces.len() <= 1 {
+        return Err("Cannot delete the last workspace".to_string());
+    }
+    if !settings.workspaces.iter().any(|w| w.id == workspace_id) {
+        return Err(format!("Unknown workspace: {workspace_id}"));
+    }
+
+    settings.workspaces.retain(|w| w.id != workspace_id);
+
+    if settings.active_workspace_id.as_deref() == Some(workspace_id.as_str()) {
+        settings.active_workspace_id = settings.workspaces.first().map(|w| w.id.clone());
+    }
+
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+/// Preferred path to open when entering a workspace.
+pub fn workspace_entry_path(settings: &AppSettings, workspace_id: &str) -> Result<String, String> {
+    let ws = settings
+        .workspaces
+        .iter()
+        .find(|w| w.id == workspace_id)
+        .ok_or_else(|| format!("Unknown workspace: {workspace_id}"))?;
+
+    if let Some(last) = &ws.last_path {
+        if Path::new(last).exists() || is_general_chats_path(last) {
+            return Ok(last.clone());
+        }
+    }
+    if let Some(first) = ws.project_paths.first() {
+        return Ok(first.clone());
+    }
+    Ok(workspace_chats_dir(workspace_id)?.display().to_string())
 }
 
 fn now_ms() -> u64 {

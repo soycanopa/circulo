@@ -49,7 +49,7 @@ export function CommandPalette({ open, items, onClose }: CommandPaletteProps) {
 			onClick={onClose}
 		>
 			<div
-				className="w-full max-w-md overflow-hidden rounded-lg border border-border bg-sidebar shadow-2xl"
+				className="frosted-strong w-full max-w-md overflow-hidden rounded-lg border border-border shadow-2xl"
 				onClick={(event) => event.stopPropagation()}
 			>
 				<input

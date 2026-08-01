@@ -24,7 +24,16 @@ export const activePermissionAtom = atom<PermissionRequest | null>(null)
 export const errorMessageAtom = atom<string | null>(null)
 export const progressMessageAtom = atom<string | null>(null)
 export const opencodeStatusAtom = atom<OpencodeStatus | null>(null)
+/** @deprecated Prefer generalChatSessionsAtom + projectChatsByPathAtom; kept for active-path convenience. */
 export const chatSessionsAtom = atom<ChatSessionSummary[]>([])
+/** Resolved `~/.circulo/chats` path for the general Chats section. */
+export const generalChatsPathAtom = atom<string | null>(null)
+/** Sessions that belong only to the general chats workspace. */
+export const generalChatSessionsAtom = atom<ChatSessionSummary[]>([])
+/** Sessions nested under each project path (never mixed into general Chats). */
+export const projectChatsByPathAtom = atom<Record<string, ChatSessionSummary[]>>(
+	{},
+)
 /** Saved chat opened for read-only history (no live ACP session). */
 export const historyViewSessionIdAtom = atom<string | null>(null)
 export const appSettingsAtom = atom<AppSettings | null>(null)
@@ -78,10 +87,12 @@ export const setDiffPanelWidthAtom = atom(null, (_get, set, width: number) => {
 	set(diffPanelWidthAtom, next)
 })
 
-/** Clear chat/session UI when switching workspace (not when re-opening the same path). */
+/**
+ * Clear live session UI when switching workspace (not when re-opening the same path).
+ * Does **not** clear general/project chat indexes — those are multi-workspace lists.
+ */
 export const resetWorkspaceUiAtom = atom(null, (_get, set) => {
 	set(historyViewSessionIdAtom, null)
-	set(chatSessionsAtom, [])
 	set(sessionIdAtom, null)
 	set(messagesAtom, [])
 	set(streamingTextAtom, "")

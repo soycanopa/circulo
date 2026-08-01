@@ -10,6 +10,7 @@ import { CommandPalette } from "@/components/layout/command-palette"
 import { AppShell } from "@/components/layout/app-shell"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { OpencodeSetupBanner } from "@/components/onboarding/opencode-setup"
+import { OpenProjectModal } from "@/components/project/open-project-modal"
 import { SettingsPanel } from "@/components/settings/settings-panel"
 import { DiffPanel } from "@/components/tools/diff-panel"
 import { useAcpBridge } from "@/hooks/use-acp-bridge"
@@ -28,16 +29,21 @@ import { collectDiffTools } from "@/lib/diff-tools"
 import {
 	closeSession,
 	createSession,
+	createWorkspace,
 	deleteChatTranscript,
+	deleteWorkspace,
 	getDefaultChatsPath,
 	getAppSettings,
 	getHomePath,
+	getWorkspacePaths,
 	loadChatTranscript,
 	loadSession,
 	openProject,
 	pickDirectory,
 	renameChatTranscript,
+	setActiveWorkspace,
 } from "@/lib/tauri"
+
 import {
 	agentConnectedAtom,
 	appSettingsAtom,
@@ -46,10 +52,13 @@ import {
 	configOptionsAtom,
 	diffPanelOpenAtom,
 	errorMessageAtom,
+	generalChatSessionsAtom,
+	generalChatsPathAtom,
 	historyViewSessionIdAtom,
 	messagesAtom,
 	opencodeStatusAtom,
 	progressMessageAtom,
+	projectChatsByPathAtom,
 	projectPathAtom,
 	resetWorkspaceUiAtom,
 	selectedDiffToolAtom,
@@ -59,15 +68,12 @@ import {
 	streamingTextAtom,
 } from "@/stores/atoms"
 
-function isChatsWorkspace(path: string | null): boolean {
-	return Boolean(path?.includes("/.circulo/chats"))
-}
-
 export default function App() {
 	useAcpBridge()
 	useBootstrapAgent()
 	useAppSettings()
-	const { refreshSessions } = useChatPersistence()
+	const { refreshSessions, refreshPath, refreshAllWorkspaceLists } =
+		useChatPersistence()
 
 	const projectPath = useAtomValue(projectPathAtom)
 	const sessionId = useAtomValue(sessionIdAtom)
@@ -78,6 +84,9 @@ export default function App() {
 	const progress = useAtomValue(progressMessageAtom)
 	const opencodeStatus = useAtomValue(opencodeStatusAtom)
 	const chatSessions = useAtomValue(chatSessionsAtom)
+	const generalChatsPath = useAtomValue(generalChatsPathAtom)
+	const generalChatSessions = useAtomValue(generalChatSessionsAtom)
+	const projectChatsByPath = useAtomValue(projectChatsByPathAtom)
 	const capabilities = useAtomValue(capabilitiesAtom)
 	const appSettings = useAtomValue(appSettingsAtom)
 	const messages = useAtomValue(messagesAtom)
@@ -100,6 +109,7 @@ export default function App() {
 
 	const [busy, setBusy] = useState(false)
 	const [settingsOpen, setSettingsOpen] = useState(false)
+	const [openProjectModalOpen, setOpenProjectModalOpen] = useState(false)
 	const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
 	const [agentCommand, setAgentCommand] = useState("opencode acp")
 	const [agentId, setAgentId] = useState<string | null>("opencode")
@@ -109,9 +119,25 @@ export default function App() {
 	const viewingHistory = Boolean(historyViewSessionId && !sessionId)
 	const showChat = hasLiveSession || viewingHistory
 	const activeChatId = sessionId ?? historyViewSessionId
-	const activeChatTitle =
-		chatSessions.find((chat) => chat.sessionId === activeChatId)?.title ??
-		"chat"
+	const activeChatTitle = useMemo(() => {
+		if (!activeChatId) return "chat"
+		const fromActive = chatSessions.find((c) => c.sessionId === activeChatId)
+		if (fromActive) return fromActive.title
+		const fromGeneral = generalChatSessions.find(
+			(c) => c.sessionId === activeChatId,
+		)
+		if (fromGeneral) return fromGeneral.title
+		for (const list of Object.values(projectChatsByPath)) {
+			const hit = list.find((c) => c.sessionId === activeChatId)
+			if (hit) return hit.title
+		}
+		return "chat"
+	}, [
+		activeChatId,
+		chatSessions,
+		generalChatSessions,
+		projectChatsByPath,
+	])
 
 	const handleExportTranscript = useCallback(async () => {
 		if (messages.length === 0) return
@@ -180,6 +206,8 @@ export default function App() {
 			}
 			await createSession()
 			setStatus("idle")
+			await refreshSessions()
+			await refreshAllWorkspaceLists()
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to create session")
 			setStatus("idle")
@@ -188,6 +216,8 @@ export default function App() {
 		}
 	}, [
 		projectPath,
+		refreshAllWorkspaceLists,
+		refreshSessions,
 		setError,
 		setHistoryView,
 		setMessages,
@@ -195,32 +225,47 @@ export default function App() {
 		setStreaming,
 	])
 
-	async function openWorkspacePath(path: string) {
+	async function resolveWorkspacePath(rawPath: string): Promise<string> {
+		const trimmed = rawPath.trim()
+		if (trimmed === "~" || trimmed.startsWith("~/")) {
+			const home = await getHomePath()
+			if (trimmed === "~") return home
+			return `${home}${trimmed.slice(1)}`
+		}
+		return trimmed
+	}
+
+	async function openWorkspacePath(
+		path: string,
+		options?: { manageBusy?: boolean },
+	) {
+		const manageBusy = options?.manageBusy ?? true
+		const resolved = await resolveWorkspacePath(path)
 		const [homePath, base] = await Promise.all([
 			getHomePath(),
-			Promise.resolve(path.split("/").filter(Boolean).pop() ?? path),
+			Promise.resolve(resolved.split("/").filter(Boolean).pop() ?? resolved),
 		])
 		const largeRoot =
 			base === "Desktop" ||
 			base === "Documents" ||
 			base === "Downloads" ||
-			path === homePath
+			resolved === homePath
 
-		const isNewWorkspace = projectPath !== path
+		const isNewWorkspace = projectPath !== resolved
 
-		setBusy(true)
+		if (manageBusy) setBusy(true)
 		if (isNewWorkspace) {
 			resetWorkspaceUi()
-			setProjectPath(path)
+			setProjectPath(resolved)
 		}
 		try {
-			const status = await openProject(path)
+			const status = await openProject(resolved)
 			setProjectPath(status.projectPath)
 			setConnected(status.connected)
 			setAgentCommand(status.agentCommand)
 			setAgentId(status.agentId)
 			if (isNewWorkspace) {
-				setSessionId(status.sessionId)
+				setSessionId(status.sessionId || null)
 				setConfig(status.configOptions)
 			}
 			if (largeRoot) {
@@ -231,19 +276,87 @@ export default function App() {
 			setStatus("idle")
 			const settings = await getAppSettings()
 			setAppSettings(settings)
+			setOpenProjectModalOpen(false)
+			await refreshAllWorkspaceLists()
+			const openedPath = status.projectPath ?? resolved
+			await refreshPath(openedPath)
+			return openedPath
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to open project")
 			setStatus("idle")
+			throw err
+		} finally {
+			if (manageBusy) setBusy(false)
+		}
+	}
+
+	function handleOpenProject() {
+		setError(null)
+		setOpenProjectModalOpen(true)
+	}
+
+	async function handleSelectGeneralChats() {
+		setError(null)
+		try {
+			const path = generalChatsPath ?? (await getDefaultChatsPath())
+			await openWorkspacePath(path)
+		} catch {
+			// Error banner already set in openWorkspacePath.
+		}
+	}
+
+	async function handleAddWorkspace() {
+		setError(null)
+		setBusy(true)
+		try {
+			const settings = await createWorkspace()
+			setAppSettings(settings)
+			const id = settings.activeWorkspaceId
+			if (!id) return
+			const paths = await getWorkspacePaths(id)
+			await openWorkspacePath(paths.chatsPath, { manageBusy: false })
+			await refreshAllWorkspaceLists()
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to create workspace")
 		} finally {
 			setBusy(false)
 		}
 	}
 
-	async function handleOpenProject() {
+	async function handleSelectWorkspace(workspaceId: string) {
+		if (workspaceId === appSettings?.activeWorkspaceId) return
 		setError(null)
-		const path = await pickDirectory()
-		if (!path) return
-		await openWorkspacePath(path)
+		setBusy(true)
+		try {
+			const settings = await setActiveWorkspace(workspaceId)
+			setAppSettings(settings)
+			const paths = await getWorkspacePaths(workspaceId)
+			await openWorkspacePath(paths.entryPath, { manageBusy: false })
+			await refreshAllWorkspaceLists()
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to switch workspace")
+		} finally {
+			setBusy(false)
+		}
+	}
+
+	async function handleDeleteWorkspace(workspaceId: string) {
+		setError(null)
+		setBusy(true)
+		try {
+			const settings = await deleteWorkspace(workspaceId)
+			setAppSettings(settings)
+			const nextId = settings.activeWorkspaceId
+			if (nextId) {
+				const paths = await getWorkspacePaths(nextId)
+				await openWorkspacePath(paths.entryPath, { manageBusy: false })
+			}
+			await refreshAllWorkspaceLists()
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to remove workspace")
+		} finally {
+			setBusy(false)
+		}
 	}
 
 	useAppShortcuts({
@@ -251,7 +364,7 @@ export default function App() {
 			if (!busy) void handleNewChat()
 		},
 		onOpenProject: () => {
-			if (!busy) void handleOpenProject()
+			if (!busy) handleOpenProject()
 		},
 		onOpenSettings: () => setSettingsOpen(true),
 		onOpenCommandPalette: () => setCommandPaletteOpen(true),
@@ -271,7 +384,7 @@ export default function App() {
 			{
 				id: "open-project",
 				label: "Open Project",
-				onSelect: () => void handleOpenProject(),
+				onSelect: () => handleOpenProject(),
 			},
 			{
 				id: "settings",
@@ -303,38 +416,50 @@ export default function App() {
 		],
 	)
 
-	async function handleRenameChat(targetSessionId: string, title: string) {
-		if (!projectPath) return
+	async function handleRenameChat(
+		targetSessionId: string,
+		ownerPath: string,
+		title: string,
+	) {
 		try {
-			await renameChatTranscript(projectPath, targetSessionId, title)
-			await refreshSessions()
+			await renameChatTranscript(ownerPath, targetSessionId, title)
+			await refreshPath(ownerPath)
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to rename chat")
 		}
 	}
 
-	async function handleOpenRecentProject(path: string) {
+	async function handleSelectProject(path: string) {
 		setError(null)
-		await openWorkspacePath(path)
+		try {
+			await openWorkspacePath(path)
+		} catch {
+			// Error banner already set in openWorkspacePath.
+		}
 	}
 
-	async function handleOpenChat(targetSessionId: string) {
-		if (!projectPath) return
+	async function handleOpenChat(targetSessionId: string, ownerPath: string) {
 		setError(null)
 
-		if (targetSessionId === sessionId) {
+		const sameWorkspace = projectPath === ownerPath
+		if (sameWorkspace && targetSessionId === sessionId) {
 			setHistoryView(null)
 			return
 		}
 
 		setBusy(true)
 		try {
-			const transcript = await loadChatTranscript(projectPath, targetSessionId)
+			if (!sameWorkspace) {
+				await openWorkspacePath(ownerPath, { manageBusy: false })
+			}
+
+			const transcript = await loadChatTranscript(ownerPath, targetSessionId)
 			setMessages(transcript.messages)
 			setStreaming("")
 			setStatus("connecting")
 
-			if (capabilities?.loadSession) {
+			// Only try live resume when we stayed on the same agent workspace.
+			if (capabilities?.loadSession && sameWorkspace) {
 				try {
 					await loadSession(targetSessionId)
 					setHistoryView(null)
@@ -351,6 +476,7 @@ export default function App() {
 				}
 			}
 
+			// After workspace switch (or no loadSession): saved transcript only.
 			setSessionId(null)
 			setHistoryView(targetSessionId)
 			setStatus("idle")
@@ -362,12 +488,15 @@ export default function App() {
 		}
 	}
 
-	async function handleDeleteChat(targetSessionId: string) {
-		if (!projectPath) return
+	async function handleDeleteChat(
+		targetSessionId: string,
+		ownerPath: string,
+	) {
 		setError(null)
 		setBusy(true)
 		try {
-			if (sessionId === targetSessionId) {
+			const sameWorkspace = projectPath === ownerPath
+			if (sameWorkspace && sessionId === targetSessionId) {
 				try {
 					await closeSession(targetSessionId)
 				} catch {
@@ -377,24 +506,18 @@ export default function App() {
 				setMessages([])
 				setStreaming("")
 			}
-			if (historyViewSessionId === targetSessionId) {
+			if (sameWorkspace && historyViewSessionId === targetSessionId) {
 				setHistoryView(null)
 				setMessages([])
 			}
-			await deleteChatTranscript(projectPath, targetSessionId)
-			await refreshSessions()
+			await deleteChatTranscript(ownerPath, targetSessionId)
+			await refreshPath(ownerPath)
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to delete chat")
 		} finally {
 			setBusy(false)
 		}
 	}
-
-	const workspaceLabel = isChatsWorkspace(projectPath)
-		? "General Chat"
-		: projectPath
-			? projectPath.split("/").filter(Boolean).slice(-2).join("/")
-			: "—"
 
 	const statusLabel = viewingHistory
 		? "History — New Chat to continue"
@@ -425,21 +548,31 @@ export default function App() {
 				}
 				sidebar={
 					<AppSidebar
-						workspaceLabel={workspaceLabel}
 						sessionId={sessionId}
 						historyViewSessionId={historyViewSessionId}
 						agentRuntimes={agentRuntimes}
 						busy={busy}
-						chatSessions={chatSessions}
-						recentProjects={appSettings?.recentProjects ?? []}
+						generalChatsPath={generalChatsPath}
+						generalChats={generalChatSessions}
+						projectChatsByPath={projectChatsByPath}
+						workspaces={appSettings?.workspaces ?? []}
+						activeWorkspaceId={appSettings?.activeWorkspaceId ?? null}
 						currentProjectPath={projectPath}
 						onNewChat={() => void handleNewChat()}
-						onOpenProject={() => void handleOpenProject()}
+						onOpenProject={() => handleOpenProject()}
 						onOpenSettings={() => setSettingsOpen(true)}
-						onOpenChat={(id) => void handleOpenChat(id)}
-						onRenameChat={(id, title) => void handleRenameChat(id, title)}
-						onDeleteChat={(id) => void handleDeleteChat(id)}
-						onOpenRecentProject={(path) => void handleOpenRecentProject(path)}
+						onOpenChat={(id, ownerPath) => void handleOpenChat(id, ownerPath)}
+						onRenameChat={(id, ownerPath, title) =>
+							void handleRenameChat(id, ownerPath, title)
+						}
+						onDeleteChat={(id, ownerPath) =>
+							void handleDeleteChat(id, ownerPath)
+						}
+						onSelectProject={(path) => void handleSelectProject(path)}
+						onSelectGeneralChats={() => void handleSelectGeneralChats()}
+						onAddWorkspace={() => void handleAddWorkspace()}
+						onSelectWorkspace={(id) => void handleSelectWorkspace(id)}
+						onDeleteWorkspace={(id) => void handleDeleteWorkspace(id)}
 						onHideSidebar={() => setSidebarOpen(false)}
 					/>
 				}
@@ -572,6 +705,17 @@ export default function App() {
 				open={settingsOpen}
 				onClose={() => setSettingsOpen(false)}
 				agentCommand={agentCommand}
+			/>
+			<OpenProjectModal
+				open={openProjectModalOpen}
+				busy={busy}
+				recentProjects={appSettings?.recentProjects ?? []}
+				currentProjectPath={projectPath}
+				onClose={() => setOpenProjectModalOpen(false)}
+				onOpenPath={async (path) => {
+					await openWorkspacePath(path)
+				}}
+				onBrowseFinder={pickDirectory}
 			/>
 			</AppShell>
 			<CommandPalette

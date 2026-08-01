@@ -23,7 +23,7 @@ export function SettingsPanel({ open, onClose, agentCommand }: SettingsPanelProp
 			<div
 				role="dialog"
 				aria-modal="true"
-				className="w-full max-w-md rounded-lg border border-border bg-sidebar shadow-xl"
+				className="frosted-strong w-full max-w-md rounded-lg border border-border shadow-xl"
 			>
 				<div className="flex items-center justify-between border-b border-border px-4 py-3">
 					<h2 className="text-sm font-medium text-fg">Settings</h2>

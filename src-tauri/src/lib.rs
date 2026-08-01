@@ -8,6 +8,7 @@ mod state;
 use std::sync::Arc;
 
 use state::{CirculoState, SharedState};
+use tauri::Manager;
 use tracing_subscriber::EnvFilter;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -25,6 +26,21 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(shared_state)
         .setup(|app| {
+            // Native frosted glass under transparent chrome (sidebars: no CSS fill/blur).
+            // Dark sits between UltraDark (too heavy) and HudWindow (too see-through).
+            // Chat / app bar stay opaque in CSS. Requires transparent window + macOSPrivateApi.
+            if let Some(window) = app.get_webview_window("main") {
+                use tauri::window::{Effect, EffectState, EffectsBuilder};
+                #[allow(deprecated)]
+                let effect = Effect::Dark;
+                let _ = window.set_effects(
+                    EffectsBuilder::new()
+                        .effect(effect)
+                        .state(EffectState::Active)
+                        .build(),
+                );
+            }
+
             // Start OpenCode as early as possible (in parallel with webview load)
             // so the user does not wait a full cold start after the UI appears.
             commands::spawn_eager_agent_warm(app.handle());
@@ -46,9 +62,14 @@ pub fn run() {
             commands::set_config_option,
             commands::search_files,
             commands::pick_directory,
+            commands::complete_directory_path,
             commands::export_transcript_cmd,
             commands::persistence::get_app_settings,
             commands::persistence::set_app_settings,
+            commands::persistence::create_workspace_cmd,
+            commands::persistence::set_active_workspace_cmd,
+            commands::persistence::delete_workspace_cmd,
+            commands::persistence::get_workspace_paths_cmd,
             commands::persistence::list_chat_sessions_cmd,
             commands::persistence::load_chat_transcript_cmd,
             commands::persistence::save_chat_transcript_cmd,

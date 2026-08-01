@@ -102,7 +102,18 @@ export interface RecentProject {
 	lastOpenedAt: number
 }
 
+export interface WorkspaceEntry {
+	id: string
+	/** Project folders that belong only to this space. */
+	projectPaths: string[]
+	/** Last cwd opened in this space. */
+	lastPath?: string | null
+	createdAt: number
+}
+
 export interface AppSettings {
 	version: number
 	recentProjects: RecentProject[]
+	workspaces: WorkspaceEntry[]
+	activeWorkspaceId: string | null
 }

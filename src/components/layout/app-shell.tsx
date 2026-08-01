@@ -65,16 +65,21 @@ export function AppShell({
 
 	return (
 		<div className={cn("flex h-full min-h-0 w-full overflow-hidden", className)}>
+			{/*
+			  Side chrome: transparent only (native vibrancy).
+			  No CSS backdrop-filter here — stacking native blur + CSS blur flickers
+			  at the edge with the solid chat card while dragging the window.
+			*/}
 			<aside
 				className={cn(
-					"flex h-full shrink-0 flex-col overflow-hidden bg-frame",
+					"flex h-full shrink-0 flex-col overflow-hidden bg-transparent",
 					resizing !== "sidebar" && shellTransition,
 				)}
 				style={{ width: sidebarOpen ? sidebarWidth : 0 }}
 			>
 				<div
 					className={cn(
-						"flex h-full flex-col",
+						"flex h-full flex-col bg-transparent",
 						!sidebarOpen && "pointer-events-none",
 					)}
 					style={{ width: sidebarWidth }}
@@ -86,7 +91,8 @@ export function AppShell({
 			{sidebarOpen ? (
 				<ResizeHandle onPointerDown={sidebarResize.onPointerDown} />
 			) : null}
-			<main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-tl-[6px] rounded-bl-[6px] rounded-tr-[8px] rounded-br-[8px] bg-content">
+			{/* Solid chat surface + app bar — opaque layer, simple border (no soft shadow). */}
+			<main className="solid-content relative z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-border">
 				{children}
 			</main>
 			{panel && panelOpen ? (
@@ -95,14 +101,14 @@ export function AppShell({
 			{panel ? (
 				<aside
 					className={cn(
-						"flex h-full shrink-0 flex-col overflow-hidden",
+						"flex h-full shrink-0 flex-col overflow-hidden bg-transparent",
 						resizing !== "diff" && shellTransition,
 					)}
 					style={{ width: panelOpen ? diffPanelWidth : 0 }}
 				>
 					<div
 						className={cn(
-							"flex h-full flex-col",
+							"flex h-full flex-col bg-transparent",
 							!panelOpen && "pointer-events-none",
 						)}
 						style={{ width: diffPanelWidth }}

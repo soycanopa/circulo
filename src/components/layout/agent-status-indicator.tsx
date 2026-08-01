@@ -74,7 +74,7 @@ export function AgentStatusIndicator({ agents }: AgentStatusIndicatorProps) {
 				role="tooltip"
 				className={cn(
 					"pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-56",
-					"rounded-md border border-border bg-surface px-3 py-2 shadow-lg",
+					"frosted-strong rounded-md border border-border px-3 py-2 shadow-lg",
 					"opacity-0 transition-opacity duration-150",
 					"group-hover:opacity-100 group-focus-within:opacity-100",
 				)}
