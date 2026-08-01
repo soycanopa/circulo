@@ -1,4 +1,4 @@
-import { FolderOpen, MessageSquare, MessageSquarePlus, Settings } from "lucide-react"
+import { FolderOpen, MessageSquare, MessageSquarePlus, Settings, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ChatSessionSummary, RecentProject } from "@/types/acp"
 
@@ -23,6 +23,7 @@ interface AppSidebarProps {
 	onOpenProject: () => void
 	onOpenSettings: () => void
 	onOpenChat: (sessionId: string) => void
+	onDeleteChat: (sessionId: string) => void
 	onOpenRecentProject: (path: string) => void
 }
 
@@ -41,6 +42,7 @@ export function AppSidebar({
 	onOpenProject,
 	onOpenSettings,
 	onOpenChat,
+	onDeleteChat,
 	onOpenRecentProject,
 }: AppSidebarProps) {
 	const otherRecents = recentProjects.filter((p) => p.path !== currentProjectPath)
@@ -97,20 +99,34 @@ export function AppSidebar({
 									chat.sessionId === sessionId ||
 									chat.sessionId === historyViewSessionId
 								return (
-									<button
+									<div
 										key={chat.sessionId}
-										type="button"
-										onClick={() => onOpenChat(chat.sessionId)}
 										className={cn(
-											"flex items-start gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition",
-											active
-												? "bg-white/10 text-fg"
-												: "text-fg/80 hover:bg-white/5",
+											"group flex items-start gap-1 rounded-md transition",
+											active ? "bg-white/10" : "hover:bg-white/5",
 										)}
 									>
-										<MessageSquare className="mt-0.5 size-3.5 shrink-0 text-muted" />
-										<span className="line-clamp-2">{chat.title}</span>
-									</button>
+										<button
+											type="button"
+											onClick={() => onOpenChat(chat.sessionId)}
+											className={cn(
+												"flex min-w-0 flex-1 items-start gap-2 px-2.5 py-1.5 text-left text-xs",
+												active ? "text-fg" : "text-fg/80",
+											)}
+										>
+											<MessageSquare className="mt-0.5 size-3.5 shrink-0 text-muted" />
+											<span className="line-clamp-2">{chat.title}</span>
+										</button>
+										<button
+											type="button"
+											onClick={() => onDeleteChat(chat.sessionId)}
+											disabled={busy}
+											className="mr-1 mt-1 rounded p-1 text-muted opacity-0 transition hover:bg-white/10 hover:text-red-300 group-hover:opacity-100 disabled:opacity-40"
+											title="Delete chat"
+										>
+											<Trash2 className="size-3.5" />
+										</button>
+									</div>
 								)
 							})}
 						</div>

@@ -67,9 +67,11 @@ export function useAcpBridge() {
 				setHistoryView(null)
 				setProjectPath(payload.projectPath)
 				setConfig(payload.configOptions ?? [])
-				setMessages([])
-				streamingRef.current = ""
-				setStreaming("")
+				if (!payload.resume) {
+					setMessages([])
+					streamingRef.current = ""
+					setStreaming("")
+				}
 				setPromptInFlight(false)
 				setPermission(null)
 				setStatus("idle")

@@ -14,16 +14,20 @@ import { useBootstrapAgent } from "@/hooks/use-bootstrap"
 import { useChatPersistence } from "@/hooks/use-chat-persistence"
 import {
 	createSession,
+	deleteChatTranscript,
 	getDefaultChatsPath,
 	getAppSettings,
 	getHomePath,
 	loadChatTranscript,
+	loadSession,
+	closeSession,
 	openProject,
 	pickDirectory,
 } from "@/lib/tauri"
 import {
 	agentConnectedAtom,
 	appSettingsAtom,
+	capabilitiesAtom,
 	chatSessionsAtom,
 	configOptionsAtom,
 	errorMessageAtom,
@@ -46,7 +50,7 @@ export default function App() {
 	useAcpBridge()
 	useBootstrapAgent()
 	useAppSettings()
-	useChatPersistence()
+	const { refreshSessions } = useChatPersistence()
 
 	const projectPath = useAtomValue(projectPathAtom)
 	const sessionId = useAtomValue(sessionIdAtom)
@@ -57,6 +61,7 @@ export default function App() {
 	const progress = useAtomValue(progressMessageAtom)
 	const opencodeStatus = useAtomValue(opencodeStatusAtom)
 	const chatSessions = useAtomValue(chatSessionsAtom)
+	const capabilities = useAtomValue(capabilitiesAtom)
 	const appSettings = useAtomValue(appSettingsAtom)
 	const setError = useSetAtom(errorMessageAtom)
 	const setStatus = useSetAtom(sessionStatusAtom)
@@ -154,11 +159,59 @@ export default function App() {
 			const transcript = await loadChatTranscript(projectPath, targetSessionId)
 			setMessages(transcript.messages)
 			setStreaming("")
+			setStatus("connecting")
+
+			if (capabilities?.loadSession) {
+				try {
+					await loadSession(targetSessionId)
+					setHistoryView(null)
+					setStatus("idle")
+					return
+				} catch (err) {
+					setSessionId(null)
+					setHistoryView(targetSessionId)
+					setStatus("idle")
+					const detail =
+						err instanceof Error ? err.message : "Could not resume session"
+					setError(`${detail} — viewing saved transcript only.`)
+					return
+				}
+			}
+
 			setSessionId(null)
 			setHistoryView(targetSessionId)
 			setStatus("idle")
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to load chat")
+			setStatus("idle")
+		} finally {
+			setBusy(false)
+		}
+	}
+
+	async function handleDeleteChat(targetSessionId: string) {
+		if (!projectPath) return
+		setError(null)
+		setBusy(true)
+		try {
+			if (sessionId === targetSessionId) {
+				try {
+					await closeSession(targetSessionId)
+				} catch {
+					// Still remove local transcript if agent close fails.
+				}
+				setSessionId(null)
+				setMessages([])
+				setStreaming("")
+			}
+			if (historyViewSessionId === targetSessionId) {
+				setHistoryView(null)
+				setMessages([])
+			}
+			await deleteChatTranscript(projectPath, targetSessionId)
+			await refreshSessions()
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to delete chat")
 		} finally {
 			setBusy(false)
 		}
@@ -223,6 +276,7 @@ export default function App() {
 					onOpenProject={() => void handleOpenProject()}
 					onOpenSettings={() => setSettingsOpen(true)}
 					onOpenChat={(id) => void handleOpenChat(id)}
+					onDeleteChat={(id) => void handleDeleteChat(id)}
 					onOpenRecentProject={(path) => void handleOpenRecentProject(path)}
 				/>
 			}
@@ -244,7 +298,11 @@ export default function App() {
 
 			{viewingHistory ? (
 				<div className="mx-4 mt-3 rounded-md border border-border bg-white/5 px-3 py-2 text-xs text-muted">
-					Viewing saved history. Start a{" "}
+					Viewing saved history
+					{capabilities?.loadSession
+						? " — could not resume on the agent."
+						: " — session resume not supported by this agent."}{" "}
+					Start a{" "}
 					<button
 						type="button"
 						onClick={() => void handleNewChat()}

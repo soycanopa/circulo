@@ -49,6 +49,14 @@ export async function createSession(): Promise<ProjectStatus> {
 	return invoke("create_session")
 }
 
+export async function loadSession(sessionId: string): Promise<ProjectStatus> {
+	return invoke("load_session", { sessionId })
+}
+
+export async function closeSession(sessionId: string): Promise<ProjectStatus> {
+	return invoke("close_session_cmd", { sessionId })
+}
+
 export async function sendPrompt(
 	text: string,
 	contextPaths: string[],
@@ -111,6 +119,13 @@ export async function saveChatTranscript(
 	})
 }
 
+export async function deleteChatTranscript(
+	projectPath: string,
+	sessionId: string,
+): Promise<void> {
+	return invoke("delete_chat_transcript_cmd", { projectPath, sessionId })
+}
+
 function toStoredMessages(messages: ChatMessage[]): StoredChatMessage[] {
 	return messages.map((m) => ({
 		id: m.id,
@@ -142,6 +157,7 @@ export function listenAcpEvents(handlers: {
 		sessionId: string
 		projectPath: string
 		configOptions: ConfigOption[]
+		resume?: boolean
 	}) => void
 	onSessionUpdate?: (payload: unknown) => void
 	onPermissionRequest?: (payload: PermissionRequest) => void
@@ -169,6 +185,7 @@ export function listenAcpEvents(handlers: {
 					sessionId: string
 					projectPath: string
 					configOptions: ConfigOption[]
+					resume?: boolean
 				},
 			)
 		}),
