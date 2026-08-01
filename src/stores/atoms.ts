@@ -21,3 +21,17 @@ export const activePermissionAtom = atom<PermissionRequest | null>(null)
 export const errorMessageAtom = atom<string | null>(null)
 export const progressMessageAtom = atom<string | null>(null)
 export const opencodeStatusAtom = atom<OpencodeStatus | null>(null)
+
+/** Clear chat/session UI when switching workspace (not when re-opening the same path). */
+export const resetWorkspaceUiAtom = atom(null, (_get, set) => {
+	set(sessionIdAtom, null)
+	set(messagesAtom, [])
+	set(streamingTextAtom, "")
+	set(promptInFlightAtom, false)
+	set(activePermissionAtom, null)
+	set(configOptionsAtom, [])
+	set(capabilitiesAtom, null)
+	set(sessionStatusAtom, "idle")
+	set(agentConnectedAtom, false)
+	set(progressMessageAtom, "Opening workspace…")
+})

@@ -20,9 +20,10 @@ import {
 	configOptionsAtom,
 	errorMessageAtom,
 	messagesAtom,
-	progressMessageAtom,
 	opencodeStatusAtom,
+	progressMessageAtom,
 	projectPathAtom,
+	resetWorkspaceUiAtom,
 	sessionIdAtom,
 	sessionStatusAtom,
 	streamingTextAtom,
@@ -51,6 +52,7 @@ export default function App() {
 	const setConnected = useSetAtom(agentConnectedAtom)
 	const setProjectPath = useSetAtom(projectPathAtom)
 	const setConfig = useSetAtom(configOptionsAtom)
+	const resetWorkspaceUi = useSetAtom(resetWorkspaceUiAtom)
 
 	const [busy, setBusy] = useState(false)
 	const agentWarm = connected
@@ -78,18 +80,21 @@ export default function App() {
 			base === "Downloads" ||
 			path === homePath
 
+		const isNewWorkspace = projectPath !== path
+
 		setBusy(true)
-		setMessages([])
-		setStreaming("")
-		setSessionId(null)
-		setConfig([])
+		if (isNewWorkspace) {
+			resetWorkspaceUi()
+			setProjectPath(path)
+		}
 		try {
-			// Spawn only — returns immediately; warm continues in background.
 			const status = await openProject(path)
 			setProjectPath(status.projectPath)
 			setConnected(status.connected)
-			setSessionId(status.sessionId)
-			setConfig(status.configOptions)
+			if (isNewWorkspace) {
+				setSessionId(status.sessionId)
+				setConfig(status.configOptions)
+			}
 			if (largeRoot) {
 				setError(
 					"Workspace set. Large folders (Desktop/Home) can slow OpenCode session setup — prefer a repo.",
