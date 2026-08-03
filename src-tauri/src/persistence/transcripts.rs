@@ -280,6 +280,27 @@ pub fn rename_chat_transcript(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
+    use tempfile::tempdir;
+
+    struct HomeGuard(Option<std::ffi::OsString>);
+
+    impl HomeGuard {
+        fn set(path: &Path) -> Self {
+            let previous = std::env::var_os("HOME");
+            std::env::set_var("HOME", path);
+            Self(previous)
+        }
+    }
+
+    impl Drop for HomeGuard {
+        fn drop(&mut self) {
+            match &self.0 {
+                Some(previous) => std::env::set_var("HOME", previous),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
 
     fn message(role: &str, content: &str) -> StoredChatMessage {
         StoredChatMessage {
@@ -329,5 +350,45 @@ mod tests {
             save_chat_transcript("/unused", "pending", messages).unwrap_err(),
             "Refusing to persist without a real ACP session id"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn saves_loads_renames_and_deletes_transcript() {
+        let home = tempdir().unwrap();
+        let project = tempdir().unwrap();
+        let _home = HomeGuard::set(home.path());
+        let project_path = project.path().to_string_lossy().to_string();
+        let messages = vec![message("user", "Build the feature")];
+
+        let saved = save_chat_transcript(&project_path, "session/one", messages).unwrap();
+        assert_eq!(saved.title, "Build the feature");
+
+        let loaded = load_chat_transcript(&project_path, "session/one").unwrap();
+        assert_eq!(loaded.session_id, "session/one");
+        assert_eq!(loaded.messages.len(), 1);
+
+        let renamed = rename_chat_transcript(&project_path, "session/one", "New title").unwrap();
+        assert_eq!(renamed.title, "New title");
+        assert_eq!(list_chat_sessions(&project_path).unwrap()[0].title, "New title");
+
+        delete_chat_transcript(&project_path, "session/one").unwrap();
+        assert!(list_chat_sessions(&project_path).unwrap().is_empty());
+        assert_eq!(
+            load_chat_transcript(&project_path, "session/one").unwrap_err(),
+            "Chat transcript not found"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn stores_sanitized_session_filename() {
+        let home = tempdir().unwrap();
+        let project = tempdir().unwrap();
+        let _home = HomeGuard::set(home.path());
+
+        let file = session_path(project.path(), "session/one:two").unwrap();
+
+        assert_eq!(file.file_name().unwrap(), "session_one_two.json");
     }
 }
