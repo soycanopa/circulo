@@ -20,6 +20,44 @@ export const messagesAtom = atom<ChatMessage[]>([])
 export const streamingTextAtom = atom("")
 export const promptInFlightAtom = atom(false)
 export const configOptionsAtom = atom<ConfigOption[]>([])
+
+/** Per-session UI state, keyed by session_id. Mirrors the Rust `SessionHandle` map. */
+export interface SessionUiState {
+	messages: ChatMessage[]
+	streaming: string
+	promptInFlight: boolean
+	status: SessionStatus
+	configOptions: ConfigOption[]
+}
+export const sessionsAtom = atom<Record<string, SessionUiState>>({})
+/** Selectors for the visible chat so existing UI keeps working unchanged. */
+export const visibleSessionIdAtom = atom<string | null>(null)
+export const visibleMessagesAtom = atom((get) => {
+	const sid = get(visibleSessionIdAtom)
+	if (!sid) return get(messagesAtom)
+	return get(sessionsAtom)[sid]?.messages ?? get(messagesAtom)
+})
+export const visibleStreamingAtom = atom((get) => {
+	const sid = get(visibleSessionIdAtom)
+	if (!sid) return get(streamingTextAtom)
+	return get(sessionsAtom)[sid]?.streaming ?? ""
+})
+export const visiblePromptInFlightAtom = atom((get) => {
+	const sid = get(visibleSessionIdAtom)
+	if (!sid) return get(promptInFlightAtom)
+	return get(sessionsAtom)[sid]?.promptInFlight ?? false
+})
+export const visibleConfigOptionsAtom = atom((get) => {
+	const sid = get(visibleSessionIdAtom)
+	if (!sid) return get(configOptionsAtom)
+	return get(sessionsAtom)[sid]?.configOptions ?? get(configOptionsAtom)
+})
+export const visibleSessionStatusAtom = atom((get) => {
+	const sid = get(visibleSessionIdAtom)
+	if (!sid) return get(sessionStatusAtom)
+	return get(sessionsAtom)[sid]?.status ?? get(sessionStatusAtom)
+})
+
 export const capabilitiesAtom = atom<AgentCapabilities | null>(null)
 export const activePermissionAtom = atom<PermissionRequest | null>(null)
 /** FIFO queue of permission requests for the current session — first one is the active card. */

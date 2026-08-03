@@ -11,6 +11,8 @@ import {
 	promptInFlightAtom,
 	sessionIdAtom,
 	sessionStatusAtom,
+	sessionsAtom,
+	visibleSessionIdAtom,
 } from "@/stores/atoms"
 import type { PermissionRequest } from "@/types/acp"
 
@@ -27,6 +29,21 @@ function createRefs(): AcpBridgeRefs {
 	}
 }
 
+function activate(store: ReturnType<typeof createStore>, sessionId: string) {
+	store.set(sessionIdAtom, sessionId)
+	store.set(visibleSessionIdAtom, sessionId)
+	store.set(sessionsAtom, {
+		...store.get(sessionsAtom),
+		[sessionId]: {
+			messages: [],
+			streaming: "",
+			promptInFlight: false,
+			status: "idle",
+			configOptions: [],
+		},
+	})
+}
+
 const permission: PermissionRequest = {
 	requestId: "request-1",
 	sessionId: "session-1",
@@ -37,7 +54,7 @@ describe("processAcpEvent", () => {
 	it("opens the permission gate only for the active session", () => {
 		const store = createStore()
 		const refs = createRefs()
-		store.set(sessionIdAtom, "session-1")
+		activate(store, "session-1")
 
 		processAcpEvent(store, refs, {
 			type: "permission_request",
@@ -45,7 +62,7 @@ describe("processAcpEvent", () => {
 		})
 
 		expect(store.get(activePermissionAtom)).toEqual(permission)
-		expect(store.get(sessionStatusAtom)).toBe("awaiting_permission")
+		expect(store.get(sessionsAtom)["session-1"]?.status).toBe("awaiting_permission")
 
 		processAcpEvent(store, refs, {
 			type: "permission_request",
@@ -58,10 +75,20 @@ describe("processAcpEvent", () => {
 	it("clears the permission gate when the prompt completes", () => {
 		const store = createStore()
 		const refs = createRefs()
-		store.set(sessionIdAtom, "session-1")
+		activate(store, "session-1")
 		store.set(activePermissionAtom, permission)
 		store.set(promptInFlightAtom, true)
 		store.set(sessionStatusAtom, "awaiting_permission")
+		store.set(sessionsAtom, {
+			...store.get(sessionsAtom),
+			"session-1": {
+				messages: [],
+				streaming: "",
+				promptInFlight: true,
+				status: "awaiting_permission",
+				configOptions: [],
+			},
+		})
 
 		processAcpEvent(store, refs, {
 			type: "prompt_complete",
@@ -69,14 +96,14 @@ describe("processAcpEvent", () => {
 		})
 
 		expect(store.get(activePermissionAtom)).toBeNull()
-		expect(store.get(promptInFlightAtom)).toBe(false)
-		expect(store.get(sessionStatusAtom)).toBe("idle")
+		expect(store.get(sessionsAtom)["session-1"]?.promptInFlight).toBe(false)
+		expect(store.get(sessionsAtom)["session-1"]?.status).toBe("idle")
 	})
 
 	it("ignores streaming updates from another session", () => {
 		const store = createStore()
 		const refs = createRefs()
-		store.set(sessionIdAtom, "session-1")
+		activate(store, "session-1")
 
 		processAcpEvent(store, refs, {
 			type: "session_update",
@@ -90,13 +117,13 @@ describe("processAcpEvent", () => {
 		})
 
 		expect(store.get(messagesAtom)).toEqual([])
-		expect(store.get(promptInFlightAtom)).toBe(false)
+		expect(store.get(sessionsAtom)["other"]).toBeUndefined()
 	})
 
 	it("streams active-session text immediately", () => {
 		const store = createStore()
 		const refs = createRefs()
-		store.set(sessionIdAtom, "session-1")
+		activate(store, "session-1")
 
 		processAcpEvent(store, refs, {
 			type: "session_update",
@@ -110,8 +137,8 @@ describe("processAcpEvent", () => {
 		})
 
 		expect(store.get(messagesAtom)[0]?.content).toBe("Hello")
-		expect(store.get(promptInFlightAtom)).toBe(true)
-		expect(store.get(sessionStatusAtom)).toBe("generating")
+		expect(store.get(sessionsAtom)["session-1"]?.promptInFlight).toBe(true)
+		expect(store.get(sessionsAtom)["session-1"]?.status).toBe("generating")
 	})
 
 	it("ignores session-scoped events without an active session", () => {
@@ -140,7 +167,7 @@ describe("processAcpEvent", () => {
 	it("queues simultaneous permission requests for the same session", () => {
 		const store = createStore()
 		const refs = createRefs()
-		store.set(sessionIdAtom, "session-1")
+		activate(store, "session-1")
 
 		const second: PermissionRequest = {
 			...permission,
@@ -156,7 +183,7 @@ describe("processAcpEvent", () => {
 		})
 
 		expect(store.get(activePermissionAtom)).toEqual(permission)
-		expect(store.get(sessionStatusAtom)).toBe("awaiting_permission")
+		expect(store.get(sessionsAtom)["session-1"]?.status).toBe("awaiting_permission")
 	})
 
 	it("ignores session updates without a session id", () => {
