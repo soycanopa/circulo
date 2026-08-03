@@ -66,6 +66,9 @@ Rules:
 11. **Permission safety** — `respond_permission` validates `optionId` against the agent-provided set and matches `sessionId` before replying. UI uses a FIFO `pendingPermissionsAtom` so simultaneous requests queue instead of overwriting.
 12. **Concurrent sessions** — `AgentCapabilitiesDto.concurrent_sessions` defaults to true. When true, multiple ACP sessions per workspace can run prompts in parallel; each lives in `ActiveAgent.sessions` keyed by `session_id`. When false, New Chat closes the previous session first.
 13. **Swap without cancel** — `set_visible_session(sessionId)` (Tauri command) swaps the visible session without aborting the previous session's RPC. The reducer mirrors the new session's `messages`/`streaming` into `messagesAtom`/`streamingTextAtom`. Sidebar indicates background runs with a pulsing dot.
+14. **Single source of visible state** — `activeSessionIdAtom` is the only atom for the session bound to the composer. The reducer is the only writer. UI never sets `activeSessionIdAtom` directly. Legacy `messagesAtom`/`streamingTextAtom`/`promptInFlightAtom` are derived from `sessionsAtom + activeSessionIdAtom` via `visibleMessagesAtom`, `visibleStreamingAtom` and `visiblePromptInFlightAtom`.
+15. **Streaming buffer per session** — the bridge maintains a `Map<sessionId, string>` of in-flight streaming chunks; `prompt_complete` for one session never touches another's buffer.
+16. **Deterministic agent startup** — the runtime spawns the command run-loop **before** the prewarm so the receiver is ready when `session/new` returns. The previous "response to `session/new` never received: oneshot canceled" symptom is fixed by bridging external commands into a private sub-channel.
 
 ## Warm / latency strategy
 

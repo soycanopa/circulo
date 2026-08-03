@@ -60,11 +60,19 @@ Each `opencode acp` process can hold multiple ACP sessions at once. The Rust cor
 
 `AgentCapabilitiesDto.concurrent_sessions` defaults to `true` (OpenCode and most ACP agents support it). When `false`, `publish_or_create_session` falls back to the serial behavior (close-before-new).
 
-`set_visible_session(sessionId)` swaps the active buffer without interrupting the previous session's RPC. The reducer mirrors the new session's `messages`/`streaming` into the legacy atoms (`messagesAtom`, `streamingTextAtom`, …) so the rest of the UI keeps reading a single buffer.
+`set_visible_session(sessionId)` swaps the active buffer without interrupting the previous session's RPC.
 
 ## Session storage map
 
-The frontend mirrors the Rust session map via `sessionsAtom: Record<sessionId, SessionUiState>`. `visibleSessionIdAtom` points at the session currently bound to the composer; the sidebar shows a pulsing dot for any session with `promptInFlight: true` that is not the visible one. `disconnected` clears the map; `session_ready`/`prompt_complete`/`error` write per session.
+The frontend mirrors the Rust session map via `sessionsAtom: Record<sessionId, SessionUiState>`. `activeSessionIdAtom` is the single source of truth for the session bound to the composer; the sidebar shows a pulsing dot for any session with `promptInFlight: true` that is not the active one. `disconnected` clears the map; `session_ready`/`prompt_complete`/`error` write per session. The bridge holds a per-session streaming buffer (`Map<sessionId, string>`) so two sessions in the same agent process never interleave their text chunks.
+
+## Single source of visible state
+
+`activeSessionIdAtom` is the only atom for the visible session; the reducer is the sole writer. Legacy global mirrors (`messagesAtom`, `streamingTextAtom`, `promptInFlightAtom`) are derived from `sessionsAtom + activeSessionIdAtom` via `visibleMessagesAtom`, `visibleStreamingAtom` and `visiblePromptInFlightAtom`. UI components never mutate session state directly: optimistic UI for new prompts and config selectors patch only the active session in `sessionsAtom`.
+
+## Deterministic startup
+
+The runtime spawns the command run-loop **before** the prewarm task, and bridges external commands into a private sub-channel owned by the run-loop. This eliminates the previous `oneshot canceled` symptom during cold-start because the receiver is always ready before any `session/new` response is delivered.
 
 ## Lifecycle (must match ACP)
 
