@@ -15,7 +15,7 @@ pub struct ChatSessionSummary {
     pub updated_at: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredToolCall {
     pub id: String,
@@ -27,7 +27,7 @@ pub struct StoredToolCall {
     pub content: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredChatMessage {
     pub id: String,
@@ -165,26 +165,46 @@ pub fn save_chat_transcript(
     let path = PathBuf::from(project_path);
     let file = session_path(&path, session_id)?;
     let now = now_ms();
-    let title = derive_title(&messages);
+    let derived = derive_title(&messages);
 
     let transcript = if file.is_file() {
         let mut existing: StoredTranscript =
             serde_json::from_str(&std::fs::read_to_string(&file).map_err(|e| e.to_string())?)
                 .map_err(|e| format!("Invalid transcript: {e}"))?;
+        if existing.messages == messages {
+            return Ok(ChatSessionSummary {
+                session_id: session_id.to_string(),
+                title: existing.title.clone(),
+                updated_at: existing.updated_at,
+            });
+        }
+        // Keep a user-visible title when the in-memory buffer is briefly empty
+        // (e.g. switching visible sessions before messages hydrate).
+        let title = if derived == "New chat"
+            && existing.title != "New chat"
+            && !existing.title.trim().is_empty()
+        {
+            existing.title.clone()
+        } else {
+            derived.clone()
+        };
         existing.messages = messages;
         existing.title = title.clone();
         existing.updated_at = now;
-        existing
+        (existing, title)
     } else {
-        StoredTranscript {
+        let transcript = StoredTranscript {
             session_id: session_id.to_string(),
             project_path: project_path.to_string(),
-            title: title.clone(),
+            title: derived.clone(),
             created_at: now,
             updated_at: now,
             messages,
-        }
+        };
+        (transcript, derived)
     };
+
+    let (transcript, title) = transcript;
 
     let raw = serde_json::to_string_pretty(&transcript).map_err(|err| err.to_string())?;
     std::fs::write(&file, raw).map_err(|err| err.to_string())?;
@@ -230,19 +250,15 @@ pub fn seed_chat_transcript(
     let resolved_title = if trimmed.is_empty() { "New chat" } else { trimmed };
 
     if file.is_file() {
-        let mut existing: StoredTranscript = serde_json::from_str(
+        let existing: StoredTranscript = serde_json::from_str(
             &std::fs::read_to_string(&file).map_err(|e| e.to_string())?,
         )
         .map_err(|e| format!("Invalid transcript: {e}"))?;
-        existing.title = resolved_title.to_string();
-        existing.updated_at = now;
-        let raw =
-            serde_json::to_string_pretty(&existing).map_err(|err| err.to_string())?;
-        std::fs::write(&file, raw).map_err(|err| err.to_string())?;
+        // Seed is for first paint only — never clobber an existing title on revisit.
         let summary = ChatSessionSummary {
             session_id: session_id.to_string(),
-            title: resolved_title.to_string(),
-            updated_at: now,
+            title: existing.title.clone(),
+            updated_at: existing.updated_at,
         };
         upsert_summary(&path, project_path, &summary)?;
         return Ok(summary);
@@ -427,6 +443,45 @@ mod tests {
         assert_eq!(
             save_chat_transcript("/unused", "pending", messages).unwrap_err(),
             "Refusing to persist without a real ACP session id"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn save_skips_when_messages_unchanged() {
+        let home = tempdir().unwrap();
+        let project = tempdir().unwrap();
+        let _home = HomeGuard::set(home.path());
+        let project_path = project.path().to_string_lossy().to_string();
+        let messages = vec![message("user", "Hello")];
+
+        let first = save_chat_transcript(&project_path, "session/one", messages.clone()).unwrap();
+        let second =
+            save_chat_transcript(&project_path, "session/one", messages).unwrap();
+
+        assert_eq!(first.updated_at, second.updated_at);
+    }
+
+    #[test]
+    #[serial]
+    fn seed_does_not_overwrite_existing_title() {
+        let home = tempdir().unwrap();
+        let project = tempdir().unwrap();
+        let _home = HomeGuard::set(home.path());
+        let project_path = project.path().to_string_lossy().to_string();
+
+        save_chat_transcript(
+            &project_path,
+            "session/one",
+            vec![message("user", "Keep this title")],
+        )
+        .unwrap();
+
+        let seeded = seed_chat_transcript(&project_path, "session/one", "New chat").unwrap();
+        assert_eq!(seeded.title, "Keep this title");
+        assert_eq!(
+            list_chat_sessions(&project_path).unwrap()[0].title,
+            "Keep this title"
         );
     }
 

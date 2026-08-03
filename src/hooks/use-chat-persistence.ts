@@ -31,7 +31,7 @@ export function useChatPersistence() {
 	const setGeneralChatSessions = useSetAtom(generalChatSessionsAtom)
 	const setGeneralChatsPath = useSetAtom(generalChatsPathAtom)
 	const setProjectChatsByPath = useSetAtom(projectChatsByPathAtom)
-	const lastSaved = useRef<string>("")
+	const lastSavedBySession = useRef<Record<string, string>>({})
 
 	const applySessionsForPath = useCallback(
 		(path: string, sessions: Awaited<ReturnType<typeof listChatSessions>>) => {
@@ -126,14 +126,20 @@ export function useChatPersistence() {
 	useEffect(() => {
 		if (!projectPath || !sessionId || messages.length === 0) return
 
+		const saveKey = `${projectPath}::${sessionId}`
 		const last = messages[messages.length - 1]
-		const fingerprint = `${sessionId}:${messages.length}:${last?.content.length ?? 0}`
-		if (fingerprint === lastSaved.current && !promptInFlight) return
+		const fingerprint = `${messages.length}:${last?.content.length ?? 0}:${last?.id ?? ""}`
+		if (
+			fingerprint === lastSavedBySession.current[saveKey] &&
+			!promptInFlight
+		) {
+			return
+		}
 
 		const timer = window.setTimeout(() => {
 			void persistChatTranscript(projectPath, sessionId, messages)
 				.then(() => {
-					lastSaved.current = fingerprint
+					lastSavedBySession.current[saveKey] = fingerprint
 					return refreshPath(projectPath)
 				})
 				.catch((error: unknown) => {
