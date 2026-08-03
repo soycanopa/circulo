@@ -1,22 +1,12 @@
 import { getDefaultStore, useSetAtom, useAtomValue } from "jotai"
 import { useEffect } from "react"
+import { checkOpencode, getDefaultChatsPath, getProjectStatus, openProject } from "@/lib/tauri"
+import { reconcileFromStatus } from "@/hooks/session-reconcile"
 import {
-	checkOpencode,
-	getDefaultChatsPath,
-	getProjectStatus,
-	openProject,
-} from "@/lib/tauri"
-import {
-	activeSessionIdAtom,
 	agentConnectedAtom,
-	capabilitiesAtom,
-	configOptionsAtom,
-	connectionGenerationAtom,
 	errorMessageAtom,
 	opencodeStatusAtom,
 	progressMessageAtom,
-	projectPathAtom,
-	sessionsAtom,
 } from "@/stores/atoms"
 
 /** Resolves when the ACP event bus has installed its listeners (no race on first event). */
@@ -35,57 +25,20 @@ export function waitForListeners(): Promise<void> {
 	return listenersReady ?? Promise.resolve()
 }
 
-async function reconcileFromStatus(): Promise<void> {
-	const status = await getProjectStatus()
-	const store = getDefaultStore()
-	const currentGeneration = store.get(connectionGenerationAtom)
-	if (
-		!status.connected ||
-		status.connectionGeneration === null ||
-		(status.connectionGeneration !== undefined &&
-			currentGeneration !== null &&
-			status.connectionGeneration !== currentGeneration)
-	) {
-		// Bridge is already the source of truth; do not overwrite a different generation.
-		return
-	}
-	store.set(connectionGenerationAtom, status.connectionGeneration)
-	store.set(agentConnectedAtom, status.connected)
-	if (status.projectPath) store.set(projectPathAtom, status.projectPath)
-	if (status.sessionId) {
-		store.set(activeSessionIdAtom, status.sessionId)
-		// Make sure the session map has a slot so the reducer can accept its events.
-		if (!store.get(sessionsAtom)[status.sessionId]) {
-			store.set(sessionsAtom, {
-				...store.get(sessionsAtom),
-				[status.sessionId]: {
-					messages: [],
-					streaming: "",
-					promptInFlight: false,
-					status: "idle",
-					configOptions: [],
-				},
-			})
-		}
-	}
-	if (status.configOptions.length) store.set(configOptionsAtom, status.configOptions)
-	if (status.capabilities) store.set(capabilitiesAtom, status.capabilities)
-}
-
 async function warmDefaultAgent(): Promise<void> {
 	const opencode = await checkOpencode()
 	if (!opencode.available) {
 		return
 	}
 
-	await reconcileFromStatus()
+	await reconcileFromStatus(getDefaultStore())
 	const status = await getProjectStatus()
 	if (status.connected) {
 		return
 	}
 	const chatsPath = await getDefaultChatsPath()
 	await openProject(chatsPath)
-	await reconcileFromStatus()
+	await reconcileFromStatus(getDefaultStore())
 }
 
 /**
