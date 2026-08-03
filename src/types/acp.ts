@@ -24,6 +24,7 @@ export interface ProjectStatus {
 	connected: boolean
 	projectPath: string | null
 	agentId: string | null
+	connectionGeneration: number | null
 	sessionId: string | null
 	configOptions: ConfigOption[]
 	capabilities: AgentCapabilities | null
@@ -39,6 +40,7 @@ export interface PermissionOption {
 export interface PermissionRequest {
 	requestId: string
 	sessionId: string
+	connectionGeneration?: number
 	toolCall?: unknown
 	options: PermissionOption[]
 }

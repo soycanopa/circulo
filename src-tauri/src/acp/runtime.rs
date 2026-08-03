@@ -2,13 +2,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::schema::v1::{
     CancelNotification, CloseSessionRequest, ContentBlock, InitializeRequest, LoadSessionRequest,
     NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigKind, SessionConfigOption,
     SessionConfigSelectOptions, SessionNotification, SetSessionConfigOptionRequest, TextContent,
 };
+use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ConnectionTo};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
@@ -25,6 +25,7 @@ pub async fn start_agent_connection(
     app: AppHandle,
     state: SharedState,
     project_path: PathBuf,
+    generation: u64,
     mut cmd_rx: mpsc::Receiver<AgentCommand>,
 ) -> Result<(), String> {
     let agent_id = {
@@ -38,6 +39,7 @@ pub async fn start_agent_connection(
 
     let agent = build_agent(&agent_id, &project_path)?;
 
+    let state_for_notifications = state.clone();
     let app_for_notifications = app.clone();
     let state_for_permissions = state.clone();
     let app_for_permissions = app.clone();
@@ -54,7 +56,21 @@ pub async fn start_agent_connection(
             async move |notification: SessionNotification, _cx| {
                 // Forward immediately — UI must stream agent_message_chunk before
                 // session/prompt RPC resolves (ACP prompt-turn lifecycle).
-                let payload = serde_json::to_value(&notification).unwrap_or(Value::Null);
+                if !state_for_notifications
+                    .lock()
+                    .await
+                    .is_current_generation(generation)
+                {
+                    return Ok(());
+                }
+
+                let mut payload = serde_json::to_value(&notification).unwrap_or(Value::Null);
+                if let Some(object) = payload.as_object_mut() {
+                    object.insert(
+                        "connectionGeneration".to_string(),
+                        serde_json::json!(generation),
+                    );
+                }
 
                 // Log time-to-first agent_message_chunk (Palot-feel metric).
                 if let Some(update) = payload.get("update") {
@@ -84,6 +100,17 @@ pub async fn start_agent_connection(
         )
         .on_receive_request(
             async move |request: RequestPermissionRequest, responder, _connection| {
+                if !state_for_permissions
+                    .lock()
+                    .await
+                    .is_current_generation(generation)
+                {
+                    let _ = responder.respond(RequestPermissionResponse::new(
+                        RequestPermissionOutcome::Cancelled,
+                    ));
+                    return Ok(());
+                }
+
                 let request_id = uuid::Uuid::new_v4().to_string();
                 let (tx, rx) = oneshot::channel::<String>();
 
@@ -97,6 +124,7 @@ pub async fn start_agent_connection(
                     "sessionId": request.session_id,
                     "toolCall": request.tool_call,
                     "options": request.options,
+                    "connectionGeneration": generation,
                 });
                 let _ = app_for_permissions.emit("acp:permission_request", payload);
 
@@ -120,12 +148,16 @@ pub async fn start_agent_connection(
             let project_path = project_path.clone();
 
             async move {
-                info!(path = %project_path.display(), "Initializing ACP agent");
+                info!(path = %project_path.display(), generation, "Initializing ACP agent");
+                if !state.lock().await.is_current_generation(generation) {
+                    return Ok(());
+                }
                 let _ = app.emit(
                     "agent:progress",
                     serde_json::json!({
                         "phase": "initialize",
                         "message": "Connecting to OpenCode…",
+                        "connectionGeneration": generation,
                     }),
                 );
                 let init_started = Instant::now();
@@ -144,11 +176,14 @@ pub async fn start_agent_connection(
                     Err(err) => {
                         let _ = app.emit(
                             "acp:error",
-                            serde_json::json!({ "message": format!("ACP initialize failed: {err}") }),
+                            serde_json::json!({
+                                "message": format!("ACP initialize failed: {err}"),
+                                "connectionGeneration": generation,
+                            }),
                         );
                         // Unblock open_project waiters.
                         let mut guard = state.lock().await;
-                        if let Some(agent) = guard.active_agent_mut() {
+                        if let Some(agent) = guard.agent_for_generation_mut(generation) {
                             agent.connected = false;
                             agent.agent_done.notify_waiters();
                         }
@@ -166,7 +201,7 @@ pub async fn start_agent_connection(
 
                 {
                     let mut guard = state.lock().await;
-                    if let Some(agent) = guard.active_agent_mut() {
+                    if let Some(agent) = guard.agent_for_generation_mut(generation) {
                         agent.agent_capabilities = agent_capabilities.clone();
                         agent.connected = true;
                         agent.project_path = project_path.clone();
@@ -178,6 +213,7 @@ pub async fn start_agent_connection(
                     serde_json::json!({
                         "projectPath": project_path.display().to_string(),
                         "capabilities": agent_capabilities,
+                        "connectionGeneration": generation,
                     }),
                 );
                 let _ = app.emit(
@@ -185,13 +221,14 @@ pub async fn start_agent_connection(
                     serde_json::json!({
                         "phase": "ready",
                         "message": "Agent ready — preparing first session in background…",
+                        "connectionGeneration": generation,
                     }),
                 );
 
                 // Unblock open_project waiters after initialize only (ACP: agent ready, no UI session yet).
                 {
                     let mut guard = state.lock().await;
-                    if let Some(agent) = guard.active_agent_mut() {
+                    if let Some(agent) = guard.agent_for_generation_mut(generation) {
                         agent.agent_done.notify_waiters();
                     }
                 }
@@ -221,6 +258,7 @@ pub async fn start_agent_connection(
                             &app,
                             &state,
                             &project_path,
+                            generation,
                             &active_session_id,
                             /* publish_to_ui */ false,
                             /* resume */ false,
@@ -232,8 +270,9 @@ pub async fn start_agent_connection(
                                 let _ = app.emit(
                                     "agent:progress",
                                     serde_json::json!({
-                                        "phase": "ready",
-                                        "message": "Agent ready — New Chat to start",
+                        "phase": "ready",
+                        "message": "Agent ready — New Chat to start",
+                        "connectionGeneration": generation,
                                     }),
                                 );
                             }
@@ -306,6 +345,7 @@ pub async fn start_agent_connection(
                                             serde_json::json!({
                                                 "sessionId": session_id,
                                                 "elapsedMs": started.elapsed().as_millis() as u64,
+                                                "connectionGeneration": generation,
                                             }),
                                         );
                                     }
@@ -320,6 +360,7 @@ pub async fn start_agent_connection(
                                             serde_json::json!({
                                                 "message": err.to_string(),
                                                 "sessionId": session_id,
+                                                "connectionGeneration": generation,
                                             }),
                                         );
                                     }
@@ -346,7 +387,9 @@ pub async fn start_agent_connection(
                                 Ok(response) => {
                                     let mapped =
                                         map_config_options(Some(&response.config_options));
-                                    if let Some(agent) = state.lock().await.active_agent_mut() {
+                                    if let Some(agent) =
+                                        state.lock().await.agent_for_generation_mut(generation)
+                                    {
                                         agent.config_options = mapped.clone();
                                     }
                                     let _ = app.emit(
@@ -354,13 +397,17 @@ pub async fn start_agent_connection(
                                         serde_json::json!({
                                             "configOptions": mapped,
                                             "sessionId": session_id,
+                                            "connectionGeneration": generation,
                                         }),
                                     );
                                 }
                                 Err(err) => {
                                     let _ = app.emit(
                                         "acp:error",
-                                        serde_json::json!({ "message": err.to_string() }),
+                                        serde_json::json!({
+                                            "message": err.to_string(),
+                                            "connectionGeneration": generation,
+                                        }),
                                     );
                                 }
                             }
@@ -372,6 +419,7 @@ pub async fn start_agent_connection(
                                 &app,
                                 &state,
                                 &project_path,
+                                generation,
                                 &active_session_id,
                             )
                             .await;
@@ -384,6 +432,7 @@ pub async fn start_agent_connection(
                                 &app,
                                 &state,
                                 &project_path,
+                                generation,
                                 &active_session_id,
                                 &session_id,
                             )
@@ -394,6 +443,7 @@ pub async fn start_agent_connection(
                             let result = close_session_on_connection(
                                 &connection,
                                 &state,
+                                generation,
                                 &active_session_id,
                                 &session_id,
                             )
@@ -422,7 +472,10 @@ pub async fn start_agent_connection(
                                 Err(err) => {
                                     let _ = app.emit(
                                         "acp:error",
-                                        serde_json::json!({ "message": err.to_string() }),
+                                        serde_json::json!({
+                                            "message": err.to_string(),
+                                            "connectionGeneration": generation,
+                                        }),
                                     );
                                 }
                             }
@@ -446,12 +499,13 @@ async fn publish_or_create_session(
     app: &AppHandle,
     state: &SharedState,
     project_path: &PathBuf,
+    generation: u64,
     active_session_id: &Arc<Mutex<String>>,
 ) -> Result<(), String> {
     // If prewarm finished and UI has not claimed it, publish without another session/new.
     {
         let mut guard = state.lock().await;
-        if let Some(agent) = guard.active_agent_mut() {
+        if let Some(agent) = guard.agent_for_generation_mut(generation) {
             if !agent.session_id.is_empty() && !agent.session_ready_for_ui {
                 agent.session_ready_for_ui = true;
                 let session_id = agent.session_id.clone();
@@ -462,8 +516,9 @@ async fn publish_or_create_session(
                     serde_json::json!({
                         "sessionId": session_id,
                         "projectPath": project_path.display().to_string(),
-                        "configOptions": config_options,
-                        "resume": false,
+                    "configOptions": config_options,
+                    "resume": false,
+                    "connectionGeneration": generation,
                     }),
                 );
                 return Ok(());
@@ -485,6 +540,7 @@ async fn publish_or_create_session(
         close_session_on_connection(
             connection,
             state,
+            generation,
             active_session_id,
             &previous_session_id,
         )
@@ -497,6 +553,7 @@ async fn publish_or_create_session(
         app,
         state,
         project_path,
+        generation,
         active_session_id,
         /* publish_to_ui */ true,
         /* resume */ false,
@@ -511,6 +568,7 @@ async fn create_session_on_connection(
     app: &AppHandle,
     state: &SharedState,
     project_path: &PathBuf,
+    generation: u64,
     active_session_id: &Arc<Mutex<String>>,
     publish_to_ui: bool,
     resume: bool,
@@ -541,7 +599,7 @@ async fn create_session_on_connection(
     *active_session_id.lock().await = session_id.clone();
     {
         let mut guard = state.lock().await;
-        if let Some(agent) = guard.active_agent_mut() {
+        if let Some(agent) = guard.agent_for_generation_mut(generation) {
             agent.session_id = session_id.clone();
             agent.config_options = config_options.clone();
             agent.project_path = project_path.clone();
@@ -557,6 +615,7 @@ async fn create_session_on_connection(
                 "projectPath": project_path.display().to_string(),
                 "configOptions": config_options,
                 "resume": resume,
+                "connectionGeneration": generation,
             }),
         );
     }
@@ -570,6 +629,7 @@ async fn load_session_on_connection(
     app: &AppHandle,
     state: &SharedState,
     project_path: &PathBuf,
+    generation: u64,
     active_session_id: &Arc<Mutex<String>>,
     session_id: &str,
 ) -> Result<(), String> {
@@ -595,7 +655,7 @@ async fn load_session_on_connection(
     };
     if current_session_id == session_id {
         let mut guard = state.lock().await;
-        if let Some(agent) = guard.active_agent_mut() {
+        if let Some(agent) = guard.agent_for_generation_mut(generation) {
             agent.session_ready_for_ui = true;
             let config_options = agent.config_options.clone();
             let _ = app.emit(
@@ -605,6 +665,7 @@ async fn load_session_on_connection(
                     "projectPath": project_path.display().to_string(),
                     "configOptions": config_options,
                     "resume": true,
+                    "connectionGeneration": generation,
                 }),
             );
         }
@@ -615,6 +676,7 @@ async fn load_session_on_connection(
         close_session_on_connection(
             connection,
             state,
+            generation,
             active_session_id,
             &current_session_id,
         )
@@ -648,7 +710,7 @@ async fn load_session_on_connection(
     *active_session_id.lock().await = session_id.to_string();
     {
         let mut guard = state.lock().await;
-        if let Some(agent) = guard.active_agent_mut() {
+        if let Some(agent) = guard.agent_for_generation_mut(generation) {
             agent.session_id = session_id.to_string();
             agent.config_options = config_options.clone();
             agent.project_path = project_path.clone();
@@ -663,6 +725,7 @@ async fn load_session_on_connection(
             "projectPath": project_path.display().to_string(),
             "configOptions": config_options,
             "resume": true,
+            "connectionGeneration": generation,
         }),
     );
 
@@ -672,6 +735,7 @@ async fn load_session_on_connection(
 async fn close_session_on_connection(
     connection: &ConnectionTo<Agent>,
     state: &SharedState,
+    generation: u64,
     active_session_id: &Arc<Mutex<String>>,
     session_id: &str,
 ) -> Result<(), String> {
@@ -699,7 +763,7 @@ async fn close_session_on_connection(
 
     *active_session_id.lock().await = String::new();
     let mut guard = state.lock().await;
-    if let Some(agent) = guard.active_agent_mut() {
+    if let Some(agent) = guard.agent_for_generation_mut(generation) {
         if agent.session_id == session_id {
             agent.session_id = String::new();
             agent.session_ready_for_ui = false;

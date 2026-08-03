@@ -60,6 +60,7 @@ pub struct ProjectStatus {
     pub connected: bool,
     pub project_path: Option<String>,
     pub agent_id: Option<String>,
+    pub connection_generation: Option<u64>,
     pub session_id: Option<String>,
     pub config_options: Vec<ConfigOptionDto>,
     pub capabilities: Option<AgentCapabilitiesDto>,
@@ -98,6 +99,7 @@ pub struct ContextFile {
 }
 
 pub struct ActiveAgent {
+    pub generation: u64,
     pub project_path: PathBuf,
     pub agent_id: String,
     /// ACP session id if one exists on the agent process.
@@ -114,6 +116,7 @@ pub struct ActiveAgent {
 
 pub struct CirculoState {
     pub agent: Option<ActiveAgent>,
+    pub next_generation: u64,
     pub permission_waiters: HashMap<String, oneshot::Sender<String>>,
 }
 
@@ -121,6 +124,7 @@ impl CirculoState {
     pub fn new() -> Self {
         Self {
             agent: None,
+            next_generation: 0,
             permission_waiters: HashMap::new(),
         }
     }
@@ -131,6 +135,7 @@ impl CirculoState {
                 connected: agent.connected,
                 project_path: Some(agent.project_path.display().to_string()),
                 agent_id: Some(agent.agent_id.clone()),
+                connection_generation: Some(agent.generation),
                 // Hide prewarmed sessions until New Chat publishes them.
                 session_id: if agent.session_ready_for_ui {
                     normalize_session_id(&agent.session_id)
@@ -145,6 +150,7 @@ impl CirculoState {
                 connected: false,
                 project_path: None,
                 agent_id: None,
+                connection_generation: None,
                 session_id: None,
                 config_options: Vec::new(),
                 capabilities: None,
@@ -154,10 +160,16 @@ impl CirculoState {
         }
     }
 
-    /// MVP is single-agent: always mutate the active agent when present.
-    /// Path equality can fail across canonicalize/string forms and left the UI stuck warming.
-    pub fn active_agent_mut(&mut self) -> Option<&mut ActiveAgent> {
-        self.agent.as_mut()
+    pub fn is_current_generation(&self, generation: u64) -> bool {
+        self.agent
+            .as_ref()
+            .is_some_and(|agent| agent.generation == generation)
+    }
+
+    pub fn agent_for_generation_mut(&mut self, generation: u64) -> Option<&mut ActiveAgent> {
+        self.agent
+            .as_mut()
+            .filter(|agent| agent.generation == generation)
     }
 }
 

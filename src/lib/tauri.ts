@@ -210,11 +210,13 @@ export function listenAcpEvents(handlers: {
 	onAgentReady?: (payload: {
 		projectPath: string
 		capabilities: AgentCapabilities
+		connectionGeneration: number
 	}) => void
 	onSessionReady?: (payload: {
 		sessionId: string
 		projectPath: string
 		configOptions: ConfigOption[]
+		connectionGeneration: number
 		resume?: boolean
 	}) => void
 	onSessionUpdate?: (payload: unknown) => void
@@ -222,10 +224,18 @@ export function listenAcpEvents(handlers: {
 	onConfigOptions?: (payload: {
 		configOptions: ConfigOption[]
 		sessionId?: string
+		connectionGeneration?: number
 	}) => void
-	onPromptComplete?: (payload?: { sessionId?: string }) => void
-	onError?: (payload: { message: string; sessionId?: string }) => void
-	onDisconnected?: () => void
+	onPromptComplete?: (payload?: {
+		sessionId?: string
+		connectionGeneration?: number
+	}) => void
+	onError?: (payload: {
+		message: string
+		sessionId?: string
+		connectionGeneration?: number
+	}) => void
+	onDisconnected?: (payload: { connectionGeneration?: number }) => void
 	onProgress?: (payload: { phase: string; message?: string }) => void
 }): Promise<UnlistenFn[]> {
 	return Promise.all([
@@ -234,6 +244,7 @@ export function listenAcpEvents(handlers: {
 				event.payload as {
 					projectPath: string
 					capabilities: AgentCapabilities
+					connectionGeneration: number
 				},
 			)
 		}),
@@ -243,6 +254,7 @@ export function listenAcpEvents(handlers: {
 					sessionId: string
 					projectPath: string
 					configOptions: ConfigOption[]
+					connectionGeneration: number
 					resume?: boolean
 				},
 			)
@@ -255,17 +267,34 @@ export function listenAcpEvents(handlers: {
 		}),
 		listen("acp:config_options", (event) => {
 			handlers.onConfigOptions?.(
-				event.payload as { configOptions: ConfigOption[]; sessionId?: string },
+				event.payload as {
+					configOptions: ConfigOption[]
+					sessionId?: string
+					connectionGeneration?: number
+				},
 			)
 		}),
 		listen("acp:prompt_complete", (event) => {
-			handlers.onPromptComplete?.(event.payload as { sessionId?: string })
+			handlers.onPromptComplete?.(
+				event.payload as {
+					sessionId?: string
+					connectionGeneration?: number
+				},
+			)
 		}),
 		listen("acp:error", (event) => {
-			handlers.onError?.(event.payload as { message: string; sessionId?: string })
+			handlers.onError?.(
+				event.payload as {
+					message: string
+					sessionId?: string
+					connectionGeneration?: number
+				},
+			)
 		}),
-		listen("agent:disconnected", () => {
-			handlers.onDisconnected?.()
+		listen("agent:disconnected", (event) => {
+			handlers.onDisconnected?.(
+				event.payload as { connectionGeneration?: number },
+			)
 		}),
 		listen("agent:progress", (event) => {
 			handlers.onProgress?.(event.payload as { phase: string; message?: string })

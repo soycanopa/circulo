@@ -41,8 +41,8 @@ export function useAcpBridge() {
 				processAcpEvent(store, refs, { type: "prompt_complete", payload }),
 			onError: (payload) =>
 				processAcpEvent(store, refs, { type: "error", payload }),
-			onDisconnected: () =>
-				processAcpEvent(store, refs, { type: "disconnected" }),
+			onDisconnected: (payload) =>
+				processAcpEvent(store, refs, { type: "disconnected", payload }),
 		}).then((list) => {
 			if (cancelled) {
 				for (const unlisten of list) unlisten()

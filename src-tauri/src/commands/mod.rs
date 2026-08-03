@@ -86,13 +86,11 @@ pub async fn open_project_inner(
 ) -> Result<ProjectStatus, String> {
     let project_path = PathBuf::from(&path);
     if !project_path.is_dir() {
-        std::fs::create_dir_all(&project_path).map_err(|err| {
-            format!("Not a directory and could not create {path}: {err}")
-        })?;
+        std::fs::create_dir_all(&project_path)
+            .map_err(|err| format!("Not a directory and could not create {path}: {err}"))?;
     }
 
-    let resolved_agent_id =
-        crate::agents::normalize_agent_id(agent_id.as_deref()).to_string();
+    let resolved_agent_id = crate::agents::normalize_agent_id(agent_id.as_deref()).to_string();
 
     crate::cli_resolve::resolve_opencode().map_err(|err| err)?;
 
@@ -118,9 +116,12 @@ pub async fn open_project_inner(
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
     let agent_done = Arc::new(tokio::sync::Notify::new());
 
-    {
+    let generation = {
         let mut guard = state.lock().await;
+        guard.next_generation = guard.next_generation.saturating_add(1);
+        let generation = guard.next_generation;
         guard.agent = Some(ActiveAgent {
+            generation,
             project_path: project_path.clone(),
             agent_id: resolved_agent_id,
             session_id: String::new(),
@@ -131,7 +132,8 @@ pub async fn open_project_inner(
             agent_done: agent_done.clone(),
             connected: false,
         });
-    }
+        generation
+    };
 
     let shared: SharedState = Arc::clone(state);
     let app_clone = app.clone();
@@ -139,17 +141,37 @@ pub async fn open_project_inner(
 
     info!(path = %project_path.display(), "Spawning single OpenCode ACP process (opencode acp)");
     tauri::async_runtime::spawn(async move {
-        let result =
-            start_agent_connection(app_clone.clone(), shared.clone(), path_clone, cmd_rx).await;
+        let result = start_agent_connection(
+            app_clone.clone(),
+            shared.clone(),
+            path_clone,
+            generation,
+            cmd_rx,
+        )
+        .await;
 
         if let Err(err) = result {
-            let _ = app_clone.emit("acp:error", serde_json::json!({ "message": err }));
+            let is_current = shared.lock().await.is_current_generation(generation);
+            if !is_current {
+                return;
+            }
+            let _ = app_clone.emit(
+                "acp:error",
+                serde_json::json!({
+                    "message": err,
+                    "connectionGeneration": generation,
+                }),
+            );
             let mut guard = shared.lock().await;
-            if let Some(agent) = &mut guard.agent {
+            if let Some(agent) = guard.agent_for_generation_mut(generation) {
                 agent.connected = false;
                 agent.agent_done.notify_waiters();
             }
-            let _ = app_clone.emit("agent:disconnected", ());
+            drop(guard);
+            let _ = app_clone.emit(
+                "agent:disconnected",
+                serde_json::json!({ "connectionGeneration": generation }),
+            );
         }
     });
 
@@ -473,9 +495,7 @@ pub struct DirectoryCompletion {
 /// List directories that match a typed path prefix (e.g. `/Vol` → `/Volumes`).
 /// Only directories; used for Open Project autocomplete (user-initiated).
 #[tauri::command]
-pub async fn complete_directory_path(
-    partial: String,
-) -> Result<Vec<DirectoryCompletion>, String> {
+pub async fn complete_directory_path(partial: String) -> Result<Vec<DirectoryCompletion>, String> {
     tauri::async_runtime::spawn_blocking(move || complete_directory_path_sync(&partial))
         .await
         .map_err(|err| format!("Path completion task failed: {err}"))?
@@ -746,7 +766,11 @@ fn search_directories_by_name(query: &str) -> Result<Vec<DirectoryCompletion>, S
 
     scored.sort_by(|a, b| {
         a.0.cmp(&b.0)
-            .then_with(|| a.1.name.to_ascii_lowercase().cmp(&b.1.name.to_ascii_lowercase()))
+            .then_with(|| {
+                a.1.name
+                    .to_ascii_lowercase()
+                    .cmp(&b.1.name.to_ascii_lowercase())
+            })
             .then_with(|| a.1.path.cmp(&b.1.path))
     });
     scored.truncate(40);
@@ -821,8 +845,11 @@ fn search_directories_by_name_shallow(query: &str) -> Result<Vec<DirectoryComple
     }
 
     scored.sort_by(|a, b| {
-        a.0.cmp(&b.0)
-            .then_with(|| a.1.name.to_ascii_lowercase().cmp(&b.1.name.to_ascii_lowercase()))
+        a.0.cmp(&b.0).then_with(|| {
+            a.1.name
+                .to_ascii_lowercase()
+                .cmp(&b.1.name.to_ascii_lowercase())
+        })
     });
     scored.truncate(40);
     Ok(scored.into_iter().map(|(_, item)| item).collect())

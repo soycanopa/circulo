@@ -5,6 +5,7 @@ import {
 	agentConnectedAtom,
 	capabilitiesAtom,
 	configOptionsAtom,
+	connectionGenerationAtom,
 	errorMessageAtom,
 	historyViewSessionIdAtom,
 	messagesAtom,
@@ -30,7 +31,11 @@ export interface AcpBridgeRefs {
 type AcpBridgeEvent =
 	| {
 			type: "agent_ready"
-			payload: { projectPath: string; capabilities: AgentCapabilities }
+			payload: {
+				projectPath: string
+				capabilities: AgentCapabilities
+				connectionGeneration: number
+			}
 	  }
 	| {
 			type: "session_ready"
@@ -38,6 +43,7 @@ type AcpBridgeEvent =
 				sessionId: string
 				projectPath: string
 				configOptions?: ConfigOption[]
+				connectionGeneration: number
 				resume?: boolean
 			}
 	  }
@@ -46,11 +52,33 @@ type AcpBridgeEvent =
 	| { type: "permission_request"; payload: PermissionRequest }
 	| {
 			type: "config_options"
-			payload: { sessionId?: string; configOptions: ConfigOption[] }
+			payload: {
+				sessionId?: string
+				configOptions: ConfigOption[]
+				connectionGeneration?: number
+			}
 	  }
-	| { type: "prompt_complete"; payload?: { sessionId?: string } }
-	| { type: "error"; payload: { message: string; sessionId?: string } }
-	| { type: "disconnected" }
+	| {
+			type: "prompt_complete"
+			payload?: { sessionId?: string; connectionGeneration?: number }
+	  }
+	| {
+			type: "error"
+			payload: {
+				message: string
+				sessionId?: string
+				connectionGeneration?: number
+			}
+	  }
+	| { type: "disconnected"; payload: { connectionGeneration?: number } }
+
+function isStaleGeneration(
+	store: Store,
+	generation: number | undefined,
+): boolean {
+	const current = store.get(connectionGenerationAtom)
+	return generation !== undefined && current !== null && generation !== current
+}
 
 function isDifferentSession(
 	eventSessionId: string | undefined | null,
@@ -68,6 +96,7 @@ export function processAcpEvent(
 ) {
 	switch (event.type) {
 		case "agent_ready":
+			store.set(connectionGenerationAtom, event.payload.connectionGeneration)
 			store.set(agentConnectedAtom, true)
 			store.set(projectPathAtom, event.payload.projectPath)
 			store.set(capabilitiesAtom, event.payload.capabilities)
@@ -76,6 +105,13 @@ export function processAcpEvent(
 			store.set(errorMessageAtom, null)
 			return
 		case "session_ready":
+			if (
+				store.get(connectionGenerationAtom) !== null &&
+				store.get(connectionGenerationAtom) !== event.payload.connectionGeneration
+			) {
+				return
+			}
+			store.set(connectionGenerationAtom, event.payload.connectionGeneration)
 			refs.sessionId.current = event.payload.sessionId
 			refs.firstChunkLogged.current = false
 			store.set(sessionIdAtom, event.payload.sessionId)
@@ -100,6 +136,11 @@ export function processAcpEvent(
 			return
 		case "session_update": {
 			const root = event.payload as Record<string, unknown>
+			const eventGeneration =
+				typeof root.connectionGeneration === "number"
+					? root.connectionGeneration
+					: undefined
+			if (isStaleGeneration(store, eventGeneration)) return
 			const eventSessionId =
 				(typeof root.sessionId === "string" && root.sessionId) ||
 				(typeof root.session_id === "string" && root.session_id) ||
@@ -126,6 +167,7 @@ export function processAcpEvent(
 		}
 		case "permission_request":
 			if (
+				isStaleGeneration(store, event.payload.connectionGeneration) ||
 				isDifferentSession(event.payload.sessionId, refs.sessionId.current)
 			) {
 				return
@@ -135,6 +177,7 @@ export function processAcpEvent(
 			return
 		case "config_options":
 			if (
+				isStaleGeneration(store, event.payload.connectionGeneration) ||
 				isDifferentSession(event.payload.sessionId, refs.sessionId.current)
 			) {
 				return
@@ -143,6 +186,7 @@ export function processAcpEvent(
 			return
 		case "prompt_complete":
 			if (
+				isStaleGeneration(store, event.payload?.connectionGeneration) ||
 				isDifferentSession(event.payload?.sessionId, refs.sessionId.current)
 			) {
 				return
@@ -164,6 +208,7 @@ export function processAcpEvent(
 			return
 		case "error":
 			if (
+				isStaleGeneration(store, event.payload.connectionGeneration) ||
 				isDifferentSession(event.payload.sessionId, refs.sessionId.current)
 			) {
 				return
@@ -176,6 +221,15 @@ export function processAcpEvent(
 			store.set(progressMessageAtom, null)
 			return
 		case "disconnected":
+			if (
+				event.payload.connectionGeneration !== undefined &&
+				store.get(connectionGenerationAtom) !== null &&
+				event.payload.connectionGeneration !==
+					store.get(connectionGenerationAtom)
+			) {
+				return
+			}
+			store.set(connectionGenerationAtom, null)
 			store.set(agentConnectedAtom, false)
 			store.set(sessionIdAtom, null)
 			refs.sessionId.current = null

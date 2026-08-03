@@ -111,6 +111,34 @@ describe("processAcpEvent", () => {
 		expect(store.get(sessionStatusAtom)).toBe("generating")
 	})
 
+	it("ignores disconnects from an older connection", () => {
+		const store = createStore()
+		const refs = createRefs()
+		processAcpEvent(store, refs, {
+			type: "agent_ready",
+			payload: {
+				projectPath: "/current",
+				capabilities: {
+					loadSession: true,
+					listSessions: false,
+					resumeSession: false,
+					closeSession: true,
+				},
+				connectionGeneration: 2,
+			},
+		})
+		store.set(sessionIdAtom, "session-1")
+		store.set(agentConnectedAtom, true)
+
+		processAcpEvent(store, refs, {
+			type: "disconnected",
+			payload: { connectionGeneration: 1 },
+		})
+
+		expect(store.get(sessionIdAtom)).toBe("session-1")
+		expect(store.get(agentConnectedAtom)).toBe(true)
+	})
+
 	it("clears session and permission state on disconnect", () => {
 		const store = createStore()
 		const refs = createRefs()
@@ -118,7 +146,10 @@ describe("processAcpEvent", () => {
 		store.set(agentConnectedAtom, true)
 		store.set(activePermissionAtom, permission)
 
-		processAcpEvent(store, refs, { type: "disconnected" })
+		processAcpEvent(store, refs, {
+			type: "disconnected",
+			payload: {},
+		})
 
 		expect(store.get(sessionIdAtom)).toBeNull()
 		expect(store.get(agentConnectedAtom)).toBe(false)

@@ -12,6 +12,7 @@ import type {
 } from "@/types/acp"
 
 export const projectPathAtom = atom<string | null>(null)
+export const connectionGenerationAtom = atom<number | null>(null)
 export const sessionIdAtom = atom<string | null>(null)
 export const agentConnectedAtom = atom(false)
 export const sessionStatusAtom = atom<SessionStatus>("idle")
