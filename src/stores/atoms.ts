@@ -24,8 +24,6 @@ export const activePermissionAtom = atom<PermissionRequest | null>(null)
 export const errorMessageAtom = atom<string | null>(null)
 export const progressMessageAtom = atom<string | null>(null)
 export const opencodeStatusAtom = atom<OpencodeStatus | null>(null)
-/** @deprecated Prefer generalChatSessionsAtom + projectChatsByPathAtom; kept for active-path convenience. */
-export const chatSessionsAtom = atom<ChatSessionSummary[]>([])
 /** Resolved `~/.circulo/chats` path for the general Chats section. */
 export const generalChatsPathAtom = atom<string | null>(null)
 /** Sessions that belong only to the general chats workspace. */

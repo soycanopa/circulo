@@ -47,7 +47,6 @@ import {
 	agentConnectedAtom,
 	appSettingsAtom,
 	capabilitiesAtom,
-	chatSessionsAtom,
 	configOptionsAtom,
 	diffPanelOpenAtom,
 	errorMessageAtom,
@@ -82,7 +81,6 @@ export default function App() {
 	const error = useAtomValue(errorMessageAtom)
 	const progress = useAtomValue(progressMessageAtom)
 	const opencodeStatus = useAtomValue(opencodeStatusAtom)
-	const chatSessions = useAtomValue(chatSessionsAtom)
 	const generalChatsPath = useAtomValue(generalChatsPathAtom)
 	const generalChatSessions = useAtomValue(generalChatSessionsAtom)
 	const projectChatsByPath = useAtomValue(projectChatsByPathAtom)
@@ -120,8 +118,6 @@ export default function App() {
 	const activeChatId = sessionId ?? historyViewSessionId
 	const activeChatTitle = useMemo(() => {
 		if (!activeChatId) return "chat"
-		const fromActive = chatSessions.find((c) => c.sessionId === activeChatId)
-		if (fromActive) return fromActive.title
 		const fromGeneral = generalChatSessions.find(
 			(c) => c.sessionId === activeChatId,
 		)
@@ -131,12 +127,7 @@ export default function App() {
 			if (hit) return hit.title
 		}
 		return "chat"
-	}, [
-		activeChatId,
-		chatSessions,
-		generalChatSessions,
-		projectChatsByPath,
-	])
+	}, [activeChatId, generalChatSessions, projectChatsByPath])
 
 	const handleExportTranscript = useCallback(async () => {
 		if (messages.length === 0) return

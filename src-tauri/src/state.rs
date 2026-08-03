@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use agent_client_protocol::schema::v1::AgentCapabilities;
@@ -152,18 +152,6 @@ impl CirculoState {
                     .to_string(),
             },
         }
-    }
-
-    pub fn agent_for_path(&self, path: &Path) -> Option<&ActiveAgent> {
-        self.agent
-            .as_ref()
-            .filter(|agent| agent.project_path == path)
-    }
-
-    pub fn agent_for_path_mut(&mut self, path: &Path) -> Option<&mut ActiveAgent> {
-        self.agent
-            .as_mut()
-            .filter(|agent| agent.project_path == path)
     }
 
     /// MVP is single-agent: always mutate the active agent when present.

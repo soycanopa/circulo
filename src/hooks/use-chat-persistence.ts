@@ -8,7 +8,6 @@ import {
 import { isGeneralChatsPath } from "@/lib/workspace"
 import {
 	appSettingsAtom,
-	chatSessionsAtom,
 	generalChatSessionsAtom,
 	generalChatsPathAtom,
 	messagesAtom,
@@ -27,7 +26,6 @@ export function useChatPersistence() {
 	const appSettings = useAtomValue(appSettingsAtom)
 	const generalChatsPath = useAtomValue(generalChatsPathAtom)
 
-	const setChatSessions = useSetAtom(chatSessionsAtom)
 	const setGeneralChatSessions = useSetAtom(generalChatSessionsAtom)
 	const setGeneralChatsPath = useSetAtom(generalChatsPathAtom)
 	const setProjectChatsByPath = useSetAtom(projectChatsByPathAtom)
@@ -40,17 +38,8 @@ export function useChatPersistence() {
 			} else {
 				setProjectChatsByPath((prev) => ({ ...prev, [path]: sessions }))
 			}
-			// Keep active-path convenience atom in sync for titles / legacy callers.
-			if (projectPath === path) {
-				setChatSessions(sessions)
-			}
 		},
-		[
-			projectPath,
-			setChatSessions,
-			setGeneralChatSessions,
-			setProjectChatsByPath,
-		],
+		[setGeneralChatSessions, setProjectChatsByPath],
 	)
 
 	const refreshPath = useCallback(
@@ -100,7 +89,6 @@ export function useChatPersistence() {
 	/** Refresh only the active workspace list (plus keep maps coherent). */
 	const refreshSessions = useCallback(async () => {
 		if (!projectPath) {
-			setChatSessions([])
 			await refreshAllWorkspaceLists()
 			return
 		}
@@ -120,7 +108,6 @@ export function useChatPersistence() {
 		projectPath,
 		refreshAllWorkspaceLists,
 		refreshPath,
-		setChatSessions,
 		setGeneralChatsPath,
 	])
 
@@ -129,14 +116,10 @@ export function useChatPersistence() {
 		void refreshAllWorkspaceLists()
 	}, [refreshAllWorkspaceLists])
 
-	// Sync convenience atom when active path changes and we already have cache.
 	useEffect(() => {
-		if (!projectPath) {
-			setChatSessions([])
-			return
-		}
+		if (!projectPath) return
 		void refreshPath(projectPath)
-	}, [projectPath, refreshPath, setChatSessions])
+	}, [projectPath, refreshPath])
 
 	useEffect(() => {
 		if (!projectPath || !sessionId || messages.length === 0) return
