@@ -11,6 +11,18 @@ describe("extractMentionPaths", () => {
 			extractMentionPaths("See @src/App.tsx and @src/lib/utils.ts"),
 		).toEqual(["src/App.tsx", "src/lib/utils.ts"])
 	})
+
+	it("ignores email-style tokens", () => {
+		expect(extractMentionPaths("contact email@host.com")).toEqual([])
+	})
+
+	it("rejects @-tokens preceded by alphanumerics", () => {
+		expect(extractMentionPaths("user@host")).toEqual([])
+	})
+
+	it("still recognises @ after punctuation", () => {
+		expect(extractMentionPaths("see(@src/index.ts)")).toEqual(["src/index.ts"])
+	})
 })
 
 describe("getActiveMention", () => {
@@ -21,6 +33,10 @@ describe("getActiveMention", () => {
 
 	it("ignores @ inside words", () => {
 		expect(getActiveMention("email@test.com", 14)).toBeNull()
+	})
+
+	it("returns empty query right after @", () => {
+		expect(getActiveMention("hello @", 7)?.query).toBe("")
 	})
 })
 
