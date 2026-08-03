@@ -261,7 +261,7 @@ pub async fn start_agent_connection(
                 let run_prompt_started_at = prompt_started_at.clone();
                 let run_first_chunk_logged = first_chunk_logged.clone();
                 let run_generation = generation;
-                tokio::spawn(async move {
+                let run_loop = tokio::spawn(async move {
                     run_command_loop(
                         run_state,
                         run_app,
@@ -279,46 +279,55 @@ pub async fn start_agent_connection(
                 // Background session/new prewarm (ACP session-setup). OpenCode pays ~6–10s on
                 // the first session/new per process (context + configured MCP). We do not emit
                 // acp:session_ready until the user clicks New Chat — UI still shows "no session".
-                {
-                    let connection = connection.clone();
-                    let app = app.clone();
-                    let state = state.clone();
-                    let project_path = project_path.clone();
-                    let session_ops = session_ops.clone();
-                    tokio::spawn(async move {
-                        let _ops = session_ops.lock().await;
-                        if let Some(agent) = state.lock().await.agent_for_generation_mut(generation) {
-                            if !agent.session_id().is_empty() {
-                                return;
-                            }
+                let prewarm_connection = connection.clone();
+                let prewarm_app = app.clone();
+                let prewarm_state = state.clone();
+                let prewarm_project_path = project_path.clone();
+                let prewarm_session_ops = session_ops.clone();
+                let prewarm = tokio::spawn(async move {
+                    let _ops = prewarm_session_ops.lock().await;
+                    if let Some(agent) =
+                        prewarm_state.lock().await.agent_for_generation_mut(generation)
+                    {
+                        if !agent.session_id().is_empty() {
+                            return;
                         }
-                        match create_session_on_connection(
-                            &connection,
-                            &app,
-                            &state,
-                            &project_path,
-                            generation,
-                            /* publish_to_ui */ false,
-                            /* resume */ false,
-                        )
-                        .await
-                        {
-                            Ok(()) => {
-                                info!("Session prewarm complete (not published to UI yet)");
-                                let _ = app.emit(
-                                    "agent:progress",
-                                    serde_json::json!({
-                                        "phase": "ready",
-                                        "message": "Agent ready — New Chat to start",
-                                        "connectionGeneration": generation,
-                                    }),
-                                );
-                            }
-                            Err(err) => {
-                                error!(%err, "Session prewarm failed (New Chat will create on demand)");
-                            }
+                    }
+                    match create_session_on_connection(
+                        &prewarm_connection,
+                        &prewarm_app,
+                        &prewarm_state,
+                        &prewarm_project_path,
+                        generation,
+                        /* publish_to_ui */ false,
+                        /* resume */ false,
+                    )
+                    .await
+                    {
+                        Ok(()) => {
+                            info!("Session prewarm complete (not published to UI yet)");
+                            let _ = prewarm_app.emit(
+                                "agent:progress",
+                                serde_json::json!({
+                                    "phase": "ready",
+                                    "message": "Agent ready — New Chat to start",
+                                    "connectionGeneration": generation,
+                                }),
+                            );
                         }
-                    });
+                        Err(err) => {
+                            error!(%err, "Session prewarm failed (New Chat will create on demand)");
+                        }
+                    }
+                });
+
+                // Keep the closure alive while the prewarm uses the connection, and
+                // also while the run-loop processes commands. The run-loop task
+                // exits when `AgentCommand::Shutdown` arrives; the prewarm exits
+                // when `session/new` resolves (success or failure).
+                tokio::select! {
+                    _ = run_loop => {}
+                    _ = prewarm => {}
                 }
 
                 Ok(())
