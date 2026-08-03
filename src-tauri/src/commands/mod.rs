@@ -550,7 +550,11 @@ pub async fn search_files(
             .map(|a| a.project_path.clone())
             .ok_or_else(|| "No project open".to_string())?
     };
-    Ok(search_project_files(&project_path, &query, 40))
+    tauri::async_runtime::spawn_blocking(move || {
+        search_project_files(&project_path, &query, 40)
+    })
+    .await
+    .map_err(|err| format!("Search task failed: {err}"))
 }
 
 #[tauri::command]
