@@ -1,3 +1,5 @@
+import { ChevronRight } from "lucide-react"
+import { useState } from "react"
 import type { ToolCall } from "@/types/acp"
 import { cn } from "@/lib/utils"
 import { isDiffTool } from "@/lib/diff-tools"
@@ -9,7 +11,9 @@ interface ToolCallCardProps {
 }
 
 export function ToolCallCard({ tool, onOpenDiff }: ToolCallCardProps) {
+	const [open, setOpen] = useState(false)
 	const diff = isDiffTool(tool)
+	const detailText = tool.content ? toolContentToText(tool.content) : ""
 
 	return (
 		<div
@@ -20,14 +24,17 @@ export function ToolCallCard({ tool, onOpenDiff }: ToolCallCardProps) {
 		>
 			<button
 				type="button"
-				disabled={!diff || !onOpenDiff}
-				onClick={() => diff && onOpenDiff?.(tool)}
-				className={cn(
-					"flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-xs",
-					diff && onOpenDiff && "cursor-pointer hover:bg-white/5",
-				)}
+				onClick={() => setOpen((value) => !value)}
+				aria-expanded={open}
+				className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-white/5"
 			>
-				<span className="truncate font-medium text-fg/90">
+				<ChevronRight
+					className={cn(
+						"size-3.5 shrink-0 text-muted transition-transform",
+						open && "rotate-90",
+					)}
+				/>
+				<span className="min-w-0 flex-1 truncate font-medium text-fg/90">
 					{diff ? `Diff · ${tool.title}` : tool.title}
 				</span>
 				<span
@@ -43,21 +50,38 @@ export function ToolCallCard({ tool, onOpenDiff }: ToolCallCardProps) {
 					{tool.status}
 				</span>
 			</button>
-			{tool.content ? (
-				<pre
+			{open ? (
+				<div
 					className={cn(
-						"max-h-48 overflow-auto border-t px-2.5 py-2 font-mono text-[11px] leading-relaxed",
-						diff
-							? "border-sky-500/20 bg-sky-500/5 text-sky-100"
-							: "border-border text-muted",
+						"border-t",
+						diff ? "border-sky-500/20" : "border-border",
 					)}
 				>
-					{toolContentToText(tool.content).slice(0, 4000)}
-				</pre>
-			) : null}
-			{diff && onOpenDiff ? (
-				<div className="border-t border-sky-500/20 px-2.5 py-1 text-[10px] text-muted">
-					Click header to open diff panel
+					{detailText ? (
+						<pre
+							className={cn(
+								"max-h-48 overflow-auto px-2.5 py-2 font-mono text-[11px] leading-relaxed",
+								diff
+									? "bg-sky-500/5 text-sky-100"
+									: "text-muted",
+							)}
+						>
+							{detailText.slice(0, 4000)}
+						</pre>
+					) : (
+						<p className="px-2.5 py-2 text-[11px] text-muted">No output yet.</p>
+					)}
+					{diff && onOpenDiff ? (
+						<div className="border-t border-sky-500/20 px-2.5 py-1.5">
+							<button
+								type="button"
+								onClick={() => onOpenDiff(tool)}
+								className="text-[10px] text-sky-300/90 underline-offset-2 hover:text-sky-200 hover:underline"
+							>
+								Open diff panel
+							</button>
+						</div>
+					) : null}
 				</div>
 			) : null}
 		</div>
