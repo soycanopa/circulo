@@ -18,6 +18,8 @@ export interface AgentCapabilities {
 	listSessions: boolean
 	resumeSession: boolean
 	closeSession: boolean
+	/** Multiple ACP sessions may run concurrently against the same agent process. */
+	concurrentSessions: boolean
 }
 
 export interface ProjectStatus {

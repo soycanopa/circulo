@@ -560,6 +560,15 @@ async fn publish_or_create_session(
     project_path: &PathBuf,
     generation: u64,
 ) -> Result<(), String> {
+    let concurrent_sessions = {
+        let guard = state.lock().await;
+        guard
+            .agent
+            .as_ref()
+            .map(|a| a.agent_capabilities.concurrent_sessions)
+            .unwrap_or(true)
+    };
+
     // If prewarm finished and UI has not claimed it, publish without another session/new.
     {
         let mut guard = state.lock().await;
@@ -596,7 +605,9 @@ async fn publish_or_create_session(
         }
     }
 
-    // Close any UI-bound session before creating a fresh one.
+    // When the agent supports concurrent sessions, keep the previous visible
+    // session alive (its in-flight prompt continues in the background). Otherwise
+    // close it before allocating a new one to stay compatible with serial agents.
     let previous_session_id = {
         let guard = state.lock().await;
         guard
@@ -606,8 +617,13 @@ async fn publish_or_create_session(
             .map(|a| a.session_id().to_string())
             .unwrap_or_default()
     };
-    if !previous_session_id.is_empty() {
+    if !previous_session_id.is_empty() && !concurrent_sessions {
         close_session_on_connection(connection, state, generation, &previous_session_id).await?;
+    } else if !previous_session_id.is_empty() {
+        info!(
+            session_id = %previous_session_id,
+            "Keeping previous ACP session alive (concurrent_sessions enabled)"
+        );
     }
 
     // Fresh session/new (subsequent New Chat, or prewarm missed/failed).

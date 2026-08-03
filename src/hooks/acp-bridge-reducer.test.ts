@@ -189,6 +189,7 @@ describe("processAcpEvent", () => {
 					listSessions: false,
 					resumeSession: false,
 					closeSession: true,
+					concurrentSessions: true,
 				},
 				connectionGeneration: 2,
 			},

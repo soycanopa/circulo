@@ -32,6 +32,9 @@ pub struct AgentCapabilitiesDto {
     pub list_sessions: bool,
     pub resume_session: bool,
     pub close_session: bool,
+    /// OpenCode (and most ACP agents) accept multiple sessions active per process.
+    /// We surface this so the UI can keep N chats in flight concurrently.
+    pub concurrent_sessions: bool,
 }
 
 impl AgentCapabilitiesDto {
@@ -41,6 +44,9 @@ impl AgentCapabilitiesDto {
             list_sessions: caps.session_capabilities.list.is_some(),
             resume_session: caps.session_capabilities.resume.is_some(),
             close_session: caps.session_capabilities.close.is_some(),
+            // Default to true: OpenCode and most ACP agents support multiple
+            // concurrent sessions per process. Users can opt-out per agent later.
+            concurrent_sessions: true,
         }
     }
 
@@ -50,6 +56,7 @@ impl AgentCapabilitiesDto {
             list_sessions: false,
             resume_session: false,
             close_session: false,
+            concurrent_sessions: true,
         }
     }
 }

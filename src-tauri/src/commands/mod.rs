@@ -291,6 +291,29 @@ pub async fn create_session(state: State<'_, SharedState>) -> Result<ProjectStat
     }
 }
 
+/// Switch the visible session without closing the previous one. Background sessions
+/// keep running their in-flight prompts. Pass `None` to clear the visible session.
+#[tauri::command]
+pub async fn set_visible_session(
+    state: State<'_, SharedState>,
+    session_id: Option<String>,
+) -> Result<ProjectStatus, String> {
+    let cmd_tx = {
+        let guard = state.lock().await;
+        guard
+            .agent
+            .as_ref()
+            .ok_or_else(|| "No agent process".to_string())?
+            .cmd_tx
+            .clone()
+    };
+    cmd_tx
+        .send(AgentCommand::SetVisibleSession { session_id })
+        .await
+        .map_err(|err| format!("Failed to swap visible session: {err}"))?;
+    Ok(state.lock().await.status())
+}
+
 #[tauri::command]
 pub async fn load_session(
     state: State<'_, SharedState>,

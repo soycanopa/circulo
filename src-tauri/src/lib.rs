@@ -59,6 +59,7 @@ pub fn run() {
             commands::cancel_prompt,
             commands::respond_permission,
             commands::set_config_option,
+            commands::set_visible_session,
             commands::search_files,
             commands::pick_directory,
             commands::complete_directory_path,
