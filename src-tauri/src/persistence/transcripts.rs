@@ -276,3 +276,58 @@ pub fn rename_chat_transcript(
 
     Ok(summary)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn message(role: &str, content: &str) -> StoredChatMessage {
+        StoredChatMessage {
+            id: "message-1".to_string(),
+            role: role.to_string(),
+            content: content.to_string(),
+            tool_calls: Vec::new(),
+            timestamp: 0,
+        }
+    }
+
+    #[test]
+    fn derives_title_from_first_non_empty_user_message() {
+        let messages = vec![
+            message("assistant", "Ignored"),
+            message("user", "  First line\nSecond line  "),
+            message("user", "Later"),
+        ];
+
+        assert_eq!(derive_title(&messages), "First line");
+    }
+
+    #[test]
+    fn truncates_long_titles_at_seventy_two_characters() {
+        let content = "a".repeat(73);
+        let title = derive_title(&[message("user", &content)]);
+
+        assert_eq!(title, format!("{}…", "a".repeat(72)));
+    }
+
+    #[test]
+    fn returns_default_title_without_user_content() {
+        let messages = vec![message("assistant", "Answer"), message("user", "   ")];
+
+        assert_eq!(derive_title(&messages), "New chat");
+    }
+
+    #[test]
+    fn refuses_placeholder_session_ids_before_writing() {
+        let messages = vec![message("user", "Hello")];
+
+        assert_eq!(
+            save_chat_transcript("/unused", "", messages.clone()).unwrap_err(),
+            "Refusing to persist without a real ACP session id"
+        );
+        assert_eq!(
+            save_chat_transcript("/unused", "pending", messages).unwrap_err(),
+            "Refusing to persist without a real ACP session id"
+        );
+    }
+}
