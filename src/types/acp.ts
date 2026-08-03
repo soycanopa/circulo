@@ -47,12 +47,21 @@ export interface PermissionRequest {
 	options: PermissionOption[]
 }
 
+export interface ToolCallDiff {
+	type: "diff"
+	path: string
+	oldText: string
+	newText: string
+}
+
+export type ToolCallContent = string | ToolCallDiff
+
 export interface ToolCall {
 	id: string
 	title: string
 	kind?: string
 	status: string
-	content?: string
+	content?: ToolCallContent
 	rawInput?: unknown
 	rawOutput?: unknown
 }

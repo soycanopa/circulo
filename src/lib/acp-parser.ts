@@ -1,4 +1,4 @@
-import type { ChatMessage, ToolCall } from "@/types/acp"
+import type { ChatMessage, ToolCall, ToolCallContent, ToolCallDiff } from "@/types/acp"
 
 function asRecord(value: unknown): Record<string, unknown> | null {
 	return value && typeof value === "object" && !Array.isArray(value)
@@ -28,22 +28,44 @@ export function extractTextFromContent(content: unknown): string {
 	return ""
 }
 
-function extractToolContent(content: unknown): string {
+function extractDiffContent(item: Record<string, unknown>): ToolCallDiff | null {
+	const path = asString(item.path) ?? asString(item.filePath)
+	if (!path) return null
+	const oldText =
+		asString(item.oldText) ?? asString(item.old_text) ?? asString(item.before) ?? ""
+	const newText =
+		asString(item.newText) ?? asString(item.new_text) ?? asString(item.after) ?? ""
+	return { type: "diff", path, oldText, newText }
+}
+
+function diffToText(diff: ToolCallDiff): string {
+	return `[diff ${diff.path}]\n--- old\n${diff.oldText}\n+++ new\n${diff.newText}`
+}
+
+export function toolContentToText(content: ToolCallContent | undefined): string {
+	if (!content) return ""
+	return typeof content === "string" ? content : diffToText(content)
+}
+
+function extractToolContent(content: unknown): ToolCallContent {
 	if (!Array.isArray(content)) return extractTextFromContent(content)
-	let text = ""
+	let combined = ""
+	const diffs: ToolCallDiff[] = []
 	for (const item of content) {
 		const record = asRecord(item)
 		if (!record) {
-			text += extractTextFromContent(item)
+			combined += extractTextFromContent(item)
 			continue
 		}
-		if (record.type === "content") text += extractTextFromContent(record.content)
+		if (record.type === "content") combined += extractTextFromContent(record.content)
 		else if (record.type === "diff") {
-			const path = asString(record.path) ?? "file"
-			text += `[diff ${path}]\n`
-		} else text += extractTextFromContent(item)
+			const diff = extractDiffContent(record)
+			if (diff) diffs.push(diff)
+		} else combined += extractTextFromContent(item)
 	}
-	return text
+	if (diffs.length === 0) return combined
+	if (diffs.length === 1) return diffs[0]!
+	return diffs.map(diffToText).join("\n\n")
 }
 
 /** Merges delta or cumulative stream chunks without duplicating text. */

@@ -1,11 +1,12 @@
 import type { ChatMessage, ToolCall } from "@/types/acp"
 
 export function isDiffTool(tool: ToolCall): boolean {
-	return (
-		tool.kind === "diff" ||
-		Boolean(tool.content?.startsWith("[diff ")) ||
-		tool.title.toLowerCase().includes("diff")
-	)
+	if (tool.kind === "diff") return true
+	if (typeof tool.content === "object" && tool.content?.type === "diff") return true
+	if (typeof tool.content === "string" && tool.content.startsWith("[diff ")) {
+		return true
+	}
+	return tool.title.toLowerCase().includes("diff")
 }
 
 export function collectDiffTools(messages: ChatMessage[]): ToolCall[] {

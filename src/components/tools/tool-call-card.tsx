@@ -1,6 +1,7 @@
 import type { ToolCall } from "@/types/acp"
 import { cn } from "@/lib/utils"
 import { isDiffTool } from "@/lib/diff-tools"
+import { toolContentToText } from "@/lib/acp-parser"
 
 interface ToolCallCardProps {
 	tool: ToolCall
@@ -51,7 +52,7 @@ export function ToolCallCard({ tool, onOpenDiff }: ToolCallCardProps) {
 							: "border-border text-muted",
 					)}
 				>
-					{tool.content.slice(0, 4000)}
+					{toolContentToText(tool.content).slice(0, 4000)}
 				</pre>
 			) : null}
 			{diff && onOpenDiff ? (

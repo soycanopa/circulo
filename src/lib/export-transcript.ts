@@ -1,4 +1,5 @@
 import type { ChatMessage } from "@/types/acp"
+import { toolContentToText } from "@/lib/acp-parser"
 import { exportTranscript } from "@/lib/tauri"
 
 function sanitizeFilename(name: string): string {
@@ -22,7 +23,7 @@ export function formatTranscriptMarkdown(
 		for (const tool of message.toolCalls) {
 			lines.push(`### Tool: ${tool.title} (${tool.status})`, "")
 			if (tool.content) {
-				lines.push("```", tool.content, "```", "")
+				lines.push("```", toolContentToText(tool.content), "```", "")
 			}
 		}
 	}

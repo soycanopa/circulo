@@ -40,9 +40,39 @@ export function DiffPanel({ onClose }: DiffPanelProps) {
 			</div>
 
 			{tool ? (
-				<pre className="min-h-0 flex-1 overflow-auto px-4 py-3 font-mono text-[11px] leading-relaxed text-sky-100">
-					{tool.content ?? "No diff content available."}
-				</pre>
+				<div className="min-h-0 flex-1 overflow-auto px-4 py-3 font-mono text-[11px] leading-relaxed text-sky-100">
+					{tool.content &&
+					typeof tool.content === "object" &&
+					tool.content.type === "diff" ? (
+						<div className="flex flex-col gap-3">
+							<p className="font-sans text-xs font-medium text-sky-200">
+								{tool.content.path}
+							</p>
+							<div>
+								<p className="font-sans text-[10px] uppercase tracking-wide text-muted">
+									Old
+								</p>
+								<pre className="mt-1 whitespace-pre-wrap break-words rounded bg-black/30 px-2 py-1 text-red-200">
+									{tool.content.oldText || "(empty)"}
+								</pre>
+							</div>
+							<div>
+								<p className="font-sans text-[10px] uppercase tracking-wide text-muted">
+									New
+								</p>
+								<pre className="mt-1 whitespace-pre-wrap break-words rounded bg-black/30 px-2 py-1 text-emerald-200">
+									{tool.content.newText || "(empty)"}
+								</pre>
+							</div>
+						</div>
+					) : (
+						<pre className="whitespace-pre-wrap break-words">
+							{typeof tool.content === "string"
+								? tool.content
+								: "No diff content available."}
+						</pre>
+					)}
+				</div>
 			) : diffTools.length > 0 ? (
 				<ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3">
 					{diffTools.map((item) => (
