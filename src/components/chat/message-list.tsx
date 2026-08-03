@@ -5,16 +5,16 @@ import { SimpleMarkdown } from "@/lib/simple-markdown"
 import type { ToolCall } from "@/types/acp"
 import {
 	diffPanelOpenAtom,
-	messagesAtom,
-	promptInFlightAtom,
 	selectedDiffToolAtom,
-	streamingTextAtom,
+	visibleMessagesAtom,
+	visiblePromptInFlightAtom,
+	visibleStreamingAtom,
 } from "@/stores/atoms"
 
 export function MessageList() {
-	const messages = useAtomValue(messagesAtom)
-	const streaming = useAtomValue(streamingTextAtom)
-	const inFlight = useAtomValue(promptInFlightAtom)
+	const messages = useAtomValue(visibleMessagesAtom)
+	const streaming = useAtomValue(visibleStreamingAtom)
+	const inFlight = useAtomValue(visiblePromptInFlightAtom)
 	const setSelectedDiff = useSetAtom(selectedDiffToolAtom)
 	const setDiffPanelOpen = useSetAtom(diffPanelOpenAtom)
 

@@ -2,14 +2,14 @@ import { useAtom, useAtomValue } from "jotai"
 import { FileDiff, X } from "lucide-react"
 import { collectDiffTools } from "@/lib/diff-tools"
 import { cn } from "@/lib/utils"
-import { messagesAtom, selectedDiffToolAtom } from "@/stores/atoms"
+import { selectedDiffToolAtom, visibleMessagesAtom } from "@/stores/atoms"
 
 interface DiffPanelProps {
 	onClose: () => void
 }
 
 export function DiffPanel({ onClose }: DiffPanelProps) {
-	const messages = useAtomValue(messagesAtom)
+	const messages = useAtomValue(visibleMessagesAtom)
 	const [tool, setTool] = useAtom(selectedDiffToolAtom)
 	const diffTools = collectDiffTools(messages)
 

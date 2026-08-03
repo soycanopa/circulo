@@ -7,6 +7,7 @@ import {
 	openProject,
 } from "@/lib/tauri"
 import {
+	activeSessionIdAtom,
 	agentConnectedAtom,
 	capabilitiesAtom,
 	configOptionsAtom,
@@ -15,7 +16,7 @@ import {
 	opencodeStatusAtom,
 	progressMessageAtom,
 	projectPathAtom,
-	sessionIdAtom,
+	sessionsAtom,
 } from "@/stores/atoms"
 
 /** Resolves when the ACP event bus has installed its listeners (no race on first event). */
@@ -51,7 +52,22 @@ async function reconcileFromStatus(): Promise<void> {
 	store.set(connectionGenerationAtom, status.connectionGeneration)
 	store.set(agentConnectedAtom, status.connected)
 	if (status.projectPath) store.set(projectPathAtom, status.projectPath)
-	if (status.sessionId) store.set(sessionIdAtom, status.sessionId)
+	if (status.sessionId) {
+		store.set(activeSessionIdAtom, status.sessionId)
+		// Make sure the session map has a slot so the reducer can accept its events.
+		if (!store.get(sessionsAtom)[status.sessionId]) {
+			store.set(sessionsAtom, {
+				...store.get(sessionsAtom),
+				[status.sessionId]: {
+					messages: [],
+					streaming: "",
+					promptInFlight: false,
+					status: "idle",
+					configOptions: [],
+				},
+			})
+		}
+	}
 	if (status.configOptions.length) store.set(configOptionsAtom, status.configOptions)
 	if (status.capabilities) store.set(capabilitiesAtom, status.capabilities)
 }

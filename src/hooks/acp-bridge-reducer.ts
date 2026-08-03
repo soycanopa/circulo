@@ -2,22 +2,18 @@ import type { Store } from "jotai/vanilla/store"
 import { appendStreamToMessages, applySessionUpdate } from "@/lib/acp-parser"
 import {
 	activePermissionAtom,
+	activeSessionIdAtom,
 	agentConnectedAtom,
 	capabilitiesAtom,
 	configOptionsAtom,
 	connectionGenerationAtom,
 	errorMessageAtom,
 	historyViewSessionIdAtom,
-	messagesAtom,
 	pendingPermissionsAtom,
 	progressMessageAtom,
 	projectPathAtom,
-	promptInFlightAtom,
-	sessionIdAtom,
 	sessionStatusAtom,
 	sessionsAtom,
-	streamingTextAtom,
-	visibleSessionIdAtom,
 	type SessionUiState,
 } from "@/stores/atoms"
 import type {
@@ -89,8 +85,8 @@ function isUnknownSession(
 	eventSessionId: string | undefined | null,
 ): boolean {
 	if (!eventSessionId) return true
-	const visible = store.get(visibleSessionIdAtom) ?? store.get(sessionIdAtom)
-	if (visible === eventSessionId) return false
+	const active = store.get(activeSessionIdAtom)
+	if (active === eventSessionId) return false
 	const sessions = store.get(sessionsAtom)
 	return !sessions[eventSessionId]
 }
@@ -123,16 +119,6 @@ function updateSession(
 		...sessions,
 		[sessionId]: { ...current, ...patch },
 	})
-	// Mirror the visible session into the legacy atoms so existing UI keeps working.
-	if (store.get(visibleSessionIdAtom) === sessionId) {
-		if (patch.messages !== undefined) store.set(messagesAtom, patch.messages)
-		if (patch.streaming !== undefined) store.set(streamingTextAtom, patch.streaming)
-		if (patch.promptInFlight !== undefined)
-			store.set(promptInFlightAtom, patch.promptInFlight)
-		if (patch.configOptions !== undefined)
-			store.set(configOptionsAtom, patch.configOptions)
-		if (patch.status !== undefined) store.set(sessionStatusAtom, patch.status)
-	}
 }
 
 export function processAcpEvent(
@@ -159,8 +145,8 @@ export function processAcpEvent(
 			}
 			store.set(connectionGenerationAtom, event.payload.connectionGeneration)
 			refs.firstChunkLogged.current = false
-			store.set(sessionIdAtom, event.payload.sessionId)
-			store.set(visibleSessionIdAtom, event.payload.sessionId)
+			// `activeSessionIdAtom` is the single source of truth for the visible session.
+			store.set(activeSessionIdAtom, event.payload.sessionId)
 			store.set(historyViewSessionIdAtom, null)
 			store.set(projectPathAtom, event.payload.projectPath)
 			ensureSession(store, event.payload.sessionId)
@@ -244,7 +230,8 @@ export function processAcpEvent(
 				return next
 			})
 			return
-		}		case "config_options":
+		}
+		case "config_options":
 			if (
 				isStaleGeneration(store, event.payload.connectionGeneration) ||
 				isUnknownSession(store, event.payload.sessionId)
@@ -277,16 +264,22 @@ export function processAcpEvent(
 					status: "idle",
 				})
 			} else {
-				store.set(
-					messagesAtom,
-					appendStreamToMessages(
-						store.get(messagesAtom),
+				// Fallback for events without session id — append to the currently
+				// active session if any, otherwise drop.
+				const active = store.get(activeSessionIdAtom)
+				if (active) {
+					const state = ensureSession(store, active)
+					const next = appendStreamToMessages(
+						state.messages,
 						refs.streaming.current,
-					),
-				)
-				store.set(streamingTextAtom, "")
-				store.set(promptInFlightAtom, false)
-				store.set(sessionStatusAtom, "idle")
+					)
+					updateSession(store, active, {
+						messages: next,
+						streaming: "",
+						promptInFlight: false,
+						status: "idle",
+					})
+				}
 			}
 			refs.streaming.current = ""
 			refs.firstChunkLogged.current = false
@@ -310,10 +303,6 @@ export function processAcpEvent(
 					status: "idle",
 					streaming: "",
 				})
-			} else {
-				store.set(promptInFlightAtom, false)
-				store.set(sessionStatusAtom, "idle")
-				store.set(streamingTextAtom, "")
 			}
 			refs.streaming.current = ""
 			store.set(progressMessageAtom, null)
@@ -329,14 +318,10 @@ export function processAcpEvent(
 			}
 			store.set(connectionGenerationAtom, null)
 			store.set(agentConnectedAtom, false)
-			store.set(sessionIdAtom, null)
-			store.set(visibleSessionIdAtom, null)
+			store.set(activeSessionIdAtom, null)
 			store.set(sessionsAtom, {})
 			store.set(projectPathAtom, null)
 			store.set(sessionStatusAtom, "disconnected")
-			store.set(promptInFlightAtom, false)
-			store.set(messagesAtom, [])
-			store.set(streamingTextAtom, "")
 			store.set(activePermissionAtom, null)
 			store.set(pendingPermissionsAtom, [])
 			store.set(configOptionsAtom, [])

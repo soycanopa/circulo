@@ -7,23 +7,23 @@ import {
 } from "@/lib/tauri"
 import { isGeneralChatsPath } from "@/lib/workspace"
 import {
+	activeSessionIdAtom,
 	appSettingsAtom,
 	errorMessageAtom,
 	generalChatSessionsAtom,
 	generalChatsPathAtom,
-	messagesAtom,
 	projectChatsByPathAtom,
 	projectPathAtom,
-	promptInFlightAtom,
-	sessionIdAtom,
+	visibleMessagesAtom,
+	visiblePromptInFlightAtom,
 } from "@/stores/atoms"
 
 /** Debounced transcript save — only real ACP session ids (never optimistic). */
 export function useChatPersistence() {
 	const projectPath = useAtomValue(projectPathAtom)
-	const sessionId = useAtomValue(sessionIdAtom)
-	const messages = useAtomValue(messagesAtom)
-	const promptInFlight = useAtomValue(promptInFlightAtom)
+	const sessionId = useAtomValue(activeSessionIdAtom)
+	const messages = useAtomValue(visibleMessagesAtom)
+	const promptInFlight = useAtomValue(visiblePromptInFlightAtom)
 	const appSettings = useAtomValue(appSettingsAtom)
 	const generalChatsPath = useAtomValue(generalChatsPathAtom)
 

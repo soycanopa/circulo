@@ -7,7 +7,12 @@ import {
 	SelectValue,
 } from "@/components/ui/select"
 import { setConfigOption } from "@/lib/tauri"
-import { configOptionsAtom, promptInFlightAtom } from "@/stores/atoms"
+import {
+	activeSessionIdAtom,
+	sessionsAtom,
+	visibleConfigOptionsAtom,
+	visiblePromptInFlightAtom,
+} from "@/stores/atoms"
 import type { ConfigOption } from "@/types/acp"
 
 /** Display order: mode → model → reasoning (if present). */
@@ -99,9 +104,10 @@ function orderedToolbarOptions(options: ConfigOption[]): ConfigOption[] {
 }
 
 export function ConfigSelectors() {
-	const options = useAtomValue(configOptionsAtom)
-	const promptInFlight = useAtomValue(promptInFlightAtom)
-	const setConfig = useSetAtom(configOptionsAtom)
+	const options = useAtomValue(visibleConfigOptionsAtom)
+	const promptInFlight = useAtomValue(visiblePromptInFlightAtom)
+	const setSessions = useSetAtom(sessionsAtom)
+	const activeSessionId = useAtomValue(activeSessionIdAtom)
 
 	const selects = orderedToolbarOptions(options)
 
@@ -121,14 +127,27 @@ export function ConfigSelectors() {
 							disabled={promptInFlight}
 							value={value}
 							onValueChange={(next) => {
-								// Optimistic UI — agent acp:config_options will confirm.
-								setConfig((current) =>
-									current.map((entry) =>
-										entry.id === option.id
-											? { ...entry, currentValue: next }
-											: entry,
-									),
-								)
+								// Optimistic UI on the active session only — the reducer
+								// will reconcile when acp:config_options arrives.
+								const targetSid = activeSessionId
+								if (targetSid) {
+									setSessions((prev) => {
+										const current = prev[targetSid]
+										if (!current) return prev
+										return {
+											...prev,
+											[targetSid]: {
+												...current,
+												configOptions: current.configOptions.map(
+													(entry) =>
+														entry.id === option.id
+															? { ...entry, currentValue: next }
+															: entry,
+												),
+											},
+										}
+									})
+								}
 								void setConfigOption(option.id, next)
 							}}
 						>

@@ -12,33 +12,25 @@ import {
 import { cancelPrompt, sendPrompt } from "@/lib/tauri"
 import {
 	activePermissionAtom,
+	activeSessionIdAtom,
 	errorMessageAtom,
-	messagesAtom,
-	promptInFlightAtom,
-	sessionIdAtom,
-	sessionStatusAtom,
+	sessionsAtom,
+	visiblePromptInFlightAtom,
 } from "@/stores/atoms"
+import type { ChatMessage } from "@/types/acp"
 
 export function ChatInput() {
-	const sessionId = useAtomValue(sessionIdAtom)
-	const status = useAtomValue(sessionStatusAtom)
-	const promptInFlight = useAtomValue(promptInFlightAtom)
+	const sessionId = useAtomValue(activeSessionIdAtom)
+	const promptInFlight = useAtomValue(visiblePromptInFlightAtom)
 	const permission = useAtomValue(activePermissionAtom)
-	const setMessages = useSetAtom(messagesAtom)
-	const setPromptInFlight = useSetAtom(promptInFlightAtom)
-	const setStatus = useSetAtom(sessionStatusAtom)
+	const setSessions = useSetAtom(sessionsAtom)
 	const setError = useSetAtom(errorMessageAtom)
 	const [value, setValue] = useState("")
 	const [mentionIndex, setMentionIndex] = useState(0)
 	const [mentionResults, setMentionResults] = useState<string[]>([])
 	const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-	const disabled =
-		!sessionId ||
-		promptInFlight ||
-		status === "connecting" ||
-		status === "awaiting_permission" ||
-		Boolean(permission)
+	const disabled = !sessionId || promptInFlight || Boolean(permission)
 
 	const cursor = textareaRef.current?.selectionStart ?? value.length
 	const activeMention = getActiveMention(value, cursor)
@@ -83,35 +75,62 @@ export function ChatInput() {
 
 		const contextPaths = extractMentionPaths(trimmed)
 
-		setMessages((current) => [
-			...current,
-			{
-				id: crypto.randomUUID(),
-				role: "user",
-				content: trimmed,
-				toolCalls: [],
-				timestamp: Date.now(),
-			},
-			{
-				id: crypto.randomUUID(),
-				role: "assistant",
-				content: "",
-				toolCalls: [],
-				timestamp: Date.now(),
-			},
-		])
+		// Optimistic update on the active session only — never overwrite the
+		// legacy global atoms (they no longer exist).
+		const targetSid = sessionId
+		if (targetSid) {
+			const now = Date.now()
+			const optimistic: ChatMessage[] = [
+				{
+					id: crypto.randomUUID(),
+					role: "user",
+					content: trimmed,
+					toolCalls: [],
+					timestamp: now,
+				},
+				{
+					id: crypto.randomUUID(),
+					role: "assistant",
+					content: "",
+					toolCalls: [],
+					timestamp: now,
+				},
+			]
+			setSessions((prev) => {
+				const current = prev[targetSid]
+				if (!current) return prev
+				return {
+					...prev,
+					[targetSid]: {
+						...current,
+						messages: [...current.messages, ...optimistic],
+						promptInFlight: true,
+						status: "generating",
+					},
+				}
+			})
+		}
 		setValue("")
 		setMentionIndex(0)
 		setMentionResults([])
-		setPromptInFlight(true)
-		setStatus("generating")
 		setError(null)
 
 		try {
 			await sendPrompt(trimmed, contextPaths)
 		} catch (error) {
-			setPromptInFlight(false)
-			setStatus("idle")
+			setSessions((prev) => {
+				if (!targetSid) return prev
+				const current = prev[targetSid]
+				if (!current) return prev
+				return {
+					...prev,
+					[targetSid]: {
+						...current,
+						promptInFlight: false,
+						status: "idle",
+					},
+				}
+			})
 			setError(error instanceof Error ? error.message : "Failed to send prompt")
 		}
 	}

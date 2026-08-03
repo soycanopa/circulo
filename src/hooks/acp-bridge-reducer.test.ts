@@ -6,13 +6,9 @@ import {
 } from "@/hooks/acp-bridge-reducer"
 import {
 	activePermissionAtom,
+	activeSessionIdAtom,
 	agentConnectedAtom,
-	messagesAtom,
-	promptInFlightAtom,
-	sessionIdAtom,
-	sessionStatusAtom,
 	sessionsAtom,
-	visibleSessionIdAtom,
 } from "@/stores/atoms"
 import type { PermissionRequest } from "@/types/acp"
 
@@ -30,8 +26,7 @@ function createRefs(): AcpBridgeRefs {
 }
 
 function activate(store: ReturnType<typeof createStore>, sessionId: string) {
-	store.set(sessionIdAtom, sessionId)
-	store.set(visibleSessionIdAtom, sessionId)
+	store.set(activeSessionIdAtom, sessionId)
 	store.set(sessionsAtom, {
 		...store.get(sessionsAtom),
 		[sessionId]: {
@@ -77,8 +72,6 @@ describe("processAcpEvent", () => {
 		const refs = createRefs()
 		activate(store, "session-1")
 		store.set(activePermissionAtom, permission)
-		store.set(promptInFlightAtom, true)
-		store.set(sessionStatusAtom, "awaiting_permission")
 		store.set(sessionsAtom, {
 			...store.get(sessionsAtom),
 			"session-1": {
@@ -116,7 +109,6 @@ describe("processAcpEvent", () => {
 			},
 		})
 
-		expect(store.get(messagesAtom)).toEqual([])
 		expect(store.get(sessionsAtom)["other"]).toBeUndefined()
 	})
 
@@ -136,7 +128,9 @@ describe("processAcpEvent", () => {
 			},
 		})
 
-		expect(store.get(messagesAtom)[0]?.content).toBe("Hello")
+		expect(store.get(sessionsAtom)["session-1"]?.messages[0]?.content).toBe(
+			"Hello",
+		)
 		expect(store.get(sessionsAtom)["session-1"]?.promptInFlight).toBe(true)
 		expect(store.get(sessionsAtom)["session-1"]?.status).toBe("generating")
 	})
@@ -160,7 +154,6 @@ describe("processAcpEvent", () => {
 			payload: permission,
 		})
 
-		expect(store.get(messagesAtom)).toEqual([])
 		expect(store.get(activePermissionAtom)).toBeNull()
 	})
 
@@ -215,7 +208,6 @@ describe("processAcpEvent", () => {
 			},
 		})
 
-		expect(store.get(messagesAtom)).toEqual([])
 		expect(store.get(sessionsAtom)["session-b"]?.messages[0]?.content).toBe("from-b")
 		expect(store.get(sessionsAtom)["session-b"]?.promptInFlight).toBe(true)
 		expect(store.get(sessionsAtom)["session-a"]?.promptInFlight).toBe(false)
@@ -224,7 +216,7 @@ describe("processAcpEvent", () => {
 	it("ignores session updates without a session id", () => {
 		const store = createStore()
 		const refs = createRefs()
-		store.set(sessionIdAtom, "session-1")
+		activate(store, "session-1")
 
 		processAcpEvent(store, refs, {
 			type: "session_update",
@@ -236,7 +228,7 @@ describe("processAcpEvent", () => {
 			},
 		})
 
-		expect(store.get(messagesAtom)).toEqual([])
+		expect(store.get(sessionsAtom)["session-1"]?.messages).toEqual([])
 	})
 
 	it("ignores disconnects from an older connection", () => {
@@ -256,7 +248,7 @@ describe("processAcpEvent", () => {
 				connectionGeneration: 2,
 			},
 		})
-		store.set(sessionIdAtom, "session-1")
+		activate(store, "session-1")
 		store.set(agentConnectedAtom, true)
 
 		processAcpEvent(store, refs, {
@@ -264,14 +256,14 @@ describe("processAcpEvent", () => {
 			payload: { connectionGeneration: 1 },
 		})
 
-		expect(store.get(sessionIdAtom)).toBe("session-1")
+		expect(store.get(activeSessionIdAtom)).toBe("session-1")
 		expect(store.get(agentConnectedAtom)).toBe(true)
 	})
 
 	it("clears the permission queue on disconnect", () => {
 		const store = createStore()
 		const refs = createRefs()
-		store.set(sessionIdAtom, "session-1")
+		activate(store, "session-1")
 		processAcpEvent(store, refs, {
 			type: "permission_request",
 			payload: permission,
@@ -292,7 +284,7 @@ describe("processAcpEvent", () => {
 	it("clears session and permission state on disconnect", () => {
 		const store = createStore()
 		const refs = createRefs()
-		store.set(sessionIdAtom, "session-1")
+		activate(store, "session-1")
 		store.set(agentConnectedAtom, true)
 		store.set(activePermissionAtom, permission)
 
@@ -301,9 +293,8 @@ describe("processAcpEvent", () => {
 			payload: {},
 		})
 
-		expect(store.get(sessionIdAtom)).toBeNull()
+		expect(store.get(activeSessionIdAtom)).toBeNull()
 		expect(store.get(agentConnectedAtom)).toBe(false)
 		expect(store.get(activePermissionAtom)).toBeNull()
-		expect(store.get(sessionStatusAtom)).toBe("disconnected")
 	})
 })

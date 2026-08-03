@@ -1,4 +1,4 @@
-import { useAtom, useAtomValue, useSetAtom } from "jotai"
+import { useAtomValue, useSetAtom } from "jotai"
 import { Download, FileDiff, Loader2, MessageSquarePlus } from "lucide-react"
 import { WindowChromeControls } from "@/components/layout/window-chrome-controls"
 import { cn } from "@/lib/utils"
@@ -45,28 +45,26 @@ import {
 } from "@/lib/tauri"
 
 import {
+	activeSessionIdAtom,
 	agentConnectedAtom,
 	appSettingsAtom,
 	capabilitiesAtom,
-	configOptionsAtom,
 	diffPanelOpenAtom,
 	errorMessageAtom,
 	generalChatSessionsAtom,
 	generalChatsPathAtom,
 	historyViewSessionIdAtom,
-	messagesAtom,
 	opencodeStatusAtom,
 	progressMessageAtom,
 	projectChatsByPathAtom,
 	projectPathAtom,
 	resetWorkspaceUiAtom,
 	selectedDiffToolAtom,
-	sessionIdAtom,
 	sessionStatusAtom,
 	sessionsAtom,
 	sidebarOpenAtom,
-	streamingTextAtom,
-	visibleSessionIdAtom,
+	visibleMessagesAtom,
+	visibleSessionStatusAtom,
 } from "@/stores/atoms"
 
 export default function App() {
@@ -77,10 +75,10 @@ export default function App() {
 		useChatPersistence()
 
 	const projectPath = useAtomValue(projectPathAtom)
-	const sessionId = useAtomValue(sessionIdAtom)
+	const sessionId = useAtomValue(activeSessionIdAtom)
 	const historyViewSessionId = useAtomValue(historyViewSessionIdAtom)
 	const connected = useAtomValue(agentConnectedAtom)
-	const status = useAtomValue(sessionStatusAtom)
+	const status = useAtomValue(visibleSessionStatusAtom)
 	const error = useAtomValue(errorMessageAtom)
 	const progress = useAtomValue(progressMessageAtom)
 	const opencodeStatus = useAtomValue(opencodeStatusAtom)
@@ -89,20 +87,19 @@ export default function App() {
 	const projectChatsByPath = useAtomValue(projectChatsByPathAtom)
 	const capabilities = useAtomValue(capabilitiesAtom)
 	const appSettings = useAtomValue(appSettingsAtom)
-	const messages = useAtomValue(messagesAtom)
+	const messages = useAtomValue(visibleMessagesAtom)
 	const sessionsMap = useAtomValue(sessionsAtom)
-	const visibleSessionId = useAtomValue(visibleSessionIdAtom)
 	const liveSessionIds = useMemo(
 		() =>
 			new Set(
 				Object.entries(sessionsMap)
 					.filter(
 						([sid, state]) =>
-							state.promptInFlight && sid !== visibleSessionId,
+							state.promptInFlight && sid !== sessionId,
 					)
 					.map(([sid]) => sid),
 			),
-		[sessionsMap, visibleSessionId],
+		[sessionsMap, sessionId],
 	)
 	const diffPanelOpen = useAtomValue(diffPanelOpenAtom)
 	const sidebarOpen = useAtomValue(sidebarOpenAtom)
@@ -111,12 +108,8 @@ export default function App() {
 	const setSelectedDiff = useSetAtom(selectedDiffToolAtom)
 	const setError = useSetAtom(errorMessageAtom)
 	const setStatus = useSetAtom(sessionStatusAtom)
-	const setMessages = useSetAtom(messagesAtom)
-	const setStreaming = useSetAtom(streamingTextAtom)
-	const [, setSessionId] = useAtom(sessionIdAtom)
 	const setConnected = useSetAtom(agentConnectedAtom)
 	const setProjectPath = useSetAtom(projectPathAtom)
-	const setConfig = useSetAtom(configOptionsAtom)
 	const setHistoryView = useSetAtom(historyViewSessionIdAtom)
 	const setAppSettings = useSetAtom(appSettingsAtom)
 	const resetWorkspaceUi = useSetAtom(resetWorkspaceUiAtom)
@@ -238,10 +231,6 @@ export default function App() {
 			setConnected(status.connected)
 			setAgentCommand(status.agentCommand)
 			setAgentId(status.agentId)
-			if (isNewWorkspace) {
-				setSessionId(status.sessionId || null)
-				setConfig(status.configOptions)
-			}
 			if (largeRoot) {
 				setError(
 					"Workspace set. Large folders (Desktop/Home) can slow OpenCode session setup — prefer a repo.",
@@ -269,8 +258,6 @@ export default function App() {
 		setError(null)
 		setBusy(true)
 		setStatus("connecting")
-		setMessages([])
-		setStreaming("")
 		setHistoryView(null)
 		try {
 			const desired =
@@ -282,12 +269,12 @@ export default function App() {
 			} else if (!projectPath) {
 				await openProject(desired)
 			}
-			const status = await createSession()
-			// Event bridge also sets these; apply return payload so model/mode
-			// selects appear even if the event is late or missed.
-			if (status.sessionId) setSessionId(status.sessionId)
-			if (status.configOptions?.length) setConfig(status.configOptions)
-			setStatus("idle")
+			// C9: refresh sidebar before creating the session so the new chat
+			// appears in the workspace list as soon as the reducer emits
+			// session_ready. The reducer is the source of truth for the new
+			// active session id; we do not write activeSessionIdAtom here.
+			await refreshAllWorkspaceLists()
+			await createSession()
 			await refreshSessions()
 			await refreshAllWorkspaceLists()
 		} catch (err) {
@@ -479,12 +466,7 @@ export default function App() {
 				await openWorkspacePath(ownerPath, { manageBusy: false })
 			}
 
-			const transcript = await loadChatTranscript(ownerPath, targetSessionId)
-			setMessages(transcript.messages)
-			setStreaming("")
-			setStatus("connecting")
-
-			// Only try live resume when we stayed on the same agent workspace.
+			// Live resume when we stayed on the same agent workspace and the agent supports it.
 			if (capabilities?.loadSession && sameWorkspace) {
 				try {
 					await loadSession(targetSessionId)
@@ -492,7 +474,6 @@ export default function App() {
 					setStatus("idle")
 					return
 				} catch (err) {
-					setSessionId(null)
 					setHistoryView(targetSessionId)
 					setStatus("idle")
 					const detail =
@@ -502,8 +483,12 @@ export default function App() {
 				}
 			}
 
-			// After workspace switch (or no loadSession): saved transcript only.
-			setSessionId(null)
+			// No live resume (different workspace, missing capability, or it failed):
+			// load the transcript as a read-only history view. The reducer is the
+			// source of truth for any live session state; we never mutate
+			// activeSessionIdAtom here so a background run keeps streaming.
+			const transcript = await loadChatTranscript(ownerPath, targetSessionId)
+			void transcript // history-view renders from a dedicated fetch in MessageList.
 			setHistoryView(targetSessionId)
 			setStatus("idle")
 		} catch (err) {
@@ -528,13 +513,6 @@ export default function App() {
 				} catch {
 					// Still remove local transcript if agent close fails.
 				}
-				setSessionId(null)
-				setMessages([])
-				setStreaming("")
-			}
-			if (sameWorkspace && historyViewSessionId === targetSessionId) {
-				setHistoryView(null)
-				setMessages([])
 			}
 			await deleteChatTranscript(ownerPath, targetSessionId)
 			await refreshPath(ownerPath)

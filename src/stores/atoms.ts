@@ -13,12 +13,13 @@ import type {
 
 export const projectPathAtom = atom<string | null>(null)
 export const connectionGenerationAtom = atom<number | null>(null)
-export const sessionIdAtom = atom<string | null>(null)
+/**
+ * Single source of truth for the session bound to the composer. Set only by the
+ * ACP bridge reducer. UI never writes to this atom directly.
+ */
+export const activeSessionIdAtom = atom<string | null>(null)
 export const agentConnectedAtom = atom(false)
 export const sessionStatusAtom = atom<SessionStatus>("idle")
-export const messagesAtom = atom<ChatMessage[]>([])
-export const streamingTextAtom = atom("")
-export const promptInFlightAtom = atom(false)
 export const configOptionsAtom = atom<ConfigOption[]>([])
 
 /** Per-session UI state, keyed by session_id. Mirrors the Rust `SessionHandle` map. */
@@ -30,30 +31,29 @@ export interface SessionUiState {
 	configOptions: ConfigOption[]
 }
 export const sessionsAtom = atom<Record<string, SessionUiState>>({})
-/** Selectors for the visible chat so existing UI keeps working unchanged. */
-export const visibleSessionIdAtom = atom<string | null>(null)
+/** Selectors for the active chat so existing UI keeps working unchanged. */
 export const visibleMessagesAtom = atom((get) => {
-	const sid = get(visibleSessionIdAtom)
-	if (!sid) return get(messagesAtom)
-	return get(sessionsAtom)[sid]?.messages ?? get(messagesAtom)
+	const sid = get(activeSessionIdAtom)
+	if (!sid) return []
+	return get(sessionsAtom)[sid]?.messages ?? []
 })
 export const visibleStreamingAtom = atom((get) => {
-	const sid = get(visibleSessionIdAtom)
-	if (!sid) return get(streamingTextAtom)
+	const sid = get(activeSessionIdAtom)
+	if (!sid) return ""
 	return get(sessionsAtom)[sid]?.streaming ?? ""
 })
 export const visiblePromptInFlightAtom = atom((get) => {
-	const sid = get(visibleSessionIdAtom)
-	if (!sid) return get(promptInFlightAtom)
+	const sid = get(activeSessionIdAtom)
+	if (!sid) return false
 	return get(sessionsAtom)[sid]?.promptInFlight ?? false
 })
 export const visibleConfigOptionsAtom = atom((get) => {
-	const sid = get(visibleSessionIdAtom)
+	const sid = get(activeSessionIdAtom)
 	if (!sid) return get(configOptionsAtom)
 	return get(sessionsAtom)[sid]?.configOptions ?? get(configOptionsAtom)
 })
 export const visibleSessionStatusAtom = atom((get) => {
-	const sid = get(visibleSessionIdAtom)
+	const sid = get(activeSessionIdAtom)
 	if (!sid) return get(sessionStatusAtom)
 	return get(sessionsAtom)[sid]?.status ?? get(sessionStatusAtom)
 })
@@ -132,10 +132,8 @@ export const setDiffPanelWidthAtom = atom(null, (_get, set, width: number) => {
  */
 export const resetWorkspaceUiAtom = atom(null, (_get, set) => {
 	set(historyViewSessionIdAtom, null)
-	set(sessionIdAtom, null)
-	set(messagesAtom, [])
-	set(streamingTextAtom, "")
-	set(promptInFlightAtom, false)
+	set(activeSessionIdAtom, null)
+	set(sessionsAtom, {})
 	set(activePermissionAtom, null)
 	set(pendingPermissionsAtom, [])
 	set(configOptionsAtom, [])
