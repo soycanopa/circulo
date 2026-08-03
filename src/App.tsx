@@ -1,8 +1,8 @@
-import { useAtomValue, useSetAtom } from "jotai"
+import { getDefaultStore, useAtomValue, useSetAtom } from "jotai"
 import { Download, FileDiff, Loader2, MessageSquarePlus } from "lucide-react"
 import { WindowChromeControls } from "@/components/layout/window-chrome-controls"
 import { cn } from "@/lib/utils"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChatInput } from "@/components/chat/chat-input"
 import { MessageList } from "@/components/chat/message-list"
 import { CommandPalette } from "@/components/layout/command-palette"
@@ -17,6 +17,7 @@ import { useAppSettings } from "@/hooks/use-app-settings"
 import { useAppShortcuts } from "@/hooks/use-app-shortcuts"
 import { useBootstrapAgent } from "@/hooks/use-bootstrap"
 import { useChatPersistence } from "@/hooks/use-chat-persistence"
+import { reconcileSessionFromProjectStatus } from "@/hooks/session-reconcile"
 import { exportTranscriptMarkdown } from "@/lib/export-transcript"
 import {
 	agentLabel,
@@ -34,6 +35,7 @@ import {
 	getDefaultChatsPath,
 	getAppSettings,
 	getHomePath,
+	getProjectStatus,
 	getWorkspacePaths,
 	loadChatTranscript,
 	loadSession,
@@ -54,6 +56,7 @@ import {
 	errorMessageAtom,
 	generalChatSessionsAtom,
 	generalChatsPathAtom,
+	historyMessagesAtom,
 	historyViewSessionIdAtom,
 	opencodeStatusAtom,
 	progressMessageAtom,
@@ -112,6 +115,7 @@ export default function App() {
 	const setConnected = useSetAtom(agentConnectedAtom)
 	const setProjectPath = useSetAtom(projectPathAtom)
 	const setHistoryView = useSetAtom(historyViewSessionIdAtom)
+	const setHistoryMessages = useSetAtom(historyMessagesAtom)
 	const setAppSettings = useSetAtom(appSettingsAtom)
 	const resetWorkspaceUi = useSetAtom(resetWorkspaceUiAtom)
 
@@ -140,18 +144,24 @@ export default function App() {
 		return "chat"
 	}, [activeChatId, generalChatSessions, projectChatsByPath])
 
-	// Seed a placeholder transcript when the reducer publishes a fresh session id
-	// so the sidebar renders the chat immediately. Safe to call repeatedly: the
-	// backend upserts by id.
+	// Seed a placeholder transcript once per new session id (sidebar first paint).
+	const seededSessionsRef = useRef(new Set<string>())
 	useEffect(() => {
 		if (!sessionId || !projectPath) return
+		const seedKey = `${projectPath}::${sessionId}`
+		if (seededSessionsRef.current.has(seedKey)) return
 		const known = generalChatSessions.some(
 			(c) => c.sessionId === sessionId,
 		)
 		const knownProject = Object.values(projectChatsByPath).some((list) =>
 			list.some((c) => c.sessionId === sessionId),
 		)
-		if (known || knownProject) return
+		const knownLive = Boolean(sessionsMap[sessionId]?.messages.length)
+		if (known || knownProject || knownLive) {
+			seededSessionsRef.current.add(seedKey)
+			return
+		}
+		seededSessionsRef.current.add(seedKey)
 		void seedChatTranscript(projectPath, sessionId, "New chat").catch(() => {
 			// Best-effort seed; the chat already exists if this fails.
 		})
@@ -160,6 +170,7 @@ export default function App() {
 		projectPath,
 		generalChatSessions,
 		projectChatsByPath,
+		sessionsMap,
 	])
 
 	const handleExportTranscript = useCallback(async () => {
@@ -286,6 +297,7 @@ export default function App() {
 		setBusy(true)
 		setStatus("connecting")
 		setHistoryView(null)
+		setHistoryMessages([])
 		try {
 			const desired =
 				targetProjectPath ??
@@ -301,10 +313,19 @@ export default function App() {
 			// session_ready. The reducer is the source of truth for the new
 			// active session id; we do not write activeSessionIdAtom here.
 			await refreshAllWorkspaceLists()
-			await createSession()
+			const status = await createSession()
+			reconcileSessionFromProjectStatus(getDefaultStore(), status)
 			await refreshSessions()
 			await refreshAllWorkspaceLists()
 		} catch (err) {
+			try {
+				const status = await getProjectStatus()
+				if (status.sessionId) {
+					reconcileSessionFromProjectStatus(getDefaultStore(), status)
+				}
+			} catch {
+				// Best-effort recovery when create failed but Rust bound a session.
+			}
 			setError(err instanceof Error ? err.message : "Failed to create session")
 			setStatus("idle")
 		} finally {
@@ -476,8 +497,10 @@ export default function App() {
 		// the active buffer into messagesAtom/streamingTextAtom automatically.
 		if (sameWorkspace && sessionsMap[targetSessionId]) {
 			try {
-				await setVisibleSession(targetSessionId)
+				const status = await setVisibleSession(targetSessionId)
+				reconcileSessionFromProjectStatus(getDefaultStore(), status)
 				setHistoryView(null)
+				setHistoryMessages([])
 				return
 			} catch (err) {
 				setError(
@@ -496,11 +519,22 @@ export default function App() {
 			// Live resume when we stayed on the same agent workspace and the agent supports it.
 			if (capabilities?.loadSession && sameWorkspace) {
 				try {
-					await loadSession(targetSessionId)
+					const status = await loadSession(targetSessionId)
+					reconcileSessionFromProjectStatus(getDefaultStore(), status)
 					setHistoryView(null)
+					setHistoryMessages([])
 					setStatus("idle")
 					return
 				} catch (err) {
+					try {
+						const transcript = await loadChatTranscript(
+							ownerPath,
+							targetSessionId,
+						)
+						setHistoryMessages(transcript.messages)
+					} catch {
+						setHistoryMessages([])
+					}
 					setHistoryView(targetSessionId)
 					setStatus("idle")
 					const detail =
@@ -515,7 +549,7 @@ export default function App() {
 			// source of truth for any live session state; we never mutate
 			// activeSessionIdAtom here so a background run keeps streaming.
 			const transcript = await loadChatTranscript(ownerPath, targetSessionId)
-			void transcript // history-view renders from a dedicated fetch in MessageList.
+			setHistoryMessages(transcript.messages)
 			setHistoryView(targetSessionId)
 			setStatus("idle")
 		} catch (err) {

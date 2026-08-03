@@ -31,11 +31,14 @@ export interface SessionUiState {
 	configOptions: ConfigOption[]
 }
 export const sessionsAtom = atom<Record<string, SessionUiState>>({})
+/** Messages loaded from disk for read-only history view. */
+export const historyMessagesAtom = atom<ChatMessage[]>([])
 /** Selectors for the active chat so existing UI keeps working unchanged. */
 export const visibleMessagesAtom = atom((get) => {
 	const sid = get(activeSessionIdAtom)
-	if (!sid) return []
-	return get(sessionsAtom)[sid]?.messages ?? []
+	if (sid) return get(sessionsAtom)[sid]?.messages ?? []
+	if (get(historyViewSessionIdAtom)) return get(historyMessagesAtom)
+	return []
 })
 export const visibleStreamingAtom = atom((get) => {
 	const sid = get(activeSessionIdAtom)
@@ -131,7 +134,9 @@ export const setDiffPanelWidthAtom = atom(null, (_get, set, width: number) => {
  * Does **not** clear general/project chat indexes — those are multi-workspace lists.
  */
 export const resetWorkspaceUiAtom = atom(null, (_get, set) => {
+	set(connectionGenerationAtom, null)
 	set(historyViewSessionIdAtom, null)
+	set(historyMessagesAtom, [])
 	set(activeSessionIdAtom, null)
 	set(sessionsAtom, {})
 	set(activePermissionAtom, null)
