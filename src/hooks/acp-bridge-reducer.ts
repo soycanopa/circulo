@@ -8,6 +8,7 @@ import {
 	configOptionsAtom,
 	connectionGenerationAtom,
 	errorMessageAtom,
+	historyMessagesAtom,
 	historyViewSessionIdAtom,
 	pendingPermissionsAtom,
 	progressMessageAtom,
@@ -44,6 +45,14 @@ type AcpBridgeEvent =
 				configOptions?: ConfigOption[]
 				connectionGeneration: number
 				resume?: boolean
+			}
+	  }
+	| {
+			type: "visible_session_changed"
+			payload: {
+				sessionId: string | null
+				configOptions?: ConfigOption[]
+				connectionGeneration: number
 			}
 	  }
 	| { type: "progress"; payload: { message?: string } }
@@ -161,6 +170,7 @@ export function processAcpEvent(
 			// `activeSessionIdAtom` is the single source of truth for the visible session.
 			store.set(activeSessionIdAtom, event.payload.sessionId)
 			store.set(historyViewSessionIdAtom, null)
+			store.set(historyMessagesAtom, [])
 			store.set(projectPathAtom, event.payload.projectPath)
 			ensureSession(store, event.payload.sessionId)
 			if (!event.payload.resume) {
@@ -179,6 +189,30 @@ export function processAcpEvent(
 			store.set(pendingPermissionsAtom, [])
 			store.set(progressMessageAtom, null)
 			store.set(errorMessageAtom, null)
+			return
+		}
+		case "visible_session_changed": {
+			if (
+				store.get(connectionGenerationAtom) !== null &&
+				store.get(connectionGenerationAtom) !== event.payload.connectionGeneration
+			) {
+				return
+			}
+			store.set(connectionGenerationAtom, event.payload.connectionGeneration)
+			store.set(historyViewSessionIdAtom, null)
+			store.set(historyMessagesAtom, [])
+			if (event.payload.sessionId) {
+				store.set(activeSessionIdAtom, event.payload.sessionId)
+				ensureSession(store, event.payload.sessionId)
+				if (event.payload.configOptions?.length) {
+					updateSession(store, event.payload.sessionId, {
+						configOptions: event.payload.configOptions,
+					})
+					store.set(configOptionsAtom, event.payload.configOptions)
+				}
+			} else {
+				store.set(activeSessionIdAtom, null)
+			}
 			return
 		}
 		case "progress":
@@ -297,10 +331,15 @@ export function processAcpEvent(
 					})
 				}
 			}
-			refs.streaming.current.clear()
-			refs.firstChunkLogged.current = false
-			store.set(activePermissionAtom, null)
-			store.set(pendingPermissionsAtom, [])
+			const completedSid = sid ?? store.get(activeSessionIdAtom)
+			if (completedSid) {
+				refs.streaming.current.delete(completedSid)
+			}
+			if (completedSid === store.get(activeSessionIdAtom)) {
+				refs.firstChunkLogged.current = false
+				store.set(activePermissionAtom, null)
+				store.set(pendingPermissionsAtom, [])
+			}
 			store.set(progressMessageAtom, null)
 			return
 		}

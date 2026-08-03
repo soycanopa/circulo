@@ -234,6 +234,11 @@ export function listenAcpEvents(handlers: {
 		connectionGeneration: number
 		resume?: boolean
 	}) => void
+	onVisibleSessionChanged?: (payload: {
+		sessionId: string | null
+		configOptions: ConfigOption[]
+		connectionGeneration: number
+	}) => void
 	onSessionUpdate?: (payload: unknown) => void
 	onPermissionRequest?: (payload: PermissionRequest) => void
 	onConfigOptions?: (payload: {
@@ -271,6 +276,15 @@ export function listenAcpEvents(handlers: {
 					configOptions: ConfigOption[]
 					connectionGeneration: number
 					resume?: boolean
+				},
+			)
+		}),
+		listen("acp:visible_session_changed", (event) => {
+			handlers.onVisibleSessionChanged?.(
+				event.payload as {
+					sessionId: string | null
+					configOptions: ConfigOption[]
+					connectionGeneration: number
 				},
 			)
 		}),

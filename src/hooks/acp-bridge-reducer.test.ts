@@ -8,6 +8,8 @@ import {
 	activePermissionAtom,
 	activeSessionIdAtom,
 	agentConnectedAtom,
+	historyMessagesAtom,
+	historyViewSessionIdAtom,
 	sessionsAtom,
 } from "@/stores/atoms"
 import type { PermissionRequest } from "@/types/acp"
@@ -248,7 +250,9 @@ describe("processAcpEvent", () => {
 		})
 
 		expect(refs.streaming.current.has("session-a")).toBe(false)
-		expect(refs.streaming.current.has("session-b")).toBe(false)
+		expect(store.get(sessionsAtom)["session-b"]?.messages[0]?.content).toBe(
+			"for-b",
+		)
 		expect(store.get(sessionsAtom)["session-a"]?.messages).toHaveLength(1)
 		expect(store.get(sessionsAtom)["session-a"]?.promptInFlight).toBe(false)
 		expect(store.get(sessionsAtom)["session-b"]?.promptInFlight).toBe(true)
@@ -337,5 +341,74 @@ describe("processAcpEvent", () => {
 		expect(store.get(activeSessionIdAtom)).toBeNull()
 		expect(store.get(agentConnectedAtom)).toBe(false)
 		expect(store.get(activePermissionAtom)).toBeNull()
+	})
+})
+
+describe("visible_session_changed", () => {
+	it("swaps the active session without clearing messages", () => {
+		const store = createStore()
+		const refs = createRefs()
+		activate(store, "session-a")
+		store.set(sessionsAtom, {
+			...store.get(sessionsAtom),
+			"session-b": {
+				messages: [
+					{
+						id: "m1",
+						role: "assistant",
+						content: "from-b",
+						toolCalls: [],
+						timestamp: 1,
+					},
+				],
+				streaming: "",
+				promptInFlight: false,
+				status: "idle",
+				configOptions: [],
+			},
+		})
+
+		processAcpEvent(store, refs, {
+			type: "visible_session_changed",
+			payload: {
+				sessionId: "session-b",
+				configOptions: [],
+				connectionGeneration: 1,
+			},
+		})
+
+		expect(store.get(activeSessionIdAtom)).toBe("session-b")
+		expect(store.get(sessionsAtom)["session-b"]?.messages[0]?.content).toBe(
+			"from-b",
+		)
+		expect(store.get(sessionsAtom)["session-a"]?.messages).toEqual([])
+	})
+
+	it("clears history view when binding a live session", () => {
+		const store = createStore()
+		const refs = createRefs()
+		store.set(historyViewSessionIdAtom, "saved-1")
+		store.set(historyMessagesAtom, [
+			{
+				id: "h1",
+				role: "user",
+				content: "saved",
+				toolCalls: [],
+				timestamp: 1,
+			},
+		])
+		activate(store, "session-a")
+
+		processAcpEvent(store, refs, {
+			type: "visible_session_changed",
+			payload: {
+				sessionId: "session-a",
+				configOptions: [],
+				connectionGeneration: 1,
+			},
+		})
+
+		expect(store.get(historyViewSessionIdAtom)).toBeNull()
+		expect(store.get(historyMessagesAtom)).toEqual([])
 	})
 })

@@ -25,6 +25,11 @@ export function useAcpBridge() {
 				processAcpEvent(store, refs, { type: "agent_ready", payload }),
 			onSessionReady: (payload) =>
 				processAcpEvent(store, refs, { type: "session_ready", payload }),
+			onVisibleSessionChanged: (payload) =>
+				processAcpEvent(store, refs, {
+					type: "visible_session_changed",
+					payload,
+				}),
 			onProgress: (payload) =>
 				processAcpEvent(store, refs, { type: "progress", payload }),
 			onSessionUpdate: (payload) =>
