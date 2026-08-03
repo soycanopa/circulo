@@ -8,6 +8,7 @@ import {
 import { isGeneralChatsPath } from "@/lib/workspace"
 import {
 	appSettingsAtom,
+	errorMessageAtom,
 	generalChatSessionsAtom,
 	generalChatsPathAtom,
 	messagesAtom,
@@ -26,6 +27,7 @@ export function useChatPersistence() {
 	const appSettings = useAtomValue(appSettingsAtom)
 	const generalChatsPath = useAtomValue(generalChatsPathAtom)
 
+	const setError = useSetAtom(errorMessageAtom)
 	const setGeneralChatSessions = useSetAtom(generalChatSessionsAtom)
 	const setGeneralChatsPath = useSetAtom(generalChatsPathAtom)
 	const setProjectChatsByPath = useSetAtom(projectChatsByPathAtom)
@@ -134,8 +136,9 @@ export function useChatPersistence() {
 					lastSaved.current = fingerprint
 					return refreshPath(projectPath)
 				})
-				.catch(() => {
-					// Non-blocking — chat still works if disk write fails.
+				.catch((error: unknown) => {
+					const detail = error instanceof Error ? error.message : String(error)
+					setError(`Failed to save chat: ${detail}`)
 				})
 		}, promptInFlight ? 1200 : 600)
 
@@ -146,6 +149,7 @@ export function useChatPersistence() {
 		promptInFlight,
 		refreshPath,
 		sessionId,
+		setError,
 	])
 
 	return {
