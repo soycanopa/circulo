@@ -25,13 +25,11 @@ Agent process (registry → OpenCode first)
 
 ## ACP surface (MVP)
 
-**Client → Agent:** `initialize`, `session/new`, `session/prompt`, `session/set_config_option`  
+**Client → Agent:** `initialize`, `session/new`, `session/load`, `session/close`, `session/cancel`, `session/prompt`, `session/set_config_option`.
 
-**Agent → Client:** `session/update`, `session/request_permission`  
+**Agent → Client:** `session/update`, `session/request_permission`.
 
 Optional later: `session/list`, client `fs/*`, `terminal/*`, elicitation.
-
-Implemented post-MVP: `session/load`, `session/close`, `session/cancel`.
 
 ## OpenCode spawn (source of truth)
 
@@ -53,13 +51,17 @@ Idle → OpeningProject → AgentReady → SessionReady → Generating ⇄ Await
 
 Rules:
 
-1. One agent process per open workspace (single-flight warm).  
-2. One ACP `sessionId` active in Rust and UI at a time.  
-3. `session_ready_for_ui` — prewarm may hold a `sessionId` before the UI sees it.  
-4. New chat = publish prewarm **or** `session/new`, then bind UI before send.  
-5. **No** placeholder / optimistic session ids in persistence.  
-6. Folder-less chats use `~/.circulo/chats`, never `$HOME`.  
+1. One agent process per open workspace (single-flight warm).
+2. One ACP `sessionId` active in Rust and UI at a time.
+3. `session_ready_for_ui` — prewarm may hold a `sessionId` before the UI sees it.
+4. New chat = publish prewarm **or** `session/new`, then bind UI before send.
+5. **No** placeholder / optimistic session ids in persistence.
+6. Folder-less chats use `~/.circulo/chats`, never `$HOME`.
 7. Background `session/new` prewarm after `initialize` is allowed; must not emit `acp:session_ready` until New Chat.
+8. **Connection generation** — every `open_project` bumps a monotonic `generation`. All ACP events tag their payload with `connectionGeneration`. The frontend (`connectionGenerationAtom`) drops events tagged with a stale generation so a previous agent process cannot mutate the active UI.
+9. **Single-flight prompts** — `send_prompt` rejects concurrent invocations; `prompt_in_flight` is held in `ActiveAgent` and released only after the `session/prompt` RPC resolves (or errors). User Stop still drains via `session/cancel`.
+10. **Serialized session ops** — `CreateSession`, `LoadSession`, `CloseSession`, and `SetConfigOption` all serialize on `session_ops` inside the runtime, so close/new/config cannot race against each other on the same connection.
+11. **Permission safety** — `respond_permission` validates `optionId` against the agent-provided set and matches `sessionId` before replying. UI uses a FIFO `pendingPermissionsAtom` so simultaneous requests queue instead of overwriting.
 
 ## Warm / latency strategy
 

@@ -41,9 +41,15 @@ Per [OpenCode ACP docs](https://opencode.ai/docs/acp/) (Zed / JetBrains / nvim):
 | C→A | `session/load` | Resume saved chat on agent (when supported) |
 | C→A | `session/close` | Close session before New Chat / delete |
 
-## Optional (not yet)
+## Connection generation & event gating
 
-`session/list`, client `fs/*`, `terminal/*`, elicitation.
+Each `open_project` increments a monotonic `connectionGeneration` counter on the Rust side. Every Tauri event (`agent:ready`, `acp:session_ready`, `acp:session_update`, `acp:permission_request`, `acp:config_options`, `acp:prompt_complete`, `acp:error`, `agent:disconnected`) carries this `connectionGeneration` in its payload. The frontend tracks `connectionGenerationAtom` and drops events whose generation no longer matches — preventing a previous OpenCode process from mutating the UI after a workspace switch or crash.
+
+If `open_project` finishes before the frontend has registered listeners, `useBootstrapAgent` calls `reconcileFromStatus` so the bridge starts from the same source of truth the backend already published.
+
+## Permission queue
+
+Permission requests can fire concurrently on the same session. The frontend accumulates them in `pendingPermissionsAtom`; `activePermissionAtom` always holds the head of the queue. When the user responds, the queue advances. `respond_permission` validates that `optionId` belongs to the set returned by the agent and that `sessionId` matches the waiter; an invalid reply cancels the waiter instead of forwarding a forged option.
 
 ## Lifecycle (must match ACP)
 
