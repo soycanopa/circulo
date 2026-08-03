@@ -83,15 +83,16 @@ function isStaleGeneration(
 	return generation !== undefined && current !== null && generation !== current
 }
 
-function isDifferentSession(
+/** True when the event refers to a session we have never seen on this agent. */
+function isUnknownSession(
 	store: Store,
 	eventSessionId: string | undefined | null,
-) {
-	const activeSessionId =
-		store.get(visibleSessionIdAtom) ?? store.get(sessionIdAtom)
-	return (
-		!activeSessionId || !eventSessionId || eventSessionId !== activeSessionId
-	)
+): boolean {
+	if (!eventSessionId) return true
+	const visible = store.get(visibleSessionIdAtom) ?? store.get(sessionIdAtom)
+	if (visible === eventSessionId) return false
+	const sessions = store.get(sessionsAtom)
+	return !sessions[eventSessionId]
 }
 
 const EMPTY_SESSION: SessionUiState = {
@@ -198,7 +199,7 @@ export function processAcpEvent(
 				(typeof root.session_id === "string" && root.session_id) ||
 				null
 			if (!eventSessionId) return
-			if (isDifferentSession(store, eventSessionId)) return
+			if (isUnknownSession(store, eventSessionId)) return
 
 			const sessionState = ensureSession(store, eventSessionId)
 			const result = applySessionUpdate(
@@ -226,7 +227,7 @@ export function processAcpEvent(
 		case "permission_request": {
 			if (
 				isStaleGeneration(store, event.payload.connectionGeneration) ||
-				isDifferentSession(store, event.payload.sessionId)
+				isUnknownSession(store, event.payload.sessionId)
 			) {
 				return
 			}
@@ -246,7 +247,7 @@ export function processAcpEvent(
 		}		case "config_options":
 			if (
 				isStaleGeneration(store, event.payload.connectionGeneration) ||
-				isDifferentSession(store, event.payload.sessionId)
+				isUnknownSession(store, event.payload.sessionId)
 			) {
 				return
 			}
@@ -261,7 +262,7 @@ export function processAcpEvent(
 		case "prompt_complete": {
 			if (
 				isStaleGeneration(store, event.payload?.connectionGeneration) ||
-				isDifferentSession(store, event.payload?.sessionId)
+				isUnknownSession(store, event.payload?.sessionId)
 			) {
 				return
 			}
@@ -297,7 +298,7 @@ export function processAcpEvent(
 		case "error":
 			if (
 				isStaleGeneration(store, event.payload.connectionGeneration) ||
-				isDifferentSession(store, event.payload.sessionId)
+				isUnknownSession(store, event.payload.sessionId)
 			) {
 				return
 			}

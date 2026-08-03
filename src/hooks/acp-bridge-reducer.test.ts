@@ -186,6 +186,41 @@ describe("processAcpEvent", () => {
 		expect(store.get(sessionsAtom)["session-1"]?.status).toBe("awaiting_permission")
 	})
 
+	it("keeps concurrent sessions isolated", () => {
+		const store = createStore()
+		const refs = createRefs()
+		activate(store, "session-a")
+		// Pre-create the second session in the map so it counts as known, but keep
+		// the visible pointer on session-a so updates must not bleed into the legacy atom.
+		const sessions = store.get(sessionsAtom)
+		store.set(sessionsAtom, {
+			...sessions,
+			"session-b": {
+				messages: [],
+				streaming: "",
+				promptInFlight: false,
+				status: "idle",
+				configOptions: [],
+			},
+		})
+
+		processAcpEvent(store, refs, {
+			type: "session_update",
+			payload: {
+				sessionId: "session-b",
+				update: {
+					sessionUpdate: "agent_message_chunk",
+					content: { type: "text", text: "from-b" },
+				},
+			},
+		})
+
+		expect(store.get(messagesAtom)).toEqual([])
+		expect(store.get(sessionsAtom)["session-b"]?.messages[0]?.content).toBe("from-b")
+		expect(store.get(sessionsAtom)["session-b"]?.promptInFlight).toBe(true)
+		expect(store.get(sessionsAtom)["session-a"]?.promptInFlight).toBe(false)
+	})
+
 	it("ignores session updates without a session id", () => {
 		const store = createStore()
 		const refs = createRefs()
