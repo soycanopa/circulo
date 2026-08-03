@@ -222,7 +222,11 @@ export default function App() {
 
 		if (manageBusy) setBusy(true)
 		if (isNewWorkspace) {
+			// Reset only when the workspace really changes so background sessions
+			// from the previous workspace don't get wiped out mid-prompt.
 			resetWorkspaceUi()
+			setProjectPath(resolved)
+		} else {
 			setProjectPath(resolved)
 		}
 		try {
