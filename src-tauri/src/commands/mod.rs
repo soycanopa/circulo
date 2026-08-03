@@ -5,6 +5,7 @@ use std::time::Duration;
 const AGENT_WARM_TIMEOUT: Duration = Duration::from_secs(60);
 const SESSION_OPERATION_TIMEOUT: Duration = Duration::from_secs(60);
 const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(15);
+const SHUTDOWN_ACK_TIMEOUT: Duration = Duration::from_secs(3);
 
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, oneshot};
@@ -111,7 +112,7 @@ pub async fn open_project_inner(
     }
 
     // Different path (or no agent): shut down previous and start one process.
-    shutdown_agent(state).await;
+    shutdown_agent(&app, state).await;
 
     let (cmd_tx, cmd_rx) = mpsc::channel(32);
     let agent_done = Arc::new(tokio::sync::Notify::new());
@@ -245,8 +246,11 @@ pub fn spawn_eager_agent_warm(app: &AppHandle) {
 }
 
 #[tauri::command]
-pub async fn close_project(state: State<'_, SharedState>) -> Result<ProjectStatus, String> {
-    shutdown_agent(state.inner()).await;
+pub async fn close_project(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+) -> Result<ProjectStatus, String> {
+    shutdown_agent(&app, state.inner()).await;
     Ok(state.lock().await.status())
 }
 
@@ -883,19 +887,25 @@ pub async fn export_transcript_cmd(
     }
 }
 
-async fn shutdown_agent(state: &SharedState) {
-    let cmd_tx = {
+async fn shutdown_agent(app: &AppHandle, state: &SharedState) {
+    let (cmd_tx, generation) = {
         let mut guard = state.lock().await;
         guard.permission_waiters.clear();
-        guard.agent.as_ref().map(|a| a.cmd_tx.clone())
+        let agent = guard.agent.as_ref();
+        (agent.map(|a| a.cmd_tx.clone()), agent.map(|a| a.generation))
     };
 
-    if let Some(tx) = cmd_tx {
-        let _ = tx.send(AgentCommand::Shutdown).await;
+    if let (Some(tx), Some(generation)) = (cmd_tx, generation) {
+        let (ack_tx, ack_rx) = oneshot::channel::<()>();
+        if tx.send(AgentCommand::Shutdown { ack: ack_tx }).await.is_ok() {
+            // Deterministic handshake — bound the wait so a stuck agent cannot hang open_project.
+            let _ = tokio::time::timeout(SHUTDOWN_ACK_TIMEOUT, ack_rx).await;
+        }
+        let _ = app.emit(
+            "agent:disconnected",
+            serde_json::json!({ "connectionGeneration": generation }),
+        );
     }
-
-    // Brief yield so the process can exit before we spawn another.
-    tokio::time::sleep(Duration::from_millis(50)).await;
 
     let mut guard = state.lock().await;
     guard.agent = None;

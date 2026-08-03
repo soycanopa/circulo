@@ -88,7 +88,9 @@ pub enum AgentCommand {
         done: oneshot::Sender<Result<(), String>>,
     },
     CancelPrompt,
-    Shutdown,
+    Shutdown {
+        ack: oneshot::Sender<()>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]

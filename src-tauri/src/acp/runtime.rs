@@ -480,7 +480,10 @@ pub async fn start_agent_connection(
                                 }
                             }
                         }
-                        AgentCommand::Shutdown => break,
+                        AgentCommand::Shutdown { ack } => {
+                            let _ = ack.send(());
+                            break;
+                        }
                     }
                 }
 
