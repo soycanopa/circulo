@@ -296,20 +296,20 @@ pub async fn start_agent_connection(
                 while let Some(command) = cmd_rx.recv().await {
                     match command {
                         AgentCommand::SendPrompt {
+                            session_id,
                             text,
                             context_files,
                         } => {
-                            // Prompts require a UI-published session.
-                            let (session_id, ready) = {
-                                let guard = state.lock().await;
-                                match &guard.agent {
-                                    Some(a) if a.generation == generation => {
-                                        (a.session_id().to_string(), a.session_ready_for_ui())
-                                    }
-                                    _ => (String::new(), false),
-                                }
+                            // Prompts target a specific session_id; the runtime no longer
+                            // assumes a single visible session.
+                            let ready = {
+                                let mut guard = state.lock().await;
+                                guard
+                                    .agent_for_generation_mut(generation)
+                                    .and_then(|a| a.sessions.get(&session_id))
+                                    .is_some_and(|s| s.session_ready_for_ui)
                             };
-                            if !ready || session_id.is_empty() {
+                            if !ready {
                                 let _ = app.emit(
                                     "acp:error",
                                     serde_json::json!({
@@ -319,25 +319,20 @@ pub async fn start_agent_connection(
                                 continue;
                             }
 
-                            // Mark in-flight under the runtime mutex so concurrent prompts
-                            // and cancel can coordinate without UI races.
+                            // Mark in-flight for the targeted session only.
                             {
                                 let mut guard = state.lock().await;
                                 if let Some(agent) = guard.agent_for_generation_mut(generation) {
-                                    if agent.prompt_in_flight() {
-                                        let _ = app.emit(
-                                            "acp:error",
-                                            serde_json::json!({
-                                                "message": "Prompt already in flight"
-                                            }),
-                                        );
-                                        continue;
-                                    }
-                                    let target_sid = session_id.clone();
-                                    if let Some(handle) = agent
-                                        .sessions
-                                        .get_mut(&target_sid)
-                                    {
+                                    if let Some(handle) = agent.sessions.get_mut(&session_id) {
+                                        if handle.prompt_in_flight {
+                                            let _ = app.emit(
+                                                "acp:error",
+                                                serde_json::json!({
+                                                    "message": "Prompt already in flight"
+                                                }),
+                                            );
+                                            continue;
+                                        }
                                         handle.prompt_in_flight = true;
                                     } else {
                                         continue;
@@ -360,7 +355,6 @@ pub async fn start_agent_connection(
                             let started = Instant::now();
                             *prompt_started_at.lock().await = Some(started);
                             *first_chunk_logged.lock().await = false;
-                            // Tell UI the prompt left the client immediately (before LLM tokens).
                             let _ = app.emit(
                                 "acp:prompt_started",
                                 serde_json::json!({
@@ -378,20 +372,17 @@ pub async fn start_agent_connection(
                                         .send_request(PromptRequest::new(session_id.clone(), blocks))
                                         .block_task()
                                         .await;
-                                    // Always release the in-flight flag for this generation.
                                     {
-                                    let mut guard = state.lock().await;
-                                    if let Some(agent) =
-                                        guard.agent_for_generation_mut(generation)
-                                    {
-                                        if let Some(handle) = agent
-                                            .visible_session_id
-                                            .as_ref()
-                                            .and_then(|sid| agent.sessions.get_mut(sid))
+                                        let mut guard = state.lock().await;
+                                        if let Some(agent) =
+                                            guard.agent_for_generation_mut(generation)
                                         {
-                                            handle.prompt_in_flight = false;
+                                            if let Some(handle) =
+                                                agent.sessions.get_mut(&session_id)
+                                            {
+                                                handle.prompt_in_flight = false;
+                                            }
                                         }
-                                    }
                                     }
                                     match result {
                                         Ok(_) => {
@@ -428,18 +419,20 @@ pub async fn start_agent_connection(
                                 }
                             });
                         }
-                        AgentCommand::SetConfigOption { config_id, value } => {
+                        AgentCommand::SetConfigOption {
+                            session_id,
+                            config_id,
+                            value,
+                        } => {
                             let _ops = session_ops.lock().await;
-                            let (session_id, ready) = {
-                                let guard = state.lock().await;
-                                match &guard.agent {
-                                    Some(a) if a.generation == generation => {
-                                        (a.session_id().to_string(), a.session_ready_for_ui())
-                                    }
-                                    _ => (String::new(), false),
-                                }
+                            let known = {
+                                let mut guard = state.lock().await;
+                                guard
+                                    .agent_for_generation_mut(generation)
+                                    .map(|a| a.sessions.contains_key(&session_id))
+                                    .unwrap_or(false)
                             };
-                            if !ready || session_id.is_empty() {
+                            if !known {
                                 continue;
                             }
                             let request = SetSessionConfigOptionRequest::new(
@@ -454,10 +447,8 @@ pub async fn start_agent_connection(
                                     if let Some(agent) =
                                         state.lock().await.agent_for_generation_mut(generation)
                                     {
-                                        if let Some(handle) = agent
-                                            .visible_session_id
-                                            .as_ref()
-                                            .and_then(|sid| agent.sessions.get_mut(sid))
+                                        if let Some(handle) =
+                                            agent.sessions.get_mut(&session_id)
                                         {
                                             handle.config_options = mapped.clone();
                                         }
@@ -518,16 +509,7 @@ pub async fn start_agent_connection(
                             .await;
                             let _ = done.send(result);
                         }
-                        AgentCommand::CancelPrompt => {
-                            let session_id = {
-                                let guard = state.lock().await;
-                                match &guard.agent {
-                                    Some(a) if a.session_ready_for_ui() => {
-                                        a.session_id().to_string()
-                                    }
-                                    _ => String::new(),
-                                }
-                            };
+                        AgentCommand::CancelPrompt { session_id } => {
                             if session_id.is_empty() {
                                 continue;
                             }
@@ -546,6 +528,12 @@ pub async fn start_agent_connection(
                                         }),
                                     );
                                 }
+                            }
+                        }
+                        AgentCommand::SetVisibleSession { session_id } => {
+                            let mut guard = state.lock().await;
+                            if let Some(agent) = guard.agent_for_generation_mut(generation) {
+                                agent.visible_session_id = session_id;
                             }
                         }
                         AgentCommand::Shutdown { ack } => {

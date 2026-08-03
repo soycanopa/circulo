@@ -69,10 +69,12 @@ pub struct ProjectStatus {
 
 pub enum AgentCommand {
     SendPrompt {
+        session_id: String,
         text: String,
         context_files: Vec<ContextFile>,
     },
     SetConfigOption {
+        session_id: String,
         config_id: String,
         value: String,
     },
@@ -87,7 +89,12 @@ pub enum AgentCommand {
         session_id: String,
         done: oneshot::Sender<Result<(), String>>,
     },
-    CancelPrompt,
+    CancelPrompt {
+        session_id: String,
+    },
+    SetVisibleSession {
+        session_id: Option<String>,
+    },
     Shutdown {
         ack: oneshot::Sender<()>,
     },

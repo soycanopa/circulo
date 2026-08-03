@@ -375,19 +375,31 @@ pub async fn send_prompt(
     text: String,
     context_paths: Vec<String>,
 ) -> Result<(), String> {
-    let (cmd_tx, project_path) = {
+    let (cmd_tx, project_path, session_id) = {
         let guard = state.lock().await;
         let agent = guard
             .agent
             .as_ref()
             .ok_or_else(|| "No project open".to_string())?;
-        if agent.prompt_in_flight() {
-            return Err("Prompt already in flight".to_string());
-        }
-        if !agent.session_ready_for_ui() || agent.session_id().is_empty() {
+        let visible = agent
+            .visible_session_id
+            .clone()
+            .ok_or_else(|| "No active session — use New Chat first".to_string())?;
+        let ready = agent
+            .sessions
+            .get(&visible)
+            .is_some_and(|s| s.session_ready_for_ui);
+        if !ready {
             return Err("No active session — use New Chat first".to_string());
         }
-        (agent.cmd_tx.clone(), agent.project_path.clone())
+        if agent
+            .sessions
+            .get(&visible)
+            .is_some_and(|s| s.prompt_in_flight)
+        {
+            return Err("Prompt already in flight".to_string());
+        }
+        (agent.cmd_tx.clone(), agent.project_path.clone(), visible)
     };
 
     let mut context_files = Vec::new();
@@ -398,6 +410,7 @@ pub async fn send_prompt(
 
     cmd_tx
         .send(AgentCommand::SendPrompt {
+            session_id,
             text,
             context_files,
         })
@@ -407,20 +420,21 @@ pub async fn send_prompt(
 
 #[tauri::command]
 pub async fn cancel_prompt(state: State<'_, SharedState>) -> Result<(), String> {
-    let cmd_tx = {
+    let (cmd_tx, session_id) = {
         let guard = state.lock().await;
         let agent = guard
             .agent
             .as_ref()
             .ok_or_else(|| "No project open".to_string())?;
-        if !agent.session_ready_for_ui() || agent.session_id().is_empty() {
-            return Err("No active session".to_string());
-        }
-        agent.cmd_tx.clone()
+        let visible = agent
+            .visible_session_id
+            .clone()
+            .ok_or_else(|| "No active session".to_string())?;
+        (agent.cmd_tx.clone(), visible)
     };
 
     cmd_tx
-        .send(AgentCommand::CancelPrompt)
+        .send(AgentCommand::CancelPrompt { session_id })
         .await
         .map_err(|err| format!("Failed to cancel prompt: {err}"))
 }
@@ -477,17 +491,25 @@ pub async fn set_config_option(
     config_id: String,
     value: String,
 ) -> Result<(), String> {
-    let cmd_tx = {
+    let (cmd_tx, session_id) = {
         let guard = state.lock().await;
         let agent = guard
             .agent
             .as_ref()
             .ok_or_else(|| "No project open".to_string())?;
-        agent.cmd_tx.clone()
+        let visible = agent
+            .visible_session_id
+            .clone()
+            .ok_or_else(|| "No active session".to_string())?;
+        (agent.cmd_tx.clone(), visible)
     };
 
     cmd_tx
-        .send(AgentCommand::SetConfigOption { config_id, value })
+        .send(AgentCommand::SetConfigOption {
+            session_id,
+            config_id,
+            value,
+        })
         .await
         .map_err(|err| format!("Failed to set config option: {err}"))
 }
