@@ -351,6 +351,9 @@ export function AppSidebar({
 			{/* Chats + Projects + workspace dots (middle zone, above ACP/settings). */}
 			<div className="flex min-h-0 flex-1 flex-col">
 				<div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3 pb-2">
+					<p className="px-2.5 pb-0.5 text-[11px] font-medium tracking-tight text-muted/55">
+						Circulo
+					</p>
 					<button
 						type="button"
 						onClick={onNewChat}
