@@ -7,8 +7,7 @@ use agent_client_protocol::schema::v1::{
     NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigKind, SessionConfigOption,
     SessionConfigSelectOptions, SessionNotification, SetSessionConfigOptionRequest, TextContent,
-};
-use agent_client_protocol::schema::ProtocolVersion;
+};use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ConnectionTo};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
@@ -18,7 +17,7 @@ use tracing::{error, info};
 use crate::agents::build_agent;
 use crate::state::{
     AgentCapabilitiesDto, AgentCommand, ConfigOptionDto, ConfigOptionValueDto, ContextFile,
-    SharedState,
+    PermissionOptionId, SharedState,
 };
 
 pub async fn start_agent_connection(
@@ -113,10 +112,23 @@ pub async fn start_agent_connection(
 
                 let request_id = uuid::Uuid::new_v4().to_string();
                 let (tx, rx) = oneshot::channel::<String>();
+                let allowed: Vec<PermissionOptionId> = request
+                    .options
+                    .iter()
+                    .map(|o| o.option_id.clone())
+                    .collect();
+                let session_id = request.session_id.to_string();
 
                 {
                     let mut guard = state_for_permissions.lock().await;
-                    guard.permission_waiters.insert(request_id.clone(), tx);
+                    guard.permission_waiters.insert(
+                        request_id.clone(),
+                        crate::state::PermissionWaiter {
+                            tx,
+                            allowed_option_ids: allowed,
+                            session_id,
+                        },
+                    );
                 }
 
                 let payload = serde_json::json!({

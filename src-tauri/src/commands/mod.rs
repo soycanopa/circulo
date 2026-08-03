@@ -431,15 +431,33 @@ pub async fn respond_permission(
     state: State<'_, SharedState>,
     request_id: String,
     option_id: String,
+    session_id: String,
 ) -> Result<(), String> {
-    let mut guard = state.lock().await;
-    if let Some(tx) = guard.permission_waiters.remove(&request_id) {
-        tx.send(option_id)
-            .map_err(|_| "Permission waiter dropped".to_string())?;
-        Ok(())
-    } else {
-        Err("Permission request not found".to_string())
+    if option_id.is_empty() {
+        return Err("optionId must not be empty".to_string());
     }
+    let mut guard = state.lock().await;
+    let waiter = guard
+        .permission_waiters
+        .remove(&request_id)
+        .ok_or_else(|| "Permission request not found".to_string())?;
+    if waiter.session_id != session_id {
+        return Err("sessionId does not match the permission request".to_string());
+    }
+    if !waiter
+        .allowed_option_ids
+        .iter()
+        .any(|o| o.0.as_ref() == option_id)
+    {
+        return Err(format!(
+            "Unknown optionId '{option_id}' for request '{request_id}'"
+        ));
+    }
+    waiter
+        .tx
+        .send(option_id)
+        .map_err(|_| "Permission waiter dropped".to_string())?;
+    Ok(())
 }
 
 #[tauri::command]

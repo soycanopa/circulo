@@ -9,6 +9,7 @@ import {
 	errorMessageAtom,
 	historyViewSessionIdAtom,
 	messagesAtom,
+	pendingPermissionsAtom,
 	progressMessageAtom,
 	projectPathAtom,
 	promptInFlightAtom,
@@ -122,6 +123,7 @@ export function processAcpEvent(
 			}
 			store.set(promptInFlightAtom, false)
 			store.set(activePermissionAtom, null)
+			store.set(pendingPermissionsAtom, [])
 			store.set(sessionStatusAtom, "idle")
 			store.set(progressMessageAtom, null)
 			store.set(errorMessageAtom, null)
@@ -169,8 +171,12 @@ export function processAcpEvent(
 			) {
 				return
 			}
-			store.set(activePermissionAtom, event.payload)
-			store.set(sessionStatusAtom, "awaiting_permission")
+			store.set(pendingPermissionsAtom, (prev) => {
+				const next = [...prev, event.payload]
+				store.set(activePermissionAtom, next[0] ?? null)
+				store.set(sessionStatusAtom, "awaiting_permission")
+				return next
+			})
 			return
 		case "config_options":
 			if (
@@ -233,6 +239,7 @@ export function processAcpEvent(
 			store.set(sessionStatusAtom, "disconnected")
 			store.set(promptInFlightAtom, false)
 			store.set(activePermissionAtom, null)
+			store.set(pendingPermissionsAtom, [])
 			store.set(configOptionsAtom, [])
 			store.set(capabilitiesAtom, null)
 			store.set(progressMessageAtom, null)

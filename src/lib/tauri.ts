@@ -71,8 +71,9 @@ export async function cancelPrompt(): Promise<void> {
 export async function respondPermission(
 	requestId: string,
 	optionId: string,
+	sessionId: string,
 ): Promise<void> {
-	return invoke("respond_permission", { requestId, optionId })
+	return invoke("respond_permission", { requestId, optionId, sessionId })
 }
 
 export async function setConfigOption(

@@ -118,10 +118,18 @@ pub struct ActiveAgent {
     pub connected: bool,
 }
 
+pub use agent_client_protocol::schema::v1::PermissionOptionId;
+
+pub struct PermissionWaiter {
+    pub tx: oneshot::Sender<String>,
+    pub allowed_option_ids: Vec<PermissionOptionId>,
+    pub session_id: String,
+}
+
 pub struct CirculoState {
     pub agent: Option<ActiveAgent>,
     pub next_generation: u64,
-    pub permission_waiters: HashMap<String, oneshot::Sender<String>>,
+    pub permission_waiters: HashMap<String, PermissionWaiter>,
 }
 
 impl CirculoState {
