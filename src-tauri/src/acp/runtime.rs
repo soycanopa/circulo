@@ -792,12 +792,21 @@ pub fn read_context_file(project_root: &Path, relative_path: &str) -> Result<Str
 }
 
 pub fn search_project_files(project_root: &Path, query: &str, limit: usize) -> Vec<String> {
+    const MAX_SEARCH_DEPTH: usize = 12;
+    const IGNORED_DIRECTORIES: [&str; 4] = ["node_modules", ".git", "target", ".build"];
+
     let query_lower = query.to_lowercase();
     let mut results = Vec::new();
 
     for entry in walkdir::WalkDir::new(project_root)
         .follow_links(false)
+        .max_depth(MAX_SEARCH_DEPTH)
         .into_iter()
+        .filter_entry(|entry| {
+            entry.depth() == 0
+                || !entry.file_type().is_dir()
+                || !IGNORED_DIRECTORIES.contains(&entry.file_name().to_string_lossy().as_ref())
+        })
         .filter_map(Result::ok)
     {
         if results.len() >= limit {
@@ -819,14 +828,6 @@ pub fn search_project_files(project_root: &Path, query: &str, limit: usize) -> V
             continue;
         }
 
-        if relative.contains("node_modules")
-            || relative.contains(".git/")
-            || relative.contains("target/")
-            || relative.contains(".build/")
-        {
-            continue;
-        }
-
         if query.is_empty() || relative.to_lowercase().contains(&query_lower) {
             results.push(relative.to_string());
         }
@@ -834,4 +835,55 @@ pub fn search_project_files(project_root: &Path, query: &str, limit: usize) -> V
 
     results.sort();
     results
+}
+
+#[cfg(test)]
+mod tests {
+    use super::search_project_files;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn search_prunes_ignored_directory_segments() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("node_modules/pkg")).unwrap();
+        fs::create_dir_all(root.path().join("src")).unwrap();
+        fs::write(root.path().join("node_modules/pkg/index.ts"), "ignored").unwrap();
+        fs::write(root.path().join("src/index.ts"), "included").unwrap();
+
+        let results = search_project_files(root.path(), "index", 40);
+
+        assert_eq!(results, vec!["src/index.ts"]);
+    }
+
+    #[test]
+    fn search_keeps_directories_that_only_contain_ignored_names() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("custom-node_modules-cache")).unwrap();
+        fs::write(
+            root.path().join("custom-node_modules-cache/index.ts"),
+            "included",
+        )
+        .unwrap();
+
+        let results = search_project_files(root.path(), "index", 40);
+
+        assert_eq!(results, vec!["custom-node_modules-cache/index.ts"]);
+    }
+
+    #[test]
+    fn search_does_not_walk_beyond_depth_limit() {
+        let root = tempdir().unwrap();
+        let mut deep = root.path().to_path_buf();
+        for segment in 0..12 {
+            deep.push(format!("level-{segment}"));
+        }
+        fs::create_dir_all(&deep).unwrap();
+        fs::write(deep.join("too-deep.ts"), "ignored").unwrap();
+        fs::write(root.path().join("visible.ts"), "included").unwrap();
+
+        let results = search_project_files(root.path(), "", 40);
+
+        assert_eq!(results, vec!["visible.ts"]);
+    }
 }
