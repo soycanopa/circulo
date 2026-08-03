@@ -24,7 +24,6 @@ import type {
 
 export interface AcpBridgeRefs {
 	streaming: { current: string }
-	sessionId: { current: string | null }
 	firstChunkLogged: { current: boolean }
 }
 
@@ -81,12 +80,11 @@ function isStaleGeneration(
 }
 
 function isDifferentSession(
+	store: Store,
 	eventSessionId: string | undefined | null,
-	activeSessionId: string | null,
 ) {
-	return Boolean(
-		eventSessionId && activeSessionId && eventSessionId !== activeSessionId,
-	)
+	const activeSessionId = store.get(sessionIdAtom)
+	return !activeSessionId || !eventSessionId || eventSessionId !== activeSessionId
 }
 
 export function processAcpEvent(
@@ -112,7 +110,6 @@ export function processAcpEvent(
 				return
 			}
 			store.set(connectionGenerationAtom, event.payload.connectionGeneration)
-			refs.sessionId.current = event.payload.sessionId
 			refs.firstChunkLogged.current = false
 			store.set(sessionIdAtom, event.payload.sessionId)
 			store.set(historyViewSessionIdAtom, null)
@@ -145,7 +142,7 @@ export function processAcpEvent(
 				(typeof root.sessionId === "string" && root.sessionId) ||
 				(typeof root.session_id === "string" && root.session_id) ||
 				null
-			if (isDifferentSession(eventSessionId, refs.sessionId.current)) return
+			if (isDifferentSession(store, eventSessionId)) return
 
 			const result = applySessionUpdate(
 				store.get(messagesAtom),
@@ -168,7 +165,7 @@ export function processAcpEvent(
 		case "permission_request":
 			if (
 				isStaleGeneration(store, event.payload.connectionGeneration) ||
-				isDifferentSession(event.payload.sessionId, refs.sessionId.current)
+				isDifferentSession(store, event.payload.sessionId)
 			) {
 				return
 			}
@@ -178,7 +175,7 @@ export function processAcpEvent(
 		case "config_options":
 			if (
 				isStaleGeneration(store, event.payload.connectionGeneration) ||
-				isDifferentSession(event.payload.sessionId, refs.sessionId.current)
+				isDifferentSession(store, event.payload.sessionId)
 			) {
 				return
 			}
@@ -187,7 +184,7 @@ export function processAcpEvent(
 		case "prompt_complete":
 			if (
 				isStaleGeneration(store, event.payload?.connectionGeneration) ||
-				isDifferentSession(event.payload?.sessionId, refs.sessionId.current)
+				isDifferentSession(store, event.payload?.sessionId)
 			) {
 				return
 			}
@@ -209,7 +206,7 @@ export function processAcpEvent(
 		case "error":
 			if (
 				isStaleGeneration(store, event.payload.connectionGeneration) ||
-				isDifferentSession(event.payload.sessionId, refs.sessionId.current)
+				isDifferentSession(store, event.payload.sessionId)
 			) {
 				return
 			}
@@ -232,7 +229,6 @@ export function processAcpEvent(
 			store.set(connectionGenerationAtom, null)
 			store.set(agentConnectedAtom, false)
 			store.set(sessionIdAtom, null)
-			refs.sessionId.current = null
 			store.set(projectPathAtom, null)
 			store.set(sessionStatusAtom, "disconnected")
 			store.set(promptInFlightAtom, false)

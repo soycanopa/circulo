@@ -20,10 +20,9 @@ beforeEach(() => {
 	})
 })
 
-function createRefs(sessionId: string | null = "session-1"): AcpBridgeRefs {
+function createRefs(): AcpBridgeRefs {
 	return {
 		streaming: { current: "" },
-		sessionId: { current: sessionId },
 		firstChunkLogged: { current: false },
 	}
 }
@@ -38,6 +37,7 @@ describe("processAcpEvent", () => {
 	it("opens the permission gate only for the active session", () => {
 		const store = createStore()
 		const refs = createRefs()
+		store.set(sessionIdAtom, "session-1")
 
 		processAcpEvent(store, refs, {
 			type: "permission_request",
@@ -58,6 +58,7 @@ describe("processAcpEvent", () => {
 	it("clears the permission gate when the prompt completes", () => {
 		const store = createStore()
 		const refs = createRefs()
+		store.set(sessionIdAtom, "session-1")
 		store.set(activePermissionAtom, permission)
 		store.set(promptInFlightAtom, true)
 		store.set(sessionStatusAtom, "awaiting_permission")
@@ -75,6 +76,7 @@ describe("processAcpEvent", () => {
 	it("ignores streaming updates from another session", () => {
 		const store = createStore()
 		const refs = createRefs()
+		store.set(sessionIdAtom, "session-1")
 
 		processAcpEvent(store, refs, {
 			type: "session_update",
@@ -94,6 +96,7 @@ describe("processAcpEvent", () => {
 	it("streams active-session text immediately", () => {
 		const store = createStore()
 		const refs = createRefs()
+		store.set(sessionIdAtom, "session-1")
 
 		processAcpEvent(store, refs, {
 			type: "session_update",
@@ -109,6 +112,47 @@ describe("processAcpEvent", () => {
 		expect(store.get(messagesAtom)[0]?.content).toBe("Hello")
 		expect(store.get(promptInFlightAtom)).toBe(true)
 		expect(store.get(sessionStatusAtom)).toBe("generating")
+	})
+
+	it("ignores session-scoped events without an active session", () => {
+		const store = createStore()
+		const refs = createRefs()
+
+		processAcpEvent(store, refs, {
+			type: "session_update",
+			payload: {
+				sessionId: "prewarmed-session",
+				update: {
+					sessionUpdate: "agent_message_chunk",
+					content: { type: "text", text: "ignored" },
+				},
+			},
+		})
+		processAcpEvent(store, refs, {
+			type: "permission_request",
+			payload: permission,
+		})
+
+		expect(store.get(messagesAtom)).toEqual([])
+		expect(store.get(activePermissionAtom)).toBeNull()
+	})
+
+	it("ignores session updates without a session id", () => {
+		const store = createStore()
+		const refs = createRefs()
+		store.set(sessionIdAtom, "session-1")
+
+		processAcpEvent(store, refs, {
+			type: "session_update",
+			payload: {
+				update: {
+					sessionUpdate: "agent_message_chunk",
+					content: { type: "text", text: "ignored" },
+				},
+			},
+		})
+
+		expect(store.get(messagesAtom)).toEqual([])
 	})
 
 	it("ignores disconnects from an older connection", () => {

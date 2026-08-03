@@ -8,7 +8,6 @@ import { listenAcpEvents } from "@/lib/tauri"
 
 export function useAcpBridge() {
 	const streamingRef = useRef("")
-	const sessionIdRef = useRef<string | null>(null)
 	const firstChunkLogged = useRef(false)
 
 	useEffect(() => {
@@ -17,7 +16,6 @@ export function useAcpBridge() {
 		const store = getDefaultStore()
 		const refs: AcpBridgeRefs = {
 			streaming: streamingRef,
-			sessionId: sessionIdRef,
 			firstChunkLogged,
 		}
 
