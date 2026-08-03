@@ -137,6 +137,28 @@ describe("processAcpEvent", () => {
 		expect(store.get(activePermissionAtom)).toBeNull()
 	})
 
+	it("queues simultaneous permission requests for the same session", () => {
+		const store = createStore()
+		const refs = createRefs()
+		store.set(sessionIdAtom, "session-1")
+
+		const second: PermissionRequest = {
+			...permission,
+			requestId: "request-2",
+		}
+		processAcpEvent(store, refs, {
+			type: "permission_request",
+			payload: permission,
+		})
+		processAcpEvent(store, refs, {
+			type: "permission_request",
+			payload: second,
+		})
+
+		expect(store.get(activePermissionAtom)).toEqual(permission)
+		expect(store.get(sessionStatusAtom)).toBe("awaiting_permission")
+	})
+
 	it("ignores session updates without a session id", () => {
 		const store = createStore()
 		const refs = createRefs()
@@ -181,6 +203,27 @@ describe("processAcpEvent", () => {
 
 		expect(store.get(sessionIdAtom)).toBe("session-1")
 		expect(store.get(agentConnectedAtom)).toBe(true)
+	})
+
+	it("clears the permission queue on disconnect", () => {
+		const store = createStore()
+		const refs = createRefs()
+		store.set(sessionIdAtom, "session-1")
+		processAcpEvent(store, refs, {
+			type: "permission_request",
+			payload: permission,
+		})
+		processAcpEvent(store, refs, {
+			type: "permission_request",
+			payload: { ...permission, requestId: "request-2" },
+		})
+
+		processAcpEvent(store, refs, {
+			type: "disconnected",
+			payload: {},
+		})
+
+		expect(store.get(activePermissionAtom)).toBeNull()
 	})
 
 	it("clears session and permission state on disconnect", () => {

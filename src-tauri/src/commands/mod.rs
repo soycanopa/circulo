@@ -433,14 +433,26 @@ pub async fn respond_permission(
     option_id: String,
     session_id: String,
 ) -> Result<(), String> {
-    if option_id.is_empty() {
-        return Err("optionId must not be empty".to_string());
-    }
     let mut guard = state.lock().await;
     let waiter = guard
         .permission_waiters
         .remove(&request_id)
         .ok_or_else(|| "Permission request not found".to_string())?;
+    validate_permission_response(waiter, &option_id, &request_id, &session_id)?;
+    Ok(())
+}
+
+/// Pure validation helper exposed for unit testing without spinning up Tauri State.
+/// Sends the validated option_id through the waiter; returns an error for unknown / mismatched options.
+fn validate_permission_response(
+    waiter: crate::state::PermissionWaiter,
+    option_id: &str,
+    request_id: &str,
+    session_id: &str,
+) -> Result<(), String> {
+    if option_id.is_empty() {
+        return Err("optionId must not be empty".to_string());
+    }
     if waiter.session_id != session_id {
         return Err("sessionId does not match the permission request".to_string());
     }
@@ -455,7 +467,7 @@ pub async fn respond_permission(
     }
     waiter
         .tx
-        .send(option_id)
+        .send(option_id.to_string())
         .map_err(|_| "Permission waiter dropped".to_string())?;
     Ok(())
 }
@@ -931,4 +943,55 @@ async fn shutdown_agent(app: &AppHandle, state: &SharedState) {
 
     let mut guard = state.lock().await;
     guard.agent = None;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_permission_response;
+    use crate::state::{PermissionOptionId, PermissionWaiter};
+    use std::sync::Arc;
+    use tokio::sync::oneshot;
+
+    fn make_waiter(session_id: &str, options: &[&str]) -> (PermissionWaiter, oneshot::Receiver<String>) {
+        let (tx, rx) = oneshot::channel();
+        let waiter = PermissionWaiter {
+            tx,
+            allowed_option_ids: options
+                .iter()
+                .map(|o| PermissionOptionId::new(Arc::from(*o)))
+                .collect(),
+            session_id: session_id.to_string(),
+        };
+        (waiter, rx)
+    }
+
+    #[test]
+    fn rejects_empty_option_id() {
+        let (waiter, _rx) = make_waiter("s1", &["allow"]);
+        let err = validate_permission_response(waiter, "", "req-1", "s1").unwrap_err();
+        assert_eq!(err, "optionId must not be empty");
+    }
+
+    #[test]
+    fn rejects_session_mismatch() {
+        let (waiter, _rx) = make_waiter("s1", &["allow"]);
+        let err =
+            validate_permission_response(waiter, "allow", "req-1", "other").unwrap_err();
+        assert_eq!(err, "sessionId does not match the permission request");
+    }
+
+    #[test]
+    fn rejects_unknown_option() {
+        let (waiter, _rx) = make_waiter("s1", &["allow"]);
+        let err =
+            validate_permission_response(waiter, "deny", "req-1", "s1").unwrap_err();
+        assert!(err.contains("Unknown optionId 'deny' for request 'req-1'"));
+    }
+
+    #[test]
+    fn accepts_known_option() {
+        let (waiter, rx) = make_waiter("s1", &["allow", "deny"]);
+        validate_permission_response(waiter, "allow", "req-1", "s1").unwrap();
+        assert_eq!(rx.blocking_recv().unwrap(), "allow");
+    }
 }
