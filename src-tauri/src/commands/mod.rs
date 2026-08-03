@@ -115,7 +115,12 @@ pub async fn open_project_inner(
     // Different path (or no agent): shut down previous and start one process.
     shutdown_agent(&app, state).await;
 
-    let (cmd_tx, cmd_rx) = mpsc::channel(32);
+    // External channel: commands queued by other commands (send_prompt, etc.).
+    // Internal channel: consumed by the run-loop inside the runtime task. We
+    // bridge external → internal so the run-loop can own its receiver without
+    // blocking the external sender.
+    let (cmd_tx, cmd_rx_external) = mpsc::channel(32);
+    let (loop_tx, cmd_rx) = mpsc::channel(32);
     let agent_done = Arc::new(tokio::sync::Notify::new());
 
     let generation = {
@@ -135,6 +140,19 @@ pub async fn open_project_inner(
         });
         generation
     };
+
+    // Bridge external → internal so the run-loop can own its receiver without
+    // holding the external sender. This decouples the queued commands from
+    // the runtime loop's lifetime and prevents `oneshot canceled` when the
+    // prewarm tries to send a command before the loop is ready.
+    tauri::async_runtime::spawn(async move {
+        let mut rx = cmd_rx_external;
+        while let Some(cmd) = rx.recv().await {
+            if loop_tx.send(cmd).await.is_err() {
+                break;
+            }
+        }
+    });
 
     let shared: SharedState = Arc::clone(state);
     let app_clone = app.clone();

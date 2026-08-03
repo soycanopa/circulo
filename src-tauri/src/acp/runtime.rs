@@ -25,7 +25,7 @@ pub async fn start_agent_connection(
     state: SharedState,
     project_path: PathBuf,
     generation: u64,
-    mut cmd_rx: mpsc::Receiver<AgentCommand>,
+    cmd_rx: mpsc::Receiver<AgentCommand>,
 ) -> Result<(), String> {
     let agent_id = {
         let guard = state.lock().await;
@@ -245,8 +245,36 @@ pub async fn start_agent_connection(
                     }
                 }
 
-                // Serializes session ops (create/load/close/config) on this agent process.
+                // The command run-loop is spawned as a separate task (see below) so
+                // the receiver is ready when the prewarm below sends its RPC.
                 let session_ops = Arc::new(Mutex::new(()));
+
+                // Spawn the command run-loop BEFORE the prewarm so the receiver is
+                // ready when the prewarm sends its `oneshot`-backed CreateSession.
+                // Spawning the run-loop inline used to race with the prewarm's
+                // session/new RPC and trigger `oneshot canceled` on startup.
+                let run_state = state.clone();
+                let run_app = app.clone();
+                let run_connection = connection.clone();
+                let run_session_ops = session_ops.clone();
+                let run_project_path = project_path.clone();
+                let run_prompt_started_at = prompt_started_at.clone();
+                let run_first_chunk_logged = first_chunk_logged.clone();
+                let run_generation = generation;
+                tokio::spawn(async move {
+                    run_command_loop(
+                        run_state,
+                        run_app,
+                        run_connection,
+                        cmd_rx,
+                        run_session_ops,
+                        run_project_path,
+                        run_prompt_started_at,
+                        run_first_chunk_logged,
+                        run_generation,
+                    )
+                    .await;
+                });
 
                 // Background session/new prewarm (ACP session-setup). OpenCode pays ~6–10s on
                 // the first session/new per process (context + configured MCP). We do not emit
@@ -280,9 +308,9 @@ pub async fn start_agent_connection(
                                 let _ = app.emit(
                                     "agent:progress",
                                     serde_json::json!({
-                        "phase": "ready",
-                        "message": "Agent ready — New Chat to start",
-                        "connectionGeneration": generation,
+                                        "phase": "ready",
+                                        "message": "Agent ready — New Chat to start",
+                                        "connectionGeneration": generation,
                                     }),
                                 );
                             }
@@ -293,256 +321,6 @@ pub async fn start_agent_connection(
                     });
                 }
 
-                while let Some(command) = cmd_rx.recv().await {
-                    match command {
-                        AgentCommand::SendPrompt {
-                            session_id,
-                            text,
-                            context_files,
-                        } => {
-                            // Prompts target a specific session_id; the runtime no longer
-                            // assumes a single visible session.
-                            let ready = {
-                                let mut guard = state.lock().await;
-                                guard
-                                    .agent_for_generation_mut(generation)
-                                    .and_then(|a| a.sessions.get(&session_id))
-                                    .is_some_and(|s| s.session_ready_for_ui)
-                            };
-                            if !ready {
-                                let _ = app.emit(
-                                    "acp:error",
-                                    serde_json::json!({
-                                        "message": "No active ACP session — use New Chat first"
-                                    }),
-                                );
-                                continue;
-                            }
-
-                            // Mark in-flight for the targeted session only.
-                            {
-                                let mut guard = state.lock().await;
-                                if let Some(agent) = guard.agent_for_generation_mut(generation) {
-                                    if let Some(handle) = agent.sessions.get_mut(&session_id) {
-                                        if handle.prompt_in_flight {
-                                            let _ = app.emit(
-                                                "acp:error",
-                                                serde_json::json!({
-                                                    "message": "Prompt already in flight"
-                                                }),
-                                            );
-                                            continue;
-                                        }
-                                        handle.prompt_in_flight = true;
-                                    } else {
-                                        continue;
-                                    }
-                                } else {
-                                    continue;
-                                }
-                            }
-
-                            let blocks = build_prompt_blocks(&text, &context_files);
-                            let prompt_connection = connection.clone();
-                            let app = app.clone();
-                            let prompt_started_at = prompt_started_at.clone();
-                            let first_chunk_logged = first_chunk_logged.clone();
-                            info!(
-                                session_id = %session_id,
-                                chars = text.len(),
-                                "Sending session/prompt"
-                            );
-                            let started = Instant::now();
-                            *prompt_started_at.lock().await = Some(started);
-                            *first_chunk_logged.lock().await = false;
-                            let _ = app.emit(
-                                "acp:prompt_started",
-                                serde_json::json!({
-                                    "sessionId": session_id,
-                                    "chars": text.len(),
-                                }),
-                            );
-                            tokio::spawn({
-                                let state = state.clone();
-                                let app = app.clone();
-                                let session_id = session_id.clone();
-                                let generation = generation;
-                                async move {
-                                    let result = prompt_connection
-                                        .send_request(PromptRequest::new(session_id.clone(), blocks))
-                                        .block_task()
-                                        .await;
-                                    {
-                                        let mut guard = state.lock().await;
-                                        if let Some(agent) =
-                                            guard.agent_for_generation_mut(generation)
-                                        {
-                                            if let Some(handle) =
-                                                agent.sessions.get_mut(&session_id)
-                                            {
-                                                handle.prompt_in_flight = false;
-                                            }
-                                        }
-                                    }
-                                    match result {
-                                        Ok(_) => {
-                                            info!(
-                                                session_id = %session_id,
-                                                elapsed_ms = started.elapsed().as_millis() as u64,
-                                                "session/prompt completed"
-                                            );
-                                            let _ = app.emit(
-                                                "acp:prompt_complete",
-                                                serde_json::json!({
-                                                    "sessionId": session_id,
-                                                    "elapsedMs": started.elapsed().as_millis() as u64,
-                                                    "connectionGeneration": generation,
-                                                }),
-                                            );
-                                        }
-                                        Err(err) => {
-                                            error!(
-                                                ?err,
-                                                elapsed_ms = started.elapsed().as_millis() as u64,
-                                                "Prompt failed"
-                                            );
-                                            let _ = app.emit(
-                                                "acp:error",
-                                                serde_json::json!({
-                                                    "message": err.to_string(),
-                                                    "sessionId": session_id,
-                                                    "connectionGeneration": generation,
-                                                }),
-                                            );
-                                        }
-                                    }
-                                }
-                            });
-                        }
-                        AgentCommand::SetConfigOption {
-                            session_id,
-                            config_id,
-                            value,
-                        } => {
-                            let _ops = session_ops.lock().await;
-                            let known = {
-                                let mut guard = state.lock().await;
-                                guard
-                                    .agent_for_generation_mut(generation)
-                                    .map(|a| a.sessions.contains_key(&session_id))
-                                    .unwrap_or(false)
-                            };
-                            if !known {
-                                continue;
-                            }
-                            let request = SetSessionConfigOptionRequest::new(
-                                session_id.clone(),
-                                config_id,
-                                value.as_str(),
-                            );
-                            match connection.send_request(request).block_task().await {
-                                Ok(response) => {
-                                    let mapped =
-                                        map_config_options(Some(&response.config_options));
-                                    if let Some(agent) =
-                                        state.lock().await.agent_for_generation_mut(generation)
-                                    {
-                                        if let Some(handle) =
-                                            agent.sessions.get_mut(&session_id)
-                                        {
-                                            handle.config_options = mapped.clone();
-                                        }
-                                    }
-                                    let _ = app.emit(
-                                        "acp:config_options",
-                                        serde_json::json!({
-                                            "configOptions": mapped,
-                                            "sessionId": session_id,
-                                            "connectionGeneration": generation,
-                                        }),
-                                    );
-                                }
-                                Err(err) => {
-                                    let _ = app.emit(
-                                        "acp:error",
-                                        serde_json::json!({
-                                            "message": err.to_string(),
-                                            "connectionGeneration": generation,
-                                        }),
-                                    );
-                                }
-                            }
-                        }
-                        AgentCommand::CreateSession { done } => {
-                            let _ops = session_ops.lock().await;
-                            let result = publish_or_create_session(
-                                &connection,
-                                &app,
-                                &state,
-                                &project_path,
-                                generation,
-                            )
-                            .await;
-                            let _ = done.send(result);
-                        }
-                        AgentCommand::LoadSession { session_id, done } => {
-                            let _ops = session_ops.lock().await;
-                            let result = load_session_on_connection(
-                                &connection,
-                                &app,
-                                &state,
-                                &project_path,
-                                generation,
-                                &session_id,
-                            )
-                            .await;
-                            let _ = done.send(result);
-                        }
-                        AgentCommand::CloseSession { session_id, done } => {
-                            let _ops = session_ops.lock().await;
-                            let result = close_session_on_connection(
-                                &connection,
-                                &state,
-                                generation,
-                                &session_id,
-                            )
-                            .await;
-                            let _ = done.send(result);
-                        }
-                        AgentCommand::CancelPrompt { session_id } => {
-                            if session_id.is_empty() {
-                                continue;
-                            }
-                            match connection
-                                .send_notification(CancelNotification::new(session_id.clone()))
-                            {
-                                Ok(()) => {
-                                    info!(session_id = %session_id, "Sent session/cancel");
-                                }
-                                Err(err) => {
-                                    let _ = app.emit(
-                                        "acp:error",
-                                        serde_json::json!({
-                                            "message": err.to_string(),
-                                            "connectionGeneration": generation,
-                                        }),
-                                    );
-                                }
-                            }
-                        }
-                        AgentCommand::SetVisibleSession { session_id } => {
-                            let mut guard = state.lock().await;
-                            if let Some(agent) = guard.agent_for_generation_mut(generation) {
-                                agent.visible_session_id = session_id;
-                            }
-                        }
-                        AgentCommand::Shutdown { ack } => {
-                            let _ = ack.send(());
-                            break;
-                        }
-                    }
-                }
-
                 Ok(())
             }
         })
@@ -550,6 +328,250 @@ pub async fn start_agent_connection(
         .map_err(|err| format!("ACP connection failed: {err}"))?;
 
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_command_loop(
+    state: SharedState,
+    app: AppHandle,
+    connection: ConnectionTo<Agent>,
+    mut cmd_rx: mpsc::Receiver<AgentCommand>,
+    session_ops: Arc<Mutex<()>>,
+    project_path: PathBuf,
+    prompt_started_at: Arc<Mutex<Option<Instant>>>,
+    first_chunk_logged: Arc<Mutex<bool>>,
+    generation: u64,
+) {
+    while let Some(command) = cmd_rx.recv().await {
+        match command {
+            AgentCommand::SendPrompt {
+                session_id,
+                text,
+                context_files,
+            } => {
+                // Prompts target a specific session_id; the runtime no longer
+                // assumes a single visible session.
+                let ready = {
+                    let mut guard = state.lock().await;
+                    guard
+                        .agent_for_generation_mut(generation)
+                        .and_then(|a| a.sessions.get(&session_id))
+                        .is_some_and(|s| s.session_ready_for_ui)
+                };
+                if !ready {
+                    let _ = app.emit(
+                        "acp:error",
+                        serde_json::json!({
+                            "message": "No active ACP session — use New Chat first"
+                        }),
+                    );
+                    continue;
+                }
+
+                // Mark in-flight for the targeted session only.
+                {
+                    let mut guard = state.lock().await;
+                    if let Some(agent) = guard.agent_for_generation_mut(generation) {
+                        if let Some(handle) = agent.sessions.get_mut(&session_id) {
+                            if handle.prompt_in_flight {
+                                let _ = app.emit(
+                                    "acp:error",
+                                    serde_json::json!({
+                                        "message": "Prompt already in flight"
+                                    }),
+                                );
+                                continue;
+                            }
+                            handle.prompt_in_flight = true;
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                }
+
+                let blocks = build_prompt_blocks(&text, &context_files);
+                let prompt_connection = connection.clone();
+                let app = app.clone();
+                let prompt_started_at = prompt_started_at.clone();
+                let first_chunk_logged = first_chunk_logged.clone();
+                info!(
+                    session_id = %session_id,
+                    chars = text.len(),
+                    "Sending session/prompt"
+                );
+                let started = Instant::now();
+                *prompt_started_at.lock().await = Some(started);
+                *first_chunk_logged.lock().await = false;
+                let _ = app.emit(
+                    "acp:prompt_started",
+                    serde_json::json!({
+                        "sessionId": session_id,
+                        "chars": text.len(),
+                    }),
+                );
+                tokio::spawn({
+                    let state = state.clone();
+                    let app = app.clone();
+                    let session_id = session_id.clone();
+                    let generation = generation;
+                    async move {
+                        let result = prompt_connection
+                            .send_request(PromptRequest::new(session_id.clone(), blocks))
+                            .block_task()
+                            .await;
+                        {
+                            let mut guard = state.lock().await;
+                            if let Some(agent) = guard.agent_for_generation_mut(generation) {
+                                if let Some(handle) = agent.sessions.get_mut(&session_id) {
+                                    handle.prompt_in_flight = false;
+                                }
+                            }
+                        }
+                        match result {
+                            Ok(_) => {
+                                info!(
+                                    session_id = %session_id,
+                                    elapsed_ms = started.elapsed().as_millis() as u64,
+                                    "session/prompt completed"
+                                );
+                                let _ = app.emit(
+                                    "acp:prompt_complete",
+                                    serde_json::json!({
+                                        "sessionId": session_id,
+                                        "elapsedMs": started.elapsed().as_millis() as u64,
+                                        "connectionGeneration": generation,
+                                    }),
+                                );
+                            }
+                            Err(err) => {
+                                error!(
+                                    ?err,
+                                    elapsed_ms = started.elapsed().as_millis() as u64,
+                                    "Prompt failed"
+                                );
+                                let _ = app.emit(
+                                    "acp:error",
+                                    serde_json::json!({
+                                        "message": err.to_string(),
+                                        "sessionId": session_id,
+                                        "connectionGeneration": generation,
+                                    }),
+                                );
+                            }
+                        }
+                    }
+                });
+            }
+            AgentCommand::SetConfigOption {
+                session_id,
+                config_id,
+                value,
+            } => {
+                let _ops = session_ops.lock().await;
+                let known = {
+                    let mut guard = state.lock().await;
+                    guard
+                        .agent_for_generation_mut(generation)
+                        .map(|a| a.sessions.contains_key(&session_id))
+                        .unwrap_or(false)
+                };
+                if !known {
+                    continue;
+                }
+                let request = SetSessionConfigOptionRequest::new(
+                    session_id.clone(),
+                    config_id,
+                    value.as_str(),
+                );
+                match connection.send_request(request).block_task().await {
+                    Ok(response) => {
+                        let mapped = map_config_options(Some(&response.config_options));
+                        if let Some(agent) =
+                            state.lock().await.agent_for_generation_mut(generation)
+                        {
+                            if let Some(handle) = agent.sessions.get_mut(&session_id) {
+                                handle.config_options = mapped.clone();
+                            }
+                        }
+                        let _ = app.emit(
+                            "acp:config_options",
+                            serde_json::json!({
+                                "configOptions": mapped,
+                                "sessionId": session_id,
+                                "connectionGeneration": generation,
+                            }),
+                        );
+                    }
+                    Err(err) => {
+                        let _ = app.emit(
+                            "acp:error",
+                            serde_json::json!({
+                                "message": err.to_string(),
+                                "connectionGeneration": generation,
+                            }),
+                        );
+                    }
+                }
+            }
+            AgentCommand::CreateSession { done } => {
+                let _ops = session_ops.lock().await;
+                let result =
+                    publish_or_create_session(&connection, &app, &state, &project_path, generation)
+                        .await;
+                let _ = done.send(result);
+            }
+            AgentCommand::LoadSession { session_id, done } => {
+                let _ops = session_ops.lock().await;
+                let result = load_session_on_connection(
+                    &connection,
+                    &app,
+                    &state,
+                    &project_path,
+                    generation,
+                    &session_id,
+                )
+                .await;
+                let _ = done.send(result);
+            }
+            AgentCommand::CloseSession { session_id, done } => {
+                let _ops = session_ops.lock().await;
+                let result =
+                    close_session_on_connection(&connection, &state, generation, &session_id).await;
+                let _ = done.send(result);
+            }
+            AgentCommand::CancelPrompt { session_id } => {
+                if session_id.is_empty() {
+                    continue;
+                }
+                match connection.send_notification(CancelNotification::new(session_id.clone())) {
+                    Ok(()) => {
+                        info!(session_id = %session_id, "Sent session/cancel");
+                    }
+                    Err(err) => {
+                        let _ = app.emit(
+                            "acp:error",
+                            serde_json::json!({
+                                "message": err.to_string(),
+                                "connectionGeneration": generation,
+                            }),
+                        );
+                    }
+                }
+            }
+            AgentCommand::SetVisibleSession { session_id } => {
+                let mut guard = state.lock().await;
+                if let Some(agent) = guard.agent_for_generation_mut(generation) {
+                    agent.visible_session_id = session_id;
+                }
+            }
+            AgentCommand::Shutdown { ack } => {
+                let _ = ack.send(());
+                break;
+            }
+        }
+    }
 }
 
 /// New Chat: promote a prewarmed session (no extra RPC) or call session/new.
