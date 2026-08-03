@@ -31,6 +31,8 @@ Agent process (registry → OpenCode first)
 
 Optional later: `session/list`, client `fs/*`, `terminal/*`, elicitation.
 
+Multiple sessions may run concurrently against the same `opencode acp` process when the agent advertises `concurrent_sessions` (default true).
+
 ## OpenCode spawn (source of truth)
 
 Per [OpenCode ACP docs](https://opencode.ai/docs/acp/):
@@ -62,6 +64,8 @@ Rules:
 9. **Single-flight prompts** — `send_prompt` rejects concurrent invocations; `prompt_in_flight` is held in `ActiveAgent` and released only after the `session/prompt` RPC resolves (or errors). User Stop still drains via `session/cancel`.
 10. **Serialized session ops** — `CreateSession`, `LoadSession`, `CloseSession`, and `SetConfigOption` all serialize on `session_ops` inside the runtime, so close/new/config cannot race against each other on the same connection.
 11. **Permission safety** — `respond_permission` validates `optionId` against the agent-provided set and matches `sessionId` before replying. UI uses a FIFO `pendingPermissionsAtom` so simultaneous requests queue instead of overwriting.
+12. **Concurrent sessions** — `AgentCapabilitiesDto.concurrent_sessions` defaults to true. When true, multiple ACP sessions per workspace can run prompts in parallel; each lives in `ActiveAgent.sessions` keyed by `session_id`. When false, New Chat closes the previous session first.
+13. **Swap without cancel** — `set_visible_session(sessionId)` (Tauri command) swaps the visible session without aborting the previous session's RPC. The reducer mirrors the new session's `messages`/`streaming` into `messagesAtom`/`streamingTextAtom`. Sidebar indicates background runs with a pulsing dot.
 
 ## Warm / latency strategy
 

@@ -40,6 +40,9 @@ Per [OpenCode ACP docs](https://opencode.ai/docs/acp/) (Zed / JetBrains / nvim):
 | C→A | `session/cancel` | User interrupt (Stop) |
 | C→A | `session/load` | Resume saved chat on agent (when supported) |
 | C→A | `session/close` | Close session before New Chat / delete |
+| C→A | `session/set_config_option` | Model/mode when offered (per session) |
+
+Multiple sessions can run concurrently against the same `opencode acp` process (configurable via `concurrent_sessions` capability; defaults to true).
 
 ## Connection generation & event gating
 
@@ -50,6 +53,18 @@ If `open_project` finishes before the frontend has registered listeners, `useBoo
 ## Permission queue
 
 Permission requests can fire concurrently on the same session. The frontend accumulates them in `pendingPermissionsAtom`; `activePermissionAtom` always holds the head of the queue. When the user responds, the queue advances. `respond_permission` validates that `optionId` belongs to the set returned by the agent and that `sessionId` matches the waiter; an invalid reply cancels the waiter instead of forwarding a forged option.
+
+## Concurrent sessions & swap
+
+Each `opencode acp` process can hold multiple ACP sessions at once. The Rust core tracks every session in `ActiveAgent.sessions: HashMap<String, SessionHandle>`; each entry has its own `prompt_in_flight` and a reference to the shared `cmd_tx`. `SendPrompt` / `SetConfigOption` / `CancelPrompt` carry an explicit `session_id`, so two chats in the same workspace can stream in parallel.
+
+`AgentCapabilitiesDto.concurrent_sessions` defaults to `true` (OpenCode and most ACP agents support it). When `false`, `publish_or_create_session` falls back to the serial behavior (close-before-new).
+
+`set_visible_session(sessionId)` swaps the active buffer without interrupting the previous session's RPC. The reducer mirrors the new session's `messages`/`streaming` into the legacy atoms (`messagesAtom`, `streamingTextAtom`, …) so the rest of the UI keeps reading a single buffer.
+
+## Session storage map
+
+The frontend mirrors the Rust session map via `sessionsAtom: Record<sessionId, SessionUiState>`. `visibleSessionIdAtom` points at the session currently bound to the composer; the sidebar shows a pulsing dot for any session with `promptInFlight: true` that is not the visible one. `disconnected` clears the map; `session_ready`/`prompt_complete`/`error` write per session.
 
 ## Lifecycle (must match ACP)
 
