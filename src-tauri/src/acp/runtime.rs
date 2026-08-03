@@ -233,8 +233,7 @@ pub async fn start_agent_connection(
                     }
                 }
 
-                let active_session_id = Arc::new(Mutex::new(String::new()));
-                // Serializes session/new (prewarm + New Chat) on this agent process.
+                // Serializes session ops (create/load/close/config) on this agent process.
                 let session_ops = Arc::new(Mutex::new(()));
 
                 // Background session/new prewarm (ACP session-setup). OpenCode pays ~6–10s on
@@ -245,13 +244,13 @@ pub async fn start_agent_connection(
                     let app = app.clone();
                     let state = state.clone();
                     let project_path = project_path.clone();
-                    let active_session_id = active_session_id.clone();
                     let session_ops = session_ops.clone();
                     tokio::spawn(async move {
                         let _ops = session_ops.lock().await;
-                        // Skip if New Chat already created a session.
-                        if !active_session_id.lock().await.is_empty() {
-                            return;
+                        if let Some(agent) = state.lock().await.agent_for_generation_mut(generation) {
+                            if !agent.session_id.is_empty() {
+                                return;
+                            }
                         }
                         match create_session_on_connection(
                             &connection,
@@ -259,7 +258,6 @@ pub async fn start_agent_connection(
                             &state,
                             &project_path,
                             generation,
-                            &active_session_id,
                             /* publish_to_ui */ false,
                             /* resume */ false,
                         )
@@ -293,8 +291,10 @@ pub async fn start_agent_connection(
                             let (session_id, ready) = {
                                 let guard = state.lock().await;
                                 match &guard.agent {
-                                    Some(a) => (a.session_id.clone(), a.session_ready_for_ui),
-                                    None => (String::new(), false),
+                                    Some(a) if a.generation == generation => {
+                                        (a.session_id.clone(), a.session_ready_for_ui)
+                                    }
+                                    _ => (String::new(), false),
                                 }
                             };
                             if !ready || session_id.is_empty() {
@@ -305,6 +305,26 @@ pub async fn start_agent_connection(
                                     }),
                                 );
                                 continue;
+                            }
+
+                            // Mark in-flight under the runtime mutex so concurrent prompts
+                            // and cancel can coordinate without UI races.
+                            {
+                                let mut guard = state.lock().await;
+                                if let Some(agent) = guard.agent_for_generation_mut(generation) {
+                                    if agent.prompt_in_flight {
+                                        let _ = app.emit(
+                                            "acp:error",
+                                            serde_json::json!({
+                                                "message": "Prompt already in flight"
+                                            }),
+                                        );
+                                        continue;
+                                    }
+                                    agent.prompt_in_flight = true;
+                                } else {
+                                    continue;
+                                }
                             }
 
                             let blocks = build_prompt_blocks(&text, &context_files);
@@ -328,51 +348,69 @@ pub async fn start_agent_connection(
                                     "chars": text.len(),
                                 }),
                             );
-                            tokio::spawn(async move {
-                                match prompt_connection
-                                    .send_request(PromptRequest::new(session_id.clone(), blocks))
-                                    .block_task()
-                                    .await
-                                {
-                                    Ok(_) => {
-                                        info!(
-                                            session_id = %session_id,
-                                            elapsed_ms = started.elapsed().as_millis() as u64,
-                                            "session/prompt completed"
-                                        );
-                                        let _ = app.emit(
-                                            "acp:prompt_complete",
-                                            serde_json::json!({
-                                                "sessionId": session_id,
-                                                "elapsedMs": started.elapsed().as_millis() as u64,
-                                                "connectionGeneration": generation,
-                                            }),
-                                        );
+                            tokio::spawn({
+                                let state = state.clone();
+                                let app = app.clone();
+                                let session_id = session_id.clone();
+                                let generation = generation;
+                                async move {
+                                    let result = prompt_connection
+                                        .send_request(PromptRequest::new(session_id.clone(), blocks))
+                                        .block_task()
+                                        .await;
+                                    // Always release the in-flight flag for this generation.
+                                    {
+                                        let mut guard = state.lock().await;
+                                        if let Some(agent) =
+                                            guard.agent_for_generation_mut(generation)
+                                        {
+                                            agent.prompt_in_flight = false;
+                                        }
                                     }
-                                    Err(err) => {
-                                        error!(
-                                            ?err,
-                                            elapsed_ms = started.elapsed().as_millis() as u64,
-                                            "Prompt failed"
-                                        );
-                                        let _ = app.emit(
-                                            "acp:error",
-                                            serde_json::json!({
-                                                "message": err.to_string(),
-                                                "sessionId": session_id,
-                                                "connectionGeneration": generation,
-                                            }),
-                                        );
+                                    match result {
+                                        Ok(_) => {
+                                            info!(
+                                                session_id = %session_id,
+                                                elapsed_ms = started.elapsed().as_millis() as u64,
+                                                "session/prompt completed"
+                                            );
+                                            let _ = app.emit(
+                                                "acp:prompt_complete",
+                                                serde_json::json!({
+                                                    "sessionId": session_id,
+                                                    "elapsedMs": started.elapsed().as_millis() as u64,
+                                                    "connectionGeneration": generation,
+                                                }),
+                                            );
+                                        }
+                                        Err(err) => {
+                                            error!(
+                                                ?err,
+                                                elapsed_ms = started.elapsed().as_millis() as u64,
+                                                "Prompt failed"
+                                            );
+                                            let _ = app.emit(
+                                                "acp:error",
+                                                serde_json::json!({
+                                                    "message": err.to_string(),
+                                                    "sessionId": session_id,
+                                                    "connectionGeneration": generation,
+                                                }),
+                                            );
+                                        }
                                     }
                                 }
                             });
                         }
                         AgentCommand::SetConfigOption { config_id, value } => {
+                            let _ops = session_ops.lock().await;
                             let (session_id, ready) = {
                                 let guard = state.lock().await;
                                 match &guard.agent {
-                                    Some(a) => (a.session_id.clone(), a.session_ready_for_ui),
-                                    None => (String::new(), false),
+                                    Some(a) if a.generation == generation => {
+                                        (a.session_id.clone(), a.session_ready_for_ui)
+                                    }
+                                    _ => (String::new(), false),
                                 }
                             };
                             if !ready || session_id.is_empty() {
@@ -420,7 +458,6 @@ pub async fn start_agent_connection(
                                 &state,
                                 &project_path,
                                 generation,
-                                &active_session_id,
                             )
                             .await;
                             let _ = done.send(result);
@@ -433,18 +470,17 @@ pub async fn start_agent_connection(
                                 &state,
                                 &project_path,
                                 generation,
-                                &active_session_id,
                                 &session_id,
                             )
                             .await;
                             let _ = done.send(result);
                         }
                         AgentCommand::CloseSession { session_id, done } => {
+                            let _ops = session_ops.lock().await;
                             let result = close_session_on_connection(
                                 &connection,
                                 &state,
                                 generation,
-                                &active_session_id,
                                 &session_id,
                             )
                             .await;
@@ -503,7 +539,6 @@ async fn publish_or_create_session(
     state: &SharedState,
     project_path: &PathBuf,
     generation: u64,
-    active_session_id: &Arc<Mutex<String>>,
 ) -> Result<(), String> {
     // If prewarm finished and UI has not claimed it, publish without another session/new.
     {
@@ -540,14 +575,7 @@ async fn publish_or_create_session(
             .unwrap_or_default()
     };
     if !previous_session_id.is_empty() {
-        close_session_on_connection(
-            connection,
-            state,
-            generation,
-            active_session_id,
-            &previous_session_id,
-        )
-        .await?;
+        close_session_on_connection(connection, state, generation, &previous_session_id).await?;
     }
 
     // Fresh session/new (subsequent New Chat, or prewarm missed/failed).
@@ -557,7 +585,6 @@ async fn publish_or_create_session(
         state,
         project_path,
         generation,
-        active_session_id,
         /* publish_to_ui */ true,
         /* resume */ false,
     )
@@ -572,7 +599,6 @@ async fn create_session_on_connection(
     state: &SharedState,
     project_path: &PathBuf,
     generation: u64,
-    active_session_id: &Arc<Mutex<String>>,
     publish_to_ui: bool,
     resume: bool,
 ) -> Result<(), String> {
@@ -599,7 +625,6 @@ async fn create_session_on_connection(
         "ACP session/new completed"
     );
 
-    *active_session_id.lock().await = session_id.clone();
     {
         let mut guard = state.lock().await;
         if let Some(agent) = guard.agent_for_generation_mut(generation) {
@@ -633,7 +658,6 @@ async fn load_session_on_connection(
     state: &SharedState,
     project_path: &PathBuf,
     generation: u64,
-    active_session_id: &Arc<Mutex<String>>,
     session_id: &str,
 ) -> Result<(), String> {
     let capabilities = {
@@ -676,14 +700,7 @@ async fn load_session_on_connection(
     }
 
     if !current_session_id.is_empty() {
-        close_session_on_connection(
-            connection,
-            state,
-            generation,
-            active_session_id,
-            &current_session_id,
-        )
-        .await?;
+        close_session_on_connection(connection, state, generation, &current_session_id).await?;
     }
 
     info!(
@@ -710,7 +727,6 @@ async fn load_session_on_connection(
         "ACP session/load completed"
     );
 
-    *active_session_id.lock().await = session_id.to_string();
     {
         let mut guard = state.lock().await;
         if let Some(agent) = guard.agent_for_generation_mut(generation) {
@@ -739,7 +755,6 @@ async fn close_session_on_connection(
     connection: &ConnectionTo<Agent>,
     state: &SharedState,
     generation: u64,
-    active_session_id: &Arc<Mutex<String>>,
     session_id: &str,
 ) -> Result<(), String> {
     if session_id.is_empty() {
@@ -764,7 +779,6 @@ async fn close_session_on_connection(
         info!(session_id = %session_id, "ACP session/close completed");
     }
 
-    *active_session_id.lock().await = String::new();
     let mut guard = state.lock().await;
     if let Some(agent) = guard.agent_for_generation_mut(generation) {
         if agent.session_id == session_id {

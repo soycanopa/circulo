@@ -109,6 +109,8 @@ pub struct ActiveAgent {
     /// Only true after New Chat publishes the session to the UI.
     /// Prewarm may hold a session_id while this stays false.
     pub session_ready_for_ui: bool,
+    /// Reject concurrent prompts without needing to round-trip through the runtime.
+    pub prompt_in_flight: bool,
     pub cmd_tx: mpsc::Sender<AgentCommand>,
     pub config_options: Vec<ConfigOptionDto>,
     pub agent_capabilities: AgentCapabilitiesDto,

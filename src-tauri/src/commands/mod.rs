@@ -127,6 +127,7 @@ pub async fn open_project_inner(
             agent_id: resolved_agent_id,
             session_id: String::new(),
             session_ready_for_ui: false,
+            prompt_in_flight: false,
             cmd_tx: cmd_tx.clone(),
             config_options: Vec::new(),
             agent_capabilities: AgentCapabilitiesDto::empty(),
@@ -381,6 +382,9 @@ pub async fn send_prompt(
             .agent
             .as_ref()
             .ok_or_else(|| "No project open".to_string())?;
+        if agent.prompt_in_flight {
+            return Err("Prompt already in flight".to_string());
+        }
         if !agent.session_ready_for_ui || agent.session_id.is_empty() {
             return Err("No active session — use New Chat first".to_string());
         }
