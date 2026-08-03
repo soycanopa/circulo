@@ -1,4 +1,4 @@
-import { useSetAtom, useAtomValue } from "jotai"
+import { getDefaultStore, useSetAtom, useAtomValue } from "jotai"
 import { useEffect } from "react"
 import {
 	checkOpencode,
@@ -8,13 +8,53 @@ import {
 } from "@/lib/tauri"
 import {
 	agentConnectedAtom,
+	capabilitiesAtom,
+	configOptionsAtom,
+	connectionGenerationAtom,
 	errorMessageAtom,
 	opencodeStatusAtom,
 	progressMessageAtom,
+	projectPathAtom,
+	sessionIdAtom,
 } from "@/stores/atoms"
+
+/** Resolves when the ACP event bus has installed its listeners (no race on first event). */
+let listenersReady: Promise<void> | null = null
 
 /** Dedupe concurrent bootstrap (React Strict Mode + Rust eager warm). */
 let bootstrapPromise: Promise<void> | null = null
+
+export function setListenersReady(promise: Promise<unknown>) {
+	if (!listenersReady) {
+		listenersReady = promise.then(() => undefined)
+	}
+}
+
+export function waitForListeners(): Promise<void> {
+	return listenersReady ?? Promise.resolve()
+}
+
+async function reconcileFromStatus(): Promise<void> {
+	const status = await getProjectStatus()
+	const store = getDefaultStore()
+	const currentGeneration = store.get(connectionGenerationAtom)
+	if (
+		!status.connected ||
+		status.connectionGeneration === null ||
+		(status.connectionGeneration !== undefined &&
+			currentGeneration !== null &&
+			status.connectionGeneration !== currentGeneration)
+	) {
+		// Bridge is already the source of truth; do not overwrite a different generation.
+		return
+	}
+	store.set(connectionGenerationAtom, status.connectionGeneration)
+	store.set(agentConnectedAtom, status.connected)
+	if (status.projectPath) store.set(projectPathAtom, status.projectPath)
+	if (status.sessionId) store.set(sessionIdAtom, status.sessionId)
+	if (status.configOptions.length) store.set(configOptionsAtom, status.configOptions)
+	if (status.capabilities) store.set(capabilitiesAtom, status.capabilities)
+}
 
 async function warmDefaultAgent(): Promise<void> {
 	const opencode = await checkOpencode()
@@ -22,12 +62,14 @@ async function warmDefaultAgent(): Promise<void> {
 		return
 	}
 
+	await reconcileFromStatus()
 	const status = await getProjectStatus()
 	if (status.connected) {
 		return
 	}
 	const chatsPath = await getDefaultChatsPath()
 	await openProject(chatsPath)
+	await reconcileFromStatus()
 }
 
 /**
@@ -47,7 +89,8 @@ export function useBootstrapAgent() {
 
 		if (!bootstrapPromise) {
 			setProgress("Checking OpenCode…")
-			bootstrapPromise = checkOpencode()
+			bootstrapPromise = waitForListeners()
+				.then(() => checkOpencode())
 				.then((status) => {
 					setOpencodeStatus(status)
 					if (!status.available) {

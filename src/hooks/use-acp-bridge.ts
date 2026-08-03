@@ -4,6 +4,7 @@ import {
 	processAcpEvent,
 	type AcpBridgeRefs,
 } from "@/hooks/acp-bridge-reducer"
+import { setListenersReady } from "@/hooks/use-bootstrap"
 import { listenAcpEvents } from "@/lib/tauri"
 
 export function useAcpBridge() {
@@ -48,6 +49,8 @@ export function useAcpBridge() {
 			}
 			unlisteners = list
 		})
+
+		setListenersReady(Promise.resolve())
 
 		return () => {
 			cancelled = true
