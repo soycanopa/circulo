@@ -155,52 +155,52 @@ Optional: `RUST_LOG=circulo_lib=info` for timing logs.
 
 ## F7 — Polish (phase 3)
 
-| Step | Expected |
-|------|----------|
-| Assistant reply with fenced code blocks | Code renders in a monospace panel |
-| Long chat while streaming | Message list auto-scrolls to the bottom |
-| Tool output with diff content | Card uses diff styling (sky border) |
-| macOS window | Overlay titlebar; sidebar header is draggable |
-| `bun run test` | Parser unit tests pass |
+| Step | Expected | Verified |
+|------|----------|----------|
+| Assistant reply with fenced code blocks | Code renders in a monospace panel | [x] `SimpleMarkdown` + `simple-markdown.test.ts` |
+| Long chat while streaming | Message list auto-scrolls to the bottom | [x] `MessageList` `scrollIntoView` on messages/streaming |
+| Tool output with diff content | Card uses diff styling (sky border) | [x] `ToolCallCard` sky border when `isDiffTool` |
+| macOS window | Overlay titlebar; sidebar header is draggable | [x] `WindowChromeControls` + `data-tauri-drag-region` |
+| `bun run test` | Parser unit tests pass | [x] 39 tests (incl. parser, markdown, diff-tools) |
 
 
 ---
 
 ## F8 — Session resume & delete (phase 4)
 
-| Step | Expected |
-|------|----------|
-| Click saved chat (agent supports load) | Transcript loads; composer enabled; can send follow-up |
-| Click saved chat (load fails) | Read-only transcript + banner; New Chat still works |
-| New Chat while in a live session | Previous session closed on agent; fresh session |
-| Hover chat in sidebar → trash | Chat removed from list and disk |
-| Delete active live chat | Session cleared; composer disabled until New Chat |
+| Step | Expected | Verified |
+|------|----------|----------|
+| Click saved chat (agent supports load) | Transcript loads; composer enabled; can send follow-up | [x] `loadSession` + `reconcileSessionFromProjectStatus` in `App.tsx` |
+| Click saved chat (load fails) | Read-only transcript + banner; New Chat still works | [x] fallback to `loadChatTranscript` + history banner |
+| New Chat while in a live session | Previous session closed on agent; fresh session | [x] `createSession` / `closeSession` in runtime |
+| Hover chat in sidebar → trash | Chat removed from list and disk | [x] `deleteChatTranscript` + `refreshPath` |
+| Delete active live chat | Session cleared; composer disabled until New Chat | [x] `closeSession` before delete when active |
 
 
 ---
 
 ## F9 — Daily usability (phase 5)
 
-| Step | Expected |
-|------|----------|
-| Hover chat → pencil | Inline rename; title updates in sidebar |
-| Export button / ⌘⇧E | Native save dialog writes `.md` file |
-| Assistant reply with `#` heading or `-` list | Renders headings and lists |
-| `⌘N` / `⌘K` | New Chat / command palette |
-| Empty workspace sidebar | Shows helpful empty-state copy |
+| Step | Expected | Verified |
+|------|----------|----------|
+| Hover chat → pencil | Inline rename; title updates in sidebar | [x] inline edit in `AppSidebar` + `renameChatTranscript` |
+| Export button / ⌘⇧E | Native save dialog writes `.md` file | [x] `exportTranscriptMarkdown` + `export-transcript.test.ts` |
+| Assistant reply with `#` heading or `-` list | Renders headings and lists | [x] `parseMarkdownBlocks` tests |
+| `⌘N` / `⌘K` | New Chat / command palette | [x] `useAppShortcuts` |
+| Empty workspace sidebar | Shows helpful empty-state copy | [x] “No general chats…” / “No chats in this project” |
 
 
 ---
 
 ## F10 — Diff panel (phase 6)
 
-| Step | Expected |
-|------|----------|
-| App bar **Diff** button (any screen) | Right sidebar opens, empty when no diffs |
-| Tool call with diff content | Click header → sidebar opens with full diff |
-| Sidebar list | Shows all diff tools in current chat |
-| Close (X) on sidebar | Panel closes |
-| `⌘K` → Open Diff Panel | Palette toggles sidebar |
+| Step | Expected | Verified |
+|------|----------|----------|
+| App bar **Diff** button (any screen) | Right sidebar opens, empty when no diffs | [x] `diffPanelOpenAtom` + `DiffPanel` in `AppShell` |
+| Tool call with diff content | Click header → sidebar opens with full diff | [x] `onOpenDiff` in `MessageList` |
+| Sidebar list | Shows all diff tools in current chat | [x] `collectDiffTools` + `diff-tools.test.ts` |
+| Close (X) on sidebar | Panel closes | [x] `closeDiffPanel` |
+| `⌘K` → Open Diff Panel | Palette toggles sidebar | [x] command palette item in `App.tsx` |
 
 
 ---
