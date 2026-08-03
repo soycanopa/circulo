@@ -136,9 +136,31 @@ fn is_general_chats_path(path: &str) -> bool {
         || path.contains("/.circulo/spaces/") && path.ends_with("/chats")
 }
 
+/// Reject workspace ids that escape `~/.circulo/spaces/{id}`. Workspace ids are
+/// generated internally (`ws_<timestamp>`) but config files can be hand-edited,
+/// so we never trust them blindly when constructing filesystem paths.
+pub fn is_safe_workspace_id(id: &str) -> bool {
+    if id.is_empty() || id.len() > 64 {
+        return false;
+    }
+    if id == DEFAULT_WORKSPACE_ID {
+        return true;
+    }
+    let mut chars = id.chars();
+    let prefix = chars.by_ref().take(3).collect::<String>();
+    if prefix != "ws_" {
+        return false;
+    }
+    id.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 /// General chats folder for a workspace.
 /// Default space keeps legacy `~/.circulo/chats`; others use `~/.circulo/spaces/{id}/chats`.
 pub fn workspace_chats_dir(workspace_id: &str) -> Result<PathBuf, String> {
+    if !is_safe_workspace_id(workspace_id) {
+        return Err(format!("Invalid workspace id: {workspace_id}"));
+    }
     let path = if workspace_id == DEFAULT_WORKSPACE_ID {
         let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
         PathBuf::from(home).join(".circulo").join("chats")
@@ -276,4 +298,33 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_safe_workspace_id;
+
+    #[test]
+    fn default_workspace_id_is_safe() {
+        assert!(is_safe_workspace_id("default"));
+    }
+
+    #[test]
+    fn generated_workspace_ids_are_safe() {
+        assert!(is_safe_workspace_id("ws_1700000000000"));
+        assert!(is_safe_workspace_id("ws_team-alpha"));
+    }
+
+    #[test]
+    fn rejects_traversal_and_invalid_ids() {
+        assert!(!is_safe_workspace_id(""));
+        assert!(!is_safe_workspace_id("ws_.."));
+        assert!(!is_safe_workspace_id("ws_../etc"));
+        assert!(!is_safe_workspace_id("ws_a/b"));
+        assert!(!is_safe_workspace_id("ws_a b"));
+        assert!(!is_safe_workspace_id("../default"));
+        // Generic strings without the ws_ prefix are also rejected.
+        assert!(!is_safe_workspace_id("not_default"));
+        assert!(!is_safe_workspace_id(&"x".repeat(65)));
+    }
 }
