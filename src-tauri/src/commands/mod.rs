@@ -316,6 +316,7 @@ pub async fn set_visible_session(
     state: State<'_, SharedState>,
     session_id: Option<String>,
 ) -> Result<ProjectStatus, String> {
+    let (done_tx, done_rx) = oneshot::channel();
     let cmd_tx = {
         let guard = state.lock().await;
         guard
@@ -326,10 +327,19 @@ pub async fn set_visible_session(
             .clone()
     };
     cmd_tx
-        .send(AgentCommand::SetVisibleSession { session_id })
+        .send(AgentCommand::SetVisibleSession {
+            session_id,
+            done: done_tx,
+        })
         .await
         .map_err(|err| format!("Failed to swap visible session: {err}"))?;
-    Ok(state.lock().await.status())
+
+    match tokio::time::timeout(SESSION_OPERATION_TIMEOUT, done_rx).await {
+        Ok(Ok(Ok(()))) => Ok(state.lock().await.status()),
+        Ok(Ok(Err(message))) => Err(message),
+        Ok(Err(_)) => Err("Visible session swap was cancelled".to_string()),
+        Err(_) => Err("Timed out while swapping visible session".to_string()),
+    }
 }
 
 #[tauri::command]

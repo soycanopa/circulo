@@ -284,7 +284,7 @@ pub async fn start_agent_connection(
                 let prewarm_state = state.clone();
                 let prewarm_project_path = project_path.clone();
                 let prewarm_session_ops = session_ops.clone();
-                let prewarm = tokio::spawn(async move {
+                let _prewarm = tokio::spawn(async move {
                     let _ops = prewarm_session_ops.lock().await;
                     if let Some(agent) =
                         prewarm_state.lock().await.agent_for_generation_mut(generation)
@@ -321,14 +321,11 @@ pub async fn start_agent_connection(
                     }
                 });
 
-                // Keep the closure alive while the prewarm uses the connection, and
-                // also while the run-loop processes commands. The run-loop task
-                // exits when `AgentCommand::Shutdown` arrives; the prewarm exits
-                // when `session/new` resolves (success or failure).
-                tokio::select! {
-                    _ = run_loop => {}
-                    _ = prewarm => {}
-                }
+                // Keep the connect handler alive until the command run-loop exits
+                // (Shutdown). Prewarm is fire-and-forget — awaiting it in a select!
+                // used to end this closure as soon as session/new finished, which
+                // dropped the ACP connection and broke session/prompt.
+                let _ = run_loop.await;
 
                 Ok(())
             }
@@ -569,11 +566,15 @@ async fn run_command_loop(
                     }
                 }
             }
-            AgentCommand::SetVisibleSession { session_id } => {
-                let mut guard = state.lock().await;
-                if let Some(agent) = guard.agent_for_generation_mut(generation) {
-                    agent.visible_session_id = session_id;
-                }
+            AgentCommand::SetVisibleSession { session_id, done } => {
+                let result = set_visible_session_on_connection(
+                    &app,
+                    &state,
+                    generation,
+                    session_id,
+                )
+                .await;
+                let _ = done.send(result);
             }
             AgentCommand::Shutdown { ack } => {
                 let _ = ack.send(());
@@ -658,6 +659,28 @@ async fn publish_or_create_session(
     }
 
     // Fresh session/new (subsequent New Chat, or prewarm missed/failed).
+    // Close any stale hidden sessions so a late prewarm cannot orphan state.
+    {
+        let stale: Vec<String> = {
+            let guard = state.lock().await;
+            guard
+                .agent
+                .as_ref()
+                .map(|agent| {
+                    agent
+                        .sessions
+                        .iter()
+                        .filter(|(_, handle)| !handle.session_ready_for_ui)
+                        .map(|(sid, _)| sid.clone())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        for sid in stale {
+            let _ = close_session_on_connection(connection, state, generation, &sid).await;
+        }
+    }
+
     create_session_on_connection(
         connection,
         app,
@@ -703,6 +726,28 @@ async fn create_session_on_connection(
         publish_to_ui,
         "ACP session/new completed"
     );
+
+    if !publish_to_ui {
+        let already_visible = {
+            let guard = state.lock().await;
+            guard
+                .agent
+                .as_ref()
+                .map(|a| a.session_ready_for_ui() && !a.session_id().is_empty())
+                .unwrap_or(false)
+        };
+        if already_visible {
+            info!(
+                session_id = %session_id,
+                "Discarding prewarm session because UI already has a visible session"
+            );
+            let _ = connection
+                .send_request(CloseSessionRequest::new(session_id.clone()))
+                .block_task()
+                .await;
+            return Ok(());
+        }
+    }
 
     {
         let mut guard = state.lock().await;
@@ -874,6 +919,62 @@ async fn close_session_on_connection(
             }
             agent.visible_session_id = None;
         }
+    }
+
+    Ok(())
+}
+
+async fn set_visible_session_on_connection(
+    app: &AppHandle,
+    state: &SharedState,
+    generation: u64,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    let (config_options, emit_session_id) = {
+        let mut guard = state.lock().await;
+        let agent = guard
+            .agent_for_generation_mut(generation)
+            .ok_or_else(|| "No agent process".to_string())?;
+
+        match session_id {
+            Some(ref sid) if !sid.is_empty() => {
+                let handle = agent
+                    .sessions
+                    .get(sid)
+                    .ok_or_else(|| format!("Unknown session: {sid}"))?;
+                if !handle.session_ready_for_ui {
+                    return Err(format!("Session {sid} is not ready for UI"));
+                }
+                let config_options = handle.config_options.clone();
+                agent.visible_session_id = Some(sid.clone());
+                (config_options, Some(sid.clone()))
+            }
+            Some(_) => return Err("Session id is required".to_string()),
+            None => {
+                agent.visible_session_id = None;
+                (Vec::new(), None)
+            }
+        }
+    };
+
+    if let Some(sid) = emit_session_id {
+        let _ = app.emit(
+            "acp:visible_session_changed",
+            serde_json::json!({
+                "sessionId": sid,
+                "configOptions": config_options,
+                "connectionGeneration": generation,
+            }),
+        );
+    } else {
+        let _ = app.emit(
+            "acp:visible_session_changed",
+            serde_json::json!({
+                "sessionId": null,
+                "configOptions": [],
+                "connectionGeneration": generation,
+            }),
+        );
     }
 
     Ok(())

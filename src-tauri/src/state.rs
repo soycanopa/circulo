@@ -101,6 +101,7 @@ pub enum AgentCommand {
     },
     SetVisibleSession {
         session_id: Option<String>,
+        done: oneshot::Sender<Result<(), String>>,
     },
     Shutdown {
         ack: oneshot::Sender<()>,
