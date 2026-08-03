@@ -8,7 +8,7 @@ import { setListenersReady } from "@/hooks/use-bootstrap"
 import { listenAcpEvents } from "@/lib/tauri"
 
 export function useAcpBridge() {
-	const streamingRef = useRef("")
+	const streamingRef = useRef<Map<string, string>>(new Map())
 	const firstChunkLogged = useRef(false)
 
 	useEffect(() => {

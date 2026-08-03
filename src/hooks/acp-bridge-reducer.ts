@@ -23,7 +23,7 @@ import type {
 } from "@/types/acp"
 
 export interface AcpBridgeRefs {
-	streaming: { current: string }
+	streaming: { current: Map<string, string> }
 	firstChunkLogged: { current: boolean }
 }
 
@@ -121,6 +121,19 @@ function updateSession(
 	})
 }
 
+function streamFor(refs: AcpBridgeRefs, sessionId: string): string {
+	let value = refs.streaming.current.get(sessionId)
+	if (value === undefined) {
+		value = ""
+		refs.streaming.current.set(sessionId, value)
+	}
+	return value
+}
+
+function setStreamFor(refs: AcpBridgeRefs, sessionId: string, value: string) {
+	refs.streaming.current.set(sessionId, value)
+}
+
 export function processAcpEvent(
 	store: Store,
 	refs: AcpBridgeRefs,
@@ -155,7 +168,7 @@ export function processAcpEvent(
 					messages: [],
 					streaming: "",
 				})
-				refs.streaming.current = ""
+				setStreamFor(refs, event.payload.sessionId, "")
 			}
 			updateSession(store, event.payload.sessionId, {
 				configOptions: event.payload.configOptions ?? [],
@@ -190,10 +203,10 @@ export function processAcpEvent(
 			const sessionState = ensureSession(store, eventSessionId)
 			const result = applySessionUpdate(
 				sessionState.messages,
-				refs.streaming.current,
+				streamFor(refs, eventSessionId),
 				event.payload,
 			)
-			refs.streaming.current = result.streamingText
+			setStreamFor(refs, eventSessionId, result.streamingText)
 			updateSession(store, eventSessionId, {
 				messages: result.messages,
 				streaming: result.streamingText,
@@ -256,7 +269,10 @@ export function processAcpEvent(
 			const sid = event.payload?.sessionId
 			if (sid) {
 				const state = ensureSession(store, sid)
-				const next = appendStreamToMessages(state.messages, refs.streaming.current)
+				const next = appendStreamToMessages(
+					state.messages,
+					streamFor(refs, sid),
+				)
 				updateSession(store, sid, {
 					messages: next,
 					streaming: "",
@@ -271,7 +287,7 @@ export function processAcpEvent(
 					const state = ensureSession(store, active)
 					const next = appendStreamToMessages(
 						state.messages,
-						refs.streaming.current,
+						streamFor(refs, active),
 					)
 					updateSession(store, active, {
 						messages: next,
@@ -281,7 +297,7 @@ export function processAcpEvent(
 					})
 				}
 			}
-			refs.streaming.current = ""
+			refs.streaming.current.clear()
 			refs.firstChunkLogged.current = false
 			store.set(activePermissionAtom, null)
 			store.set(pendingPermissionsAtom, [])
@@ -303,8 +319,8 @@ export function processAcpEvent(
 					status: "idle",
 					streaming: "",
 				})
+				refs.streaming.current.delete(errSid)
 			}
-			refs.streaming.current = ""
 			store.set(progressMessageAtom, null)
 			return
 		case "disconnected":

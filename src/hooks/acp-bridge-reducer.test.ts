@@ -20,7 +20,7 @@ beforeEach(() => {
 
 function createRefs(): AcpBridgeRefs {
 	return {
-		streaming: { current: "" },
+		streaming: { current: new Map() },
 		firstChunkLogged: { current: false },
 	}
 }
