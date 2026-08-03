@@ -37,6 +37,8 @@ interface AppSidebarProps {
 	workspaces: WorkspaceEntry[]
 	activeWorkspaceId: string | null
 	currentProjectPath: string | null
+	/** Session ids currently running a prompt in the background (no UI). */
+	liveSessionIds: ReadonlySet<string>
 	onNewChat: () => void
 	/** New chat nested under this project path. */
 	onNewChatInProject: (projectPath: string) => void
@@ -69,6 +71,7 @@ export function AppSidebar({
 	workspaces,
 	activeWorkspaceId,
 	currentProjectPath,
+	liveSessionIds,
 	onNewChat,
 	onNewChatInProject,
 	onOpenProject,
@@ -298,6 +301,12 @@ export function AppSidebar({
 					>
 						<MessageSquare className="mt-0.5 size-3.5 shrink-0 text-muted" />
 						<span className="line-clamp-2">{chat.title}</span>
+						{liveSessionIds.has(chat.sessionId) ? (
+							<span
+								className="mt-1 inline-block size-1.5 shrink-0 animate-pulse rounded-full bg-amber-400"
+								title="Session is responding"
+							/>
+						) : null}
 					</button>
 				)}
 				{!editing ? (

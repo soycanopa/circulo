@@ -41,6 +41,7 @@ import {
 	pickDirectory,
 	renameChatTranscript,
 	setActiveWorkspace,
+	setVisibleSession,
 } from "@/lib/tauri"
 
 import {
@@ -62,8 +63,10 @@ import {
 	selectedDiffToolAtom,
 	sessionIdAtom,
 	sessionStatusAtom,
+	sessionsAtom,
 	sidebarOpenAtom,
 	streamingTextAtom,
+	visibleSessionIdAtom,
 } from "@/stores/atoms"
 
 export default function App() {
@@ -87,6 +90,20 @@ export default function App() {
 	const capabilities = useAtomValue(capabilitiesAtom)
 	const appSettings = useAtomValue(appSettingsAtom)
 	const messages = useAtomValue(messagesAtom)
+	const sessionsMap = useAtomValue(sessionsAtom)
+	const visibleSessionId = useAtomValue(visibleSessionIdAtom)
+	const liveSessionIds = useMemo(
+		() =>
+			new Set(
+				Object.entries(sessionsMap)
+					.filter(
+						([sid, state]) =>
+							state.promptInFlight && sid !== visibleSessionId,
+					)
+					.map(([sid]) => sid),
+			),
+		[sessionsMap, visibleSessionId],
+	)
 	const diffPanelOpen = useAtomValue(diffPanelOpenAtom)
 	const sidebarOpen = useAtomValue(sidebarOpenAtom)
 	const setDiffPanelOpen = useSetAtom(diffPanelOpenAtom)
@@ -440,6 +457,22 @@ export default function App() {
 			return
 		}
 
+		// If the session is already alive on the same agent process (background run),
+		// swap the visible session instead of resuming from disk. The reducer mirrors
+		// the active buffer into messagesAtom/streamingTextAtom automatically.
+		if (sameWorkspace && sessionsMap[targetSessionId]) {
+			try {
+				await setVisibleSession(targetSessionId)
+				setHistoryView(null)
+				return
+			} catch (err) {
+				setError(
+					err instanceof Error ? err.message : "Failed to swap session",
+				)
+				return
+			}
+		}
+
 		setBusy(true)
 		try {
 			if (!sameWorkspace) {
@@ -540,19 +573,20 @@ export default function App() {
 					/>
 				}
 				sidebar={
-					<AppSidebar
-						sessionId={sessionId}
-						historyViewSessionId={historyViewSessionId}
-						agentRuntimes={agentRuntimes}
-						busy={busy}
-						generalChatsPath={generalChatsPath}
-						generalChats={generalChatSessions}
-						projectChatsByPath={projectChatsByPath}
-						workspaces={appSettings?.workspaces ?? []}
-						activeWorkspaceId={appSettings?.activeWorkspaceId ?? null}
-						currentProjectPath={projectPath}
-						onNewChat={() => void handleNewChat()}
-						onNewChatInProject={(path) => void handleNewChat(path)}
+			<AppSidebar
+				sessionId={sessionId}
+				historyViewSessionId={historyViewSessionId}
+				agentRuntimes={agentRuntimes}
+				busy={busy}
+				generalChatsPath={generalChatsPath}
+				generalChats={generalChatSessions}
+				projectChatsByPath={projectChatsByPath}
+				workspaces={appSettings?.workspaces ?? []}
+				activeWorkspaceId={appSettings?.activeWorkspaceId ?? null}
+				currentProjectPath={projectPath}
+				liveSessionIds={liveSessionIds}
+				onNewChat={() => void handleNewChat()}
+				onNewChatInProject={(path) => void handleNewChat(path)}
 						onOpenProject={() => handleOpenProject()}
 						onOpenSettings={() => setSettingsOpen(true)}
 						onOpenChat={(id, ownerPath) => void handleOpenChat(id, ownerPath)}

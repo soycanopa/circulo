@@ -49,6 +49,12 @@ export async function createSession(): Promise<ProjectStatus> {
 	return invoke("create_session")
 }
 
+export async function setVisibleSession(
+	sessionId: string | null,
+): Promise<ProjectStatus> {
+	return invoke("set_visible_session", { sessionId: sessionId ?? null })
+}
+
 export async function loadSession(sessionId: string): Promise<ProjectStatus> {
 	return invoke("load_session", { sessionId })
 }
