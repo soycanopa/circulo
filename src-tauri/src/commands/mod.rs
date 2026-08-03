@@ -2,6 +2,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+const AGENT_WARM_TIMEOUT: Duration = Duration::from_secs(60);
+const SESSION_OPERATION_TIMEOUT: Duration = Duration::from_secs(60);
+const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(15);
+
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, oneshot};
 use tracing::info;
@@ -158,7 +162,7 @@ pub async fn open_project_inner(
 
 /// Wait until ACP initialize finished (connected), or error/timeout.
 async fn wait_until_agent_connected(state: &SharedState) -> Result<(), String> {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    let deadline = tokio::time::Instant::now() + AGENT_WARM_TIMEOUT;
     loop {
         let (connected, done, gone) = {
             let guard = state.lock().await;
@@ -253,7 +257,7 @@ pub async fn create_session(state: State<'_, SharedState>) -> Result<ProjectStat
         .await
         .map_err(|err| format!("Failed to create session: {err}"))?;
 
-    match tokio::time::timeout(Duration::from_secs(45), done_rx).await {
+    match tokio::time::timeout(SESSION_OPERATION_TIMEOUT, done_rx).await {
         Ok(Ok(Ok(()))) => Ok(state.lock().await.status()),
         Ok(Ok(Err(message))) => Err(message),
         Ok(Err(_)) => Err("Session creation was cancelled".to_string()),
@@ -296,7 +300,7 @@ pub async fn load_session(
         .await
         .map_err(|err| format!("Failed to load session: {err}"))?;
 
-    match tokio::time::timeout(Duration::from_secs(45), done_rx).await {
+    match tokio::time::timeout(SESSION_OPERATION_TIMEOUT, done_rx).await {
         Ok(Ok(Ok(()))) => Ok(state.lock().await.status()),
         Ok(Ok(Err(message))) => Err(message),
         Ok(Err(_)) => Err("Session load was cancelled".to_string()),
@@ -331,7 +335,7 @@ pub async fn close_session_cmd(
         .await
         .map_err(|err| format!("Failed to close session: {err}"))?;
 
-    match tokio::time::timeout(Duration::from_secs(15), done_rx).await {
+    match tokio::time::timeout(SESSION_CLOSE_TIMEOUT, done_rx).await {
         Ok(Ok(Ok(()))) => Ok(state.lock().await.status()),
         Ok(Ok(Err(message))) => Err(message),
         Ok(Err(_)) => Err("Session close was cancelled".to_string()),
