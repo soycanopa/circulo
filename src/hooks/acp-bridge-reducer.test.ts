@@ -213,6 +213,47 @@ describe("processAcpEvent", () => {
 		expect(store.get(sessionsAtom)["session-a"]?.promptInFlight).toBe(false)
 	})
 
+	it("keeps streaming buffer per session", () => {
+		const store = createStore()
+		const refs = createRefs()
+		activate(store, "session-a")
+		activate(store, "session-b")
+
+		// Send chunk to session-a while session-b is the active session.
+		processAcpEvent(store, refs, {
+			type: "session_update",
+			payload: {
+				sessionId: "session-a",
+				update: {
+					sessionUpdate: "agent_message_chunk",
+					content: { type: "text", text: "for-a" },
+				},
+			},
+		})
+		processAcpEvent(store, refs, {
+			type: "session_update",
+			payload: {
+				sessionId: "session-b",
+				update: {
+					sessionUpdate: "agent_message_chunk",
+					content: { type: "text", text: "for-b" },
+				},
+			},
+		})
+
+		// prompt_complete on session-a must not disturb session-b's accumulated buffer.
+		processAcpEvent(store, refs, {
+			type: "prompt_complete",
+			payload: { sessionId: "session-a" },
+		})
+
+		expect(refs.streaming.current.has("session-a")).toBe(false)
+		expect(refs.streaming.current.has("session-b")).toBe(false)
+		expect(store.get(sessionsAtom)["session-a"]?.messages).toHaveLength(1)
+		expect(store.get(sessionsAtom)["session-a"]?.promptInFlight).toBe(false)
+		expect(store.get(sessionsAtom)["session-b"]?.promptInFlight).toBe(true)
+	})
+
 	it("ignores session updates without a session id", () => {
 		const store = createStore()
 		const refs = createRefs()
