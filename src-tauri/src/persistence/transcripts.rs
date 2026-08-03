@@ -211,6 +211,84 @@ pub fn save_chat_transcript(
     Ok(summary)
 }
 
+/// Persist a placeholder transcript with a provisional title so the sidebar can
+/// render the chat immediately after `session_ready`, before the first chunk
+/// arrives. Subsequent `save_chat_transcript` calls overwrite the title.
+pub fn seed_chat_transcript(
+    project_path: &str,
+    session_id: &str,
+    title: &str,
+) -> Result<ChatSessionSummary, String> {
+    if session_id.is_empty() || session_id == "pending" {
+        return Err("Refusing to seed without a real ACP session id".to_string());
+    }
+
+    let path = PathBuf::from(project_path);
+    let file = session_path(&path, session_id)?;
+    let now = now_ms();
+    let trimmed = title.trim();
+    let resolved_title = if trimmed.is_empty() { "New chat" } else { trimmed };
+
+    if file.is_file() {
+        let mut existing: StoredTranscript = serde_json::from_str(
+            &std::fs::read_to_string(&file).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| format!("Invalid transcript: {e}"))?;
+        existing.title = resolved_title.to_string();
+        existing.updated_at = now;
+        let raw =
+            serde_json::to_string_pretty(&existing).map_err(|err| err.to_string())?;
+        std::fs::write(&file, raw).map_err(|err| err.to_string())?;
+        let summary = ChatSessionSummary {
+            session_id: session_id.to_string(),
+            title: resolved_title.to_string(),
+            updated_at: now,
+        };
+        upsert_summary(&path, project_path, &summary)?;
+        return Ok(summary);
+    }
+
+    let transcript = StoredTranscript {
+        session_id: session_id.to_string(),
+        project_path: project_path.to_string(),
+        title: resolved_title.to_string(),
+        created_at: now,
+        updated_at: now,
+        messages: Vec::new(),
+    };
+    let raw = serde_json::to_string_pretty(&transcript).map_err(|err| err.to_string())?;
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+    }
+    std::fs::write(&file, raw).map_err(|err| err.to_string())?;
+    let summary = ChatSessionSummary {
+        session_id: session_id.to_string(),
+        title: resolved_title.to_string(),
+        updated_at: now,
+    };
+    upsert_summary(&path, project_path, &summary)?;
+    Ok(summary)
+}
+
+fn upsert_summary(
+    path: &PathBuf,
+    project_path: &str,
+    summary: &ChatSessionSummary,
+) -> Result<(), String> {
+    let mut index = load_index(path)?;
+    index.project_path = project_path.to_string();
+    if let Some(entry) = index
+        .chats
+        .iter_mut()
+        .find(|c| c.session_id == summary.session_id)
+    {
+        *entry = summary.clone();
+    } else {
+        index.chats.push(summary.clone());
+    }
+    save_index(path, &index)
+}
+
 pub fn delete_chat_transcript(project_path: &str, session_id: &str) -> Result<(), String> {
     if session_id.is_empty() || session_id == "pending" {
         return Err("Invalid session id".to_string());

@@ -1,8 +1,8 @@
 use crate::persistence::{
     create_workspace, delete_chat_transcript, delete_workspace, list_chat_sessions,
     load_chat_transcript, load_settings, rename_chat_transcript, save_chat_transcript,
-    save_settings, set_active_workspace, workspace_chats_dir, workspace_entry_path, AppSettings,
-    ChatSessionSummary, StoredChatMessage, StoredTranscript,
+    save_settings, seed_chat_transcript, set_active_workspace, workspace_chats_dir,
+    workspace_entry_path, AppSettings, ChatSessionSummary, StoredChatMessage, StoredTranscript,
 };
 
 #[tauri::command]
@@ -72,6 +72,17 @@ pub fn save_chat_transcript_cmd(
     messages: Vec<StoredChatMessage>,
 ) -> Result<ChatSessionSummary, String> {
     save_chat_transcript(&project_path, &session_id, messages)
+}
+
+/// Seed an empty transcript with a provisional title so the sidebar can render
+/// the chat immediately after `session_ready`, before the first chunk arrives.
+#[tauri::command]
+pub fn seed_chat_transcript_cmd(
+    project_path: String,
+    session_id: String,
+    title: String,
+) -> Result<ChatSessionSummary, String> {
+    seed_chat_transcript(&project_path, &session_id, &title)
 }
 
 #[tauri::command]

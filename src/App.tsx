@@ -2,7 +2,7 @@ import { useAtomValue, useSetAtom } from "jotai"
 import { Download, FileDiff, Loader2, MessageSquarePlus } from "lucide-react"
 import { WindowChromeControls } from "@/components/layout/window-chrome-controls"
 import { cn } from "@/lib/utils"
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { ChatInput } from "@/components/chat/chat-input"
 import { MessageList } from "@/components/chat/message-list"
 import { CommandPalette } from "@/components/layout/command-palette"
@@ -40,6 +40,7 @@ import {
 	openProject,
 	pickDirectory,
 	renameChatTranscript,
+	seedChatTranscript,
 	setActiveWorkspace,
 	setVisibleSession,
 } from "@/lib/tauri"
@@ -138,6 +139,28 @@ export default function App() {
 		}
 		return "chat"
 	}, [activeChatId, generalChatSessions, projectChatsByPath])
+
+	// Seed a placeholder transcript when the reducer publishes a fresh session id
+	// so the sidebar renders the chat immediately. Safe to call repeatedly: the
+	// backend upserts by id.
+	useEffect(() => {
+		if (!sessionId || !projectPath) return
+		const known = generalChatSessions.some(
+			(c) => c.sessionId === sessionId,
+		)
+		const knownProject = Object.values(projectChatsByPath).some((list) =>
+			list.some((c) => c.sessionId === sessionId),
+		)
+		if (known || knownProject) return
+		void seedChatTranscript(projectPath, sessionId, "New chat").catch(() => {
+			// Best-effort seed; the chat already exists if this fails.
+		})
+	}, [
+		sessionId,
+		projectPath,
+		generalChatSessions,
+		projectChatsByPath,
+	])
 
 	const handleExportTranscript = useCallback(async () => {
 		if (messages.length === 0) return

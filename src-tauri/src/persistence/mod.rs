@@ -8,7 +8,7 @@ pub use config::{
 };
 pub use transcripts::{
     delete_chat_transcript, list_chat_sessions, load_chat_transcript, rename_chat_transcript,
-    save_chat_transcript, ChatSessionSummary, StoredChatMessage, StoredTranscript,
+    save_chat_transcript, seed_chat_transcript, ChatSessionSummary, StoredChatMessage, StoredTranscript,
 };
 
 pub fn circulo_data_dir() -> Result<std::path::PathBuf, String> {

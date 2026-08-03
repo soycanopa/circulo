@@ -184,6 +184,14 @@ export async function renameChatTranscript(
 	return invoke("rename_chat_transcript_cmd", { projectPath, sessionId, title })
 }
 
+export async function seedChatTranscript(
+	projectPath: string,
+	sessionId: string,
+	title: string,
+): Promise<ChatSessionSummary> {
+	return invoke("seed_chat_transcript_cmd", { projectPath, sessionId, title })
+}
+
 export async function exportTranscript(
 	filename: string,
 	content: string,

@@ -73,6 +73,7 @@ pub fn run() {
             commands::persistence::list_chat_sessions_cmd,
             commands::persistence::load_chat_transcript_cmd,
             commands::persistence::save_chat_transcript_cmd,
+            commands::persistence::seed_chat_transcript_cmd,
             commands::persistence::delete_chat_transcript_cmd,
             commands::persistence::rename_chat_transcript_cmd,
         ])
