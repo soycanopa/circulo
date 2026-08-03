@@ -11,13 +11,13 @@ use agent_client_protocol::schema::v1::{
 use agent_client_protocol::{Agent, ConnectionTo};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex, Notify};
 use tracing::{error, info};
 
 use crate::agents::build_agent;
 use crate::state::{
     AgentCapabilitiesDto, AgentCommand, ConfigOptionDto, ConfigOptionValueDto, ContextFile,
-    PermissionOptionId, SharedState,
+    PermissionOptionId, SessionHandle, SharedState,
 };
 
 pub async fn start_agent_connection(
@@ -260,7 +260,7 @@ pub async fn start_agent_connection(
                     tokio::spawn(async move {
                         let _ops = session_ops.lock().await;
                         if let Some(agent) = state.lock().await.agent_for_generation_mut(generation) {
-                            if !agent.session_id.is_empty() {
+                            if !agent.session_id().is_empty() {
                                 return;
                             }
                         }
@@ -304,7 +304,7 @@ pub async fn start_agent_connection(
                                 let guard = state.lock().await;
                                 match &guard.agent {
                                     Some(a) if a.generation == generation => {
-                                        (a.session_id.clone(), a.session_ready_for_ui)
+                                        (a.session_id().to_string(), a.session_ready_for_ui())
                                     }
                                     _ => (String::new(), false),
                                 }
@@ -324,7 +324,7 @@ pub async fn start_agent_connection(
                             {
                                 let mut guard = state.lock().await;
                                 if let Some(agent) = guard.agent_for_generation_mut(generation) {
-                                    if agent.prompt_in_flight {
+                                    if agent.prompt_in_flight() {
                                         let _ = app.emit(
                                             "acp:error",
                                             serde_json::json!({
@@ -333,7 +333,15 @@ pub async fn start_agent_connection(
                                         );
                                         continue;
                                     }
-                                    agent.prompt_in_flight = true;
+                                    let target_sid = session_id.clone();
+                                    if let Some(handle) = agent
+                                        .sessions
+                                        .get_mut(&target_sid)
+                                    {
+                                        handle.prompt_in_flight = true;
+                                    } else {
+                                        continue;
+                                    }
                                 } else {
                                     continue;
                                 }
@@ -372,12 +380,18 @@ pub async fn start_agent_connection(
                                         .await;
                                     // Always release the in-flight flag for this generation.
                                     {
-                                        let mut guard = state.lock().await;
-                                        if let Some(agent) =
-                                            guard.agent_for_generation_mut(generation)
+                                    let mut guard = state.lock().await;
+                                    if let Some(agent) =
+                                        guard.agent_for_generation_mut(generation)
+                                    {
+                                        if let Some(handle) = agent
+                                            .visible_session_id
+                                            .as_ref()
+                                            .and_then(|sid| agent.sessions.get_mut(sid))
                                         {
-                                            agent.prompt_in_flight = false;
+                                            handle.prompt_in_flight = false;
                                         }
+                                    }
                                     }
                                     match result {
                                         Ok(_) => {
@@ -420,7 +434,7 @@ pub async fn start_agent_connection(
                                 let guard = state.lock().await;
                                 match &guard.agent {
                                     Some(a) if a.generation == generation => {
-                                        (a.session_id.clone(), a.session_ready_for_ui)
+                                        (a.session_id().to_string(), a.session_ready_for_ui())
                                     }
                                     _ => (String::new(), false),
                                 }
@@ -440,7 +454,13 @@ pub async fn start_agent_connection(
                                     if let Some(agent) =
                                         state.lock().await.agent_for_generation_mut(generation)
                                     {
-                                        agent.config_options = mapped.clone();
+                                        if let Some(handle) = agent
+                                            .visible_session_id
+                                            .as_ref()
+                                            .and_then(|sid| agent.sessions.get_mut(sid))
+                                        {
+                                            handle.config_options = mapped.clone();
+                                        }
                                     }
                                     let _ = app.emit(
                                         "acp:config_options",
@@ -502,8 +522,8 @@ pub async fn start_agent_connection(
                             let session_id = {
                                 let guard = state.lock().await;
                                 match &guard.agent {
-                                    Some(a) if a.session_ready_for_ui => {
-                                        a.session_id.clone()
+                                    Some(a) if a.session_ready_for_ui() => {
+                                        a.session_id().to_string()
                                     }
                                     _ => String::new(),
                                 }
@@ -556,10 +576,22 @@ async fn publish_or_create_session(
     {
         let mut guard = state.lock().await;
         if let Some(agent) = guard.agent_for_generation_mut(generation) {
-            if !agent.session_id.is_empty() && !agent.session_ready_for_ui {
-                agent.session_ready_for_ui = true;
-                let session_id = agent.session_id.clone();
-                let config_options = agent.config_options.clone();
+            // Find any prewarmed session that is not yet visible.
+            let prewarmed = agent
+                .sessions
+                .iter()
+                .find(|(_, handle)| !handle.session_ready_for_ui)
+                .map(|(sid, _)| sid.clone());
+            if let Some(session_id) = prewarmed {
+                let config_options = agent
+                    .sessions
+                    .get(&session_id)
+                    .map(|h| h.config_options.clone())
+                    .unwrap_or_default();
+                if let Some(handle) = agent.sessions.get_mut(&session_id) {
+                    handle.session_ready_for_ui = true;
+                }
+                agent.visible_session_id = Some(session_id.clone());
                 info!(session_id = %session_id, "Publishing prewarmed ACP session to UI");
                 let _ = app.emit(
                     "acp:session_ready",
@@ -582,8 +614,8 @@ async fn publish_or_create_session(
         guard
             .agent
             .as_ref()
-            .filter(|a| a.session_ready_for_ui && !a.session_id.is_empty())
-            .map(|a| a.session_id.clone())
+            .filter(|a| a.session_ready_for_ui() && !a.session_id().is_empty())
+            .map(|a| a.session_id().to_string())
             .unwrap_or_default()
     };
     if !previous_session_id.is_empty() {
@@ -640,10 +672,13 @@ async fn create_session_on_connection(
     {
         let mut guard = state.lock().await;
         if let Some(agent) = guard.agent_for_generation_mut(generation) {
-            agent.session_id = session_id.clone();
-            agent.config_options = config_options.clone();
-            agent.project_path = project_path.clone();
-            agent.session_ready_for_ui = publish_to_ui;
+            upsert_session(&mut agent.sessions, &session_id, project_path);
+            let handle = agent.sessions.get_mut(&session_id).expect("upserted");
+            handle.config_options = config_options.clone();
+            handle.session_ready_for_ui = publish_to_ui;
+            if publish_to_ui {
+                agent.visible_session_id = Some(session_id.clone());
+            }
         }
     }
 
@@ -689,14 +724,17 @@ async fn load_session_on_connection(
         guard
             .agent
             .as_ref()
-            .map(|a| a.session_id.clone())
+            .map(|a| a.session_id().to_string())
             .unwrap_or_default()
     };
     if current_session_id == session_id {
         let mut guard = state.lock().await;
         if let Some(agent) = guard.agent_for_generation_mut(generation) {
-            agent.session_ready_for_ui = true;
-            let config_options = agent.config_options.clone();
+            let config_options = agent.config_options();
+            if let Some(handle) = agent.sessions.get_mut(session_id) {
+                handle.session_ready_for_ui = true;
+            }
+            agent.visible_session_id = Some(session_id.to_string());
             let _ = app.emit(
                 "acp:session_ready",
                 serde_json::json!({
@@ -742,10 +780,11 @@ async fn load_session_on_connection(
     {
         let mut guard = state.lock().await;
         if let Some(agent) = guard.agent_for_generation_mut(generation) {
-            agent.session_id = session_id.to_string();
-            agent.config_options = config_options.clone();
-            agent.project_path = project_path.clone();
-            agent.session_ready_for_ui = true;
+            upsert_session(&mut agent.sessions, session_id, project_path);
+            let handle = agent.sessions.get_mut(session_id).expect("upserted");
+            handle.config_options = config_options.clone();
+            handle.session_ready_for_ui = true;
+            agent.visible_session_id = Some(session_id.to_string());
         }
     }
 
@@ -793,14 +832,36 @@ async fn close_session_on_connection(
 
     let mut guard = state.lock().await;
     if let Some(agent) = guard.agent_for_generation_mut(generation) {
-        if agent.session_id == session_id {
-            agent.session_id = String::new();
-            agent.session_ready_for_ui = false;
-            agent.config_options = Vec::new();
+        if agent.session_id() == session_id {
+            if let Some(handle) = agent.sessions.get_mut(session_id) {
+                handle.session_ready_for_ui = false;
+                handle.config_options = Vec::new();
+            }
+            agent.visible_session_id = None;
         }
     }
 
     Ok(())
+}
+
+fn upsert_session(
+    sessions: &mut std::collections::HashMap<String, SessionHandle>,
+    session_id: &str,
+    project_path: &PathBuf,
+) {
+    sessions
+        .entry(session_id.to_string())
+        .and_modify(|handle| {
+            handle.session_id = session_id.to_string();
+        })
+        .or_insert_with(|| SessionHandle {
+            session_id: session_id.to_string(),
+            session_ready_for_ui: false,
+            prompt_in_flight: false,
+            config_options: Vec::new(),
+            session_done: Arc::new(Notify::new()),
+        });
+    let _ = project_path; // reserved for future per-session metadata
 }
 
 fn build_prompt_blocks(text: &str, context_files: &[ContextFile]) -> Vec<ContentBlock> {

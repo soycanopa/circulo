@@ -104,22 +104,60 @@ pub struct ActiveAgent {
     pub generation: u64,
     pub project_path: PathBuf,
     pub agent_id: String,
-    /// ACP session id if one exists on the agent process.
-    pub session_id: String,
-    /// Only true after New Chat publishes the session to the UI.
-    /// Prewarm may hold a session_id while this stays false.
-    pub session_ready_for_ui: bool,
-    /// Reject concurrent prompts without needing to round-trip through the runtime.
-    pub prompt_in_flight: bool,
-    pub cmd_tx: mpsc::Sender<AgentCommand>,
-    pub config_options: Vec<ConfigOptionDto>,
     pub agent_capabilities: AgentCapabilitiesDto,
+    pub cmd_tx: mpsc::Sender<AgentCommand>,
+    /// Notify fired when the agent process finishes `initialize` (single per process).
     pub agent_done: Arc<Notify>,
     pub connected: bool,
+    /// All ACP sessions this agent process knows about, keyed by `session_id`.
+    pub sessions: HashMap<String, SessionHandle>,
+    /// The session currently bound to the UI (one at a time). May be `None` while the
+    /// UI is presenting history or no chat is open.
+    pub visible_session_id: Option<String>,
+}
+
+/// Per-session state on the agent process. Multiple of these can run concurrently
+/// once the agent advertises the `concurrent_sessions` capability.
+pub struct SessionHandle {
+    pub session_id: String,
+    pub session_ready_for_ui: bool,
+    pub prompt_in_flight: bool,
+    pub config_options: Vec<ConfigOptionDto>,
+    pub session_done: Arc<Notify>,
+}
+
+impl ActiveAgent {
+    /// Compatibility accessor: the visible session's id, or empty string.
+    pub fn session_id(&self) -> &str {
+        self.visible_session_id
+            .as_deref()
+            .unwrap_or("")
+    }
+
+    pub fn session_ready_for_ui(&self) -> bool {
+        self.visible_session_id
+            .as_ref()
+            .and_then(|sid| self.sessions.get(sid))
+            .is_some_and(|s| s.session_ready_for_ui)
+    }
+
+    pub fn prompt_in_flight(&self) -> bool {
+        self.visible_session_id
+            .as_ref()
+            .and_then(|sid| self.sessions.get(sid))
+            .is_some_and(|s| s.prompt_in_flight)
+    }
+
+    pub fn config_options(&self) -> Vec<ConfigOptionDto> {
+        self.visible_session_id
+            .as_ref()
+            .and_then(|sid| self.sessions.get(sid))
+            .map(|s| s.config_options.clone())
+            .unwrap_or_default()
+    }
 }
 
 pub use agent_client_protocol::schema::v1::PermissionOptionId;
-
 pub struct PermissionWaiter {
     pub tx: oneshot::Sender<String>,
     pub allowed_option_ids: Vec<PermissionOptionId>,
@@ -149,12 +187,12 @@ impl CirculoState {
                 agent_id: Some(agent.agent_id.clone()),
                 connection_generation: Some(agent.generation),
                 // Hide prewarmed sessions until New Chat publishes them.
-                session_id: if agent.session_ready_for_ui {
-                    normalize_session_id(&agent.session_id)
+                session_id: if agent.session_ready_for_ui() {
+                    normalize_session_id(agent.session_id())
                 } else {
                     None
                 },
-                config_options: agent.config_options.clone(),
+                config_options: agent.config_options(),
                 capabilities: Some(agent.agent_capabilities.clone()),
                 agent_command: crate::agents::agent_command_label(&agent.agent_id).to_string(),
             },
