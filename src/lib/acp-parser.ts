@@ -79,6 +79,84 @@ function mergeStreamText(current: string, chunk: string): string {
 	return `${current}${chunk}`
 }
 
+function findAssistantWithTool(
+	messages: ChatMessage[],
+	toolId: string,
+): number {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i]
+		if (
+			message?.role === "assistant" &&
+			message.toolCalls.some((tool) => tool.id === toolId)
+		) {
+			return i
+		}
+	}
+	return -1
+}
+
+/** Assistant bubble with text only that follows a tool-bearing turn. */
+function isPostToolContentBubble(
+	messages: ChatMessage[],
+	index: number,
+): boolean {
+	const message = messages[index]
+	if (message?.role !== "assistant" || message.toolCalls.length > 0) {
+		return false
+	}
+	for (let i = index - 1; i >= 0; i--) {
+		const previous = messages[i]
+		if (previous?.role !== "assistant") continue
+		return previous.toolCalls.length > 0
+	}
+	return false
+}
+
+function appendChunkToAssistantMessages(
+	messages: ChatMessage[],
+	chunk: string,
+): ChatMessage[] {
+	const next = [...messages]
+	const lastIdx = next.length - 1
+	const last = next[lastIdx]
+
+	if (last?.role === "assistant" && last.toolCalls.length > 0) {
+		const follow = next[lastIdx + 1]
+		if (follow?.role === "assistant" && follow.toolCalls.length === 0) {
+			next[lastIdx + 1] = {
+				...follow,
+				content: mergeStreamText(follow.content, chunk),
+			}
+			return next
+		}
+		next.push({
+			id: crypto.randomUUID(),
+			role: "assistant",
+			content: chunk,
+			toolCalls: [],
+			timestamp: Date.now(),
+		})
+		return next
+	}
+
+	if (last?.role === "assistant") {
+		next[lastIdx] = {
+			...last,
+			content: mergeStreamText(last.content, chunk),
+		}
+		return next
+	}
+
+	next.push({
+		id: crypto.randomUUID(),
+		role: "assistant",
+		content: chunk,
+		toolCalls: [],
+		timestamp: Date.now(),
+	})
+	return next
+}
+
 function mapToolFromUpdate(update: Record<string, unknown>): ToolCall {
 	const id =
 		asString(update.toolCallId) ??
@@ -125,25 +203,12 @@ export function applySessionUpdate(
 	if (sessionUpdate === "agent_message_chunk") {
 		const chunk = extractTextFromContent(update.content)
 		if (chunk) {
-			// Immutable update — paint into assistant message immediately (not a side buffer).
-			const idx = nextMessages.length - 1
-			const last = nextMessages[idx]
-			if (last?.role === "assistant") {
-				nextMessages[idx] = {
-					...last,
-					content: mergeStreamText(last.content, chunk),
-				}
-			} else {
-				nextMessages.push({
-					id: crypto.randomUUID(),
-					role: "assistant",
-					content: chunk,
-					toolCalls: [],
-					timestamp: Date.now(),
-				})
+			const nextWithChunk = appendChunkToAssistantMessages(nextMessages, chunk)
+			return {
+				messages: nextWithChunk,
+				streamingText: "",
+				didStream: true,
 			}
-			nextStreaming = ""
-			didStream = true
 		}
 		return { messages: nextMessages, streamingText: nextStreaming, didStream }
 	}
@@ -160,18 +225,30 @@ export function applySessionUpdate(
 
 	if (sessionUpdate === "tool_call" || sessionUpdate === "tool_call_update") {
 		const tool = mapToolFromUpdate(update)
+		const existingIdx = findAssistantWithTool(nextMessages, tool.id)
 		const lastIdx = nextMessages.length - 1
 		const last = nextMessages[lastIdx]
-		const base: ChatMessage =
-			last?.role === "assistant"
-				? last
-				: {
-						id: crypto.randomUUID(),
-						role: "assistant",
-						content: "",
-						toolCalls: [],
-						timestamp: Date.now(),
-					}
+
+		let targetIdx = existingIdx
+		if (targetIdx < 0) {
+			if (
+				last?.role === "assistant" &&
+				!isPostToolContentBubble(nextMessages, lastIdx)
+			) {
+				targetIdx = lastIdx
+			} else {
+				nextMessages.push({
+					id: crypto.randomUUID(),
+					role: "assistant",
+					content: "",
+					toolCalls: [],
+					timestamp: Date.now(),
+				})
+				targetIdx = nextMessages.length - 1
+			}
+		}
+
+		const base = nextMessages[targetIdx]!
 		const tools = [...base.toolCalls]
 		const tIdx = tools.findIndex((t) => t.id === tool.id)
 		if (tIdx >= 0) {
@@ -183,12 +260,7 @@ export function applySessionUpdate(
 		} else {
 			tools.push(tool)
 		}
-		const nextAssistant = { ...base, toolCalls: tools }
-		if (last?.role === "assistant") {
-			nextMessages[lastIdx] = nextAssistant
-		} else {
-			nextMessages.push(nextAssistant)
-		}
+		nextMessages[targetIdx] = { ...base, toolCalls: tools }
 		didStream = true
 		return { messages: nextMessages, streamingText: nextStreaming, didStream }
 	}
@@ -202,21 +274,5 @@ export function appendStreamToMessages(
 ): ChatMessage[] {
 	const stream = streamingText
 	if (!stream.trim()) return messages
-	const next = [...messages]
-	const last = next[next.length - 1]
-	if (last?.role === "assistant") {
-		next[next.length - 1] = {
-			...last,
-			content: mergeStreamText(last.content, stream),
-		}
-		return next
-	}
-	next.push({
-		id: crypto.randomUUID(),
-		role: "assistant",
-		content: stream,
-		toolCalls: [],
-		timestamp: Date.now(),
-	})
-	return next
+	return appendChunkToAssistantMessages(messages, stream)
 }

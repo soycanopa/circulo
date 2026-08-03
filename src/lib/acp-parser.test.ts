@@ -102,6 +102,42 @@ describe("applySessionUpdate", () => {
 		expect(tools[0]?.status).toBe("completed")
 		expect(tools[0]?.content).toBe("file contents")
 	})
+
+	it("streams post-tool text after the tool bubble", () => {
+		const withTool: ChatMessage[] = [
+			{
+				id: "u1",
+				role: "user",
+				content: "read file",
+				toolCalls: [],
+				timestamp: 1,
+			},
+			{
+				id: "a1",
+				role: "assistant",
+				content: "Let me check.",
+				toolCalls: [
+					{
+						id: "tool-1",
+						title: "read",
+						status: "completed",
+						content: "",
+					},
+				],
+				timestamp: 2,
+			},
+		]
+		const result = applySessionUpdate(withTool, "", {
+			update: {
+				sessionUpdate: "agent_message_chunk",
+				content: { type: "text", text: "Here is the summary." },
+			},
+		})
+		expect(result.messages).toHaveLength(3)
+		expect(result.messages[1]?.toolCalls).toHaveLength(1)
+		expect(result.messages[2]?.content).toBe("Here is the summary.")
+		expect(result.messages[2]?.toolCalls).toHaveLength(0)
+	})
 })
 
 describe("appendStreamToMessages", () => {
