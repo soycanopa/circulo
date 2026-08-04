@@ -19,6 +19,7 @@ import {
 } from "react"
 import { WindowChromeControls } from "@/components/layout/window-chrome-controls"
 import { AgentStatusIndicator } from "@/components/layout/agent-status-indicator"
+import { Spinner } from "@/components/ui/spinner"
 import { isGeneralChatsPath, projectName } from "@/lib/workspace"
 import { cn } from "@/lib/utils"
 import type { AgentRuntimeState } from "@/lib/agent-registry"
@@ -52,6 +53,7 @@ interface AppSidebarProps {
 	) => void
 	onDeleteChat: (sessionId: string, ownerPath: string) => void
 	onSelectProject: (path: string) => void
+	onRemoveProject: (path: string) => void
 	onSelectGeneralChats?: () => void
 	onAddWorkspace: () => void
 	onSelectWorkspace: (workspaceId: string) => void
@@ -80,6 +82,7 @@ export function AppSidebar({
 	onRenameChat,
 	onDeleteChat,
 	onSelectProject,
+	onRemoveProject,
 	onSelectGeneralChats,
 	onAddWorkspace,
 	onSelectWorkspace,
@@ -299,14 +302,15 @@ export function AppSidebar({
 							active ? "text-fg" : "text-fg/80",
 						)}
 					>
-						<MessageSquare className="mt-0.5 size-3.5 shrink-0 text-muted" />
-						<span className="line-clamp-2">{chat.title}</span>
 						{liveSessionIds.has(chat.sessionId) ? (
-							<span
-								className="mt-1 inline-block size-1.5 shrink-0 animate-pulse rounded-full bg-amber-400"
-								title="Session is responding"
+							<Spinner
+								className="mt-0.5 size-3.5 shrink-0 text-muted"
+								aria-hidden
 							/>
-						) : null}
+						) : (
+							<MessageSquare className="mt-0.5 size-3.5 shrink-0 text-muted" />
+						)}
+						<span className="line-clamp-2">{chat.title}</span>
 					</button>
 				)}
 				{!editing ? (
@@ -462,9 +466,22 @@ export function AppSidebar({
 												disabled={busy}
 												title="New chat in this project"
 												aria-label={`New chat in ${projectName(path)}`}
-												className="mr-0.5 rounded p-1 text-muted opacity-0 transition hover:bg-white/10 hover:text-fg group-hover:opacity-100 disabled:opacity-40"
+												className="rounded p-1 text-muted opacity-0 transition hover:bg-white/10 hover:text-fg group-hover:opacity-100 disabled:opacity-40"
 											>
 												<Plus className="size-3.5" />
+											</button>
+											<button
+												type="button"
+												onClick={(event) => {
+													event.stopPropagation()
+													onRemoveProject(path)
+												}}
+												disabled={busy}
+												title="Remove project from workspace"
+												aria-label={`Remove ${projectName(path)} from workspace`}
+												className="mr-0.5 rounded p-1 text-muted opacity-0 transition hover:bg-white/10 hover:text-red-300 group-hover:opacity-100 disabled:opacity-40"
+											>
+												<Trash2 className="size-3.5" />
 											</button>
 										</div>
 										{isOpen ? (
@@ -603,8 +620,8 @@ export function AppSidebar({
 			) : null}
 
 			{/* ACP + Settings only */}
-			<div className="shrink-0 border-t border-border px-3 py-2.5">
-				<div className="flex items-center justify-between gap-2">
+			<div className="shrink-0 overflow-visible border-t border-border px-3 py-2.5">
+				<div className="flex items-center justify-between gap-2 overflow-visible">
 					<AgentStatusIndicator agents={agentRuntimes} />
 					<button
 						type="button"

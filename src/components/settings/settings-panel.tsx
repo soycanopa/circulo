@@ -3,17 +3,21 @@ import {
 	getDefaultChatsPath,
 	listAgents,
 	saveAutomation,
-	setPreferredAgent,
+	setEnabledAgents,
 } from "@/lib/tauri"
+import { agentLabel } from "@/lib/agent-registry"
 import { useEffect, useState } from "react"
-import type { AgentDescriptor, Automation } from "@/types/acp"
+import { Switch } from "@/components/ui/switch"
+import type { AgentDescriptor, AppSettings, Automation } from "@/types/acp"
 
 interface SettingsPanelProps {
 	open: boolean
 	onClose: () => void
 	agentCommand: string
 	preferredAgentId?: string | null
+	enabledAgentIds?: string[]
 	onPreferredAgentChange?: (agentId: string) => void
+	onEnabledAgentsChange?: (settings: AppSettings) => void
 	automations: Automation[]
 	onAutomationsChange: () => void
 	onDeleteAutomation: (id: string) => Promise<void>
@@ -24,13 +28,16 @@ export function SettingsPanel({
 	onClose,
 	agentCommand,
 	preferredAgentId,
+	enabledAgentIds = ["opencode", "cursor-agent"],
 	onPreferredAgentChange,
+	onEnabledAgentsChange,
 	automations,
 	onAutomationsChange,
 	onDeleteAutomation,
 }: SettingsPanelProps) {
 	const [chatsPath, setChatsPath] = useState("—")
 	const [agents, setAgents] = useState<AgentDescriptor[]>([])
+	const [enabledIds, setEnabledIds] = useState(enabledAgentIds)
 	const [selectedAgentId, setSelectedAgentId] = useState(
 		preferredAgentId ?? "opencode",
 	)
@@ -45,15 +52,46 @@ export function SettingsPanel({
 	}, [open])
 
 	useEffect(() => {
+		setEnabledIds(enabledAgentIds)
+	}, [enabledAgentIds])
+
+	useEffect(() => {
 		setSelectedAgentId(preferredAgentId ?? "opencode")
 	}, [preferredAgentId])
 
-	async function handleAgentChange(agentId: string) {
+	const enabledSet = new Set(enabledIds)
+	const selectableAgents = agents.filter(
+		(agent) => enabledSet.has(agent.id) && agent.available,
+	)
+
+	async function handleDefaultAgentChange(agentId: string) {
 		setSelectedAgentId(agentId)
 		setSaving(true)
 		try {
-			await setPreferredAgent(agentId)
-			onPreferredAgentChange?.(agentId)
+			await onPreferredAgentChange?.(agentId)
+		} finally {
+			setSaving(false)
+		}
+	}
+
+	async function handleToggleAgent(agentId: string, nextEnabled: boolean) {
+		const nextIds = nextEnabled
+			? [...enabledIds, agentId]
+			: enabledIds.filter((id) => id !== agentId)
+
+		if (nextIds.length === 0) return
+
+		setSaving(true)
+		try {
+			const settings = await setEnabledAgents(nextIds)
+			setEnabledIds(settings.enabledAgentIds ?? nextIds)
+			const nextPreferred = settings.preferredAgentId ?? selectedAgentId
+			const preferredChanged = nextPreferred !== selectedAgentId
+			setSelectedAgentId(nextPreferred)
+			onEnabledAgentsChange?.(settings)
+			if (preferredChanged) {
+				onPreferredAgentChange?.(nextPreferred)
+			}
 		} finally {
 			setSaving(false)
 		}
@@ -96,34 +134,89 @@ export function SettingsPanel({
 				<div className="max-h-[70vh] space-y-4 overflow-y-auto px-4 py-4 text-xs">
 					<div>
 						<div className="text-[11px] uppercase tracking-wider text-muted">
-							Agent
+							ACP agents
 						</div>
+						<p className="mt-1 text-[11px] text-muted">
+							Enable agents to show them in the chat composer.
+						</p>
 						{agents.length > 0 ? (
+							<ul className="mt-2 space-y-2">
+								{agents.map((agent) => {
+									const isEnabled = enabledSet.has(agent.id)
+									return (
+										<li
+											key={agent.id}
+											className="flex items-start justify-between gap-3 rounded border border-border bg-black/20 px-2.5 py-2"
+										>
+											<div className="min-w-0 flex-1">
+												<div className="flex items-center gap-2">
+													<span className="text-sm text-fg">
+														{agentLabel(agent.id)}
+													</span>
+													<span
+														className={
+															agent.available
+																? "text-[10px] text-emerald-400/80"
+																: "text-[10px] text-muted"
+														}
+													>
+														{agent.available ? "Available" : "Unavailable"}
+													</span>
+												</div>
+												<p className="mt-0.5 font-mono text-[10px] text-muted">
+													{agent.command}
+												</p>
+											</div>
+											<Switch
+												checked={isEnabled}
+												disabled={
+													saving ||
+													!agent.available ||
+													(isEnabled && enabledIds.length <= 1)
+												}
+												onCheckedChange={(next) =>
+													void handleToggleAgent(agent.id, next)
+												}
+												aria-label={`Enable ${agentLabel(agent.id)}`}
+												className="mt-0.5"
+											/>
+										</li>
+									)
+								})}
+							</ul>
+						) : null}
+					</div>
+
+					<div>
+						<div className="text-[11px] uppercase tracking-wider text-muted">
+							Default agent
+						</div>
+						<p className="mt-1 text-[11px] text-muted">
+							Used when opening a project or starting a new chat. Switching
+							respawns the ACP process.
+						</p>
+						{selectableAgents.length > 0 ? (
 							<select
 								value={selectedAgentId}
 								disabled={saving}
-								onChange={(event) => void handleAgentChange(event.target.value)}
-								className="mt-1 w-full rounded-md border border-border bg-black/20 px-2 py-1.5 text-sm text-fg"
+								onChange={(event) =>
+									void handleDefaultAgentChange(event.target.value)
+								}
+								className="mt-2 w-full rounded-md border border-border bg-black/20 px-2 py-1.5 text-sm text-fg"
 							>
-								{agents.map((agent) => (
-									<option
-										key={agent.id}
-										value={agent.id}
-										disabled={!agent.available}
-									>
-										{agent.label}
-										{agent.available ? "" : " (unavailable)"}
+								{selectableAgents.map((agent) => (
+									<option key={agent.id} value={agent.id}>
+										{agentLabel(agent.id)}
 									</option>
 								))}
 							</select>
 						) : (
-							<p className="mt-1 font-mono text-fg">{agentCommand}</p>
+							<p className="mt-2 text-muted">
+								Enable at least one available agent.
+							</p>
 						)}
-						<p className="mt-1 font-mono text-[11px] text-muted">
+						<p className="mt-2 font-mono text-[11px] text-muted">
 							{activeAgent?.command ?? agentCommand}
-						</p>
-						<p className="mt-1 text-[11px] text-muted">
-							Switching agents applies on the next project open.
 						</p>
 						<p className="mt-1 text-[11px] text-muted">
 							Custom: set{" "}

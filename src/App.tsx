@@ -1,5 +1,5 @@
 import { getDefaultStore, useAtomValue, useSetAtom } from "jotai"
-import { Download, FileDiff, Loader2, MessageSquarePlus, Terminal } from "lucide-react"
+import { Download, FileDiff, MessageSquarePlus, Terminal } from "lucide-react"
 import { WindowChromeControls } from "@/components/layout/window-chrome-controls"
 import { cn } from "@/lib/utils"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -21,6 +21,7 @@ import { useBootstrapAgent } from "@/hooks/use-bootstrap"
 import { useAutomations } from "@/hooks/use-automations"
 import { useChatPersistence } from "@/hooks/use-chat-persistence"
 import { reconcileSessionFromProjectStatus } from "@/hooks/session-reconcile"
+import type { AppSettings } from "@/types/acp"
 import { exportTranscriptMarkdown } from "@/lib/export-transcript"
 import {
 	agentLabel,
@@ -47,9 +48,11 @@ import {
 	openProject,
 	pickDirectory,
 	renameChatTranscript,
+	removeProjectFromWorkspace,
 	seedChatTranscript,
 	sendPrompt,
 	setActiveWorkspace,
+	setPreferredAgent,
 	setVisibleSession,
 } from "@/lib/tauri"
 
@@ -110,12 +113,12 @@ export default function App() {
 			new Set(
 				Object.entries(sessionsMap)
 					.filter(
-						([sid, state]) =>
-							state.promptInFlight && sid !== sessionId,
+						([, state]) =>
+							state.promptInFlight || state.status === "generating",
 					)
 					.map(([sid]) => sid),
 			),
-		[sessionsMap, sessionId],
+		[sessionsMap],
 	)
 	const diffPanelOpen = useAtomValue(diffPanelOpenAtom)
 	const terminalDrawerOpen = useAtomValue(terminalDrawerOpenAtom)
@@ -143,10 +146,11 @@ export default function App() {
 	const [agentCommand, setAgentCommand] = useState("opencode acp")
 	const [agentId, setAgentId] = useState<string | null>("opencode")
 
-	const agentWarm = connected
 	const hasLiveSession = Boolean(sessionId)
-	const viewingHistory = Boolean(historyViewSessionId && !sessionId)
-	const showChat = hasLiveSession || viewingHistory
+	const browsingSavedChat = Boolean(
+		historyViewSessionId && historyViewSessionId !== sessionId,
+	)
+	const showChat = hasLiveSession || browsingSavedChat || connected
 	const activeChatId = sessionId ?? historyViewSessionId
 	const activeChatTitle = useMemo(() => {
 		if (!activeChatId) return "chat"
@@ -161,10 +165,12 @@ export default function App() {
 		return "chat"
 	}, [activeChatId, generalChatSessions, projectChatsByPath])
 
-	// Seed a placeholder transcript once per new session id (sidebar first paint).
+	// Seed a sidebar row only after the user has sent at least one message.
 	const seededSessionsRef = useRef(new Set<string>())
 	useEffect(() => {
 		if (!sessionId || !projectPath) return
+		const liveMessages = sessionsMap[sessionId]?.messages ?? []
+		if (liveMessages.length === 0) return
 		const seedKey = `${projectPath}::${sessionId}`
 		if (seededSessionsRef.current.has(seedKey)) return
 		const known = generalChatSessions.some(
@@ -267,6 +273,53 @@ export default function App() {
 		status,
 	])
 
+	async function handleAgentChange(agentId: string) {
+		setError(null)
+		const priorSid = getDefaultStore().get(activeSessionIdAtom)
+		const priorMessages = getDefaultStore().get(visibleMessagesAtom)
+		if (priorSid && projectPath && priorMessages.length === 0) {
+			try {
+				await deleteChatTranscript(projectPath, priorSid)
+			} catch {
+				// Best-effort: drop empty sidebar row when switching agent.
+			}
+		}
+		try {
+			const settings = await setPreferredAgent(agentId)
+			setAppSettings(settings)
+			setAgentId(agentId)
+			if (!projectPath) return
+
+			setStatus("connecting")
+			resetWorkspaceUi()
+			getDefaultStore().set(
+				progressMessageAtom,
+				`Conectando ${agentLabel(agentId)}…`,
+			)
+			const status = await openProject(projectPath, agentId)
+			setProjectPath(status.projectPath)
+			setConnected(status.connected)
+			setAgentCommand(status.agentCommand)
+			setAgentId(status.agentId)
+			reconcileSessionFromProjectStatus(getDefaultStore(), status)
+			setStatus("idle")
+			void refreshAllWorkspaceLists()
+			void refreshPath(projectPath)
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to switch agent")
+			setStatus("idle")
+		}
+	}
+
+	async function handleEnabledAgentsChange(settings: AppSettings) {
+		setAppSettings(settings)
+		const nextPreferred = settings.preferredAgentId ?? null
+		setAgentId(nextPreferred)
+		if (projectPath && nextPreferred && nextPreferred !== agentId) {
+			await handleAgentChange(nextPreferred)
+		}
+	}
+
 	async function resolveWorkspacePath(rawPath: string): Promise<string> {
 		const trimmed = rawPath.trim()
 		if (trimmed === "~" || trimmed.startsWith("~/")) {
@@ -353,6 +406,15 @@ export default function App() {
 			// appears in the workspace list as soon as the reducer emits
 			// session_ready. The reducer is the source of truth for the new
 			// active session id; we do not write activeSessionIdAtom here.
+			const priorSid = getDefaultStore().get(activeSessionIdAtom)
+			const priorMessages = getDefaultStore().get(visibleMessagesAtom)
+			if (priorSid && desired && priorMessages.length === 0) {
+				try {
+					await deleteChatTranscript(desired, priorSid)
+				} catch {
+					// Rust closes the pristine session; drop orphan sidebar row.
+				}
+			}
 			await refreshAllWorkspaceLists()
 			const status = await createSession()
 			reconcileSessionFromProjectStatus(getDefaultStore(), status)
@@ -377,6 +439,26 @@ export default function App() {
 	function handleOpenProject() {
 		setError(null)
 		setOpenProjectModalOpen(true)
+	}
+
+	async function handleRemoveProject(path: string) {
+		setError(null)
+		setBusy(true)
+		try {
+			const settings = await removeProjectFromWorkspace(path)
+			setAppSettings(settings)
+			const wasActive = projectPath === path
+			await refreshAllWorkspaceLists()
+			if (wasActive) {
+				await handleSelectGeneralChats()
+			}
+		} catch (err) {
+			setError(
+				err instanceof Error ? err.message : "Failed to remove project",
+			)
+		} finally {
+			setBusy(false)
+		}
 	}
 
 	async function handleSelectGeneralChats() {
@@ -563,6 +645,19 @@ export default function App() {
 			return
 		}
 
+		async function showSavedTranscript() {
+			const transcript = await loadChatTranscript(ownerPath, targetSessionId)
+			setHistoryMessages(transcript.messages)
+			setHistoryView(targetSessionId)
+			if (sameWorkspace) {
+				try {
+					await setVisibleSession(null)
+				} catch {
+					// Best-effort: clear the live binding while browsing disk history.
+				}
+			}
+		}
+
 		// If the session is already alive on the same agent process (background run),
 		// swap the visible session instead of resuming from disk. The reducer mirrors
 		// the active buffer into messagesAtom/streamingTextAtom automatically.
@@ -596,32 +691,14 @@ export default function App() {
 					setHistoryMessages([])
 					setStatus("idle")
 					return
-				} catch (err) {
-					try {
-						const transcript = await loadChatTranscript(
-							ownerPath,
-							targetSessionId,
-						)
-						setHistoryMessages(transcript.messages)
-					} catch {
-						setHistoryMessages([])
-					}
-					setHistoryView(targetSessionId)
+				} catch {
+					await showSavedTranscript()
 					setStatus("idle")
-					const detail =
-						err instanceof Error ? err.message : "Could not resume session"
-					setError(`${detail} — viewing saved transcript only.`)
 					return
 				}
 			}
 
-			// No live resume (different workspace, missing capability, or it failed):
-			// load the transcript as a read-only history view. The reducer is the
-			// source of truth for any live session state; we never mutate
-			// activeSessionIdAtom here so a background run keeps streaming.
-			const transcript = await loadChatTranscript(ownerPath, targetSessionId)
-			setHistoryMessages(transcript.messages)
-			setHistoryView(targetSessionId)
+			await showSavedTranscript()
 			setStatus("idle")
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to load chat")
@@ -655,19 +732,14 @@ export default function App() {
 		}
 	}
 
-	const statusLabel = viewingHistory
-		? "History — New Chat to continue"
-		: status === "generating"
+	const statusLabel =
+		status === "generating"
 			? "Streaming…"
 			: status === "awaiting_permission"
 				? "Waiting for permission…"
 				: status === "connecting"
 					? progress || "Opening session…"
-					: hasLiveSession
-						? "Ready"
-						: agentWarm
-							? "Ready — New Chat"
-							: "Ready"
+					: "Ready"
 
 	const shellTransition =
 		"transition-[height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
@@ -710,6 +782,7 @@ export default function App() {
 							void handleDeleteChat(id, ownerPath)
 						}
 						onSelectProject={(path) => void handleSelectProject(path)}
+						onRemoveProject={(path) => void handleRemoveProject(path)}
 						onSelectGeneralChats={() => void handleSelectGeneralChats()}
 						onAddWorkspace={() => void handleAddWorkspace()}
 						onSelectWorkspace={(id) => void handleSelectWorkspace(id)}
@@ -815,53 +888,19 @@ export default function App() {
 				</div>
 			) : null}
 
-			{viewingHistory ? (
-				<div className="mx-4 mt-3 rounded-md border border-border bg-white/5 px-3 py-2 text-xs text-muted">
-					Viewing saved history
-					{capabilities?.loadSession
-						? " — could not resume on the agent."
-						: " — session resume not supported by this agent."}{" "}
-					Start a{" "}
-					<button
-						type="button"
-						onClick={() => void handleNewChat()}
-						className="text-fg underline-offset-2 hover:underline"
-					>
-						New Chat
-					</button>{" "}
-					to talk to the agent again.
-				</div>
-			) : null}
-
 			<div className="flex min-h-0 flex-1 flex-col">
-				{!showChat ? (
-					<div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
-						<p className="text-lg font-medium tracking-tight">Circulo</p>
-						<p className="max-w-md text-sm text-muted">
-							{agentWarm
-								? "Start a conversation with New Chat."
-								: "App is ready. OpenCode warms in the background — New Chat waits only if you click before it's up."}
-						</p>
-						<button
-							type="button"
-							onClick={() => void handleNewChat()}
-							disabled={busy}
-							className="mt-2 inline-flex items-center gap-2 rounded-md bg-white/10 px-3 py-1.5 text-sm text-fg transition hover:bg-white/15 disabled:opacity-40"
-						>
-							{busy ? (
-								<Loader2 className="size-4 animate-spin" />
-							) : (
-								<MessageSquarePlus className="size-4" />
-							)}
-							New chat
-						</button>
-					</div>
-				) : (
-					<MessageList />
-				)}
+				{showChat ? <MessageList /> : null}
 			</div>
 
-			<ChatInput />
+			{appSettings ? (
+				<ChatInput
+					enabledAgentIds={appSettings.enabledAgentIds ?? []}
+					preferredAgentId={appSettings.preferredAgentId ?? agentId}
+					onAgentChange={handleAgentChange}
+				/>
+			) : (
+				<ChatInput onAgentChange={undefined} />
+			)}
 
 			<div
 				className={cn(
@@ -893,12 +932,13 @@ export default function App() {
 				onClose={() => setSettingsOpen(false)}
 				agentCommand={agentCommand}
 				preferredAgentId={appSettings?.preferredAgentId}
-				onPreferredAgentChange={(agentId) => {
-					setAppSettings((prev) =>
-						prev ? { ...prev, preferredAgentId: agentId } : prev,
-					)
-					setAgentId(agentId)
-				}}
+				enabledAgentIds={
+					appSettings?.enabledAgentIds ?? ["opencode", "cursor-agent"]
+				}
+				onPreferredAgentChange={(agentId) => void handleAgentChange(agentId)}
+				onEnabledAgentsChange={(settings) =>
+					void handleEnabledAgentsChange(settings)
+				}
 				automations={automations}
 				onAutomationsChange={() => void refreshAutomations()}
 				onDeleteAutomation={async (id) => {
