@@ -1,6 +1,6 @@
 import { getDefaultStore, useSetAtom, useAtomValue } from "jotai"
 import { useEffect } from "react"
-import { checkOpencode, getDefaultChatsPath, getProjectStatus, openProject } from "@/lib/tauri"
+import { getDefaultChatsPath, getProjectStatus, listAgents, openProject } from "@/lib/tauri"
 import { reconcileFromStatus } from "@/hooks/session-reconcile"
 import {
 	agentConnectedAtom,
@@ -25,9 +25,21 @@ export function waitForListeners(): Promise<void> {
 	return listenersReady ?? Promise.resolve()
 }
 
-async function warmDefaultAgent(): Promise<void> {
-	const opencode = await checkOpencode()
-	if (!opencode.available) {
+async function warmDefaultAgents(): Promise<void> {
+	const agents = await listAgents()
+	const opencode = agents.find((a) => a.id === "opencode")
+	if (opencode) {
+		getDefaultStore().set(opencodeStatusAtom, {
+			available: opencode.available,
+			path: opencode.available ? opencode.command : null,
+			installHint: opencode.available
+				? ""
+				: "Install OpenCode from https://opencode.ai or set OPENCODE_BIN to the full binary path.",
+		})
+	}
+
+	const anyAvailable = agents.some((a) => a.available)
+	if (!anyAvailable) {
 		return
 	}
 
@@ -42,13 +54,12 @@ async function warmDefaultAgent(): Promise<void> {
 }
 
 /**
- * Verify OpenCode is installed, then kick agent warm without blocking the UI.
+ * Kick multi-agent warm without blocking the UI (Rust also warms the pool at startup).
  */
 export function useBootstrapAgent() {
 	const connected = useAtomValue(agentConnectedAtom)
 	const setError = useSetAtom(errorMessageAtom)
 	const setProgress = useSetAtom(progressMessageAtom)
-	const setOpencodeStatus = useSetAtom(opencodeStatusAtom)
 
 	useEffect(() => {
 		if (connected) {
@@ -57,30 +68,21 @@ export function useBootstrapAgent() {
 		}
 
 		if (!bootstrapPromise) {
-			setProgress("Checking OpenCode…")
+			setProgress("Preparando agentes…")
 			bootstrapPromise = waitForListeners()
-				.then(() => checkOpencode())
-				.then((status) => {
-					setOpencodeStatus(status)
-					if (!status.available) {
-						setProgress(null)
-						return
-					}
-					setProgress("Agent warming in background…")
-					return warmDefaultAgent()
-				})
+				.then(() => warmDefaultAgents())
 				.then(() => {
-					// agent:ready clears progress when initialize completes.
+					// agent:ready clears progress when the active agent finishes initialize.
 				})
 				.catch((err) => {
 					bootstrapPromise = null
 					setError(
 						err instanceof Error
 							? err.message
-							: "Failed to start agent on launch",
+							: "Failed to start agents on launch",
 					)
 					setProgress(null)
 				})
 		}
-	}, [connected, setError, setOpencodeStatus, setProgress])
+	}, [connected, setError, setProgress])
 }
