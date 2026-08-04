@@ -46,7 +46,7 @@ pub fn run() {
 
             // Start OpenCode as early as possible (in parallel with webview load)
             // so the user does not wait a full cold start after the UI appears.
-            commands::spawn_eager_agent_warm(app.handle());
+            commands::spawn_eager_multi_agent_warm(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

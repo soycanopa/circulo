@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,17 +8,20 @@ const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(15);
 const SHUTDOWN_ACK_TIMEOUT: Duration = Duration::from_secs(3);
 
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 use tracing::info;
 
 pub mod persistence;
 
 use serde::Serialize;
 
-use crate::acp::{read_context_file, search_project_files, start_agent_connection};
-use crate::state::{
-    ActiveAgent, AgentCapabilitiesDto, AgentCommand, ContextFile, ProjectStatus, SharedState,
+use crate::acp::{read_context_file, search_project_files};
+use crate::agent_pool::{
+    emit_agent_activation, pool_key, find_pooled_agent, is_active_match, park_active_agent,
+    promote_from_pool, shutdown_all_pooled, shutdown_pool_for_path, spawn_agent,
+    warm_agent_in_pool, AgentSlot,
 };
+use crate::state::{AgentCommand, ContextFile, ProjectStatus, SharedState};
 
 #[tauri::command]
 pub fn list_agents_cmd() -> Vec<crate::agents::AgentDescriptor> {
@@ -107,113 +109,79 @@ pub async fn open_project_inner(
 
     crate::agents::ensure_agent_available(&resolved_agent_id)?;
 
-    // --- Single-flight: never kill a warming agent for the same path + agent ---
+    let pool_key = pool_key(&project_path, &resolved_agent_id);
+
+    // --- Reuse active agent for same path + agent ---
     {
         let guard = state.lock().await;
-        if let Some(agent) = &guard.agent {
-            if paths_equal(&agent.project_path, &project_path)
-                && agent.agent_id == resolved_agent_id
-            {
-                info!(
-                    path = %project_path.display(),
-                    agent_id = %resolved_agent_id,
-                    connected = agent.connected,
-                    "Reusing agent process (non-blocking)"
-                );
-                return Ok(guard.status());
+        if is_active_match(&guard, &project_path, &resolved_agent_id) {
+            info!(
+                path = %project_path.display(),
+                agent_id = %resolved_agent_id,
+                connected = guard.agent.as_ref().is_some_and(|a| a.connected),
+                "Reusing agent process (non-blocking)"
+            );
+            return Ok(guard.status());
+        }
+    }
+
+    // --- Promote from warm pool (instant switch) ---
+    {
+        let mut guard = state.lock().await;
+        if find_pooled_agent(&guard, &project_path, &resolved_agent_id).is_some() {
+            if let Some(active) = guard.agent.as_ref() {
+                if !paths_equal(&active.project_path, &project_path) {
+                    let old_path = active.project_path.clone();
+                    drop(guard);
+                    shutdown_agent(&app, state).await;
+                    shutdown_pool_for_path(&app, state, &old_path).await;
+                    guard = state.lock().await;
+                } else {
+                    park_active_agent(&mut guard);
+                }
+            }
+            let connected = promote_from_pool(&mut guard, &pool_key).unwrap_or(false);
+            let status = guard.status();
+            drop(guard);
+            if connected {
+                let guard = state.lock().await;
+                if let Some(agent) = guard.agent.as_ref() {
+                    emit_agent_activation(&app, agent);
+                }
+            }
+            let _ = crate::persistence::touch_recent_project(&project_path);
+            return Ok(status);
+        }
+    }
+
+    // --- Path changed: tear down active + pool for old cwd ---
+    {
+        let old_path = state.lock().await.agent.as_ref().map(|a| a.project_path.clone());
+        if let Some(old) = old_path {
+            if !paths_equal(&old, &project_path) {
+                shutdown_agent(&app, state).await;
+                shutdown_all_pooled(&app, state).await;
             }
         }
     }
 
-    // Different path or agent: shut down previous and start one process.
-    shutdown_agent(&app, state).await;
-
-    // External channel: commands queued by other commands (send_prompt, etc.).
-    // Internal channel: consumed by the run-loop inside the runtime task. We
-    // bridge external → internal so the run-loop can own its receiver without
-    // blocking the external sender.
-    let (cmd_tx, cmd_rx_external) = mpsc::channel(32);
-    let (loop_tx, cmd_rx) = mpsc::channel(32);
-    let agent_done = Arc::new(tokio::sync::Notify::new());
-
-    info!(
-        path = %project_path.display(),
-        agent_id = %resolved_agent_id,
-        "Spawning ACP agent process"
-    );
-
-    let generation = {
+    // --- Same path, different agent: park current instead of killing ---
+    {
         let mut guard = state.lock().await;
-        guard.next_generation = guard.next_generation.saturating_add(1);
-        let generation = guard.next_generation;
-        guard.agent = Some(ActiveAgent {
-            generation,
-            project_path: project_path.clone(),
-            agent_id: resolved_agent_id,
-            agent_capabilities: AgentCapabilitiesDto::empty(),
-            cmd_tx: cmd_tx.clone(),
-            agent_done: agent_done.clone(),
-            connected: false,
-            sessions: HashMap::new(),
-            visible_session_id: None,
-        });
-        generation
-    };
-
-    // Bridge external → internal so the run-loop can own its receiver without
-    // holding the external sender. This decouples the queued commands from
-    // the runtime loop's lifetime and prevents `oneshot canceled` when the
-    // prewarm tries to send a command before the loop is ready.
-    tauri::async_runtime::spawn(async move {
-        let mut rx = cmd_rx_external;
-        while let Some(cmd) = rx.recv().await {
-            if loop_tx.send(cmd).await.is_err() {
-                break;
-            }
+        if guard.agent.is_some() {
+            park_active_agent(&mut guard);
         }
-    });
+    }
 
-    let shared: SharedState = Arc::clone(state);
-    let app_clone = app.clone();
-    let path_clone = project_path.clone();
+    spawn_agent(
+        &app,
+        state,
+        project_path.clone(),
+        resolved_agent_id,
+        AgentSlot::Active,
+    )
+    .await?;
 
-    tauri::async_runtime::spawn(async move {
-        let result = start_agent_connection(
-            app_clone.clone(),
-            shared.clone(),
-            path_clone,
-            generation,
-            cmd_rx,
-        )
-        .await;
-
-        if let Err(err) = result {
-            let is_current = shared.lock().await.is_current_generation(generation);
-            if !is_current {
-                return;
-            }
-            let _ = app_clone.emit(
-                "acp:error",
-                serde_json::json!({
-                    "message": err,
-                    "connectionGeneration": generation,
-                }),
-            );
-            let mut guard = shared.lock().await;
-            if let Some(agent) = guard.agent_for_generation_mut(generation) {
-                agent.connected = false;
-                agent.agent_done.notify_waiters();
-            }
-            drop(guard);
-            let _ = app_clone.emit(
-                "agent:disconnected",
-                serde_json::json!({ "connectionGeneration": generation }),
-            );
-        }
-    });
-
-    // Non-blocking: UI must not sit on "Agent starting" for OpenCode cold start.
-    // `agent:ready` / `create_session` wait when the user actually needs the agent.
     let _ = crate::persistence::touch_recent_project(&project_path);
 
     Ok(state.lock().await.status())
@@ -258,25 +226,72 @@ fn paths_equal(a: &std::path::Path, b: &std::path::Path) -> bool {
     }
 }
 
-/// Spawn default chats agent once at app start (overlaps with webview load).
-/// Non-blocking: returns as soon as the process is queued.
-pub fn spawn_eager_agent_warm(app: &AppHandle) {
+/// Spawn warm pool for all enabled agents at app start (overlaps with webview load).
+pub fn spawn_eager_multi_agent_warm(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        if crate::cli_resolve::resolve_opencode().is_err() {
-            tracing::warn!("OpenCode binary not found — skipping eager agent warm");
-            return;
-        }
+        let settings = match crate::persistence::load_settings() {
+            Ok(s) => s,
+            Err(err) => {
+                tracing::warn!(%err, "Could not load settings — skipping eager agent warm");
+                return;
+            }
+        };
+
         let Ok(path) = default_chats_path() else {
             return;
         };
+
+        let enabled = settings.enabled_agent_ids.clone();
+        let preferred = match crate::agents::resolve_enabled_agent_id(
+            settings.preferred_agent_id.as_deref(),
+            &enabled,
+        ) {
+            Ok(id) => id,
+            Err(err) => {
+                tracing::warn!(%err, "No enabled agent available — skipping eager warm");
+                return;
+            }
+        };
+
         let state = app.state::<SharedState>();
-        match open_project_inner(app.clone(), state.inner(), path, None).await {
+
+        match open_project_inner(app.clone(), state.inner(), path.clone(), Some(preferred.clone()))
+            .await
+        {
             Ok(status) => info!(
+                agent_id = %preferred,
                 connected = status.connected,
-                "Eager agent warm queued (non-blocking)"
+                "Eager warm: preferred agent queued"
             ),
-            Err(err) => tracing::error!(%err, "Eager agent warm failed"),
+            Err(err) => tracing::error!(%err, "Eager warm: preferred agent failed"),
+        }
+
+        let mut warm_tasks = Vec::new();
+        for agent_id in enabled {
+            if agent_id == preferred {
+                continue;
+            }
+            if crate::agents::ensure_agent_available(&agent_id).is_err() {
+                tracing::info!(agent_id = %agent_id, "Skipping pool warm — agent not available");
+                continue;
+            }
+            let app = app.clone();
+            let state: SharedState = app.state::<SharedState>().inner().clone();
+            let path = path.clone();
+            warm_tasks.push(tauri::async_runtime::spawn(async move {
+                match warm_agent_in_pool(&app, &state, PathBuf::from(path), agent_id.clone()).await
+                {
+                    Ok(()) => info!(agent_id = %agent_id, "Eager warm: pool agent queued"),
+                    Err(err) => {
+                        tracing::warn!(agent_id = %agent_id, %err, "Eager warm: pool agent failed")
+                    }
+                }
+            }));
+        }
+
+        for task in warm_tasks {
+            let _ = task.await;
         }
     });
 }
@@ -287,6 +302,7 @@ pub async fn close_project(
     state: State<'_, SharedState>,
 ) -> Result<ProjectStatus, String> {
     shutdown_agent(&app, state.inner()).await;
+    shutdown_all_pooled(&app, state.inner()).await;
     Ok(state.lock().await.status())
 }
 
