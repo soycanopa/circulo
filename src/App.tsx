@@ -75,6 +75,8 @@ import {
 	sidebarOpenAtom,
 	terminalDrawerOpenAtom,
 	terminalsAtom,
+	TERMINAL_DRAWER_HEIGHT_DEFAULT,
+	userTerminalTabsAtom,
 	visibleMessagesAtom,
 	visibleSessionStatusAtom,
 } from "@/stores/atoms"
@@ -118,6 +120,7 @@ export default function App() {
 	const diffPanelOpen = useAtomValue(diffPanelOpenAtom)
 	const terminalDrawerOpen = useAtomValue(terminalDrawerOpenAtom)
 	const terminals = useAtomValue(terminalsAtom)
+	const userTerminalTabs = useAtomValue(userTerminalTabsAtom)
 	const sidebarOpen = useAtomValue(sidebarOpenAtom)
 	const setDiffPanelOpen = useSetAtom(diffPanelOpenAtom)
 	const setTerminalDrawerOpen = useSetAtom(terminalDrawerOpenAtom)
@@ -136,6 +139,7 @@ export default function App() {
 	const [settingsOpen, setSettingsOpen] = useState(false)
 	const [openProjectModalOpen, setOpenProjectModalOpen] = useState(false)
 	const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+	const [terminalMounted, setTerminalMounted] = useState(false)
 	const [agentCommand, setAgentCommand] = useState("opencode acp")
 	const [agentId, setAgentId] = useState<string | null>("opencode")
 
@@ -205,8 +209,15 @@ export default function App() {
 	}, [setDiffPanelOpen])
 
 	const toggleTerminalDrawer = useCallback(() => {
-		setTerminalDrawerOpen((open) => !open)
+		setTerminalDrawerOpen((open) => {
+			if (!open) setTerminalMounted(true)
+			return !open
+		})
 	}, [setTerminalDrawerOpen])
+
+	useEffect(() => {
+		if (terminalDrawerOpen) setTerminalMounted(true)
+	}, [terminalDrawerOpen])
 
 	const closeTerminalDrawer = useCallback(() => {
 		setTerminalDrawerOpen(false)
@@ -214,8 +225,13 @@ export default function App() {
 
 	const diffToolCount = useMemo(() => collectDiffTools(messages).length, [messages])
 	const terminalCount = useMemo(
-		() => Math.max(collectTerminalTools(messages).length, Object.keys(terminals).length),
-		[messages, terminals],
+		() =>
+			Math.max(
+				userTerminalTabs.length,
+				collectTerminalTools(messages).length,
+				Object.keys(terminals).length,
+			),
+		[messages, terminals, userTerminalTabs.length],
 	)
 
 	const agentRuntimes = useMemo((): AgentRuntimeState[] => {
@@ -653,6 +669,9 @@ export default function App() {
 							? "Ready — New Chat"
 							: "Ready"
 
+	const shellTransition =
+		"transition-[height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+
 	return (
 		<>
 			<AppShell
@@ -737,38 +756,38 @@ export default function App() {
 						<button
 							type="button"
 							onClick={toggleTerminalDrawer}
-							className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition ${
+							className={`relative inline-flex items-center justify-center rounded-md border p-1.5 transition ${
 								terminalDrawerOpen
 									? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
 									: "border-border text-muted hover:bg-white/5 hover:text-fg"
 							}`}
-							title="Toggle terminal drawer"
+							title="Toggle terminal"
+							aria-label="Toggle terminal"
 							data-tauri-drag-region="false"
 						>
 							<Terminal className="size-3.5" />
-							Terminal
 							{terminalCount > 0 ? (
-								<span className="rounded bg-white/10 px-1 text-[10px]">
-									{terminalCount}
+								<span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-white/15 text-[9px] leading-none text-fg">
+									{terminalCount > 9 ? "9+" : terminalCount}
 								</span>
 							) : null}
 						</button>
 						<button
 							type="button"
 							onClick={toggleDiffPanel}
-							className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition ${
+							className={`relative inline-flex items-center justify-center rounded-md border p-1.5 transition ${
 								diffPanelOpen
 									? "border-sky-500/40 bg-sky-500/10 text-sky-200"
 									: "border-border text-muted hover:bg-white/5 hover:text-fg"
 							}`}
 							title="Toggle diff panel"
+							aria-label="Toggle diff panel"
 							data-tauri-drag-region="false"
 						>
 							<FileDiff className="size-3.5" />
-							Diff
 							{diffToolCount > 0 ? (
-								<span className="rounded bg-white/10 px-1 text-[10px]">
-									{diffToolCount}
+								<span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-white/15 text-[9px] leading-none text-fg">
+									{diffToolCount > 9 ? "9+" : diffToolCount}
 								</span>
 							) : null}
 						</button>
@@ -814,40 +833,61 @@ export default function App() {
 				</div>
 			) : null}
 
-			{!showChat ? (
-				<div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
-					<p className="text-lg font-medium tracking-tight">Circulo</p>
-					<p className="max-w-md text-sm text-muted">
-						{agentWarm
-							? "Start a conversation with New Chat."
-							: "App is ready. OpenCode warms in the background — New Chat waits only if you click before it's up."}
-					</p>
-					<button
-						type="button"
-						onClick={() => void handleNewChat()}
-						disabled={busy}
-						className="mt-2 inline-flex items-center gap-2 rounded-md bg-white/10 px-3 py-1.5 text-sm text-fg transition hover:bg-white/15 disabled:opacity-40"
-					>
-						{busy ? (
-							<Loader2 className="size-4 animate-spin" />
-						) : (
-							<MessageSquarePlus className="size-4" />
-						)}
-						New chat
-					</button>
-				</div>
-			) : (
-				<div className="flex min-h-0 flex-1 flex-col">
+			<div className="flex min-h-0 flex-1 flex-col">
+				{!showChat ? (
+					<div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
+						<p className="text-lg font-medium tracking-tight">Circulo</p>
+						<p className="max-w-md text-sm text-muted">
+							{agentWarm
+								? "Start a conversation with New Chat."
+								: "App is ready. OpenCode warms in the background — New Chat waits only if you click before it's up."}
+						</p>
+						<button
+							type="button"
+							onClick={() => void handleNewChat()}
+							disabled={busy}
+							className="mt-2 inline-flex items-center gap-2 rounded-md bg-white/10 px-3 py-1.5 text-sm text-fg transition hover:bg-white/15 disabled:opacity-40"
+						>
+							{busy ? (
+								<Loader2 className="size-4 animate-spin" />
+							) : (
+								<MessageSquarePlus className="size-4" />
+							)}
+							New chat
+						</button>
+					</div>
+				) : (
 					<MessageList />
-					{terminalDrawerOpen ? (
-						<div className="h-56 shrink-0">
-							<TerminalDrawer onClose={closeTerminalDrawer} />
-						</div>
-					) : null}
-				</div>
-			)}
+				)}
+			</div>
 
 			<ChatInput />
+
+			<div
+				className={cn(
+					"terminal-panel-shell shrink-0 overflow-hidden border-t border-border",
+					shellTransition,
+				)}
+				style={{
+					height: terminalDrawerOpen ? TERMINAL_DRAWER_HEIGHT_DEFAULT : 0,
+				}}
+			>
+				<div
+					className={cn(
+						"flex flex-col",
+						!terminalDrawerOpen && "pointer-events-none",
+					)}
+					style={{ height: TERMINAL_DRAWER_HEIGHT_DEFAULT }}
+					aria-hidden={!terminalDrawerOpen}
+				>
+					{terminalMounted ? (
+						<TerminalDrawer
+							projectPath={projectPath}
+							onClose={closeTerminalDrawer}
+						/>
+					) : null}
+				</div>
+			</div>
 			<SettingsPanel
 				open={settingsOpen}
 				onClose={() => setSettingsOpen(false)}
