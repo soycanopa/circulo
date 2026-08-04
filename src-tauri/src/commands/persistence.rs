@@ -1,15 +1,93 @@
 use crate::persistence::{
     create_workspace, delete_automation, delete_chat_transcript, delete_workspace, list_automations,
-    list_chat_sessions, load_chat_transcript, load_settings, rename_chat_transcript,
-    save_automation, save_chat_transcript, save_settings, seed_chat_transcript, set_active_workspace,
-    workspace_chats_dir, workspace_entry_path, AppSettings, Automation, ChatSessionSummary,
-    StoredChatMessage, StoredTranscript,
+    list_chat_sessions, load_chat_transcript, load_settings, remove_project_from_workspace,
+    rename_chat_transcript, save_automation, save_chat_transcript, save_settings,
+    seed_chat_transcript, set_active_workspace, workspace_chats_dir, workspace_entry_path,
+    AppSettings, Automation, ChatSessionSummary, StoredChatMessage, StoredTranscript,
 };
 
 #[tauri::command]
 pub fn set_preferred_agent_cmd(agent_id: String) -> Result<AppSettings, String> {
     let mut settings = load_settings()?;
+    if !settings.enabled_agent_ids.iter().any(|id| id == &agent_id) {
+        return Err(format!("Agent '{agent_id}' is not enabled"));
+    }
+    crate::agents::ensure_agent_available(&agent_id)?;
     settings.preferred_agent_id = Some(agent_id);
+    save_settings(&settings)?;
+    load_settings()
+}
+
+#[tauri::command]
+pub fn set_enabled_agents_cmd(ids: Vec<String>) -> Result<AppSettings, String> {
+    if ids.is_empty() {
+        return Err("At least one agent must be enabled".to_string());
+    }
+
+    for id in &ids {
+        if !crate::agents::is_known_agent_id(id) {
+            return Err(format!("Unknown agent: {id}"));
+        }
+    }
+
+    let mut settings = load_settings()?;
+    settings.enabled_agent_ids = ids;
+
+    let preferred = settings.preferred_agent_id.as_deref();
+    let resolved = crate::agents::resolve_enabled_agent_id(
+        preferred,
+        &settings.enabled_agent_ids,
+    )?;
+    settings.preferred_agent_id = Some(resolved);
+
+    save_settings(&settings)?;
+    load_settings()
+}
+
+#[tauri::command]
+pub fn set_favorite_model_cmd(
+    model_id: String,
+    favorite: bool,
+) -> Result<AppSettings, String> {
+    let model_id = model_id.trim();
+    if model_id.is_empty() {
+        return Err("Model id must not be empty".to_string());
+    }
+
+    let mut settings = load_settings()?;
+    if favorite {
+        if !settings.favorite_model_ids.iter().any(|id| id == model_id) {
+            settings.favorite_model_ids.push(model_id.to_string());
+        }
+    } else {
+        settings
+            .favorite_model_ids
+            .retain(|id| id != model_id);
+    }
+    save_settings(&settings)?;
+    load_settings()
+}
+
+#[tauri::command]
+pub fn toggle_favorite_model_cmd(model_id: String) -> Result<AppSettings, String> {
+    let model_id = model_id.trim();
+    if model_id.is_empty() {
+        return Err("Model id must not be empty".to_string());
+    }
+
+    let settings = load_settings()?;
+    let favorite = !settings
+        .favorite_model_ids
+        .iter()
+        .any(|id| id == model_id);
+    drop(settings);
+    set_favorite_model_cmd(model_id.to_string(), favorite)
+}
+
+#[tauri::command]
+pub fn set_auto_approve_cmd(enabled: bool) -> Result<AppSettings, String> {
+    let mut settings = load_settings()?;
+    settings.auto_approve_enabled = enabled;
     save_settings(&settings)?;
     load_settings()
 }
@@ -53,6 +131,13 @@ pub fn set_active_workspace_cmd(workspace_id: String) -> Result<AppSettings, Str
 #[tauri::command]
 pub fn delete_workspace_cmd(workspace_id: String) -> Result<AppSettings, String> {
     delete_workspace(workspace_id)
+}
+
+#[tauri::command]
+pub fn remove_project_from_workspace_cmd(
+    project_path: String,
+) -> Result<AppSettings, String> {
+    remove_project_from_workspace(&project_path)
 }
 
 /// General chats path + preferred open path when entering a workspace.

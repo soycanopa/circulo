@@ -12,6 +12,8 @@ use super::circulo_data_dir;
 pub struct ChatSessionSummary {
     pub session_id: String,
     pub title: String,
+    #[serde(default)]
+    pub created_at: u64,
     pub updated_at: u64,
 }
 
@@ -44,6 +46,8 @@ pub struct StoredTranscript {
     pub session_id: String,
     pub project_path: String,
     pub title: String,
+    #[serde(default)]
+    pub title_edited: bool,
     pub created_at: u64,
     pub updated_at: u64,
     pub messages: Vec<StoredChatMessage>,
@@ -136,7 +140,12 @@ pub fn list_chat_sessions(project_path: &str) -> Result<Vec<ChatSessionSummary>,
     let path = PathBuf::from(project_path);
     let index = load_index(&path)?;
     let mut chats = index.chats;
-    chats.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    for chat in &mut chats {
+        if chat.created_at == 0 {
+            chat.created_at = chat.updated_at;
+        }
+    }
+    chats.sort_by(|a, b| a.created_at.cmp(&b.created_at));
     Ok(chats)
 }
 
@@ -151,6 +160,19 @@ pub fn load_chat_transcript(
     }
     let raw = std::fs::read_to_string(&file).map_err(|err| err.to_string())?;
     serde_json::from_str(&raw).map_err(|err| format!("Invalid transcript: {err}"))
+}
+
+fn resolve_title(existing: &StoredTranscript, derived: &str) -> String {
+    if existing.title_edited {
+        return existing.title.clone();
+    }
+    if derived == "New chat"
+        && existing.title != "New chat"
+        && !existing.title.trim().is_empty()
+    {
+        return existing.title.clone();
+    }
+    derived.to_string()
 }
 
 pub fn save_chat_transcript(
@@ -175,19 +197,11 @@ pub fn save_chat_transcript(
             return Ok(ChatSessionSummary {
                 session_id: session_id.to_string(),
                 title: existing.title.clone(),
+                created_at: existing.created_at,
                 updated_at: existing.updated_at,
             });
         }
-        // Keep a user-visible title when the in-memory buffer is briefly empty
-        // (e.g. switching visible sessions before messages hydrate).
-        let title = if derived == "New chat"
-            && existing.title != "New chat"
-            && !existing.title.trim().is_empty()
-        {
-            existing.title.clone()
-        } else {
-            derived.clone()
-        };
+        let title = resolve_title(&existing, &derived);
         existing.messages = messages;
         existing.title = title.clone();
         existing.updated_at = now;
@@ -197,6 +211,7 @@ pub fn save_chat_transcript(
             session_id: session_id.to_string(),
             project_path: project_path.to_string(),
             title: derived.clone(),
+            title_edited: false,
             created_at: now,
             updated_at: now,
             messages,
@@ -212,6 +227,7 @@ pub fn save_chat_transcript(
     let summary = ChatSessionSummary {
         session_id: session_id.to_string(),
         title,
+        created_at: transcript.created_at,
         updated_at: now,
     };
 
@@ -258,6 +274,7 @@ pub fn seed_chat_transcript(
         let summary = ChatSessionSummary {
             session_id: session_id.to_string(),
             title: existing.title.clone(),
+            created_at: existing.created_at,
             updated_at: existing.updated_at,
         };
         upsert_summary(&path, project_path, &summary)?;
@@ -268,6 +285,7 @@ pub fn seed_chat_transcript(
         session_id: session_id.to_string(),
         project_path: project_path.to_string(),
         title: resolved_title.to_string(),
+        title_edited: false,
         created_at: now,
         updated_at: now,
         messages: Vec::new(),
@@ -280,6 +298,7 @@ pub fn seed_chat_transcript(
     let summary = ChatSessionSummary {
         session_id: session_id.to_string(),
         title: resolved_title.to_string(),
+        created_at: now,
         updated_at: now,
     };
     upsert_summary(&path, project_path, &summary)?;
@@ -298,9 +317,19 @@ fn upsert_summary(
         .iter_mut()
         .find(|c| c.session_id == summary.session_id)
     {
+        let created_at = if entry.created_at == 0 {
+            summary.created_at.max(entry.updated_at)
+        } else {
+            entry.created_at
+        };
         *entry = summary.clone();
+        entry.created_at = created_at;
     } else {
-        index.chats.push(summary.clone());
+        let mut entry = summary.clone();
+        if entry.created_at == 0 {
+            entry.created_at = entry.updated_at;
+        }
+        index.chats.push(entry);
     }
     save_index(path, &index)
 }
@@ -345,6 +374,7 @@ pub fn rename_chat_transcript(
             .map_err(|e| format!("Invalid transcript: {e}"))?;
     let now = now_ms();
     transcript.title = title.to_string();
+    transcript.title_edited = true;
     transcript.updated_at = now;
 
     let raw = serde_json::to_string_pretty(&transcript).map_err(|err| err.to_string())?;
@@ -353,6 +383,7 @@ pub fn rename_chat_transcript(
     let summary = ChatSessionSummary {
         session_id: session_id.to_string(),
         title: title.to_string(),
+        created_at: transcript.created_at,
         updated_at: now,
     };
 
@@ -362,7 +393,14 @@ pub fn rename_chat_transcript(
         .iter_mut()
         .find(|c| c.session_id == session_id)
     {
-        *entry = summary.clone();
+        let created_at = if entry.created_at == 0 {
+            transcript.created_at
+        } else {
+            entry.created_at
+        };
+        entry.title = summary.title.clone();
+        entry.updated_at = summary.updated_at;
+        entry.created_at = created_at;
     } else {
         index.chats.push(summary.clone());
     }
@@ -483,6 +521,23 @@ mod tests {
             list_chat_sessions(&project_path).unwrap()[0].title,
             "Keep this title"
         );
+    }
+
+    #[test]
+    #[serial]
+    fn rename_preserves_title_on_later_save() {
+        let home = tempdir().unwrap();
+        let project = tempdir().unwrap();
+        let _home = HomeGuard::set(home.path());
+        let project_path = project.path().to_string_lossy().to_string();
+        let messages = vec![message("user", "lowercase prompt")];
+
+        save_chat_transcript(&project_path, "session/one", messages.clone()).unwrap();
+        rename_chat_transcript(&project_path, "session/one", "My Custom Title").unwrap();
+
+        let saved =
+            save_chat_transcript(&project_path, "session/one", messages).unwrap();
+        assert_eq!(saved.title, "My Custom Title");
     }
 
     #[test]

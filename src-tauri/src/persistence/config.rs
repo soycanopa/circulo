@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::circulo_data_dir;
 
-const SETTINGS_VERSION: u32 = 3;
+const SETTINGS_VERSION: u32 = 5;
 const MAX_RECENT_PROJECTS: usize = 24;
 const MAX_WORKSPACES: usize = 12;
 const DEFAULT_WORKSPACE_ID: &str = "default";
@@ -44,6 +44,15 @@ pub struct AppSettings {
     pub active_workspace_id: Option<String>,
     #[serde(default)]
     pub preferred_agent_id: Option<String>,
+    /// Agent ids shown in the composer selector (subset of discovered agents).
+    #[serde(default)]
+    pub enabled_agent_ids: Vec<String>,
+    /// ACP model ids marked as favorites in the composer (e.g. opencode/gpt-5.5).
+    #[serde(default)]
+    pub favorite_model_ids: Vec<String>,
+    /// When true, Circulo auto-approves tool permissions (allow-always when offered).
+    #[serde(default)]
+    pub auto_approve_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -54,6 +63,9 @@ impl Default for AppSettings {
             workspaces: Vec::new(),
             active_workspace_id: None,
             preferred_agent_id: None,
+            enabled_agent_ids: default_enabled_agent_ids(),
+            favorite_model_ids: Vec::new(),
+            auto_approve_enabled: false,
         };
         let _ = ensure_workspaces(&mut settings);
         settings
@@ -73,12 +85,16 @@ pub fn load_settings() -> Result<AppSettings, String> {
             workspaces: Vec::new(),
             active_workspace_id: None,
             preferred_agent_id: None,
+            enabled_agent_ids: Vec::new(),
+            favorite_model_ids: Vec::new(),
+            auto_approve_enabled: false,
         }
     } else {
         let raw = std::fs::read_to_string(&path).map_err(|err| err.to_string())?;
         serde_json::from_str(&raw).map_err(|err| format!("Invalid config.json: {err}"))?
     };
     ensure_workspaces(&mut settings)?;
+    ensure_enabled_agents(&mut settings);
     // Persist migration (v1 → v2 workspaces) once.
     if settings.version < SETTINGS_VERSION || path_needs_rewrite(&settings) {
         save_settings(&settings)?;
@@ -87,7 +103,22 @@ pub fn load_settings() -> Result<AppSettings, String> {
 }
 
 fn path_needs_rewrite(settings: &AppSettings) -> bool {
-    settings.workspaces.is_empty() || settings.active_workspace_id.is_none()
+    settings.workspaces.is_empty()
+        || settings.active_workspace_id.is_none()
+        || settings.enabled_agent_ids.is_empty()
+}
+
+fn default_enabled_agent_ids() -> Vec<String> {
+    vec![
+        crate::agents::AGENT_ID_OPENCODE.to_string(),
+        crate::agents::AGENT_ID_CURSOR.to_string(),
+    ]
+}
+
+fn ensure_enabled_agents(settings: &mut AppSettings) {
+    if settings.enabled_agent_ids.is_empty() {
+        settings.enabled_agent_ids = default_enabled_agent_ids();
+    }
 }
 
 pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
@@ -95,6 +126,7 @@ pub fn save_settings(settings: &AppSettings) -> Result<(), String> {
     let mut next = settings.clone();
     next.version = SETTINGS_VERSION;
     ensure_workspaces(&mut next)?;
+    ensure_enabled_agents(&mut next);
     let raw = serde_json::to_string_pretty(&next).map_err(|err| err.to_string())?;
     std::fs::write(path, raw).map_err(|err| err.to_string())
 }
@@ -272,6 +304,45 @@ pub fn delete_workspace(workspace_id: String) -> Result<AppSettings, String> {
 
     if settings.active_workspace_id.as_deref() == Some(workspace_id.as_str()) {
         settings.active_workspace_id = settings.workspaces.first().map(|w| w.id.clone());
+    }
+
+    save_settings(&settings)?;
+    Ok(settings)
+}
+
+/// Remove a project from the active workspace list (does not delete transcripts).
+pub fn remove_project_from_workspace(project_path: &str) -> Result<AppSettings, String> {
+    let path_str = project_path.trim();
+    if path_str.is_empty() {
+        return Err("Project path must not be empty".to_string());
+    }
+    if is_general_chats_path(path_str) {
+        return Err("Cannot remove the general chats folder".to_string());
+    }
+
+    let mut settings = load_settings()?;
+    let workspace_id = settings
+        .active_workspace_id
+        .clone()
+        .ok_or_else(|| "No active workspace".to_string())?;
+    let ws = settings
+        .workspaces
+        .iter_mut()
+        .find(|w| w.id == workspace_id)
+        .ok_or_else(|| format!("Unknown workspace: {workspace_id}"))?;
+
+    let before = ws.project_paths.len();
+    ws.project_paths.retain(|p| p != path_str);
+    if ws.project_paths.len() == before {
+        return Err("Project is not in this workspace".to_string());
+    }
+
+    if ws.last_path.as_deref() == Some(path_str) {
+        ws.last_path = ws
+            .project_paths
+            .first()
+            .cloned()
+            .or_else(|| workspace_chats_dir(&workspace_id).ok().map(|p| p.display().to_string()));
     }
 
     save_settings(&settings)?;
