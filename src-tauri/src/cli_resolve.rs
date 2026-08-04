@@ -47,6 +47,28 @@ pub fn resolve_grok() -> Result<PathBuf, String> {
     resolve_binary("grok", "GROK_BIN")
 }
 
+pub fn resolve_pi() -> Result<PathBuf, String> {
+    resolve_binary("pi", "PI_BIN")
+}
+
+/// ACP adapter for the Pi coding agent (Zed registry: `pi-acp` over stdio).
+pub fn resolve_pi_acp() -> Result<PathBuf, String> {
+    resolve_binary("pi-acp", "PI_ACP_BIN")
+}
+
+pub fn resolve_npx() -> Result<PathBuf, String> {
+    resolve_binary("npx", "NPX_BIN")
+}
+
+pub fn resolve_agy() -> Result<PathBuf, String> {
+    resolve_binary("agy", "AGY_BIN")
+}
+
+/// ACP adapter for Google Antigravity CLI (Zed: `npx agy-acp` over stdio).
+pub fn resolve_agy_acp() -> Result<PathBuf, String> {
+    resolve_binary("agy-acp", "AGY_ACP_BIN")
+}
+
 fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
