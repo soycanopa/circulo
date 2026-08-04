@@ -137,6 +137,8 @@ pub struct SessionHandle {
     pub session_id: String,
     pub session_ready_for_ui: bool,
     pub prompt_in_flight: bool,
+    /// True after the user sends at least one prompt in this session.
+    pub user_prompt_sent: bool,
     pub config_options: Vec<ConfigOptionDto>,
     pub session_done: Arc<Notify>,
 }
@@ -164,11 +166,37 @@ impl ActiveAgent {
     }
 
     pub fn config_options(&self) -> Vec<ConfigOptionDto> {
+        if let Some(visible) = &self.visible_session_id {
+            if let Some(session) = self.sessions.get(visible) {
+                return session.config_options.clone();
+            }
+        }
+        // Draft prewarm session (before auto-publish event reaches the UI).
+        self.sessions
+            .iter()
+            .find(|(_, handle)| !handle.session_ready_for_ui)
+            .map(|(_, handle)| handle.config_options.clone())
+            .unwrap_or_default()
+    }
+
+    /// Visible session, or a hidden prewarm session for config/prompt bootstrap.
+    pub fn resolve_interactive_session_id(&self) -> Option<String> {
+        if let Some(visible) = &self.visible_session_id {
+            if self.sessions.contains_key(visible) {
+                return Some(visible.clone());
+            }
+        }
+        self.sessions
+            .iter()
+            .find(|(_, handle)| !handle.session_ready_for_ui)
+            .map(|(sid, _)| sid.clone())
+    }
+
+    pub fn visible_session_ready(&self) -> bool {
         self.visible_session_id
             .as_ref()
             .and_then(|sid| self.sessions.get(sid))
-            .map(|s| s.config_options.clone())
-            .unwrap_or_default()
+            .is_some_and(|s| s.session_ready_for_ui)
     }
 }
 
@@ -201,12 +229,18 @@ impl CirculoState {
                 project_path: Some(agent.project_path.display().to_string()),
                 agent_id: Some(agent.agent_id.clone()),
                 connection_generation: Some(agent.generation),
-                // Hide prewarmed sessions until New Chat publishes them.
-                session_id: if agent.session_ready_for_ui() {
-                    normalize_session_id(agent.session_id())
-                } else {
-                    None
-                },
+                // Hide prewarmed sessions until published to the UI.
+                session_id: agent
+                    .visible_session_id
+                    .clone()
+                    .or_else(|| {
+                        agent
+                            .sessions
+                            .iter()
+                            .find(|(_, handle)| handle.session_ready_for_ui)
+                            .map(|(sid, _)| sid.clone())
+                    })
+                    .and_then(|id| normalize_session_id(&id)),
                 config_options: agent.config_options(),
                 capabilities: Some(agent.agent_capabilities.clone()),
                 agent_command: crate::agents::agent_command_label(&agent.agent_id),

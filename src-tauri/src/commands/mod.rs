@@ -97,24 +97,26 @@ pub async fn open_project_inner(
             .map_err(|err| format!("Not a directory and could not create {path}: {err}"))?;
     }
 
-    let preferred = crate::persistence::load_settings()
-        .ok()
-        .and_then(|settings| settings.preferred_agent_id);
-    let resolved_agent_id = crate::agents::normalize_agent_id(
-        agent_id.as_deref().or(preferred.as_deref()),
-    )
-    .to_string();
+    let settings = crate::persistence::load_settings()?;
+    let preferred = settings.preferred_agent_id.as_deref();
+    let enabled = &settings.enabled_agent_ids;
+    let resolved_agent_id = crate::agents::resolve_enabled_agent_id(
+        agent_id.as_deref().or(preferred),
+        enabled,
+    )?;
 
     crate::agents::ensure_agent_available(&resolved_agent_id)?;
 
-    // --- Single-flight: never kill a warming agent for the same path ---
+    // --- Single-flight: never kill a warming agent for the same path + agent ---
     {
         let guard = state.lock().await;
         if let Some(agent) = &guard.agent {
-            if paths_equal(&agent.project_path, &project_path) {
-                // Already spawning or ready — return now (no 20s wait).
+            if paths_equal(&agent.project_path, &project_path)
+                && agent.agent_id == resolved_agent_id
+            {
                 info!(
                     path = %project_path.display(),
+                    agent_id = %resolved_agent_id,
                     connected = agent.connected,
                     "Reusing agent process (non-blocking)"
                 );
@@ -123,7 +125,7 @@ pub async fn open_project_inner(
         }
     }
 
-    // Different path (or no agent): shut down previous and start one process.
+    // Different path or agent: shut down previous and start one process.
     shutdown_agent(&app, state).await;
 
     // External channel: commands queued by other commands (send_prompt, etc.).
@@ -133,6 +135,12 @@ pub async fn open_project_inner(
     let (cmd_tx, cmd_rx_external) = mpsc::channel(32);
     let (loop_tx, cmd_rx) = mpsc::channel(32);
     let agent_done = Arc::new(tokio::sync::Notify::new());
+
+    info!(
+        path = %project_path.display(),
+        agent_id = %resolved_agent_id,
+        "Spawning ACP agent process"
+    );
 
     let generation = {
         let mut guard = state.lock().await;
@@ -169,7 +177,6 @@ pub async fn open_project_inner(
     let app_clone = app.clone();
     let path_clone = project_path.clone();
 
-    info!(path = %project_path.display(), "Spawning single OpenCode ACP process (opencode acp)");
     tauri::async_runtime::spawn(async move {
         let result = start_agent_connection(
             app_clone.clone(),
@@ -285,8 +292,7 @@ pub async fn close_project(
 
 /// ACP `session/new` with absolute cwd (session-setup). Only call when the user starts a chat.
 /// Waits for in-flight warm if needed (so New Chat works while OpenCode is still booting).
-#[tauri::command]
-pub async fn create_session(state: State<'_, SharedState>) -> Result<ProjectStatus, String> {
+async fn create_session_inner(state: &SharedState) -> Result<ProjectStatus, String> {
     // Ensure a process exists; if not, caller should have opened a project first.
     {
         let guard = state.lock().await;
@@ -294,7 +300,7 @@ pub async fn create_session(state: State<'_, SharedState>) -> Result<ProjectStat
             return Err("No agent process — open a project or wait for warm".to_string());
         }
     }
-    wait_until_agent_connected(state.inner()).await?;
+    wait_until_agent_connected(state).await?;
 
     let (done_tx, done_rx) = oneshot::channel();
 
@@ -318,6 +324,25 @@ pub async fn create_session(state: State<'_, SharedState>) -> Result<ProjectStat
         Ok(Err(_)) => Err("Session creation was cancelled".to_string()),
         Err(_) => Err("Timed out while creating session".to_string()),
     }
+}
+
+async fn ensure_visible_session(state: &SharedState) -> Result<(), String> {
+    let ready = {
+        let guard = state.lock().await;
+        guard
+            .agent
+            .as_ref()
+            .is_some_and(|agent| agent.visible_session_ready())
+    };
+    if ready {
+        return Ok(());
+    }
+    create_session_inner(state).await.map(|_| ())
+}
+
+#[tauri::command]
+pub async fn create_session(state: State<'_, SharedState>) -> Result<ProjectStatus, String> {
+    create_session_inner(state.inner()).await
 }
 
 /// Switch the visible session without closing the previous one. Background sessions
@@ -437,6 +462,8 @@ pub async fn send_prompt(
     text: String,
     context_paths: Vec<String>,
 ) -> Result<(), String> {
+    ensure_visible_session(state.inner()).await?;
+
     let (cmd_tx, project_path, session_id) = {
         let guard = state.lock().await;
         let agent = guard
@@ -446,13 +473,13 @@ pub async fn send_prompt(
         let visible = agent
             .visible_session_id
             .clone()
-            .ok_or_else(|| "No active session — use New Chat first".to_string())?;
+            .ok_or_else(|| "No active session — wait for the agent to finish starting".to_string())?;
         let ready = agent
             .sessions
             .get(&visible)
             .is_some_and(|s| s.session_ready_for_ui);
         if !ready {
-            return Err("No active session — use New Chat first".to_string());
+            return Err("No active session — wait for the agent to finish starting".to_string());
         }
         if agent
             .sessions
@@ -559,11 +586,10 @@ pub async fn set_config_option(
             .agent
             .as_ref()
             .ok_or_else(|| "No project open".to_string())?;
-        let visible = agent
-            .visible_session_id
-            .clone()
+        let session_id = agent
+            .resolve_interactive_session_id()
             .ok_or_else(|| "No active session".to_string())?;
-        (agent.cmd_tx.clone(), visible)
+        (agent.cmd_tx.clone(), session_id)
     };
 
     cmd_tx

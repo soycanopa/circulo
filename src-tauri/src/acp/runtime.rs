@@ -8,7 +8,7 @@ use agent_client_protocol::schema::v1::{
     LoadSessionRequest, NewSessionRequest, PromptRequest,
     ReleaseTerminalRequest, RequestPermissionOutcome,
     RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions, SessionNotification,
+    SessionNotification,
     SetSessionConfigOptionRequest, TerminalOutputRequest, TextContent,
     WaitForTerminalExitRequest,
 };
@@ -21,8 +21,12 @@ use tracing::{error, info};
 
 use crate::agents::build_agent;
 use crate::state::{
-    AgentCapabilitiesDto, AgentCommand, ConfigOptionDto, ConfigOptionValueDto, ContextFile,
+    AgentCapabilitiesDto, AgentCommand, ContextFile,
     PermissionOptionId, SessionHandle, SharedState,
+};
+use crate::acp::config_bridge::{
+    bridge_session_config_sync, map_config_options, merge_config_options,
+    should_auto_refresh_config, refresh_session_config,
 };
 use crate::acp::terminal::TerminalManager;
 
@@ -43,6 +47,7 @@ pub async fn start_agent_connection(
     };
 
     let agent = build_agent(&agent_id, &project_path)?;
+    let agent_label = crate::agents::agent_progress_label(&agent_id);
 
     let terminals = Arc::new(Mutex::new(TerminalManager::new(
         project_path.clone(),
@@ -271,6 +276,7 @@ pub async fn start_agent_connection(
             let app = app.clone();
             let state = state.clone();
             let project_path = project_path.clone();
+            let agent_label = agent_label.clone();
 
             async move {
                 info!(path = %project_path.display(), generation, "Initializing ACP agent");
@@ -281,7 +287,7 @@ pub async fn start_agent_connection(
                     "agent:progress",
                     serde_json::json!({
                         "phase": "initialize",
-                        "message": "Connecting to OpenCode…",
+                        "message": format!("Connecting to {agent_label}…"),
                         "connectionGeneration": generation,
                     }),
                 );
@@ -337,6 +343,16 @@ pub async fn start_agent_connection(
                 }
 
                 let _ = app.emit(
+                    "agent:progress",
+                    serde_json::json!({
+                        "phase": "initialize",
+                        "message": "Agent connected",
+                        "elapsedMs": init_started.elapsed().as_millis() as u64,
+                        "connectionGeneration": generation,
+                    }),
+                );
+
+                let _ = app.emit(
                     "agent:ready",
                     serde_json::json!({
                         "projectPath": project_path.display().to_string(),
@@ -348,7 +364,7 @@ pub async fn start_agent_connection(
                     "agent:progress",
                     serde_json::json!({
                         "phase": "ready",
-                        "message": "Agent ready — preparing first session in background…",
+                        "message": format!("{agent_label} ready — preparing session…"),
                         "connectionGeneration": generation,
                     }),
                 );
@@ -395,8 +411,8 @@ pub async fn start_agent_connection(
                 });
 
                 // Background session/new prewarm (ACP session-setup). OpenCode pays ~6–10s on
-                // the first session/new per process (context + configured MCP). We do not emit
-                // acp:session_ready until the user clicks New Chat — UI still shows "no session".
+                // the first session/new per process (context + configured MCP). We publish
+                // to the UI immediately so mode/model selectors and compose-first send work.
                 let prewarm_connection = connection.clone();
                 let prewarm_app = app.clone();
                 let prewarm_state = state.clone();
@@ -411,6 +427,15 @@ pub async fn start_agent_connection(
                             return;
                         }
                     }
+                    let _ = prewarm_app.emit(
+                        "agent:progress",
+                        serde_json::json!({
+                            "phase": "session_prewarm",
+                            "message": "Preparando sesión…",
+                            "connectionGeneration": generation,
+                        }),
+                    );
+                    let prewarm_started = Instant::now();
                     match create_session_on_connection(
                         &prewarm_connection,
                         &prewarm_app,
@@ -423,12 +448,21 @@ pub async fn start_agent_connection(
                     .await
                     {
                         Ok(()) => {
-                            info!("Session prewarm complete (not published to UI yet)");
+                            info!("Session prewarm complete (hidden until first message)");
+                            let _ = prewarm_app.emit(
+                                "agent:progress",
+                                serde_json::json!({
+                                    "phase": "session_prewarm",
+                                    "message": "Sesión lista",
+                                    "elapsedMs": prewarm_started.elapsed().as_millis() as u64,
+                                    "connectionGeneration": generation,
+                                }),
+                            );
                             let _ = prewarm_app.emit(
                                 "agent:progress",
                                 serde_json::json!({
                                     "phase": "ready",
-                                    "message": "Agent ready — New Chat to start",
+                                    "message": "Ready",
                                     "connectionGeneration": generation,
                                 }),
                             );
@@ -487,7 +521,7 @@ async fn run_command_loop(
                     let _ = app.emit(
                         "acp:error",
                         serde_json::json!({
-                            "message": "No active ACP session — use New Chat first"
+                            "message": "No active ACP session — wait for the agent to finish starting"
                         }),
                     );
                     continue;
@@ -508,6 +542,7 @@ async fn run_command_loop(
                                 continue;
                             }
                             handle.prompt_in_flight = true;
+                            handle.user_prompt_sent = true;
                         } else {
                             continue;
                         }
@@ -717,6 +752,52 @@ async fn run_command_loop(
     }
 }
 
+/// Promote the first hidden prewarmed session to the visible UI session.
+async fn publish_prewarmed_session(
+    app: &AppHandle,
+    state: &SharedState,
+    generation: u64,
+    project_path: &PathBuf,
+) -> Result<Option<String>, String> {
+    let (session_id, config_options) = {
+        let mut guard = state.lock().await;
+        let agent = guard
+            .agent_for_generation_mut(generation)
+            .ok_or_else(|| "No agent process".to_string())?;
+        let prewarmed = agent
+            .sessions
+            .iter()
+            .find(|(_, handle)| !handle.session_ready_for_ui)
+            .map(|(sid, _)| sid.clone());
+        let Some(session_id) = prewarmed else {
+            return Ok(None);
+        };
+        let config_options = agent
+            .sessions
+            .get(&session_id)
+            .map(|h| h.config_options.clone())
+            .unwrap_or_default();
+        if let Some(handle) = agent.sessions.get_mut(&session_id) {
+            handle.session_ready_for_ui = true;
+        }
+        agent.visible_session_id = Some(session_id.clone());
+        (session_id, config_options)
+    };
+
+    info!(session_id = %session_id, "Publishing prewarmed ACP session to UI");
+    let _ = app.emit(
+        "acp:session_ready",
+        serde_json::json!({
+            "sessionId": session_id,
+            "projectPath": project_path.display().to_string(),
+            "configOptions": config_options,
+            "resume": false,
+            "connectionGeneration": generation,
+        }),
+    );
+    Ok(Some(session_id))
+}
+
 /// New Chat: promote a prewarmed session (no extra RPC) or call session/new.
 async fn publish_or_create_session(
     connection: &ConnectionTo<Agent>,
@@ -736,44 +817,17 @@ async fn publish_or_create_session(
     };
 
     // If prewarm finished and UI has not claimed it, publish without another session/new.
+    if publish_prewarmed_session(app, state, generation, project_path)
+        .await?
+        .is_some()
     {
-        let mut guard = state.lock().await;
-        if let Some(agent) = guard.agent_for_generation_mut(generation) {
-            // Find any prewarmed session that is not yet visible.
-            let prewarmed = agent
-                .sessions
-                .iter()
-                .find(|(_, handle)| !handle.session_ready_for_ui)
-                .map(|(sid, _)| sid.clone());
-            if let Some(session_id) = prewarmed {
-                let config_options = agent
-                    .sessions
-                    .get(&session_id)
-                    .map(|h| h.config_options.clone())
-                    .unwrap_or_default();
-                if let Some(handle) = agent.sessions.get_mut(&session_id) {
-                    handle.session_ready_for_ui = true;
-                }
-                agent.visible_session_id = Some(session_id.clone());
-                info!(session_id = %session_id, "Publishing prewarmed ACP session to UI");
-                let _ = app.emit(
-                    "acp:session_ready",
-                    serde_json::json!({
-                        "sessionId": session_id,
-                        "projectPath": project_path.display().to_string(),
-                    "configOptions": config_options,
-                    "resume": false,
-                    "connectionGeneration": generation,
-                    }),
-                );
-                return Ok(());
-            }
-        }
+        return Ok(());
     }
 
-    // When the agent supports concurrent sessions, keep the previous visible
-    // session alive (its in-flight prompt continues in the background). Otherwise
-    // close it before allocating a new one to stay compatible with serial agents.
+    // When the agent supports concurrent sessions, keep a used previous session
+    // alive (its in-flight prompt continues in the background). Pristine sessions
+    // (compose-first auto-publish with no user prompt yet) are closed so New Chat
+    // does not stack empty chats. Serial agents always close the previous session.
     let previous_session_id = {
         let guard = state.lock().await;
         guard
@@ -783,7 +837,28 @@ async fn publish_or_create_session(
             .map(|a| a.session_id().to_string())
             .unwrap_or_default()
     };
-    if !previous_session_id.is_empty() && !concurrent_sessions {
+    let close_previous = if previous_session_id.is_empty() {
+        false
+    } else if !concurrent_sessions {
+        true
+    } else {
+        let guard = state.lock().await;
+        guard
+            .agent
+            .as_ref()
+            .and_then(|agent| {
+                agent
+                    .visible_session_id
+                    .as_ref()
+                    .and_then(|sid| agent.sessions.get(sid))
+            })
+            .is_some_and(|handle| !handle.user_prompt_sent && !handle.prompt_in_flight)
+    };
+    if close_previous {
+        info!(
+            session_id = %previous_session_id,
+            "Closing previous ACP session before New Chat"
+        );
         close_session_on_connection(
             connection,
             state,
@@ -859,7 +934,11 @@ async fn create_session_on_connection(
         .map_err(|err| format!("session/new failed: {err}"))?;
 
     let session_id = response.session_id.to_string();
-    let config_options = map_config_options(response.config_options.as_deref());
+    let modes = response.modes.clone();
+    let meta = response.meta.clone();
+    let mapped = map_config_options(response.config_options.as_deref());
+    let config_options =
+        bridge_session_config_sync(mapped, modes.as_ref(), meta.as_ref());
 
     info!(
         session_id = %session_id,
@@ -914,9 +993,107 @@ async fn create_session_on_connection(
                 "connectionGeneration": generation,
             }),
         );
+    } else {
+        let _ = app.emit(
+            "acp:config_options",
+            serde_json::json!({
+                "configOptions": config_options,
+                "sessionId": session_id,
+                "connectionGeneration": generation,
+            }),
+        );
+    }
+
+    if should_auto_refresh_config(
+        &{
+            let guard = state.lock().await;
+            guard
+                .agent
+                .as_ref()
+                .filter(|agent| agent.generation == generation)
+                .map(|agent| agent.agent_id.clone())
+                .unwrap_or_else(|| crate::agents::DEFAULT_AGENT_ID.to_string())
+        },
+        &config_options,
+        modes.as_ref(),
+        meta.as_ref(),
+    ) {
+        spawn_config_refresh(
+            connection.clone(),
+            app.clone(),
+            state.clone(),
+            session_id,
+            generation,
+            modes,
+            meta,
+        );
     }
 
     Ok(())
+}
+
+fn spawn_config_refresh(
+    connection: ConnectionTo<Agent>,
+    app: AppHandle,
+    state: SharedState,
+    session_id: String,
+    generation: u64,
+    modes: Option<agent_client_protocol::schema::v1::SessionModeState>,
+    meta: Option<serde_json::Map<String, Value>>,
+) {
+    tokio::spawn(async move {
+        let started = Instant::now();
+        let partial = {
+            let guard = state.lock().await;
+            guard
+                .agent
+                .as_ref()
+                .filter(|agent| agent.generation == generation)
+                .and_then(|agent| agent.sessions.get(&session_id))
+                .map(|handle| handle.config_options.clone())
+                .unwrap_or_default()
+        };
+        match refresh_session_config(
+            &connection,
+            &session_id,
+            modes.as_ref(),
+            meta.as_ref(),
+        )
+        .await
+        {
+            Ok(refreshed) => {
+                let merged = merge_config_options(partial, refreshed);
+                let elapsed_ms = started.elapsed().as_millis() as u64;
+                {
+                    let mut guard = state.lock().await;
+                    if let Some(agent) = guard.agent_for_generation_mut(generation) {
+                        if let Some(handle) = agent.sessions.get_mut(&session_id) {
+                            handle.config_options = merged.clone();
+                        }
+                    }
+                }
+                let _ = app.emit(
+                    "acp:config_options",
+                    serde_json::json!({
+                        "configOptions": merged,
+                        "sessionId": session_id,
+                        "connectionGeneration": generation,
+                    }),
+                );
+                let _ = app.emit(
+                    "agent:progress",
+                    serde_json::json!({
+                        "phase": "config_refresh",
+                        "elapsedMs": elapsed_ms,
+                        "connectionGeneration": generation,
+                    }),
+                );
+            }
+            Err(err) => {
+                tracing::debug!(%err, session_id = %session_id, "Config refresh skipped");
+            }
+        }
+    });
 }
 
 /// ACP `session/load` — resume an existing agent session by id.
@@ -1146,6 +1323,7 @@ fn upsert_session(
             session_id: session_id.to_string(),
             session_ready_for_ui: false,
             prompt_in_flight: false,
+            user_prompt_sent: false,
             config_options: Vec::new(),
             session_done: Arc::new(Notify::new()),
         });
@@ -1165,56 +1343,6 @@ fn build_prompt_blocks(text: &str, context_files: &[ContextFile]) -> Vec<Content
 
     blocks.push(ContentBlock::Text(TextContent::new(text.to_string())));
     blocks
-}
-
-fn map_config_options(options: Option<&[SessionConfigOption]>) -> Vec<ConfigOptionDto> {
-    options
-        .unwrap_or_default()
-        .iter()
-        .map(|option| {
-            let (current_value, values) = match &option.kind {
-                SessionConfigKind::Select(select) => {
-                    let values = match &select.options {
-                        SessionConfigSelectOptions::Ungrouped(items) => items
-                            .iter()
-                            .map(|item| ConfigOptionValueDto {
-                                value: item.value.to_string(),
-                                name: item.name.clone(),
-                                description: item.description.clone(),
-                                group: None,
-                            })
-                            .collect(),
-                        SessionConfigSelectOptions::Grouped(groups) => groups
-                            .iter()
-                            .flat_map(|group| {
-                                group.options.iter().map(|item| ConfigOptionValueDto {
-                                    value: item.value.to_string(),
-                                    name: item.name.clone(),
-                                    description: item.description.clone(),
-                                    group: Some(group.name.clone()),
-                                })
-                            })
-                            .collect(),
-                        _ => Vec::new(),
-                    };
-
-                    (select.current_value.to_string(), values)
-                }
-                SessionConfigKind::Boolean(boolean) => {
-                    (boolean.current_value.to_string(), Vec::new())
-                }
-                _ => (String::new(), Vec::new()),
-            };
-
-            ConfigOptionDto {
-                id: option.id.to_string(),
-                name: option.name.clone(),
-                category: option.category.as_ref().map(|c| format!("{c:?}")),
-                current_value,
-                options: values,
-            }
-        })
-        .collect()
 }
 
 pub fn read_context_file(project_root: &Path, relative_path: &str) -> Result<String, String> {
