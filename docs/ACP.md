@@ -78,8 +78,8 @@ The runtime spawns the command run-loop **before** the prewarm task, and bridges
 
 1. Spawn agent subprocess **once** (`opencode acp`).
 2. `initialize` → agent process ready (UI: warm, no chat session).
-3. Background prewarm (optional, Circulo): `session/new` with absolute `cwd` — **not** shown in UI until New Chat.
-4. User New Chat → publish prewarmed session **or** `session/new` if none.
+3. Background prewarm (optional, Circulo): `session/new` with absolute `cwd` — auto-published to the UI as an empty session when prewarm completes (mode/model selectors visible immediately).
+4. User sends a message or clicks New Chat → use the published session **or** `session/new` for an explicit new chat.
 5. `session/prompt` → stream `session/update` → `session/prompt` result with `stopReason`.
 
 **Never** spawn multiple agent processes for the same warm.
@@ -99,7 +99,7 @@ Circulo mitigations (still protocol-correct):
 
 1. Single-flight warm — one `opencode acp` process.
 2. Eager warm at app start; **`open_project` is non-blocking** (UI never waits 15–20s on spawn).
-3. Background `session/new` prewarm after initialize so New Chat is usually instant.
+3. Background `session/new` prewarm after initialize; auto-publish to UI so compose-first send works without clicking New Chat.
 4. Stream `agent_message_chunk` immediately; do not wait for prompt RPC completion.
 5. Optimistic assistant bubble + immutable message updates for Palot-like paint.
 
@@ -110,6 +110,14 @@ Palot talks to a **already-running OpenCode HTTP/SSE server**. Circulo uses the 
 ### OpenCode config note
 
 If `~/.config/opencode/opencode.json` enables local MCP servers (e.g. Pencil), OpenCode connects them during session setup. That adds to first `session/new` cost. Circulo does **not** invent flags to disable the user’s OpenCode config; disable MCP there if you want a lighter ACP agent.
+
+### Cursor Agent note
+
+Circulo follows the same pattern as [Zed](https://github.com/zed-industries/zed) (`crates/agent_servers/src/acp.rs`): after `session/new`, use `configOptions` when the agent returns them, or bridge `modes` for the mode selector — **without** an extra `session/set_config_option` RPC just to discover models.
+
+Cursor’s native ACP (`cursor-agent acp`) often returns modes but **not** a reliable runtime model list; forum reports confirm empty `configOptions[model]` is common. Circulo therefore skips automatic config refresh for `cursor-agent` once mode is bridged, so switching agents feels faster.
+
+To pin a model for Cursor, use the CLI at spawn time (outside Circulo today): `cursor-agent --model <id> acp` (`cursor-agent --list-models` for valid ids).
 
 ## Conventions
 
