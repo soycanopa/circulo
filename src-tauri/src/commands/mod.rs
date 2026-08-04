@@ -22,6 +22,11 @@ use crate::state::{
 };
 
 #[tauri::command]
+pub fn list_agents_cmd() -> Vec<crate::agents::AgentDescriptor> {
+    crate::agents::list_agents()
+}
+
+#[tauri::command]
 pub async fn get_project_status(state: State<'_, SharedState>) -> Result<ProjectStatus, String> {
     Ok(state.lock().await.status())
 }
@@ -92,9 +97,15 @@ pub async fn open_project_inner(
             .map_err(|err| format!("Not a directory and could not create {path}: {err}"))?;
     }
 
-    let resolved_agent_id = crate::agents::normalize_agent_id(agent_id.as_deref()).to_string();
+    let preferred = crate::persistence::load_settings()
+        .ok()
+        .and_then(|settings| settings.preferred_agent_id);
+    let resolved_agent_id = crate::agents::normalize_agent_id(
+        agent_id.as_deref().or(preferred.as_deref()),
+    )
+    .to_string();
 
-    crate::cli_resolve::resolve_opencode().map_err(|err| err)?;
+    crate::agents::ensure_agent_available(&resolved_agent_id)?;
 
     // --- Single-flight: never kill a warming agent for the same path ---
     {

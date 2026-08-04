@@ -209,7 +209,7 @@ impl CirculoState {
                 },
                 config_options: agent.config_options(),
                 capabilities: Some(agent.agent_capabilities.clone()),
-                agent_command: crate::agents::agent_command_label(&agent.agent_id).to_string(),
+                agent_command: crate::agents::agent_command_label(&agent.agent_id),
             },
             None => ProjectStatus {
                 connected: false,
@@ -219,8 +219,7 @@ impl CirculoState {
                 session_id: None,
                 config_options: Vec::new(),
                 capabilities: None,
-                agent_command: crate::agents::agent_command_label(crate::agents::DEFAULT_AGENT_ID)
-                    .to_string(),
+                agent_command: crate::agents::agent_command_label(crate::agents::DEFAULT_AGENT_ID),
             },
         }
     }
