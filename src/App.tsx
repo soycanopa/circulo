@@ -18,6 +18,7 @@ import { useTerminalBridge } from "@/hooks/use-terminal-bridge"
 import { useAppSettings } from "@/hooks/use-app-settings"
 import { useAppShortcuts } from "@/hooks/use-app-shortcuts"
 import { useBootstrapAgent } from "@/hooks/use-bootstrap"
+import { useAutomations } from "@/hooks/use-automations"
 import { useChatPersistence } from "@/hooks/use-chat-persistence"
 import { reconcileSessionFromProjectStatus } from "@/hooks/session-reconcile"
 import { exportTranscriptMarkdown } from "@/lib/export-transcript"
@@ -34,6 +35,7 @@ import {
 	createSession,
 	createWorkspace,
 	deleteChatTranscript,
+	deleteAutomation,
 	deleteWorkspace,
 	getDefaultChatsPath,
 	getAppSettings,
@@ -46,6 +48,7 @@ import {
 	pickDirectory,
 	renameChatTranscript,
 	seedChatTranscript,
+	sendPrompt,
 	setActiveWorkspace,
 	setVisibleSession,
 } from "@/lib/tauri"
@@ -83,6 +86,7 @@ export default function App() {
 	useAppSettings()
 	const { refreshSessions, refreshPath, refreshAllWorkspaceLists } =
 		useChatPersistence()
+	const { automations, refresh: refreshAutomations } = useAutomations()
 
 	const projectPath = useAtomValue(projectPathAtom)
 	const sessionId = useAtomValue(activeSessionIdAtom)
@@ -437,6 +441,22 @@ export default function App() {
 		},
 	})
 
+	const handleRunAutomation = useCallback(
+		async (prompt: string) => {
+			if (!sessionId) {
+				setError("Start a New Chat before running an automation")
+				return
+			}
+			setError(null)
+			try {
+				await sendPrompt(prompt, [])
+			} catch (err) {
+				setError(err instanceof Error ? err.message : "Failed to run automation")
+			}
+		},
+		[sessionId, setError],
+	)
+
 	const commandItems = useMemo(
 		() => [
 			{
@@ -457,6 +477,11 @@ export default function App() {
 				label: "Settings",
 				onSelect: () => setSettingsOpen(true),
 			},
+			...automations.map((automation) => ({
+				id: `automation-${automation.id}`,
+				label: `Run: ${automation.title}`,
+				onSelect: () => void handleRunAutomation(automation.prompt),
+			})),
 			{
 				id: "diff-panel",
 				label: diffPanelOpen ? "Close Diff Panel" : "Open Diff Panel",
@@ -479,9 +504,11 @@ export default function App() {
 				: []),
 		],
 		[
+			automations,
 			diffPanelOpen,
 			handleExportTranscript,
 			handleNewChat,
+			handleRunAutomation,
 			messages.length,
 			terminalDrawerOpen,
 			toggleDiffPanel,
@@ -831,6 +858,12 @@ export default function App() {
 						prev ? { ...prev, preferredAgentId: agentId } : prev,
 					)
 					setAgentId(agentId)
+				}}
+				automations={automations}
+				onAutomationsChange={() => void refreshAutomations()}
+				onDeleteAutomation={async (id) => {
+					await deleteAutomation(id)
+					await refreshAutomations()
 				}}
 			/>
 			<OpenProjectModal

@@ -1,8 +1,9 @@
 use crate::persistence::{
-    create_workspace, delete_chat_transcript, delete_workspace, list_chat_sessions,
-    load_chat_transcript, load_settings, rename_chat_transcript, save_chat_transcript,
-    save_settings, seed_chat_transcript, set_active_workspace, workspace_chats_dir,
-    workspace_entry_path, AppSettings, ChatSessionSummary, StoredChatMessage, StoredTranscript,
+    create_workspace, delete_automation, delete_chat_transcript, delete_workspace, list_automations,
+    list_chat_sessions, load_chat_transcript, load_settings, rename_chat_transcript,
+    save_automation, save_chat_transcript, save_settings, seed_chat_transcript, set_active_workspace,
+    workspace_chats_dir, workspace_entry_path, AppSettings, Automation, ChatSessionSummary,
+    StoredChatMessage, StoredTranscript,
 };
 
 #[tauri::command]
@@ -11,6 +12,21 @@ pub fn set_preferred_agent_cmd(agent_id: String) -> Result<AppSettings, String> 
     settings.preferred_agent_id = Some(agent_id);
     save_settings(&settings)?;
     load_settings()
+}
+
+#[tauri::command]
+pub fn list_automations_cmd() -> Result<Vec<Automation>, String> {
+    list_automations()
+}
+
+#[tauri::command]
+pub fn save_automation_cmd(title: String, prompt: String) -> Result<Automation, String> {
+    save_automation(title, prompt)
+}
+
+#[tauri::command]
+pub fn delete_automation_cmd(id: String) -> Result<(), String> {
+    delete_automation(&id)
 }
 
 #[tauri::command]

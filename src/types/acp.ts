@@ -153,3 +153,11 @@ export interface AgentDescriptor {
 	command: string
 	available: boolean
 }
+
+export interface Automation {
+	id: string
+	title: string
+	prompt: string
+	createdAt: number
+	updatedAt: number
+}

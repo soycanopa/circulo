@@ -1,7 +1,12 @@
-import { X } from "lucide-react"
-import { getDefaultChatsPath, listAgents, setPreferredAgent } from "@/lib/tauri"
+import { Trash2, X } from "lucide-react"
+import {
+	getDefaultChatsPath,
+	listAgents,
+	saveAutomation,
+	setPreferredAgent,
+} from "@/lib/tauri"
 import { useEffect, useState } from "react"
-import type { AgentDescriptor } from "@/types/acp"
+import type { AgentDescriptor, Automation } from "@/types/acp"
 
 interface SettingsPanelProps {
 	open: boolean
@@ -9,6 +14,9 @@ interface SettingsPanelProps {
 	agentCommand: string
 	preferredAgentId?: string | null
 	onPreferredAgentChange?: (agentId: string) => void
+	automations: Automation[]
+	onAutomationsChange: () => void
+	onDeleteAutomation: (id: string) => Promise<void>
 }
 
 export function SettingsPanel({
@@ -17,12 +25,17 @@ export function SettingsPanel({
 	agentCommand,
 	preferredAgentId,
 	onPreferredAgentChange,
+	automations,
+	onAutomationsChange,
+	onDeleteAutomation,
 }: SettingsPanelProps) {
 	const [chatsPath, setChatsPath] = useState("—")
 	const [agents, setAgents] = useState<AgentDescriptor[]>([])
 	const [selectedAgentId, setSelectedAgentId] = useState(
 		preferredAgentId ?? "opencode",
 	)
+	const [title, setTitle] = useState("")
+	const [prompt, setPrompt] = useState("")
 	const [saving, setSaving] = useState(false)
 
 	useEffect(() => {
@@ -41,6 +54,19 @@ export function SettingsPanel({
 		try {
 			await setPreferredAgent(agentId)
 			onPreferredAgentChange?.(agentId)
+		} finally {
+			setSaving(false)
+		}
+	}
+
+	async function handleSaveAutomation() {
+		if (!title.trim() || !prompt.trim()) return
+		setSaving(true)
+		try {
+			await saveAutomation(title.trim(), prompt.trim())
+			setTitle("")
+			setPrompt("")
+			onAutomationsChange()
 		} finally {
 			setSaving(false)
 		}
@@ -67,7 +93,7 @@ export function SettingsPanel({
 						<X className="size-4" />
 					</button>
 				</div>
-				<div className="space-y-4 px-4 py-4 text-xs">
+				<div className="max-h-[70vh] space-y-4 overflow-y-auto px-4 py-4 text-xs">
 					<div>
 						<div className="text-[11px] uppercase tracking-wider text-muted">
 							Agent
@@ -105,6 +131,61 @@ export function SettingsPanel({
 							(program + args).
 						</p>
 					</div>
+
+					<div>
+						<div className="text-[11px] uppercase tracking-wider text-muted">
+							Automations
+						</div>
+						<p className="mt-1 text-[11px] text-muted">
+							Saved prompts appear in the command palette (⌘K).
+						</p>
+						{automations.length > 0 ? (
+							<ul className="mt-2 space-y-1">
+								{automations.map((item) => (
+									<li
+										key={item.id}
+										className="flex items-center justify-between gap-2 rounded border border-border bg-black/20 px-2 py-1.5"
+									>
+										<span className="truncate text-fg">{item.title}</span>
+										<button
+											type="button"
+											onClick={() => void onDeleteAutomation(item.id)}
+											className="shrink-0 rounded p-1 text-muted hover:bg-white/5 hover:text-red-300"
+											title="Delete automation"
+										>
+											<Trash2 className="size-3.5" />
+										</button>
+									</li>
+								))}
+							</ul>
+						) : (
+							<p className="mt-2 text-muted">No automations yet.</p>
+						)}
+						<div className="mt-3 space-y-2">
+							<input
+								value={title}
+								onChange={(event) => setTitle(event.target.value)}
+								placeholder="Title"
+								className="w-full rounded-md border border-border bg-black/20 px-2 py-1.5 text-sm text-fg"
+							/>
+							<textarea
+								value={prompt}
+								onChange={(event) => setPrompt(event.target.value)}
+								placeholder="Prompt to send"
+								rows={3}
+								className="w-full resize-none rounded-md border border-border bg-black/20 px-2 py-1.5 text-sm text-fg"
+							/>
+							<button
+								type="button"
+								disabled={saving || !title.trim() || !prompt.trim()}
+								onClick={() => void handleSaveAutomation()}
+								className="rounded-md border border-border px-2 py-1 text-[11px] text-fg transition hover:bg-white/5 disabled:opacity-40"
+							>
+								Save automation
+							</button>
+						</div>
+					</div>
+
 					<div>
 						<div className="text-[11px] uppercase tracking-wider text-muted">
 							General chats folder
@@ -116,7 +197,7 @@ export function SettingsPanel({
 							About
 						</div>
 						<p className="mt-1 text-muted">
-							Circulo v0.3.0 — desktop ACP client
+							Circulo v0.4.0 — desktop ACP client
 						</p>
 					</div>
 				</div>
