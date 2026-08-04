@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -207,8 +208,23 @@ pub struct PermissionWaiter {
     pub session_id: String,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AgentPoolKey {
+    pub project_path: PathBuf,
+    pub agent_id: String,
+}
+
+impl Hash for AgentPoolKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.project_path.to_string_lossy().hash(state);
+        self.agent_id.hash(state);
+    }
+}
+
 pub struct CirculoState {
     pub agent: Option<ActiveAgent>,
+    /// Standby warm processes keyed by (cwd, agent_id).
+    pub warm_pool: HashMap<AgentPoolKey, ActiveAgent>,
     pub next_generation: u64,
     pub permission_waiters: HashMap<String, PermissionWaiter>,
 }
@@ -217,6 +233,7 @@ impl CirculoState {
     pub fn new() -> Self {
         Self {
             agent: None,
+            warm_pool: HashMap::new(),
             next_generation: 0,
             permission_waiters: HashMap::new(),
         }
@@ -258,16 +275,42 @@ impl CirculoState {
         }
     }
 
+    pub fn is_known_generation(&self, generation: u64) -> bool {
+        self.agent_for_generation(generation).is_some()
+    }
+
     pub fn is_current_generation(&self, generation: u64) -> bool {
         self.agent
             .as_ref()
             .is_some_and(|agent| agent.generation == generation)
     }
 
+    pub fn is_pooled_generation(&self, generation: u64) -> bool {
+        self.warm_pool
+            .values()
+            .any(|agent| agent.generation == generation)
+    }
+
+    pub fn agent_for_generation(&self, generation: u64) -> Option<&ActiveAgent> {
+        if let Some(agent) = &self.agent {
+            if agent.generation == generation {
+                return Some(agent);
+            }
+        }
+        self.warm_pool
+            .values()
+            .find(|agent| agent.generation == generation)
+    }
+
     pub fn agent_for_generation_mut(&mut self, generation: u64) -> Option<&mut ActiveAgent> {
-        self.agent
-            .as_mut()
-            .filter(|agent| agent.generation == generation)
+        if let Some(agent) = &mut self.agent {
+            if agent.generation == generation {
+                return Some(agent);
+            }
+        }
+        self.warm_pool
+            .values_mut()
+            .find(|agent| agent.generation == generation)
     }
 }
 
