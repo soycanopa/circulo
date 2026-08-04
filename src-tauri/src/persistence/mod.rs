@@ -1,6 +1,8 @@
+mod automations;
 mod config;
 mod transcripts;
 
+pub use automations::{delete_automation, list_automations, save_automation, Automation};
 pub use config::{
     active_workspace_chats_path, create_workspace, delete_workspace, load_settings, save_settings,
     set_active_workspace, touch_recent_project, workspace_chats_dir, workspace_entry_path,

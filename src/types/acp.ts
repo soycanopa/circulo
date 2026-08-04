@@ -130,3 +130,11 @@ export interface AppSettings {
 	workspaces: WorkspaceEntry[]
 	activeWorkspaceId: string | null
 }
+
+export interface Automation {
+	id: string
+	title: string
+	prompt: string
+	createdAt: number
+	updatedAt: number
+}

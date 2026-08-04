@@ -31,7 +31,7 @@ This document records product priorities after MVP (F0–F10). See [PRD.md](./PR
 
 - **v0.2** — Terminal drawer: PTY host in Rust, ACP terminal RPC bridge, bottom/side panel in React.
 - **v0.3** — Second agent in registry + minimal agent picker in Settings.
-- **v0.4** — Automations MVP (saved prompts / scheduled runs) if validated with users.
+- **v0.4** — Automations MVP (saved prompts / scheduled runs) if validated with users. *(Branch: `v0.4-automations` — saved prompts + command palette)*
 
 ## References
 

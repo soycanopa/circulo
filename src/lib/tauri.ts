@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import type {
 	AgentCapabilities,
 	AppSettings,
+	Automation,
 	ChatMessage,
 	ChatSessionSummary,
 	ConfigOption,
@@ -115,6 +116,21 @@ export async function completeDirectoryPath(
 
 export async function getAppSettings(): Promise<AppSettings> {
 	return invoke("get_app_settings")
+}
+
+export async function listAutomations(): Promise<Automation[]> {
+	return invoke("list_automations_cmd")
+}
+
+export async function saveAutomation(
+	title: string,
+	prompt: string,
+): Promise<Automation> {
+	return invoke("save_automation_cmd", { title, prompt })
+}
+
+export async function deleteAutomation(id: string): Promise<void> {
+	return invoke("delete_automation_cmd", { id })
 }
 
 export async function createWorkspace(): Promise<AppSettings> {
