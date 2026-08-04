@@ -30,6 +30,18 @@ use crate::acp::config_bridge::{
 };
 use crate::acp::terminal::TerminalManager;
 
+async fn emit_if_active(
+    app: &AppHandle,
+    state: &SharedState,
+    generation: u64,
+    event: &str,
+    payload: serde_json::Value,
+) {
+    if state.lock().await.is_current_generation(generation) {
+        let _ = app.emit(event, payload);
+    }
+}
+
 pub async fn start_agent_connection(
     app: AppHandle,
     state: SharedState,
@@ -40,8 +52,7 @@ pub async fn start_agent_connection(
     let agent_id = {
         let guard = state.lock().await;
         guard
-            .agent
-            .as_ref()
+            .agent_for_generation(generation)
             .map(|a| a.agent_id.clone())
             .unwrap_or_else(|| crate::agents::DEFAULT_AGENT_ID.to_string())
     };
@@ -280,17 +291,21 @@ pub async fn start_agent_connection(
 
             async move {
                 info!(path = %project_path.display(), generation, "Initializing ACP agent");
-                if !state.lock().await.is_current_generation(generation) {
+                if !state.lock().await.is_known_generation(generation) {
                     return Ok(());
                 }
-                let _ = app.emit(
+                emit_if_active(
+                    &app,
+                    &state,
+                    generation,
                     "agent:progress",
                     serde_json::json!({
                         "phase": "initialize",
                         "message": format!("Connecting to {agent_label}…"),
                         "connectionGeneration": generation,
                     }),
-                );
+                )
+                .await;
                 let init_started = Instant::now();
                 let init_response = match connection
                     .send_request(
@@ -308,13 +323,17 @@ pub async fn start_agent_connection(
                         response
                     }
                     Err(err) => {
-                        let _ = app.emit(
+                        emit_if_active(
+                            &app,
+                            &state,
+                            generation,
                             "acp:error",
                             serde_json::json!({
                                 "message": format!("ACP initialize failed: {err}"),
                                 "connectionGeneration": generation,
                             }),
-                        );
+                        )
+                        .await;
                         // Unblock open_project waiters.
                         let mut guard = state.lock().await;
                         if let Some(agent) = guard.agent_for_generation_mut(generation) {
@@ -342,7 +361,10 @@ pub async fn start_agent_connection(
                     }
                 }
 
-                let _ = app.emit(
+                emit_if_active(
+                    &app,
+                    &state,
+                    generation,
                     "agent:progress",
                     serde_json::json!({
                         "phase": "initialize",
@@ -350,24 +372,33 @@ pub async fn start_agent_connection(
                         "elapsedMs": init_started.elapsed().as_millis() as u64,
                         "connectionGeneration": generation,
                     }),
-                );
+                )
+                .await;
 
-                let _ = app.emit(
+                emit_if_active(
+                    &app,
+                    &state,
+                    generation,
                     "agent:ready",
                     serde_json::json!({
                         "projectPath": project_path.display().to_string(),
                         "capabilities": agent_capabilities,
                         "connectionGeneration": generation,
                     }),
-                );
-                let _ = app.emit(
+                )
+                .await;
+                emit_if_active(
+                    &app,
+                    &state,
+                    generation,
                     "agent:progress",
                     serde_json::json!({
                         "phase": "ready",
                         "message": format!("{agent_label} ready — preparing session…"),
                         "connectionGeneration": generation,
                     }),
-                );
+                )
+                .await;
 
                 // Unblock open_project waiters after initialize only (ACP: agent ready, no UI session yet).
                 {
@@ -427,14 +458,18 @@ pub async fn start_agent_connection(
                             return;
                         }
                     }
-                    let _ = prewarm_app.emit(
+                    emit_if_active(
+                        &prewarm_app,
+                        &prewarm_state,
+                        generation,
                         "agent:progress",
                         serde_json::json!({
                             "phase": "session_prewarm",
                             "message": "Preparando sesión…",
                             "connectionGeneration": generation,
                         }),
-                    );
+                    )
+                    .await;
                     let prewarm_started = Instant::now();
                     match create_session_on_connection(
                         &prewarm_connection,
@@ -449,7 +484,10 @@ pub async fn start_agent_connection(
                     {
                         Ok(()) => {
                             info!("Session prewarm complete (hidden until first message)");
-                            let _ = prewarm_app.emit(
+                            emit_if_active(
+                                &prewarm_app,
+                                &prewarm_state,
+                                generation,
                                 "agent:progress",
                                 serde_json::json!({
                                     "phase": "session_prewarm",
@@ -457,15 +495,20 @@ pub async fn start_agent_connection(
                                     "elapsedMs": prewarm_started.elapsed().as_millis() as u64,
                                     "connectionGeneration": generation,
                                 }),
-                            );
-                            let _ = prewarm_app.emit(
+                            )
+                            .await;
+                            emit_if_active(
+                                &prewarm_app,
+                                &prewarm_state,
+                                generation,
                                 "agent:progress",
                                 serde_json::json!({
                                     "phase": "ready",
                                     "message": "Ready",
                                     "connectionGeneration": generation,
                                 }),
-                            );
+                            )
+                            .await;
                         }
                         Err(err) => {
                             error!(%err, "Session prewarm failed (New Chat will create on demand)");
@@ -994,23 +1037,25 @@ async fn create_session_on_connection(
             }),
         );
     } else {
-        let _ = app.emit(
+        emit_if_active(
+            app,
+            state,
+            generation,
             "acp:config_options",
             serde_json::json!({
                 "configOptions": config_options,
                 "sessionId": session_id,
                 "connectionGeneration": generation,
             }),
-        );
+        )
+        .await;
     }
 
     if should_auto_refresh_config(
         &{
             let guard = state.lock().await;
             guard
-                .agent
-                .as_ref()
-                .filter(|agent| agent.generation == generation)
+                .agent_for_generation(generation)
                 .map(|agent| agent.agent_id.clone())
                 .unwrap_or_else(|| crate::agents::DEFAULT_AGENT_ID.to_string())
         },
