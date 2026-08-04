@@ -95,6 +95,7 @@ export interface OpencodeStatus {
 export interface ChatSessionSummary {
 	sessionId: string
 	title: string
+	createdAt?: number
 	updatedAt: number
 }
 
@@ -145,6 +146,9 @@ export interface AppSettings {
 	workspaces: WorkspaceEntry[]
 	activeWorkspaceId: string | null
 	preferredAgentId?: string | null
+	enabledAgentIds?: string[]
+	favoriteModelIds?: string[]
+	autoApproveEnabled?: boolean
 }
 
 export interface AgentDescriptor {

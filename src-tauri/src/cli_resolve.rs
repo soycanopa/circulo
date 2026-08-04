@@ -39,6 +39,14 @@ pub fn resolve_opencode() -> Result<PathBuf, String> {
     resolve_binary("opencode", "OPENCODE_BIN")
 }
 
+pub fn resolve_cursor_agent() -> Result<PathBuf, String> {
+    resolve_binary("cursor-agent", "CURSOR_AGENT_BIN")
+}
+
+pub fn resolve_grok() -> Result<PathBuf, String> {
+    resolve_binary("grok", "GROK_BIN")
+}
+
 fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
@@ -60,6 +68,12 @@ fn default_candidates(program: &str) -> Vec<PathBuf> {
     if program == "opencode" {
         if let Some(home) = home_dir() {
             paths.push(home.join(".opencode/bin/opencode"));
+        }
+    }
+
+    if program == "grok" {
+        if let Some(home) = home_dir() {
+            paths.push(home.join(".grok/bin/grok"));
         }
     }
 

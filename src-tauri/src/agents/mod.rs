@@ -3,9 +3,11 @@ use std::path::Path;
 use agent_client_protocol::AcpAgent;
 use serde::Serialize;
 
-use crate::cli_resolve::resolve_opencode;
+use crate::cli_resolve::{resolve_cursor_agent, resolve_grok, resolve_opencode};
 
 pub const AGENT_ID_OPENCODE: &str = "opencode";
+pub const AGENT_ID_CURSOR: &str = "cursor-agent";
+pub const AGENT_ID_GROK: &str = "grok";
 pub const AGENT_ID_CUSTOM: &str = "custom";
 pub const DEFAULT_AGENT_ID: &str = AGENT_ID_OPENCODE;
 
@@ -31,6 +33,22 @@ pub fn list_agents() -> Vec<AgentDescriptor> {
         available: opencode_available,
     });
 
+    let cursor_available = resolve_cursor_agent().is_ok();
+    agents.push(AgentDescriptor {
+        id: AGENT_ID_CURSOR.to_string(),
+        label: "Cursor Agent".to_string(),
+        command: "cursor-agent acp".to_string(),
+        available: cursor_available,
+    });
+
+    let grok_available = resolve_grok().is_ok();
+    agents.push(AgentDescriptor {
+        id: AGENT_ID_GROK.to_string(),
+        label: "Grok".to_string(),
+        command: "grok agent stdio".to_string(),
+        available: grok_available,
+    });
+
     if let Some((program, args)) = custom_agent_spec() {
         let command = format!("{} {}", program, args.join(" "));
         let available = command_exists(&program);
@@ -45,12 +63,53 @@ pub fn list_agents() -> Vec<AgentDescriptor> {
     agents
 }
 
+pub fn is_known_agent_id(agent_id: &str) -> bool {
+    list_agents().iter().any(|a| a.id == agent_id)
+}
+
 pub fn normalize_agent_id(agent_id: Option<&str>) -> &'static str {
     match agent_id {
         Some(id) if id == AGENT_ID_OPENCODE => AGENT_ID_OPENCODE,
+        Some(id) if id == AGENT_ID_CURSOR => AGENT_ID_CURSOR,
+        Some(id) if id == AGENT_ID_GROK => AGENT_ID_GROK,
         Some(id) if id == AGENT_ID_CUSTOM && custom_agent_spec().is_some() => AGENT_ID_CUSTOM,
         Some(_) | None => DEFAULT_AGENT_ID,
     }
+}
+
+/// Pick the agent to use: preferred if enabled and known, else first enabled+available.
+pub fn resolve_enabled_agent_id(
+    preferred: Option<&str>,
+    enabled_ids: &[String],
+) -> Result<String, String> {
+    if enabled_ids.is_empty() {
+        return Err("At least one agent must be enabled".to_string());
+    }
+
+    let agents = list_agents();
+    let enabled_set: std::collections::HashSet<&str> =
+        enabled_ids.iter().map(|s| s.as_str()).collect();
+
+    if let Some(pref) = preferred {
+        let normalized = normalize_agent_id(Some(pref));
+        if enabled_set.contains(normalized) {
+            if let Some(hit) = agents.iter().find(|a| a.id == normalized) {
+                if hit.available {
+                    return Ok(normalized.to_string());
+                }
+            }
+        }
+    }
+
+    for id in enabled_ids {
+        if let Some(hit) = agents.iter().find(|a| a.id == id.as_str()) {
+            if hit.available {
+                return Ok(hit.id.clone());
+            }
+        }
+    }
+
+    Err("No enabled agent is available on this system".to_string())
 }
 
 pub fn agent_command_label(agent_id: &str) -> String {
@@ -61,9 +120,19 @@ pub fn agent_command_label(agent_id: &str) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+pub fn agent_progress_label(agent_id: &str) -> String {
+    list_agents()
+        .into_iter()
+        .find(|a| a.id == agent_id)
+        .map(|a| a.label)
+        .unwrap_or_else(|| agent_id.to_string())
+}
+
 pub fn build_agent(agent_id: &str, _project_path: &Path) -> Result<AcpAgent, String> {
     match agent_id {
         AGENT_ID_OPENCODE => build_opencode_agent(),
+        AGENT_ID_CURSOR => build_cursor_agent(),
+        AGENT_ID_GROK => build_grok_agent(),
         AGENT_ID_CUSTOM => build_custom_agent(),
         other => Err(format!("Unsupported agent: {other}")),
     }
@@ -89,6 +158,22 @@ pub fn build_opencode_agent() -> Result<AcpAgent, String> {
     let opencode = resolve_opencode()?;
     AcpAgent::from_args([opencode.display().to_string(), "acp".to_string()])
         .map_err(|err| format!("Failed to configure OpenCode agent: {err}"))
+}
+
+pub fn build_cursor_agent() -> Result<AcpAgent, String> {
+    let cursor = resolve_cursor_agent()?;
+    AcpAgent::from_args([cursor.display().to_string(), "acp".to_string()])
+        .map_err(|err| format!("Failed to configure Cursor Agent: {err}"))
+}
+
+pub fn build_grok_agent() -> Result<AcpAgent, String> {
+    let grok = resolve_grok()?;
+    AcpAgent::from_args([
+        grok.display().to_string(),
+        "agent".to_string(),
+        "stdio".to_string(),
+    ])
+    .map_err(|err| format!("Failed to configure Grok agent: {err}"))
 }
 
 fn build_custom_agent() -> Result<AcpAgent, String> {
@@ -123,8 +208,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lists_opencode_agent() {
+    fn lists_builtin_agents() {
         let agents = list_agents();
         assert!(agents.iter().any(|a| a.id == AGENT_ID_OPENCODE));
+        assert!(agents.iter().any(|a| a.id == AGENT_ID_CURSOR));
+        assert!(agents.iter().any(|a| a.id == AGENT_ID_GROK));
+    }
+
+    #[test]
+    fn normalize_cursor_agent_id() {
+        assert_eq!(
+            normalize_agent_id(Some(AGENT_ID_CURSOR)),
+            AGENT_ID_CURSOR
+        );
+    }
+
+    #[test]
+    fn normalize_grok_agent_id() {
+        assert_eq!(normalize_agent_id(Some(AGENT_ID_GROK)), AGENT_ID_GROK);
     }
 }

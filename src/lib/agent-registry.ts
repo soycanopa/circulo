@@ -6,6 +6,9 @@ export interface AgentDescriptor {
 /** Frontend mirror of Rust agent registry — extend when adding agents. */
 export const KNOWN_AGENTS: Record<string, AgentDescriptor> = {
 	opencode: { id: "opencode", label: "OpenCode" },
+	"cursor-agent": { id: "cursor-agent", label: "Cursor Agent" },
+	grok: { id: "grok", label: "Grok" },
+	custom: { id: "custom", label: "Custom ACP" },
 }
 
 export function agentLabel(agentId: string | null | undefined): string {
