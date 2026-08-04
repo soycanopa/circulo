@@ -4,12 +4,14 @@ mod cli_resolve;
 mod commands;
 mod persistence;
 mod state;
+mod user_terminal;
 
 use std::sync::Arc;
 
 use state::{CirculoState, SharedState};
 use tauri::Manager;
 use tracing_subscriber::EnvFilter;
+use user_terminal::UserTerminalState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,6 +27,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(shared_state)
+        .manage(UserTerminalState::default())
         .setup(|app| {
             // Native blur for frost depth; CSS applies a strong neutral gray veil so
             // wallpaper hue barely tints sidebars (gray plate + some transparency).
@@ -49,6 +52,11 @@ pub fn run() {
             commands::get_project_status,
             commands::get_default_chats_path,
             commands::get_home_path,
+            user_terminal::spawn_user_terminal,
+            user_terminal::write_user_terminal,
+            user_terminal::resize_user_terminal,
+            user_terminal::close_user_terminal,
+            user_terminal::close_all_user_terminals,
             commands::check_opencode,
             commands::open_project,
             commands::close_project,
