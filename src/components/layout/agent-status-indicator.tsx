@@ -1,3 +1,4 @@
+import { useAtomValue } from "jotai"
 import { Monitor } from "lucide-react"
 import {
 	aggregateAgentStatus,
@@ -6,6 +7,7 @@ import {
 	statusLabel,
 } from "@/lib/agent-registry"
 import { cn } from "@/lib/utils"
+import { warmTimingsAtom, type WarmTimings } from "@/stores/atoms"
 
 interface AgentStatusIndicatorProps {
 	agents: AgentRuntimeState[]
@@ -21,6 +23,25 @@ const rowDotClass: Record<AgentConnectionStatus, string> = {
 	ready: "bg-emerald-400",
 	loading: "animate-pulse bg-amber-400",
 	disconnected: "bg-red-400/90",
+}
+
+function formatWarmMs(ms: number): string {
+	if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`
+	return `${ms}ms`
+}
+
+function formatWarmTimings(timings: WarmTimings): string | null {
+	const parts: string[] = []
+	if (timings.initializeMs !== undefined) {
+		parts.push(`Initialize: ${formatWarmMs(timings.initializeMs)}`)
+	}
+	if (timings.prewarmMs !== undefined) {
+		parts.push(`Prewarm: ${formatWarmMs(timings.prewarmMs)}`)
+	}
+	if (timings.configRefreshMs !== undefined) {
+		parts.push(`Config: ${formatWarmMs(timings.configRefreshMs)}`)
+	}
+	return parts.length > 0 ? parts.join(" · ") : null
 }
 
 function AgentTooltipRow({ agent }: { agent: AgentRuntimeState }) {
@@ -49,25 +70,27 @@ function AgentTooltipRow({ agent }: { agent: AgentRuntimeState }) {
 export function AgentStatusIndicator({ agents }: AgentStatusIndicatorProps) {
 	const status = aggregateAgentStatus(agents)
 	const primary = agents[0]
+	const warmTimings = useAtomValue(warmTimingsAtom)
+	const warmSummary = formatWarmTimings(warmTimings)
 
 	return (
-		<div className="group relative min-w-0">
+		<div className="group relative min-w-0 overflow-visible">
 			<button
 				type="button"
-				className="flex min-w-0 items-center gap-2 rounded-md py-0.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-white/20"
+				className="flex min-w-0 items-center gap-2 overflow-visible rounded-md py-0.5 pr-0.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-white/20"
 				aria-label={`ACP agent status: ${statusLabel(status)}`}
 			>
-				<span className="relative shrink-0">
-					<Monitor className="size-4 text-muted" aria-hidden />
+				<span className="relative flex size-[18px] shrink-0 items-center justify-center overflow-visible">
+					<Monitor className="size-3.5 text-muted" aria-hidden />
 					<span
 						className={cn(
-							"absolute -bottom-px -right-px size-2 rounded-full border border-frame",
+							"absolute bottom-0 right-0 size-1.5 rounded-full ring-1 ring-frame",
 							dotClass[status],
 						)}
 						aria-hidden
 					/>
 				</span>
-				<span className="text-[11px] text-muted">ACP</span>
+				<span className="truncate text-[11px] text-muted">ACP</span>
 			</button>
 
 			<div
@@ -90,6 +113,11 @@ export function AgentStatusIndicator({ agents }: AgentStatusIndicatorProps) {
 				{primary ? (
 					<p className="mt-2 border-t border-border pt-2 text-[10px] text-muted/80">
 						Active: {primary.label}
+					</p>
+				) : null}
+				{warmSummary ? (
+					<p className="mt-2 border-t border-border pt-2 font-mono text-[10px] leading-snug text-muted/80">
+						{warmSummary}
 					</p>
 				) : null}
 			</div>

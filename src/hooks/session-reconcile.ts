@@ -21,6 +21,7 @@ const EMPTY_SESSION: SessionUiState = {
 	promptInFlight: false,
 	status: "idle",
 	configOptions: [],
+	contextUsage: null,
 }
 
 function ensureSessionSlot(store: Store, sessionId: string) {

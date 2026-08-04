@@ -37,6 +37,7 @@ function activate(store: ReturnType<typeof createStore>, sessionId: string) {
 			promptInFlight: false,
 			status: "idle",
 			configOptions: [],
+			contextUsage: null,
 		},
 	})
 }
@@ -82,6 +83,7 @@ describe("processAcpEvent", () => {
 				promptInFlight: true,
 				status: "awaiting_permission",
 				configOptions: [],
+				contextUsage: null,
 			},
 		})
 
@@ -196,6 +198,7 @@ describe("processAcpEvent", () => {
 				promptInFlight: false,
 				status: "idle",
 				configOptions: [],
+				contextUsage: null,
 			},
 		})
 
@@ -365,6 +368,7 @@ describe("visible_session_changed", () => {
 				promptInFlight: false,
 				status: "idle",
 				configOptions: [],
+				contextUsage: null,
 			},
 		})
 

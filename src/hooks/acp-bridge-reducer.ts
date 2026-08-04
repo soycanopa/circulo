@@ -1,5 +1,6 @@
 import type { Store } from "jotai/vanilla/store"
-import { appendStreamToMessages, applySessionUpdate } from "@/lib/acp-parser"
+import { appendStreamToMessages, applySessionUpdate, parseUsageUpdate } from "@/lib/acp-parser"
+import { reconcileFromStatus } from "@/hooks/session-reconcile"
 import {
 	activePermissionAtom,
 	activeSessionIdAtom,
@@ -12,6 +13,7 @@ import {
 	historyViewSessionIdAtom,
 	pendingPermissionsAtom,
 	progressMessageAtom,
+	warmTimingsAtom,
 	projectPathAtom,
 	sessionStatusAtom,
 	sessionsAtom,
@@ -55,7 +57,15 @@ type AcpBridgeEvent =
 				connectionGeneration: number
 			}
 	  }
-	| { type: "progress"; payload: { message?: string } }
+	| {
+			type: "progress"
+			payload: {
+				phase?: string
+				message?: string
+				elapsedMs?: number
+				connectionGeneration?: number
+			}
+	  }
 	| { type: "session_update"; payload: unknown }
 	| { type: "permission_request"; payload: PermissionRequest }
 	| {
@@ -106,6 +116,7 @@ const EMPTY_SESSION: SessionUiState = {
 	promptInFlight: false,
 	status: "idle",
 	configOptions: [],
+	contextUsage: null,
 }
 
 function ensureSession(store: Store, sessionId: string): SessionUiState {
@@ -157,6 +168,9 @@ export function processAcpEvent(
 			store.set(sessionStatusAtom, "idle")
 			store.set(progressMessageAtom, null)
 			store.set(errorMessageAtom, null)
+			void reconcileFromStatus(store).catch(() => {
+				// Non-fatal: invoke may be unavailable before listeners attach (tests).
+			})
 			return
 		case "session_ready": {
 			if (
@@ -177,6 +191,7 @@ export function processAcpEvent(
 				updateSession(store, event.payload.sessionId, {
 					messages: [],
 					streaming: "",
+					contextUsage: null,
 				})
 				setStreamFor(refs, event.payload.sessionId, "")
 			}
@@ -216,8 +231,29 @@ export function processAcpEvent(
 			return
 		}
 		case "progress":
+			if (
+				isStaleGeneration(store, event.payload.connectionGeneration)
+			) {
+				return
+			}
 			if (event.payload.message) {
 				store.set(progressMessageAtom, event.payload.message)
+			}
+			if (event.payload.elapsedMs !== undefined) {
+				const phase = event.payload.phase
+				const elapsed = event.payload.elapsedMs
+				store.set(warmTimingsAtom, (prev) => {
+					if (phase === "initialize") {
+						return { ...prev, initializeMs: elapsed }
+					}
+					if (phase === "session_prewarm") {
+						return { ...prev, prewarmMs: elapsed }
+					}
+					if (phase === "config_refresh") {
+						return { ...prev, configRefreshMs: elapsed }
+					}
+					return prev
+				})
 			}
 			return
 		case "session_update": {
@@ -245,6 +281,10 @@ export function processAcpEvent(
 				messages: result.messages,
 				streaming: result.streamingText,
 			})
+			const usage = parseUsageUpdate(event.payload)
+			if (usage) {
+				updateSession(store, eventSessionId, { contextUsage: usage })
+			}
 			if (result.didStream) {
 				updateSession(store, eventSessionId, {
 					promptInFlight: true,
@@ -279,18 +319,15 @@ export function processAcpEvent(
 			return
 		}
 		case "config_options":
-			if (
-				isStaleGeneration(store, event.payload.connectionGeneration) ||
-				isUnknownSession(store, event.payload.sessionId)
-			) {
+			if (isStaleGeneration(store, event.payload.connectionGeneration)) {
 				return
 			}
+			store.set(configOptionsAtom, event.payload.configOptions)
 			if (event.payload.sessionId) {
+				ensureSession(store, event.payload.sessionId)
 				updateSession(store, event.payload.sessionId, {
 					configOptions: event.payload.configOptions,
 				})
-			} else {
-				store.set(configOptionsAtom, event.payload.configOptions)
 			}
 			return
 		case "prompt_complete": {
@@ -382,5 +419,6 @@ export function processAcpEvent(
 			store.set(configOptionsAtom, [])
 			store.set(capabilitiesAtom, null)
 			store.set(progressMessageAtom, null)
+			store.set(warmTimingsAtom, {})
 	}
 }

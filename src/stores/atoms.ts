@@ -24,21 +24,31 @@ export const sessionStatusAtom = atom<SessionStatus>("idle")
 export const configOptionsAtom = atom<ConfigOption[]>([])
 
 /** Per-session UI state, keyed by session_id. Mirrors the Rust `SessionHandle` map. */
+export interface ContextUsage {
+	used: number
+	size: number
+}
+
 export interface SessionUiState {
 	messages: ChatMessage[]
 	streaming: string
 	promptInFlight: boolean
 	status: SessionStatus
 	configOptions: ConfigOption[]
+	contextUsage: ContextUsage | null
 }
 export const sessionsAtom = atom<Record<string, SessionUiState>>({})
 /** Messages loaded from disk for read-only history view. */
 export const historyMessagesAtom = atom<ChatMessage[]>([])
 /** Selectors for the active chat so existing UI keeps working unchanged. */
 export const visibleMessagesAtom = atom((get) => {
+	const historySid = get(historyViewSessionIdAtom)
 	const sid = get(activeSessionIdAtom)
+	if (historySid && (!sid || historySid !== sid)) {
+		return get(historyMessagesAtom)
+	}
 	if (sid) return get(sessionsAtom)[sid]?.messages ?? []
-	if (get(historyViewSessionIdAtom)) return get(historyMessagesAtom)
+	if (historySid) return get(historyMessagesAtom)
 	return []
 })
 export const visibleStreamingAtom = atom((get) => {
@@ -62,12 +72,26 @@ export const visibleSessionStatusAtom = atom((get) => {
 	return get(sessionsAtom)[sid]?.status ?? get(sessionStatusAtom)
 })
 
+export const visibleContextUsageAtom = atom((get) => {
+	const sid = get(activeSessionIdAtom)
+	if (!sid) return null
+	return get(sessionsAtom)[sid]?.contextUsage ?? null
+})
+
 export const capabilitiesAtom = atom<AgentCapabilities | null>(null)
 export const activePermissionAtom = atom<PermissionRequest | null>(null)
 /** FIFO queue of permission requests for the current session — first one is the active card. */
 export const pendingPermissionsAtom = atom<PermissionRequest[]>([])
 export const errorMessageAtom = atom<string | null>(null)
 export const progressMessageAtom = atom<string | null>(null)
+
+export interface WarmTimings {
+	initializeMs?: number
+	prewarmMs?: number
+	configRefreshMs?: number
+}
+
+export const warmTimingsAtom = atom<WarmTimings>({})
 export const opencodeStatusAtom = atom<OpencodeStatus | null>(null)
 /** Resolved `~/.circulo/chats` path for the general Chats section. */
 export const generalChatsPathAtom = atom<string | null>(null)
@@ -158,6 +182,7 @@ export const resetWorkspaceUiAtom = atom(null, (_get, set) => {
 	set(sessionStatusAtom, "idle")
 	set(agentConnectedAtom, false)
 	set(progressMessageAtom, "Opening workspace…")
+	set(warmTimingsAtom, {})
 	set(terminalsAtom, {})
 	set(userTerminalTabsAtom, [])
 	set(terminalDrawerOpenAtom, false)
