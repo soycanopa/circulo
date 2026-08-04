@@ -1,4 +1,5 @@
 mod acp;
+mod agent_pool;
 mod agents;
 mod cli_resolve;
 mod commands;
