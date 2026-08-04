@@ -1,22 +1,54 @@
 import { X } from "lucide-react"
-import { getDefaultChatsPath } from "@/lib/tauri"
+import { getDefaultChatsPath, listAgents, setPreferredAgent } from "@/lib/tauri"
 import { useEffect, useState } from "react"
+import type { AgentDescriptor } from "@/types/acp"
 
 interface SettingsPanelProps {
 	open: boolean
 	onClose: () => void
 	agentCommand: string
+	preferredAgentId?: string | null
+	onPreferredAgentChange?: (agentId: string) => void
 }
 
-export function SettingsPanel({ open, onClose, agentCommand }: SettingsPanelProps) {
+export function SettingsPanel({
+	open,
+	onClose,
+	agentCommand,
+	preferredAgentId,
+	onPreferredAgentChange,
+}: SettingsPanelProps) {
 	const [chatsPath, setChatsPath] = useState("—")
+	const [agents, setAgents] = useState<AgentDescriptor[]>([])
+	const [selectedAgentId, setSelectedAgentId] = useState(
+		preferredAgentId ?? "opencode",
+	)
+	const [saving, setSaving] = useState(false)
 
 	useEffect(() => {
 		if (!open) return
 		void getDefaultChatsPath().then(setChatsPath)
+		void listAgents().then(setAgents)
 	}, [open])
 
+	useEffect(() => {
+		setSelectedAgentId(preferredAgentId ?? "opencode")
+	}, [preferredAgentId])
+
+	async function handleAgentChange(agentId: string) {
+		setSelectedAgentId(agentId)
+		setSaving(true)
+		try {
+			await setPreferredAgent(agentId)
+			onPreferredAgentChange?.(agentId)
+		} finally {
+			setSaving(false)
+		}
+	}
+
 	if (!open) return null
+
+	const activeAgent = agents.find((a) => a.id === selectedAgentId)
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -40,7 +72,38 @@ export function SettingsPanel({ open, onClose, agentCommand }: SettingsPanelProp
 						<div className="text-[11px] uppercase tracking-wider text-muted">
 							Agent
 						</div>
-						<p className="mt-1 font-mono text-fg">{agentCommand}</p>
+						{agents.length > 0 ? (
+							<select
+								value={selectedAgentId}
+								disabled={saving}
+								onChange={(event) => void handleAgentChange(event.target.value)}
+								className="mt-1 w-full rounded-md border border-border bg-black/20 px-2 py-1.5 text-sm text-fg"
+							>
+								{agents.map((agent) => (
+									<option
+										key={agent.id}
+										value={agent.id}
+										disabled={!agent.available}
+									>
+										{agent.label}
+										{agent.available ? "" : " (unavailable)"}
+									</option>
+								))}
+							</select>
+						) : (
+							<p className="mt-1 font-mono text-fg">{agentCommand}</p>
+						)}
+						<p className="mt-1 font-mono text-[11px] text-muted">
+							{activeAgent?.command ?? agentCommand}
+						</p>
+						<p className="mt-1 text-[11px] text-muted">
+							Switching agents applies on the next project open.
+						</p>
+						<p className="mt-1 text-[11px] text-muted">
+							Custom: set{" "}
+							<code className="rounded bg-white/5 px-1">CIRCULO_CUSTOM_ACP</code>{" "}
+							(program + args).
+						</p>
 					</div>
 					<div>
 						<div className="text-[11px] uppercase tracking-wider text-muted">
@@ -53,7 +116,7 @@ export function SettingsPanel({ open, onClose, agentCommand }: SettingsPanelProp
 							About
 						</div>
 						<p className="mt-1 text-muted">
-							Circulo v0.1.0 — desktop ACP client for OpenCode
+							Circulo v0.3.0 — desktop ACP client
 						</p>
 					</div>
 				</div>

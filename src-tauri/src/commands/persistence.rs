@@ -6,6 +6,14 @@ use crate::persistence::{
 };
 
 #[tauri::command]
+pub fn set_preferred_agent_cmd(agent_id: String) -> Result<AppSettings, String> {
+    let mut settings = load_settings()?;
+    settings.preferred_agent_id = Some(agent_id);
+    save_settings(&settings)?;
+    load_settings()
+}
+
+#[tauri::command]
 pub fn get_app_settings() -> Result<AppSettings, String> {
     load_settings()
 }

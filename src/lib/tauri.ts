@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import type {
 	AgentCapabilities,
+	AgentDescriptor,
 	AppSettings,
 	ChatMessage,
 	ChatSessionSummary,
@@ -28,6 +29,14 @@ export interface OpencodeStatus {
 
 export async function checkOpencode(): Promise<OpencodeStatus> {
 	return invoke("check_opencode")
+}
+
+export async function listAgents(): Promise<AgentDescriptor[]> {
+	return invoke("list_agents_cmd")
+}
+
+export async function setPreferredAgent(agentId: string): Promise<AppSettings> {
+	return invoke("set_preferred_agent_cmd", { agentId })
 }
 
 export async function getHomePath(): Promise<string> {

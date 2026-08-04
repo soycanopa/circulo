@@ -825,6 +825,13 @@ export default function App() {
 				open={settingsOpen}
 				onClose={() => setSettingsOpen(false)}
 				agentCommand={agentCommand}
+				preferredAgentId={appSettings?.preferredAgentId}
+				onPreferredAgentChange={(agentId) => {
+					setAppSettings((prev) =>
+						prev ? { ...prev, preferredAgentId: agentId } : prev,
+					)
+					setAgentId(agentId)
+				}}
 			/>
 			<OpenProjectModal
 				open={openProjectModalOpen}

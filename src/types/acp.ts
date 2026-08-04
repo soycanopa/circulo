@@ -144,4 +144,12 @@ export interface AppSettings {
 	recentProjects: RecentProject[]
 	workspaces: WorkspaceEntry[]
 	activeWorkspaceId: string | null
+	preferredAgentId?: string | null
+}
+
+export interface AgentDescriptor {
+	id: string
+	label: string
+	command: string
+	available: boolean
 }

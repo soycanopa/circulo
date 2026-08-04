@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::circulo_data_dir;
 
-const SETTINGS_VERSION: u32 = 2;
+const SETTINGS_VERSION: u32 = 3;
 const MAX_RECENT_PROJECTS: usize = 24;
 const MAX_WORKSPACES: usize = 12;
 const DEFAULT_WORKSPACE_ID: &str = "default";
@@ -42,6 +42,8 @@ pub struct AppSettings {
     pub workspaces: Vec<WorkspaceEntry>,
     #[serde(default)]
     pub active_workspace_id: Option<String>,
+    #[serde(default)]
+    pub preferred_agent_id: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -51,6 +53,7 @@ impl Default for AppSettings {
             recent_projects: Vec::new(),
             workspaces: Vec::new(),
             active_workspace_id: None,
+            preferred_agent_id: None,
         };
         let _ = ensure_workspaces(&mut settings);
         settings
@@ -69,6 +72,7 @@ pub fn load_settings() -> Result<AppSettings, String> {
             recent_projects: Vec::new(),
             workspaces: Vec::new(),
             active_workspace_id: None,
+            preferred_agent_id: None,
         }
     } else {
         let raw = std::fs::read_to_string(&path).map_err(|err| err.to_string())?;
