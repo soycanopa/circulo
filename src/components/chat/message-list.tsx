@@ -9,7 +9,10 @@ import {
 	visibleMessagesAtom,
 	visiblePromptInFlightAtom,
 	visibleStreamingAtom,
+	activeTerminalIdAtom,
+	terminalDrawerOpenAtom,
 } from "@/stores/atoms"
+import { terminalIdFromTool } from "@/lib/terminal-tools"
 
 export function MessageList() {
 	const messages = useAtomValue(visibleMessagesAtom)
@@ -17,10 +20,19 @@ export function MessageList() {
 	const inFlight = useAtomValue(visiblePromptInFlightAtom)
 	const setSelectedDiff = useSetAtom(selectedDiffToolAtom)
 	const setDiffPanelOpen = useSetAtom(diffPanelOpenAtom)
+	const setActiveTerminalId = useSetAtom(activeTerminalIdAtom)
+	const setTerminalDrawerOpen = useSetAtom(terminalDrawerOpenAtom)
 
 	function openDiffPanel(tool: ToolCall) {
 		setSelectedDiff(tool)
 		setDiffPanelOpen(true)
+	}
+
+	function openTerminalDrawer(tool: ToolCall) {
+		const terminalId = terminalIdFromTool(tool)
+		if (!terminalId) return
+		setActiveTerminalId(terminalId)
+		setTerminalDrawerOpen(true)
 	}
 	const scrollRef = useRef<HTMLDivElement>(null)
 	const bottomRef = useRef<HTMLDivElement>(null)
@@ -86,6 +98,7 @@ export function MessageList() {
 										key={tool.id}
 										tool={tool}
 										onOpenDiff={openDiffPanel}
+										onOpenTerminal={() => openTerminalDrawer(tool)}
 									/>
 								))}
 							</div>

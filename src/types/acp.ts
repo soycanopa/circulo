@@ -54,7 +54,12 @@ export interface ToolCallDiff {
 	newText: string
 }
 
-export type ToolCallContent = string | ToolCallDiff
+export interface ToolCallTerminal {
+	type: "terminal"
+	terminalId: string
+}
+
+export type ToolCallContent = string | ToolCallDiff | ToolCallTerminal
 
 export interface ToolCall {
 	id: string
@@ -108,6 +113,16 @@ export interface StoredTranscript {
 	createdAt: number
 	updatedAt: number
 	messages: StoredChatMessage[]
+}
+
+export interface TerminalState {
+	terminalId: string
+	sessionId: string
+	label: string
+	output: string
+	truncated: boolean
+	running: boolean
+	exitStatus: { exitCode?: number; signal?: string } | null
 }
 
 export interface RecentProject {

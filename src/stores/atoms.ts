@@ -8,6 +8,7 @@ import type {
 	OpencodeStatus,
 	PermissionRequest,
 	SessionStatus,
+	TerminalState,
 	ToolCall,
 } from "@/types/acp"
 
@@ -80,6 +81,9 @@ export const projectChatsByPathAtom = atom<Record<string, ChatSessionSummary[]>>
 export const historyViewSessionIdAtom = atom<string | null>(null)
 export const appSettingsAtom = atom<AppSettings | null>(null)
 export const diffPanelOpenAtom = atom(false)
+export const terminalDrawerOpenAtom = atom(false)
+export const activeTerminalIdAtom = atom<string | null>(null)
+export const terminalsAtom = atom<Record<string, TerminalState>>({})
 export const sidebarOpenAtom = atom(true)
 export const selectedDiffToolAtom = atom<ToolCall | null>(null)
 
@@ -146,4 +150,7 @@ export const resetWorkspaceUiAtom = atom(null, (_get, set) => {
 	set(sessionStatusAtom, "idle")
 	set(agentConnectedAtom, false)
 	set(progressMessageAtom, "Opening workspace…")
+	set(terminalsAtom, {})
+	set(terminalDrawerOpenAtom, false)
+	set(activeTerminalIdAtom, null)
 })

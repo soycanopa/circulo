@@ -3,12 +3,17 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use agent_client_protocol::schema::v1::{
-    CancelNotification, CloseSessionRequest, ContentBlock, InitializeRequest, LoadSessionRequest,
-    NewSessionRequest, PromptRequest, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionConfigKind, SessionConfigOption,
-    SessionConfigSelectOptions, SessionNotification, SetSessionConfigOptionRequest, TextContent,
-};use agent_client_protocol::schema::ProtocolVersion;
-use agent_client_protocol::{Agent, ConnectionTo};
+    CancelNotification, ClientCapabilities, CloseSessionRequest, ContentBlock,
+    CreateTerminalRequest, InitializeRequest, KillTerminalRequest,
+    LoadSessionRequest, NewSessionRequest, PromptRequest,
+    ReleaseTerminalRequest, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
+    SessionConfigKind, SessionConfigOption, SessionConfigSelectOptions, SessionNotification,
+    SetSessionConfigOptionRequest, TerminalOutputRequest, TextContent,
+    WaitForTerminalExitRequest,
+};
+use agent_client_protocol::schema::ProtocolVersion;
+use agent_client_protocol::{Agent, ConnectionTo, Error as AcpError};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, oneshot, Mutex, Notify};
@@ -19,6 +24,7 @@ use crate::state::{
     AgentCapabilitiesDto, AgentCommand, ConfigOptionDto, ConfigOptionValueDto, ContextFile,
     PermissionOptionId, SessionHandle, SharedState,
 };
+use crate::acp::terminal::TerminalManager;
 
 pub async fn start_agent_connection(
     app: AppHandle,
@@ -38,6 +44,12 @@ pub async fn start_agent_connection(
 
     let agent = build_agent(&agent_id, &project_path)?;
 
+    let terminals = Arc::new(Mutex::new(TerminalManager::new(
+        project_path.clone(),
+        app.clone(),
+        generation,
+    )));
+
     let state_for_notifications = state.clone();
     let app_for_notifications = app.clone();
     let state_for_permissions = state.clone();
@@ -47,6 +59,17 @@ pub async fn start_agent_connection(
     let first_chunk_logged: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let prompt_started_for_notify = prompt_started_at.clone();
     let first_chunk_for_notify = first_chunk_logged.clone();
+
+    let terminals_for_create = terminals.clone();
+    let terminals_for_output = terminals.clone();
+    let terminals_for_wait = terminals.clone();
+    let terminals_for_kill = terminals.clone();
+    let terminals_for_release = terminals.clone();
+    let state_for_terminals_create = state.clone();
+    let state_for_terminals_output = state.clone();
+    let state_for_terminals_wait = state.clone();
+    let state_for_terminals_kill = state.clone();
+    let state_for_terminals_release = state.clone();
 
     agent_client_protocol::Client
         .builder()
@@ -154,6 +177,96 @@ pub async fn start_agent_connection(
             },
             agent_client_protocol::on_receive_request!(),
         )
+        .on_receive_request(
+            async move |request: CreateTerminalRequest, responder, _connection| {
+                if !state_for_terminals_create
+                    .lock()
+                    .await
+                    .is_current_generation(generation)
+                {
+                    let _ = responder.respond_with_error(AcpError::internal_error());
+                    return Ok(());
+                }
+                let response = terminals_for_create.lock().await.create(request).await;
+                let _ = responder.respond_with_result(
+                    response.map_err(|err| AcpError::invalid_params().data(err)),
+                );
+                Ok(())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: TerminalOutputRequest, responder, _connection| {
+                if !state_for_terminals_output
+                    .lock()
+                    .await
+                    .is_current_generation(generation)
+                {
+                    let _ = responder.respond_with_error(AcpError::internal_error());
+                    return Ok(());
+                }
+                let response = terminals_for_output.lock().await.output(request).await;
+                let _ = responder.respond_with_result(
+                    response.map_err(|err| AcpError::invalid_params().data(err)),
+                );
+                Ok(())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: WaitForTerminalExitRequest, responder, _connection| {
+                if !state_for_terminals_wait
+                    .lock()
+                    .await
+                    .is_current_generation(generation)
+                {
+                    let _ = responder.respond_with_error(AcpError::internal_error());
+                    return Ok(());
+                }
+                let response = terminals_for_wait.lock().await.wait_for_exit(request).await;
+                let _ = responder.respond_with_result(
+                    response.map_err(|err| AcpError::invalid_params().data(err)),
+                );
+                Ok(())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: KillTerminalRequest, responder, _connection| {
+                if !state_for_terminals_kill
+                    .lock()
+                    .await
+                    .is_current_generation(generation)
+                {
+                    let _ = responder.respond_with_error(AcpError::internal_error());
+                    return Ok(());
+                }
+                let response = terminals_for_kill.lock().await.kill(request).await;
+                let _ = responder.respond_with_result(
+                    response.map_err(|err| AcpError::invalid_params().data(err)),
+                );
+                Ok(())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |request: ReleaseTerminalRequest, responder, _connection| {
+                if !state_for_terminals_release
+                    .lock()
+                    .await
+                    .is_current_generation(generation)
+                {
+                    let _ = responder.respond_with_error(AcpError::internal_error());
+                    return Ok(());
+                }
+                let response = terminals_for_release.lock().await.release(request).await;
+                let _ = responder.respond_with_result(
+                    response.map_err(|err| AcpError::invalid_params().data(err)),
+                );
+                Ok(())
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
         .connect_with(agent, move |connection: ConnectionTo<Agent>| {
             let app = app.clone();
             let state = state.clone();
@@ -174,7 +287,10 @@ pub async fn start_agent_connection(
                 );
                 let init_started = Instant::now();
                 let init_response = match connection
-                    .send_request(InitializeRequest::new(ProtocolVersion::V1))
+                    .send_request(
+                        InitializeRequest::new(ProtocolVersion::V1)
+                            .client_capabilities(ClientCapabilities::new().terminal(true)),
+                    )
                     .block_task()
                     .await
                 {
@@ -261,6 +377,7 @@ pub async fn start_agent_connection(
                 let run_prompt_started_at = prompt_started_at.clone();
                 let run_first_chunk_logged = first_chunk_logged.clone();
                 let run_generation = generation;
+                let run_terminals = terminals.clone();
                 let run_loop = tokio::spawn(async move {
                     run_command_loop(
                         run_state,
@@ -272,6 +389,7 @@ pub async fn start_agent_connection(
                         run_prompt_started_at,
                         run_first_chunk_logged,
                         run_generation,
+                        run_terminals,
                     )
                     .await;
                 });
@@ -347,6 +465,7 @@ async fn run_command_loop(
     prompt_started_at: Arc<Mutex<Option<Instant>>>,
     first_chunk_logged: Arc<Mutex<bool>>,
     generation: u64,
+    terminals: Arc<Mutex<TerminalManager>>,
 ) {
     while let Some(command) = cmd_rx.recv().await {
         match command {
@@ -524,7 +643,14 @@ async fn run_command_loop(
             AgentCommand::CreateSession { done } => {
                 let _ops = session_ops.lock().await;
                 let result =
-                    publish_or_create_session(&connection, &app, &state, &project_path, generation)
+                    publish_or_create_session(
+                        &connection,
+                        &app,
+                        &state,
+                        &project_path,
+                        generation,
+                        &terminals,
+                    )
                         .await;
                 let _ = done.send(result);
             }
@@ -537,14 +663,21 @@ async fn run_command_loop(
                     &project_path,
                     generation,
                     &session_id,
+                    &terminals,
                 )
                 .await;
                 let _ = done.send(result);
             }
             AgentCommand::CloseSession { session_id, done } => {
                 let _ops = session_ops.lock().await;
-                let result =
-                    close_session_on_connection(&connection, &state, generation, &session_id).await;
+                let result = close_session_on_connection(
+                    &connection,
+                    &state,
+                    generation,
+                    &session_id,
+                    &terminals,
+                )
+                .await;
                 let _ = done.send(result);
             }
             AgentCommand::CancelPrompt { session_id } => {
@@ -591,6 +724,7 @@ async fn publish_or_create_session(
     state: &SharedState,
     project_path: &PathBuf,
     generation: u64,
+    terminals: &Arc<Mutex<TerminalManager>>,
 ) -> Result<(), String> {
     let concurrent_sessions = {
         let guard = state.lock().await;
@@ -650,7 +784,14 @@ async fn publish_or_create_session(
             .unwrap_or_default()
     };
     if !previous_session_id.is_empty() && !concurrent_sessions {
-        close_session_on_connection(connection, state, generation, &previous_session_id).await?;
+        close_session_on_connection(
+            connection,
+            state,
+            generation,
+            &previous_session_id,
+            terminals,
+        )
+        .await?;
     } else if !previous_session_id.is_empty() {
         info!(
             session_id = %previous_session_id,
@@ -677,7 +818,7 @@ async fn publish_or_create_session(
                 .unwrap_or_default()
         };
         for sid in stale {
-            let _ = close_session_on_connection(connection, state, generation, &sid).await;
+            let _ = close_session_on_connection(connection, state, generation, &sid, terminals).await;
         }
     }
 
@@ -786,6 +927,7 @@ async fn load_session_on_connection(
     project_path: &PathBuf,
     generation: u64,
     session_id: &str,
+    terminals: &Arc<Mutex<TerminalManager>>,
 ) -> Result<(), String> {
     let capabilities = {
         let guard = state.lock().await;
@@ -830,7 +972,14 @@ async fn load_session_on_connection(
     }
 
     if !current_session_id.is_empty() {
-        close_session_on_connection(connection, state, generation, &current_session_id).await?;
+        close_session_on_connection(
+            connection,
+            state,
+            generation,
+            &current_session_id,
+            terminals,
+        )
+        .await?;
     }
 
     info!(
@@ -887,6 +1036,7 @@ async fn close_session_on_connection(
     state: &SharedState,
     generation: u64,
     session_id: &str,
+    terminals: &Arc<Mutex<TerminalManager>>,
 ) -> Result<(), String> {
     if session_id.is_empty() {
         return Ok(());
@@ -909,6 +1059,8 @@ async fn close_session_on_connection(
             .map_err(|err| format!("session/close failed: {err}"))?;
         info!(session_id = %session_id, "ACP session/close completed");
     }
+
+    terminals.lock().await.release_session(session_id).await;
 
     let mut guard = state.lock().await;
     if let Some(agent) = guard.agent_for_generation_mut(generation) {

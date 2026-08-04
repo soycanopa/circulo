@@ -1,4 +1,4 @@
-import type { ChatMessage, ToolCall, ToolCallContent, ToolCallDiff } from "@/types/acp"
+import type { ChatMessage, ToolCall, ToolCallContent, ToolCallDiff, ToolCallTerminal } from "@/types/acp"
 
 function asRecord(value: unknown): Record<string, unknown> | null {
 	return value && typeof value === "object" && !Array.isArray(value)
@@ -42,15 +42,22 @@ function diffToText(diff: ToolCallDiff): string {
 	return `[diff ${diff.path}]\n--- old\n${diff.oldText}\n+++ new\n${diff.newText}`
 }
 
+function terminalToText(terminal: ToolCallTerminal): string {
+	return `[terminal ${terminal.terminalId}]`
+}
+
 export function toolContentToText(content: ToolCallContent | undefined): string {
 	if (!content) return ""
-	return typeof content === "string" ? content : diffToText(content)
+	if (typeof content === "string") return content
+	if (content.type === "terminal") return terminalToText(content)
+	return diffToText(content)
 }
 
 function extractToolContent(content: unknown): ToolCallContent {
 	if (!Array.isArray(content)) return extractTextFromContent(content)
 	let combined = ""
 	const diffs: ToolCallDiff[] = []
+	let terminal: ToolCallTerminal | null = null
 	for (const item of content) {
 		const record = asRecord(item)
 		if (!record) {
@@ -61,8 +68,13 @@ function extractToolContent(content: unknown): ToolCallContent {
 		else if (record.type === "diff") {
 			const diff = extractDiffContent(record)
 			if (diff) diffs.push(diff)
+		} else if (record.type === "terminal") {
+			const terminalId =
+				asString(record.terminalId) ?? asString(record.terminal_id)
+			if (terminalId) terminal = { type: "terminal", terminalId }
 		} else combined += extractTextFromContent(item)
 	}
+	if (terminal) return terminal
 	if (diffs.length === 0) return combined
 	if (diffs.length === 1) return diffs[0]!
 	return diffs.map(diffToText).join("\n\n")

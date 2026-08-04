@@ -1,5 +1,5 @@
 import { getDefaultStore, useAtomValue, useSetAtom } from "jotai"
-import { Download, FileDiff, Loader2, MessageSquarePlus } from "lucide-react"
+import { Download, FileDiff, Loader2, MessageSquarePlus, Terminal } from "lucide-react"
 import { WindowChromeControls } from "@/components/layout/window-chrome-controls"
 import { cn } from "@/lib/utils"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -12,7 +12,9 @@ import { OpencodeSetupBanner } from "@/components/onboarding/opencode-setup"
 import { OpenProjectModal } from "@/components/project/open-project-modal"
 import { SettingsPanel } from "@/components/settings/settings-panel"
 import { DiffPanel } from "@/components/tools/diff-panel"
+import { TerminalDrawer } from "@/components/terminal/terminal-drawer"
 import { useAcpBridge } from "@/hooks/use-acp-bridge"
+import { useTerminalBridge } from "@/hooks/use-terminal-bridge"
 import { useAppSettings } from "@/hooks/use-app-settings"
 import { useAppShortcuts } from "@/hooks/use-app-shortcuts"
 import { useBootstrapAgent } from "@/hooks/use-bootstrap"
@@ -26,6 +28,7 @@ import {
 	type AgentRuntimeState,
 } from "@/lib/agent-registry"
 import { collectDiffTools } from "@/lib/diff-tools"
+import { collectTerminalTools } from "@/lib/terminal-tools"
 import {
 	closeSession,
 	createSession,
@@ -67,12 +70,15 @@ import {
 	sessionStatusAtom,
 	sessionsAtom,
 	sidebarOpenAtom,
+	terminalDrawerOpenAtom,
+	terminalsAtom,
 	visibleMessagesAtom,
 	visibleSessionStatusAtom,
 } from "@/stores/atoms"
 
 export default function App() {
 	useAcpBridge()
+	useTerminalBridge()
 	useBootstrapAgent()
 	useAppSettings()
 	const { refreshSessions, refreshPath, refreshAllWorkspaceLists } =
@@ -106,8 +112,11 @@ export default function App() {
 		[sessionsMap, sessionId],
 	)
 	const diffPanelOpen = useAtomValue(diffPanelOpenAtom)
+	const terminalDrawerOpen = useAtomValue(terminalDrawerOpenAtom)
+	const terminals = useAtomValue(terminalsAtom)
 	const sidebarOpen = useAtomValue(sidebarOpenAtom)
 	const setDiffPanelOpen = useSetAtom(diffPanelOpenAtom)
+	const setTerminalDrawerOpen = useSetAtom(terminalDrawerOpenAtom)
 	const setSidebarOpen = useSetAtom(sidebarOpenAtom)
 	const setSelectedDiff = useSetAtom(selectedDiffToolAtom)
 	const setError = useSetAtom(errorMessageAtom)
@@ -191,7 +200,19 @@ export default function App() {
 		setDiffPanelOpen(false)
 	}, [setDiffPanelOpen])
 
+	const toggleTerminalDrawer = useCallback(() => {
+		setTerminalDrawerOpen((open) => !open)
+	}, [setTerminalDrawerOpen])
+
+	const closeTerminalDrawer = useCallback(() => {
+		setTerminalDrawerOpen(false)
+	}, [setTerminalDrawerOpen])
+
 	const diffToolCount = useMemo(() => collectDiffTools(messages).length, [messages])
+	const terminalCount = useMemo(
+		() => Math.max(collectTerminalTools(messages).length, Object.keys(terminals).length),
+		[messages, terminals],
+	)
 
 	const agentRuntimes = useMemo((): AgentRuntimeState[] => {
 		const available = opencodeStatus?.available ?? true
@@ -441,6 +462,11 @@ export default function App() {
 				label: diffPanelOpen ? "Close Diff Panel" : "Open Diff Panel",
 				onSelect: () => toggleDiffPanel(),
 			},
+			{
+				id: "terminal-drawer",
+				label: terminalDrawerOpen ? "Close Terminal" : "Open Terminal",
+				onSelect: () => toggleTerminalDrawer(),
+			},
 			...(messages.length > 0
 				? [
 						{
@@ -457,7 +483,9 @@ export default function App() {
 			handleExportTranscript,
 			handleNewChat,
 			messages.length,
+			terminalDrawerOpen,
 			toggleDiffPanel,
+			toggleTerminalDrawer,
 		],
 	)
 
@@ -681,6 +709,25 @@ export default function App() {
 					<div className="flex shrink-0 items-center gap-2 pr-4">
 						<button
 							type="button"
+							onClick={toggleTerminalDrawer}
+							className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition ${
+								terminalDrawerOpen
+									? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+									: "border-border text-muted hover:bg-white/5 hover:text-fg"
+							}`}
+							title="Toggle terminal drawer"
+							data-tauri-drag-region="false"
+						>
+							<Terminal className="size-3.5" />
+							Terminal
+							{terminalCount > 0 ? (
+								<span className="rounded bg-white/10 px-1 text-[10px]">
+									{terminalCount}
+								</span>
+							) : null}
+						</button>
+						<button
+							type="button"
 							onClick={toggleDiffPanel}
 							className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition ${
 								diffPanelOpen
@@ -763,7 +810,14 @@ export default function App() {
 					</button>
 				</div>
 			) : (
-				<MessageList />
+				<div className="flex min-h-0 flex-1 flex-col">
+					<MessageList />
+					{terminalDrawerOpen ? (
+						<div className="h-56 shrink-0">
+							<TerminalDrawer onClose={closeTerminalDrawer} />
+						</div>
+					) : null}
+				</div>
 			)}
 
 			<ChatInput />
