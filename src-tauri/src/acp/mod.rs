@@ -1,3 +1,4 @@
+mod config_bridge;
 mod runtime;
 mod terminal;
 
