@@ -81,7 +81,13 @@ export const projectChatsByPathAtom = atom<Record<string, ChatSessionSummary[]>>
 export const historyViewSessionIdAtom = atom<string | null>(null)
 export const appSettingsAtom = atom<AppSettings | null>(null)
 export const diffPanelOpenAtom = atom(false)
+export interface UserTerminalTab {
+	id: string
+	title: string
+}
+
 export const terminalDrawerOpenAtom = atom(false)
+export const userTerminalTabsAtom = atom<UserTerminalTab[]>([])
 export const activeTerminalIdAtom = atom<string | null>(null)
 export const terminalsAtom = atom<Record<string, TerminalState>>({})
 export const sidebarOpenAtom = atom(true)
@@ -97,6 +103,8 @@ export const SIDEBAR_WIDTH_MAX = 480
 export const DIFF_PANEL_WIDTH_DEFAULT = 384
 export const DIFF_PANEL_WIDTH_MIN = 280
 export const DIFF_PANEL_WIDTH_MAX = 560
+
+export const TERMINAL_DRAWER_HEIGHT_DEFAULT = 256
 
 function readStoredWidth(key: string, fallback: number): number {
 	try {
@@ -151,6 +159,7 @@ export const resetWorkspaceUiAtom = atom(null, (_get, set) => {
 	set(agentConnectedAtom, false)
 	set(progressMessageAtom, "Opening workspace…")
 	set(terminalsAtom, {})
+	set(userTerminalTabsAtom, [])
 	set(terminalDrawerOpenAtom, false)
 	set(activeTerminalIdAtom, null)
 })

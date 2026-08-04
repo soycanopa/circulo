@@ -12,6 +12,7 @@ import {
 	activeTerminalIdAtom,
 	terminalDrawerOpenAtom,
 } from "@/stores/atoms"
+import { agentTerminalTabId } from "@/components/terminal/terminal-drawer"
 import { terminalIdFromTool } from "@/lib/terminal-tools"
 
 export function MessageList() {
@@ -31,7 +32,7 @@ export function MessageList() {
 	function openTerminalDrawer(tool: ToolCall) {
 		const terminalId = terminalIdFromTool(tool)
 		if (!terminalId) return
-		setActiveTerminalId(terminalId)
+		setActiveTerminalId(agentTerminalTabId(terminalId))
 		setTerminalDrawerOpen(true)
 	}
 	const scrollRef = useRef<HTMLDivElement>(null)
