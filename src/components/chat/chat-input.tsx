@@ -1,40 +1,61 @@
 import { useAtomValue, useSetAtom } from "jotai"
+import { getDefaultStore } from "jotai"
 import { CornerDownLeft, Loader2, Square } from "lucide-react"
 import { useRef, useState } from "react"
 import { ConfigSelectors } from "@/components/chat/config-selector"
+import { AgentSelector } from "@/components/chat/agent-selector"
 import { FileMentionPicker } from "@/components/chat/file-mention-picker"
 import { PermissionPrompt } from "@/components/permissions/permission-prompt"
+import { reconcileSessionFromProjectStatus } from "@/hooks/session-reconcile"
+import { useAutoApprove } from "@/hooks/use-auto-approve"
 import {
 	extractMentionPaths,
 	getActiveMention,
 	insertMention,
 } from "@/lib/mention-parser"
-import { cancelPrompt, sendPrompt } from "@/lib/tauri"
+import { cancelPrompt, createSession, sendPrompt } from "@/lib/tauri"
 import {
 	activePermissionAtom,
 	activeSessionIdAtom,
+	agentConnectedAtom,
 	errorMessageAtom,
+	projectPathAtom,
 	sessionsAtom,
 	visiblePromptInFlightAtom,
 } from "@/stores/atoms"
 import type { ChatMessage } from "@/types/acp"
 
-export function ChatInput() {
+interface ChatInputProps {
+	enabledAgentIds?: string[]
+	preferredAgentId?: string | null
+	onAgentChange?: (agentId: string) => void | Promise<void>
+}
+
+export function ChatInput({
+	enabledAgentIds = [],
+	preferredAgentId,
+	onAgentChange,
+}: ChatInputProps) {
+	useAutoApprove()
 	const sessionId = useAtomValue(activeSessionIdAtom)
+	const agentConnected = useAtomValue(agentConnectedAtom)
+	const projectPath = useAtomValue(projectPathAtom)
 	const promptInFlight = useAtomValue(visiblePromptInFlightAtom)
 	const permission = useAtomValue(activePermissionAtom)
 	const setSessions = useSetAtom(sessionsAtom)
 	const setError = useSetAtom(errorMessageAtom)
 	const [value, setValue] = useState("")
+	const [startingSession, setStartingSession] = useState(false)
 	const [mentionIndex, setMentionIndex] = useState(0)
 	const [mentionResults, setMentionResults] = useState<string[]>([])
 	const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-	const disabled = !sessionId || promptInFlight || Boolean(permission)
+	const disabled =
+		!agentConnected || promptInFlight || Boolean(permission) || startingSession
 
 	const cursor = textareaRef.current?.selectionStart ?? value.length
 	const activeMention = getActiveMention(value, cursor)
-	const showMentionPicker = Boolean(activeMention && sessionId && !disabled)
+	const showMentionPicker = Boolean(activeMention && projectPath && !disabled)
 
 	function updateValue(next: string, nextCursor: number) {
 		setValue(next)
@@ -68,6 +89,22 @@ export function ChatInput() {
 		return true
 	}
 
+	async function ensureSessionId(): Promise<string | null> {
+		const current = getDefaultStore().get(activeSessionIdAtom)
+		if (current) return current
+
+		setStartingSession(true)
+		try {
+			const status = await createSession()
+			reconcileSessionFromProjectStatus(getDefaultStore(), status)
+			return (
+				status.sessionId ?? getDefaultStore().get(activeSessionIdAtom) ?? null
+			)
+		} finally {
+			setStartingSession(false)
+		}
+	}
+
 	async function handleSubmit(event?: React.FormEvent) {
 		event?.preventDefault()
 		const trimmed = value.trim()
@@ -75,41 +112,64 @@ export function ChatInput() {
 
 		const contextPaths = extractMentionPaths(trimmed)
 
-		// Optimistic update on the active session only — never overwrite the
-		// legacy global atoms (they no longer exist).
-		const targetSid = sessionId
-		if (targetSid) {
-			const now = Date.now()
-			const optimistic: ChatMessage[] = [
-				{
-					id: crypto.randomUUID(),
-					role: "user",
-					content: trimmed,
-					toolCalls: [],
-					timestamp: now,
-				},
-				{
-					id: crypto.randomUUID(),
-					role: "assistant",
-					content: "",
-					toolCalls: [],
-					timestamp: now,
-				},
-			]
-			setSessions((prev) => {
-				const current = prev[targetSid]
-				if (!current) return prev
+		let targetSid = sessionId
+		if (!targetSid) {
+			try {
+				targetSid = await ensureSessionId()
+			} catch (error) {
+				setError(
+					error instanceof Error ? error.message : "Failed to start session",
+				)
+				return
+			}
+		}
+		if (!targetSid) {
+			setError("No active session — wait for the agent to finish starting")
+			return
+		}
+
+		const now = Date.now()
+		const optimistic: ChatMessage[] = [
+			{
+				id: crypto.randomUUID(),
+				role: "user",
+				content: trimmed,
+				toolCalls: [],
+				timestamp: now,
+			},
+			{
+				id: crypto.randomUUID(),
+				role: "assistant",
+				content: "",
+				toolCalls: [],
+				timestamp: now,
+			},
+		]
+		setSessions((prev) => {
+			const current = prev[targetSid]
+			if (!current) {
 				return {
 					...prev,
 					[targetSid]: {
-						...current,
-						messages: [...current.messages, ...optimistic],
+						messages: optimistic,
+						streaming: "",
 						promptInFlight: true,
 						status: "generating",
+						configOptions: [],
+						contextUsage: null,
 					},
 				}
-			})
-		}
+			}
+			return {
+				...prev,
+				[targetSid]: {
+					...current,
+					messages: [...current.messages, ...optimistic],
+					promptInFlight: true,
+					status: "generating",
+				},
+			}
+		})
 		setValue("")
 		setMentionIndex(0)
 		setMentionResults([])
@@ -119,7 +179,6 @@ export function ChatInput() {
 			await sendPrompt(trimmed, contextPaths)
 		} catch (error) {
 			setSessions((prev) => {
-				if (!targetSid) return prev
 				const current = prev[targetSid]
 				if (!current) return prev
 				return {
@@ -218,8 +277,8 @@ export function ChatInput() {
 						disabled={disabled}
 						rows={3}
 						placeholder={
-							!sessionId
-								? "New Chat first to open a session…"
+							startingSession
+								? "Starting session…"
 								: permission
 									? "Respond to the permission request…"
 									: "Message the agent… (@ to attach a file)"
@@ -228,7 +287,14 @@ export function ChatInput() {
 					/>
 					{/* Model / mode + send — same row, no divider line above */}
 					<div className="flex items-center gap-2 px-2.5 pb-2 pt-0.5">
-						<div className="min-w-0 flex-1">
+						<div className="flex min-w-0 flex-1 items-center gap-1">
+							{onAgentChange && enabledAgentIds.length > 0 ? (
+								<AgentSelector
+									enabledAgentIds={enabledAgentIds}
+									preferredAgentId={preferredAgentId}
+									onAgentChange={onAgentChange}
+								/>
+							) : null}
 							<ConfigSelectors />
 						</div>
 						<div className="flex shrink-0 items-center gap-1.5">
@@ -249,7 +315,7 @@ export function ChatInput() {
 								aria-label="Send"
 								className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-white/10 text-fg transition hover:bg-white/15 disabled:opacity-40"
 							>
-								{promptInFlight ? (
+								{promptInFlight || startingSession ? (
 									<Loader2 className="size-4 animate-spin" />
 								) : (
 									<CornerDownLeft className="size-4" />

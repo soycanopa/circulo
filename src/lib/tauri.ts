@@ -40,6 +40,25 @@ export async function setPreferredAgent(agentId: string): Promise<AppSettings> {
 	return invoke("set_preferred_agent_cmd", { agentId })
 }
 
+export async function setEnabledAgents(ids: string[]): Promise<AppSettings> {
+	return invoke("set_enabled_agents_cmd", { ids })
+}
+
+export async function setFavoriteModel(
+	modelId: string,
+	favorite: boolean,
+): Promise<AppSettings> {
+	return invoke("set_favorite_model_cmd", { modelId, favorite })
+}
+
+export async function setAutoApprove(enabled: boolean): Promise<AppSettings> {
+	return invoke("set_auto_approve_cmd", { enabled })
+}
+
+export async function toggleFavoriteModel(modelId: string): Promise<AppSettings> {
+	return invoke("toggle_favorite_model_cmd", { modelId })
+}
+
 export async function getHomePath(): Promise<string> {
 	return invoke("get_home_path")
 }
@@ -187,6 +206,12 @@ export async function deleteWorkspace(
 	return invoke("delete_workspace_cmd", { workspaceId })
 }
 
+export async function removeProjectFromWorkspace(
+	projectPath: string,
+): Promise<AppSettings> {
+	return invoke("remove_project_from_workspace_cmd", { projectPath })
+}
+
 export interface WorkspacePaths {
 	chatsPath: string
 	entryPath: string
@@ -310,7 +335,12 @@ export function listenAcpEvents(handlers: {
 		connectionGeneration?: number
 	}) => void
 	onDisconnected?: (payload: { connectionGeneration?: number }) => void
-	onProgress?: (payload: { phase: string; message?: string }) => void
+	onProgress?: (payload: {
+		phase?: string
+		message?: string
+		elapsedMs?: number
+		connectionGeneration?: number
+	}) => void
 }): Promise<UnlistenFn[]> {
 	return Promise.all([
 		listen("agent:ready", (event) => {
@@ -380,7 +410,14 @@ export function listenAcpEvents(handlers: {
 			)
 		}),
 		listen("agent:progress", (event) => {
-			handlers.onProgress?.(event.payload as { phase: string; message?: string })
+			handlers.onProgress?.(
+				event.payload as {
+					phase?: string
+					message?: string
+					elapsedMs?: number
+					connectionGeneration?: number
+				},
+			)
 		}),
 	])
 }
