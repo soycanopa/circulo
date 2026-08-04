@@ -44,6 +44,35 @@ export async function getHomePath(): Promise<string> {
 	return invoke("get_home_path")
 }
 
+export async function spawnUserTerminal(
+	tabId: string,
+	projectPath: string,
+	cols: number,
+	rows: number,
+): Promise<void> {
+	return invoke("spawn_user_terminal", { tabId, projectPath, cols, rows })
+}
+
+export async function writeUserTerminal(tabId: string, data: string): Promise<void> {
+	return invoke("write_user_terminal", { tabId, data })
+}
+
+export async function resizeUserTerminal(
+	tabId: string,
+	cols: number,
+	rows: number,
+): Promise<void> {
+	return invoke("resize_user_terminal", { tabId, cols, rows })
+}
+
+export async function closeUserTerminal(tabId: string): Promise<void> {
+	return invoke("close_user_terminal", { tabId })
+}
+
+export async function closeAllUserTerminals(): Promise<void> {
+	return invoke("close_all_user_terminals")
+}
+
 export async function openProject(
 	path: string,
 	agentId?: string,
