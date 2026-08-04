@@ -280,6 +280,22 @@ export function applySessionUpdate(
 	return { messages, streamingText, didStream: false }
 }
 
+export function parseUsageUpdate(payload: unknown): {
+	used: number
+	size: number
+} | null {
+	const root = asRecord(payload)
+	if (!root) return null
+	const update = asRecord(root.update) ?? root
+	const sessionUpdate = asString(update.sessionUpdate)
+	if (sessionUpdate !== "usage_update") return null
+	const used = update.used
+	const size = update.size
+	if (typeof used !== "number" || typeof size !== "number") return null
+	if (size <= 0) return null
+	return { used, size }
+}
+
 export function appendStreamToMessages(
 	messages: ChatMessage[],
 	streamingText: string,

@@ -3,6 +3,7 @@ import {
 	appendStreamToMessages,
 	applySessionUpdate,
 	extractTextFromContent,
+	parseUsageUpdate,
 } from "@/lib/acp-parser"
 import type { ChatMessage } from "@/types/acp"
 
@@ -153,5 +154,27 @@ describe("appendStreamToMessages", () => {
 		]
 		const next = appendStreamToMessages(messages, " there")
 		expect(next[0]?.content).toBe("Hi there")
+	})
+})
+
+describe("parseUsageUpdate", () => {
+	it("reads ACP usage_update payloads", () => {
+		expect(
+			parseUsageUpdate({
+				update: {
+					sessionUpdate: "usage_update",
+					used: 53_000,
+					size: 200_000,
+				},
+			}),
+		).toEqual({ used: 53_000, size: 200_000 })
+	})
+
+	it("ignores non-usage updates", () => {
+		expect(
+			parseUsageUpdate({
+				update: { sessionUpdate: "agent_message_chunk", content: "hi" },
+			}),
+		).toBeNull()
 	})
 })
