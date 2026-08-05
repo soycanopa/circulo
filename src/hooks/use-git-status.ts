@@ -1,6 +1,8 @@
 import { listen } from "@tauri-apps/api/event"
+import { useAtomValue } from "jotai"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { getGitStatus } from "@/lib/tauri"
+import { gitRefreshVersionAtom } from "@/stores/atoms"
 import type { GitStatus } from "@/types/acp"
 
 interface UseGitStatusResult {
@@ -26,6 +28,7 @@ export function useGitStatus(
 	const [error, setError] = useState<string | null>(null)
 	const inFlight = useRef(false)
 	const debounceRef = useRef<number | null>(null)
+	const gitRefreshVersion = useAtomValue(gitRefreshVersionAtom)
 
 	const load = useCallback(async (path: string) => {
 		if (inFlight.current) return
@@ -55,6 +58,11 @@ export function useGitStatus(
 		}
 		void load(projectPath)
 	}, [projectPath, load])
+
+	// Reload after a git operation bumps the refresh version (branch switch).
+	useEffect(() => {
+		if (projectPath && gitRefreshVersion > 0) void load(projectPath)
+	}, [gitRefreshVersion, projectPath, load])
 
 	// Debounced refresh after each completed agent turn.
 	useEffect(() => {

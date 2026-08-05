@@ -4,6 +4,7 @@ import { CornerDownLeft, Loader2, Square } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { ConfigSelectors } from "@/components/chat/config-selector"
 import { AgentSelector } from "@/components/chat/agent-selector"
+import { BranchSelector } from "@/components/chat/branch-selector"
 import { FileMentionPicker } from "@/components/chat/file-mention-picker"
 import { SlashMenu } from "@/components/chat/slash-menu"
 import { PermissionPrompt } from "@/components/permissions/permission-prompt"
@@ -448,6 +449,11 @@ export function ChatInput({
 						</div>
 					</div>
 				</form>
+
+				{/* Branch selector hangs just below the composer's bottom border. */}
+				<div className="mt-1.5 flex justify-start px-0.5">
+					<BranchSelector projectPath={projectPath} />
+				</div>
 			</div>
 		</div>
 	)

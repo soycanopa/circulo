@@ -105,6 +105,8 @@ export const projectChatsByPathAtom = atom<Record<string, ChatSessionSummary[]>>
 export const historyViewSessionIdAtom = atom<string | null>(null)
 export const appSettingsAtom = atom<AppSettings | null>(null)
 export const diffPanelOpenAtom = atom(false)
+/** Bumped after git operations (branch switch/create) to refresh consumers. */
+export const gitRefreshVersionAtom = atom(0)
 export interface UserTerminalTab {
 	id: string
 	title: string
