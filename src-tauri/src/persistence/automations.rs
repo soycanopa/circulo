@@ -83,18 +83,16 @@ pub fn delete_automation(id: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
-
-    static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    use serial_test::serial;
 
     fn with_temp_home<F: FnOnce()>(f: F) {
-        let _guard = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
         let temp = tempfile::tempdir().unwrap();
         std::env::set_var("HOME", temp.path());
         f();
     }
 
     #[test]
+    #[serial]
     fn saves_lists_and_deletes_automation() {
         with_temp_home(|| {
             let saved = save_automation("Daily standup".into(), "Summarize git status".into())
