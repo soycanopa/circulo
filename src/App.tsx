@@ -10,7 +10,16 @@ import { AppShell } from "@/components/layout/app-shell"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { OpencodeSetupBanner } from "@/components/onboarding/opencode-setup"
 import { OpenProjectModal } from "@/components/project/open-project-modal"
-import { SettingsPanel } from "@/components/settings/settings-panel"
+import { SettingsSidebar } from "@/components/settings/settings-sidebar"
+import { SettingsView } from "@/components/settings/settings-view"
+import { AboutSection } from "@/components/settings/sections/about-section"
+import { AgentsSection } from "@/components/settings/sections/agents-section"
+import { AutomationsSection } from "@/components/settings/sections/automations-section"
+import { GeneralSection } from "@/components/settings/sections/general-section"
+import { ModelsSection } from "@/components/settings/sections/models-section"
+import { PermissionsSection } from "@/components/settings/sections/permissions-section"
+import { SlashCommandsSection } from "@/components/settings/sections/slash-commands-section"
+import { WorkspacesSection } from "@/components/settings/sections/workspaces-section"
 import { DiffPanel } from "@/components/tools/diff-panel"
 import { FileTreePanel } from "@/components/tools/file-tree-panel"
 import { TerminalDrawer } from "@/components/terminal/terminal-drawer"
@@ -83,6 +92,7 @@ import {
 	sessionStatusAtom,
 	sessionsAtom,
 	sidebarOpenAtom,
+	settingsSectionAtom,
 	terminalDrawerOpenAtom,
 	terminalsAtom,
 	TERMINAL_DRAWER_HEIGHT_DEFAULT,
@@ -133,6 +143,8 @@ export default function App() {
 	const terminals = useAtomValue(terminalsAtom)
 	const userTerminalTabs = useAtomValue(userTerminalTabsAtom)
 	const sidebarOpen = useAtomValue(sidebarOpenAtom)
+	const settingsSection = useAtomValue(settingsSectionAtom)
+	const setSettingsSection = useSetAtom(settingsSectionAtom)
 	const setDiffPanelOpen = useSetAtom(diffPanelOpenAtom)
 	const setFileTreeOpen = useSetAtom(fileTreeOpenAtom)
 	const setTerminalDrawerOpen = useSetAtom(terminalDrawerOpenAtom)
@@ -154,6 +166,17 @@ export default function App() {
 	const [terminalMounted, setTerminalMounted] = useState(false)
 	const [agentCommand, setAgentCommand] = useState("opencode acp")
 	const [agentId, setAgentId] = useState<string | null>("opencode")
+
+	const openSettings = useCallback(() => {
+		setSettingsOpen(true)
+		setSidebarOpen(true)
+		setDiffPanelOpen(false)
+		setFileTreeOpen(false)
+	}, [setSidebarOpen, setDiffPanelOpen, setFileTreeOpen])
+
+	const closeSettings = useCallback(() => {
+		setSettingsOpen(false)
+	}, [])
 
 	const hasLiveSession = Boolean(sessionId)
 	const browsingSavedChat = Boolean(
@@ -586,7 +609,10 @@ export default function App() {
 		onOpenProject: () => {
 			if (!busy) handleOpenProject()
 		},
-		onOpenSettings: () => setSettingsOpen(true),
+		onOpenSettings: () => {
+			if (settingsOpen) closeSettings()
+			else openSettings()
+		},
 		onOpenCommandPalette: () => setCommandPaletteOpen(true),
 		onExportTranscript: () => {
 			void handleExportTranscript()
@@ -627,7 +653,7 @@ export default function App() {
 			{
 				id: "settings",
 				label: "Settings",
-				onSelect: () => setSettingsOpen(true),
+				onSelect: () => openSettings(),
 			},
 			...(projectPath
 				? [
@@ -826,6 +852,89 @@ export default function App() {
 	const shellTransition =
 		"transition-[height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
 
+	function renderSettingsSection() {
+		switch (settingsSection) {
+			case "general":
+				return <GeneralSection />
+			case "agents":
+				return (
+					<AgentsSection
+						agentCommand={agentCommand}
+						preferredAgentId={appSettings?.preferredAgentId}
+						enabledAgentIds={
+							appSettings?.enabledAgentIds ?? ["opencode", "cursor-agent"]
+						}
+						onPreferredAgentChange={(agentId) =>
+							void handleAgentChange(agentId)
+						}
+						onEnabledAgentsChange={(settings) =>
+							void handleEnabledAgentsChange(settings)
+						}
+					/>
+				)
+			case "models":
+				return (
+					<ModelsSection
+						favoriteModelIds={appSettings?.favoriteModelIds ?? []}
+						recentModelIds={appSettings?.recentModelIds ?? []}
+					/>
+				)
+			case "automations":
+				return (
+					<AutomationsSection
+						automations={automations}
+						onAutomationsChange={() => void refreshAutomations()}
+						onDeleteAutomation={async (id) => {
+							await deleteAutomation(id)
+							await refreshAutomations()
+						}}
+					/>
+				)
+			case "slash":
+				return (
+					<SlashCommandsSection
+						customSlashCommands={appSettings?.customSlashCommands ?? []}
+						onSaveSlashCommand={async (command, label, description) => {
+							const settings = await saveCustomSlashCommand(
+								command,
+								label,
+								description,
+							)
+							setAppSettings(settings)
+						}}
+						onDeleteSlashCommand={async (command) => {
+							const settings = await deleteCustomSlashCommand(command)
+							setAppSettings(settings)
+						}}
+					/>
+				)
+			case "permissions":
+				return (
+					<PermissionsSection
+						allowedToolPatterns={appSettings?.allowedToolPatterns ?? []}
+						onSetAllowedTool={async (pattern, enabled) => {
+							const settings = await setAllowedTool(pattern, enabled)
+							setAppSettings(settings)
+						}}
+					/>
+				)
+			case "workspaces":
+				return (
+					<WorkspacesSection
+						workspaces={appSettings?.workspaces ?? []}
+						activeWorkspaceId={appSettings?.activeWorkspaceId ?? null}
+						recentProjects={appSettings?.recentProjects ?? []}
+						onAddWorkspace={() => void handleAddWorkspace()}
+						onDeleteWorkspace={(id) => void handleDeleteWorkspace(id)}
+						onSelectWorkspace={(id) => void handleSelectWorkspace(id)}
+						onClose={closeSettings}
+					/>
+				)
+			case "about":
+				return <AboutSection />
+		}
+	}
+
 	return (
 		<>
 			<AppShell
@@ -849,7 +958,15 @@ export default function App() {
 						/>
 					) : null
 				}
-				sidebar={
+			sidebar={
+			settingsOpen ? (
+				<SettingsSidebar
+					activeSection={settingsSection}
+					onSelectSection={setSettingsSection}
+					onClose={closeSettings}
+					onHideSidebar={() => setSidebarOpen(false)}
+				/>
+			) : (
 			<AppSidebar
 				sessionId={sessionId}
 				historyViewSessionId={historyViewSessionId}
@@ -865,7 +982,7 @@ export default function App() {
 				onNewChat={() => void handleNewChat()}
 				onNewChatInProject={(path) => void handleNewChat(path)}
 						onOpenProject={() => handleOpenProject()}
-						onOpenSettings={() => setSettingsOpen(true)}
+						onOpenSettings={openSettings}
 						onOpenChat={(id, ownerPath) => void handleOpenChat(id, ownerPath)}
 						onRenameChat={(id, ownerPath, title) =>
 							void handleRenameChat(id, ownerPath, title)
@@ -881,12 +998,24 @@ export default function App() {
 					onDeleteWorkspace={(id) => void handleDeleteWorkspace(id)}
 					onHideSidebar={() => setSidebarOpen(false)}
 				/>
-				}
+			)
+			}
 			>
-				<div
-					className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border pb-0.5"
-					data-tauri-drag-region="deep"
-				>
+				{settingsOpen ? (
+					<SettingsView
+						activeSection={settingsSection}
+						onClose={closeSettings}
+						sidebarVisible={sidebarOpen}
+						onToggleSidebar={() => setSidebarOpen((open) => !open)}
+					>
+						{renderSettingsSection()}
+					</SettingsView>
+				) : (
+					<>
+						<div
+							className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border pb-0.5"
+							data-tauri-drag-region="deep"
+						>
 					<div className="flex min-w-0 flex-1 items-center">
 						{!sidebarOpen ? (
 							<div className="flex shrink-0 items-center gap-1.5">
@@ -1035,43 +1164,8 @@ export default function App() {
 					) : null}
 				</div>
 			</div>
-			<SettingsPanel
-				open={settingsOpen}
-				onClose={() => setSettingsOpen(false)}
-				agentCommand={agentCommand}
-				preferredAgentId={appSettings?.preferredAgentId}
-				enabledAgentIds={
-					appSettings?.enabledAgentIds ?? ["opencode", "cursor-agent"]
-				}
-				allowedToolPatterns={appSettings?.allowedToolPatterns ?? []}
-				onPreferredAgentChange={(agentId) => void handleAgentChange(agentId)}
-				onEnabledAgentsChange={(settings) =>
-					void handleEnabledAgentsChange(settings)
-				}
-				onSetAllowedTool={async (pattern, enabled) => {
-					const settings = await setAllowedTool(pattern, enabled)
-					setAppSettings(settings)
-				}}
-				automations={automations}
-				onAutomationsChange={() => void refreshAutomations()}
-				onDeleteAutomation={async (id) => {
-					await deleteAutomation(id)
-					await refreshAutomations()
-				}}
-				customSlashCommands={appSettings?.customSlashCommands ?? []}
-				onSaveSlashCommand={async (command, label, description) => {
-					const settings = await saveCustomSlashCommand(
-						command,
-						label,
-						description,
-					)
-					setAppSettings(settings)
-				}}
-				onDeleteSlashCommand={async (command) => {
-					const settings = await deleteCustomSlashCommand(command)
-					setAppSettings(settings)
-				}}
-			/>
+					</>
+				)}
 			<OpenProjectModal
 				open={openProjectModalOpen}
 				busy={busy}
