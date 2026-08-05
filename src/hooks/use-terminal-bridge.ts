@@ -1,7 +1,11 @@
 import { useEffect } from "react"
 import { getDefaultStore } from "jotai"
 import { listen } from "@tauri-apps/api/event"
-import { connectionGenerationAtom, terminalsAtom } from "@/stores/atoms"
+import {
+	connectionGenerationAtom,
+	mcpSavingsAtom,
+	terminalsAtom,
+} from "@/stores/atoms"
 import type { TerminalState } from "@/types/acp"
 
 interface TerminalOutputPayload {
@@ -12,6 +16,15 @@ interface TerminalOutputPayload {
 	truncated: boolean
 	running: boolean
 	exitStatus?: { exitCode?: number; signal?: string } | null
+	connectionGeneration: number
+}
+
+interface TerminalFilterStatsPayload {
+	terminalId: string
+	sessionId: string
+	originalBytes: number
+	filteredBytes: number
+	savedBytes: number
 	connectionGeneration: number
 }
 
@@ -45,6 +58,28 @@ export function useTerminalBridge() {
 				[payload.terminalId]: next,
 			}))
 		}).then((fn) => {
+			unlisten = fn
+		})
+
+		listen<TerminalFilterStatsPayload>(
+			"acp:terminal_filter_stats",
+			(event) => {
+				const payload = event.payload
+				const store = getDefaultStore()
+				const currentGen = store.get(connectionGenerationAtom)
+				if (
+					currentGen !== null &&
+					payload.connectionGeneration !== currentGen
+				) {
+					return
+				}
+				store.set(mcpSavingsAtom, (prev) => ({
+					...prev,
+					savingsBytes: prev.savingsBytes + payload.savedBytes,
+					compactionCount: prev.compactionCount + 1,
+				}))
+			},
+		).then((fn) => {
 			unlisten = fn
 		})
 
