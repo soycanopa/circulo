@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Sidecar binaries (built by scripts/build-sidecar.mjs)
+src-tauri/binaries/

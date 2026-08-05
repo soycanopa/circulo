@@ -3,9 +3,12 @@ mod agent_pool;
 mod agents;
 mod cli_resolve;
 mod commands;
-mod persistence;
+pub mod mcp_client;
+pub mod persistence;
 mod project_fs;
+pub mod semantic;
 mod state;
+pub mod token_optimizer;
 mod user_terminal;
 
 use std::sync::Arc;

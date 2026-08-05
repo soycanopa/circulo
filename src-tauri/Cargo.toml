@@ -5,10 +5,15 @@ description = "Circulo — desktop ACP client for coding agents"
 authors = ["Carlos Andres O. P."]
 license = "MIT"
 edition = "2021"
+default-run = "circulo"
 
 [lib]
 name = "circulo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "circulo-mcp"
+path = "src/bin/circulo-mcp.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -26,6 +31,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 walkdir = "2"
+regex = "1"
+ureq = { version = "2", features = ["json"] }
 
 [dev-dependencies]
 serial_test = "3"

@@ -4,9 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.soycanopa.circulo",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "bun run sidecar:dev && bun run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build",
+    "beforeBuildCommand": "bun run sidecar:build && bun run build",
+    "beforeBundleCommand": "bun run sidecar:build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -34,6 +35,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": ["binaries/circulo-mcp"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
