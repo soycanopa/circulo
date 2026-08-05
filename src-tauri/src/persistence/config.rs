@@ -5,9 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use super::circulo_data_dir;
 
-const SETTINGS_VERSION: u32 = 5;
+const SETTINGS_VERSION: u32 = 6;
 const MAX_RECENT_PROJECTS: usize = 24;
 const MAX_WORKSPACES: usize = 12;
+pub const MAX_CUSTOM_SLASH_COMMANDS: usize = 32;
 const DEFAULT_WORKSPACE_ID: &str = "default";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,6 +16,15 @@ const DEFAULT_WORKSPACE_ID: &str = "default";
 pub struct RecentProject {
     pub path: String,
     pub last_opened_at: u64,
+}
+
+/// A user-defined slash command; its label is sent verbatim as a prompt.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomSlashCommand {
+    pub command: String,
+    pub label: String,
+    pub description: String,
 }
 
 /// One isolated space: own general chats folder + own project list.
@@ -59,6 +69,9 @@ pub struct AppSettings {
     /// Tool patterns the user chose to always allow (remembered across sessions).
     #[serde(default)]
     pub allowed_tool_patterns: Vec<String>,
+    /// User-defined slash commands shown in the composer menu.
+    #[serde(default)]
+    pub custom_slash_commands: Vec<CustomSlashCommand>,
 }
 
 impl Default for AppSettings {
@@ -74,6 +87,7 @@ impl Default for AppSettings {
             recent_model_ids: Vec::new(),
             auto_approve_enabled: false,
             allowed_tool_patterns: Vec::new(),
+            custom_slash_commands: Vec::new(),
         };
         let _ = ensure_workspaces(&mut settings);
         settings
@@ -98,6 +112,7 @@ pub fn load_settings() -> Result<AppSettings, String> {
             recent_model_ids: Vec::new(),
             auto_approve_enabled: false,
             allowed_tool_patterns: Vec::new(),
+            custom_slash_commands: Vec::new(),
         }
     } else {
         let raw = std::fs::read_to_string(&path).map_err(|err| err.to_string())?;

@@ -1,7 +1,7 @@
 import { useAtomValue, useSetAtom } from "jotai"
 import { getDefaultStore } from "jotai"
 import { CornerDownLeft, Loader2, Square } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { ConfigSelectors } from "@/components/chat/config-selector"
 import { AgentSelector } from "@/components/chat/agent-selector"
 import { FileMentionPicker } from "@/components/chat/file-mention-picker"
@@ -15,7 +15,7 @@ import {
 	insertMention,
 } from "@/lib/mention-parser"
 import {
-	DEFAULT_SLASH_COMMANDS,
+	mergeSlashCommands,
 	type SlashCommand,
 } from "@/lib/slash-commands"
 import {
@@ -27,6 +27,7 @@ import {
 	activePermissionAtom,
 	activeSessionIdAtom,
 	agentConnectedAtom,
+	appSettingsAtom,
 	composerInsertRequestAtom,
 	draftBySessionAtom,
 	errorMessageAtom,
@@ -54,6 +55,7 @@ export function ChatInput({
 	const sessionId = useAtomValue(activeSessionIdAtom)
 	const agentConnected = useAtomValue(agentConnectedAtom)
 	const projectPath = useAtomValue(projectPathAtom)
+	const appSettings = useAtomValue(appSettingsAtom)
 	const promptInFlight = useAtomValue(visiblePromptInFlightAtom)
 	const permission = useAtomValue(activePermissionAtom)
 	const drafts = useAtomValue(draftBySessionAtom)
@@ -93,8 +95,13 @@ export function ChatInput({
 	const showMentionPicker = Boolean(activeMention && projectPath && !disabled)
 
 	const activeSlash = getActiveSlash(value, cursor)
+	const allSlashCommands = useMemo(
+		() =>
+			mergeSlashCommands(appSettings?.customSlashCommands ?? []),
+		[appSettings?.customSlashCommands],
+	)
 	const slashResults = activeSlash
-		? filterSlashCommands(activeSlash.query, DEFAULT_SLASH_COMMANDS)
+		? filterSlashCommands(activeSlash.query, allSlashCommands)
 		: []
 	const showSlashMenu = Boolean(activeSlash && !disabled)
 
@@ -268,7 +275,7 @@ export function ChatInput({
 			return
 		}
 		// Send the command on its own; drop anything already typed after the token.
-		void submitText(command.label)
+		void submitText(command.prompt ?? command.label)
 	}
 
 	async function handleCancel() {

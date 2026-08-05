@@ -37,6 +37,7 @@ import {
 	createWorkspace,
 	deleteChatTranscript,
 	deleteAutomation,
+	deleteCustomSlashCommand,
 	deleteWorkspace,
 	getDefaultChatsPath,
 	getAppSettings,
@@ -50,6 +51,7 @@ import {
 	pickDirectory,
 	renameChatTranscript,
 	removeProjectFromWorkspace,
+	saveCustomSlashCommand,
 	seedChatTranscript,
 	sendPrompt,
 	setActiveWorkspace,
@@ -1008,6 +1010,19 @@ export default function App() {
 				onDeleteAutomation={async (id) => {
 					await deleteAutomation(id)
 					await refreshAutomations()
+				}}
+				customSlashCommands={appSettings?.customSlashCommands ?? []}
+				onSaveSlashCommand={async (command, label, description) => {
+					const settings = await saveCustomSlashCommand(
+						command,
+						label,
+						description,
+					)
+					setAppSettings(settings)
+				}}
+				onDeleteSlashCommand={async (command) => {
+					const settings = await deleteCustomSlashCommand(command)
+					setAppSettings(settings)
 				}}
 			/>
 			<OpenProjectModal

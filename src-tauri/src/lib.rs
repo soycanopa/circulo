@@ -85,6 +85,8 @@ pub fn run() {
             commands::persistence::mark_model_used_cmd,
             commands::persistence::set_auto_approve_cmd,
             commands::persistence::set_allowed_tool_cmd,
+            commands::persistence::save_custom_slash_command_cmd,
+            commands::persistence::delete_custom_slash_command_cmd,
             commands::persistence::list_automations_cmd,
             commands::persistence::save_automation_cmd,
             commands::persistence::delete_automation_cmd,

@@ -200,6 +200,64 @@ pub fn set_allowed_tool_cmd(pattern: String, enabled: bool) -> Result<AppSetting
     load_settings()
 }
 
+/// Add or update a user-defined slash command. `command` is the unique
+/// `/token` in the composer; `label` is the prompt sent to the agent.
+#[tauri::command]
+pub fn save_custom_slash_command_cmd(
+    command: String,
+    label: String,
+    description: String,
+) -> Result<AppSettings, String> {
+    let command = command.trim();
+    let label = label.trim();
+    if !command.starts_with('/') || command.len() < 2 || command.len() > 32 {
+        return Err("Command must start with '/' and be 2-32 characters".to_string());
+    }
+    if command[1..].contains(char::is_whitespace) {
+        return Err("Command must not contain whitespace".to_string());
+    }
+    if label.is_empty() || label.len() > 200 {
+        return Err("Prompt must be 1-200 characters".to_string());
+    }
+    let description = description.trim();
+    if description.len() > 200 {
+        return Err("Description must be at most 200 characters".to_string());
+    }
+
+    let mut settings = load_settings()?;
+    let next = crate::persistence::CustomSlashCommand {
+        command: command.to_string(),
+        label: label.to_string(),
+        description: description.to_string(),
+    };
+    if let Some(existing) = settings
+        .custom_slash_commands
+        .iter_mut()
+        .find(|c| c.command == command)
+    {
+        *existing = next;
+    } else {
+        if settings.custom_slash_commands.len() >= crate::persistence::MAX_CUSTOM_SLASH_COMMANDS {
+            return Err("Maximum of 32 custom slash commands".to_string());
+        }
+        settings.custom_slash_commands.push(next);
+    }
+    save_settings(&settings)?;
+    load_settings()
+}
+
+#[tauri::command]
+pub fn delete_custom_slash_command_cmd(command: String) -> Result<AppSettings, String> {
+    let command = command.trim();
+    if command.is_empty() {
+        return Err("Command must not be empty".to_string());
+    }
+    let mut settings = load_settings()?;
+    settings.custom_slash_commands.retain(|c| c.command != command);
+    save_settings(&settings)?;
+    load_settings()
+}
+
 #[tauri::command]
 pub fn list_automations_cmd() -> Result<Vec<Automation>, String> {
     list_automations()

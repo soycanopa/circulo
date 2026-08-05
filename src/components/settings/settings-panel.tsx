@@ -8,7 +8,12 @@ import {
 import { agentLabel } from "@/lib/agent-registry"
 import { useEffect, useState } from "react"
 import { Switch } from "@/components/ui/switch"
-import type { AgentDescriptor, AppSettings, Automation } from "@/types/acp"
+import type {
+	AgentDescriptor,
+	AppSettings,
+	Automation,
+	CustomSlashCommand,
+} from "@/types/acp"
 
 interface SettingsPanelProps {
 	open: boolean
@@ -23,6 +28,13 @@ interface SettingsPanelProps {
 	automations: Automation[]
 	onAutomationsChange: () => void
 	onDeleteAutomation: (id: string) => Promise<void>
+	customSlashCommands?: CustomSlashCommand[]
+	onSaveSlashCommand?: (
+		command: string,
+		label: string,
+		description: string,
+	) => Promise<void>
+	onDeleteSlashCommand?: (command: string) => Promise<void>
 }
 
 export function SettingsPanel({
@@ -38,6 +50,9 @@ export function SettingsPanel({
 	automations,
 	onAutomationsChange,
 	onDeleteAutomation,
+	customSlashCommands = [],
+	onSaveSlashCommand,
+	onDeleteSlashCommand,
 }: SettingsPanelProps) {
 	const [chatsPath, setChatsPath] = useState("—")
 	const [agents, setAgents] = useState<AgentDescriptor[]>([])
@@ -49,6 +64,10 @@ export function SettingsPanel({
 	const [prompt, setPrompt] = useState("")
 	const [saving, setSaving] = useState(false)
 	const [newPattern, setNewPattern] = useState("")
+	const [slashCommand, setSlashCommand] = useState("")
+	const [slashPrompt, setSlashPrompt] = useState("")
+	const [slashDescription, setSlashDescription] = useState("")
+	const [slashError, setSlashError] = useState<string | null>(null)
 
 	useEffect(() => {
 		if (!open) return
@@ -122,6 +141,39 @@ export function SettingsPanel({
 		try {
 			await onSetAllowedTool?.(pattern, true)
 			setNewPattern("")
+		} finally {
+			setSaving(false)
+		}
+	}
+
+	async function handleSaveSlashCommand() {
+		setSlashError(null)
+		const command = slashCommand.trim()
+		const label = slashPrompt.trim()
+		if (!command || !label) return
+		if (!command.startsWith("/")) {
+			setSlashError("Command must start with '/'")
+			return
+		}
+		setSaving(true)
+		try {
+			await onSaveSlashCommand?.(command, label, slashDescription.trim())
+			setSlashCommand("")
+			setSlashPrompt("")
+			setSlashDescription("")
+		} catch (error) {
+			setSlashError(
+				error instanceof Error ? error.message : "Failed to save command",
+			)
+		} finally {
+			setSaving(false)
+		}
+	}
+
+	async function handleDeleteSlashCommand(command: string) {
+		setSaving(true)
+		try {
+			await onDeleteSlashCommand?.(command)
 		} finally {
 			setSaving(false)
 		}
@@ -292,6 +344,86 @@ export function SettingsPanel({
 								className="rounded-md border border-border px-2 py-1 text-[11px] text-fg transition hover:bg-white/5 disabled:opacity-40"
 							>
 								Save automation
+							</button>
+						</div>
+					</div>
+
+					<div>
+						<div className="text-[11px] uppercase tracking-wider text-muted">
+							Slash commands
+						</div>
+						<p className="mt-1 text-[11px] text-muted">
+							Type the token in the composer to run its prompt.
+						</p>
+						{customSlashCommands.length > 0 ? (
+							<ul className="mt-2 space-y-1">
+								{customSlashCommands.map((item) => (
+									<li
+										key={item.command}
+										className="flex items-center justify-between gap-2 rounded border border-border bg-black/20 px-2 py-1.5"
+									>
+										<div className="min-w-0 flex-1">
+											<span className="font-mono text-fg">
+												{item.command}
+											</span>
+											{item.description ? (
+												<p className="truncate text-[11px] text-muted">
+													{item.description}
+												</p>
+											) : null}
+										</div>
+										<button
+											type="button"
+											disabled={saving}
+											onClick={() =>
+												void handleDeleteSlashCommand(item.command)
+											}
+											className="shrink-0 rounded p-1 text-muted hover:bg-white/5 hover:text-red-300 disabled:opacity-40"
+											title="Delete slash command"
+										>
+											<Trash2 className="size-3.5" />
+										</button>
+									</li>
+								))}
+							</ul>
+						) : (
+							<p className="mt-2 text-muted">No custom slash commands yet.</p>
+						)}
+						<div className="mt-3 space-y-2">
+							<input
+								value={slashCommand}
+								onChange={(event) => setSlashCommand(event.target.value)}
+								placeholder="/review"
+								className="w-full rounded-md border border-border bg-black/20 px-2 py-1.5 text-sm font-mono text-fg"
+							/>
+							<textarea
+								value={slashPrompt}
+								onChange={(event) => setSlashPrompt(event.target.value)}
+								placeholder="Prompt to send"
+								rows={2}
+								className="w-full resize-none rounded-md border border-border bg-black/20 px-2 py-1.5 text-sm text-fg"
+							/>
+							<input
+								value={slashDescription}
+								onChange={(event) => setSlashDescription(event.target.value)}
+								placeholder="Description (optional)"
+								className="w-full rounded-md border border-border bg-black/20 px-2 py-1.5 text-sm text-fg"
+							/>
+							{slashError ? (
+								<p className="text-[11px] text-red-300">{slashError}</p>
+							) : null}
+							<button
+								type="button"
+								disabled={
+									saving ||
+									!slashCommand.trim() ||
+									!slashPrompt.trim() ||
+									!onSaveSlashCommand
+								}
+								onClick={() => void handleSaveSlashCommand()}
+								className="rounded-md border border-border px-2 py-1 text-[11px] text-fg transition hover:bg-white/5 disabled:opacity-40"
+							>
+								Save slash command
 							</button>
 						</div>
 					</div>

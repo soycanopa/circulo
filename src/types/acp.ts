@@ -165,6 +165,14 @@ export interface AppSettings {
 	autoApproveEnabled?: boolean
 	/** Tool patterns the user chose to always allow (exact or simple glob). */
 	allowedToolPatterns?: string[]
+	/** User-defined slash commands shown in the composer menu. */
+	customSlashCommands?: CustomSlashCommand[]
+}
+
+export interface CustomSlashCommand {
+	command: string
+	label: string
+	description: string
 }
 
 export interface AgentDescriptor {

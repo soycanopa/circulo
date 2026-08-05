@@ -100,6 +100,24 @@ export async function readDirectory(
 	return invoke("read_directory_cmd", { dirPath })
 }
 
+export async function saveCustomSlashCommand(
+	command: string,
+	label: string,
+	description: string,
+): Promise<AppSettings> {
+	return invoke("save_custom_slash_command_cmd", {
+		command,
+		label,
+		description,
+	})
+}
+
+export async function deleteCustomSlashCommand(
+	command: string,
+): Promise<AppSettings> {
+	return invoke("delete_custom_slash_command_cmd", { command })
+}
+
 export async function getHomePath(): Promise<string> {
 	return invoke("get_home_path")
 }

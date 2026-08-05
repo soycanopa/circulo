@@ -3,7 +3,10 @@ import {
 	filterSlashCommands,
 	getActiveSlash,
 } from "@/lib/slash-parser"
-import { DEFAULT_SLASH_COMMANDS } from "@/lib/slash-commands"
+import {
+	DEFAULT_SLASH_COMMANDS,
+	mergeSlashCommands,
+} from "@/lib/slash-commands"
 
 describe("getActiveSlash", () => {
 	it("detects a slash token at the start of the input", () => {
@@ -44,5 +47,33 @@ describe("filterSlashCommands", () => {
 	it("matches case-insensitively", () => {
 		const results = filterSlashCommands("HELP", DEFAULT_SLASH_COMMANDS)
 		expect(results.map((c) => c.command)).toEqual(["help"])
+	})
+})
+
+describe("mergeSlashCommands", () => {
+	it("appends custom commands and normalizes their token", () => {
+		const merged = mergeSlashCommands([
+			{ command: "/review", label: "Review the current diff", description: "Run a review" },
+		])
+		expect(merged).toHaveLength(4)
+		const custom = merged[3]
+		expect(custom.command).toBe("review")
+		expect(custom.label).toBe("/review")
+		expect(custom.prompt).toBe("Review the current diff")
+		expect(custom.description).toBe("Run a review")
+	})
+
+	it("does not let custom commands shadow built-ins", () => {
+		const merged = mergeSlashCommands([
+			{ command: "/clear", label: "custom", description: "custom" },
+			{ command: "/compact", label: "custom2", description: "custom2" },
+		])
+		expect(merged).toHaveLength(3)
+		expect(merged.map((c) => c.command)).toEqual(["compact", "help", "clear"])
+		expect(merged[0].prompt).toBeUndefined()
+	})
+
+	it("returns built-ins when no custom commands exist", () => {
+		expect(mergeSlashCommands()).toEqual(DEFAULT_SLASH_COMMANDS)
 	})
 })
