@@ -238,6 +238,17 @@ body {
 
 /* ---- Rich markdown (react-markdown) ---- */
 
+/* Base typography — list bullets restored (Tailwind preflight resets them). */
+.markdown-body ul {
+  list-style-type: disc;
+}
+.markdown-body ol {
+  list-style-type: decimal;
+}
+.markdown-body strong {
+  font-weight: 600;
+}
+
 /* Code block pre inside the markdown wrapper keeps its own scroll + color. */
 .markdown-body pre {
   margin: 0;

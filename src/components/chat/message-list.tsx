@@ -46,7 +46,7 @@ function MessageRow({
 			{message.content ? (
 				<div className="text-sm leading-relaxed text-fg">
 					{message.role === "assistant" ? (
-						<Markdown text={message.content} />
+						<Markdown text={message.content} streaming={isLiveAssistant} />
 					) : (
 						<p className="whitespace-pre-wrap">{message.content}</p>
 					)}
@@ -151,7 +151,7 @@ export function MessageList() {
 										Agent
 									</div>
 									<div className="text-sm leading-relaxed text-fg">
-										<Markdown text={streaming} />
+										<Markdown text={streaming} streaming />
 										<span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-fg/70" />
 									</div>
 								</div>

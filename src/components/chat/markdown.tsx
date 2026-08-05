@@ -5,6 +5,7 @@ import rehypeKatex from "rehype-katex"
 import remarkGfm from "remark-gfm"
 import remarkMath from "remark-math"
 import { MermaidBlock } from "@/components/chat/mermaid-block"
+import { prepareMarkdownForRender } from "@/lib/markdown-normalize"
 import { cn } from "@/lib/utils"
 
 function codeText(node: ExtraProps["node"]): string {
@@ -123,15 +124,56 @@ const components: Components = {
 			{children}
 		</blockquote>
 	),
+	p: ({ children, ...props }) => (
+		<p className="my-2 first:mt-0 last:mb-0" {...props}>{children}</p>
+	),
+	strong: ({ children, ...props }) => (
+		<strong className="font-semibold text-fg" {...props}>{children}</strong>
+	),
+	ul: ({ children, ...props }) => (
+		<ul className="my-2 list-disc space-y-1 pl-5 first:mt-0 last:mb-0" {...props}>
+			{children}
+		</ul>
+	),
+	ol: ({ children, ...props }) => (
+		<ol className="my-2 list-decimal space-y-1 pl-5 first:mt-0 last:mb-0" {...props}>
+			{children}
+		</ol>
+	),
+	li: ({ children, ...props }) => (
+		<li className="leading-relaxed" {...props}>{children}</li>
+	),
+	h1: ({ children, ...props }) => (
+		<h1 className="mt-3 mb-2 text-base font-semibold text-fg first:mt-0" {...props}>
+			{children}
+		</h1>
+	),
+	h2: ({ children, ...props }) => (
+		<h2 className="mt-3 mb-2 text-sm font-semibold text-fg first:mt-0" {...props}>
+			{children}
+		</h2>
+	),
+	h3: ({ children, ...props }) => (
+		<h3 className="mt-2 mb-1 text-sm font-medium text-fg first:mt-0" {...props}>
+			{children}
+		</h3>
+	),
 }
 
 interface MarkdownProps {
 	text: string
 	className?: string
+	/** When true, strip trailing unclosed ** / __ / ` delimiters before parsing. */
+	streaming?: boolean
 }
 
 /** Rich Markdown renderer for assistant messages (GFM, KaTeX, highlight, mermaid). */
-export function Markdown({ text, className }: MarkdownProps) {
+export function Markdown({ text, className, streaming = false }: MarkdownProps) {
+	const prepared = useMemo(
+		() => prepareMarkdownForRender(text, streaming),
+		[text, streaming],
+	)
+
 	const markdown = useMemo(
 		() => (
 			<ReactMarkdown
@@ -142,10 +184,10 @@ export function Markdown({ text, className }: MarkdownProps) {
 				]}
 				components={components}
 			>
-				{text}
+				{prepared}
 			</ReactMarkdown>
 		),
-		[text],
+		[prepared],
 	)
 
 	return <div className={cn("markdown-body", className)}>{markdown}</div>

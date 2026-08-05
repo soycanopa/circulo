@@ -39,4 +39,38 @@ describe("Markdown", () => {
 		expect(html).not.toContain("<script>alert")
 		expect(html).toContain("&lt;script&gt;")
 	})
+
+	it("renders inline bold", () => {
+		const html = renderMarkdown("El modelo **Llama-3.2-1B-Instruct-8bit** usa RAM")
+		expect(html).toMatch(/<strong[^>]*>Llama-3\.2-1B-Instruct-8bit<\/strong>/)
+		expect(html).not.toContain("**")
+	})
+
+	it("renders bullet lists with ul/li", () => {
+		const html = renderMarkdown("- item one\n- item two")
+		expect(html).toContain("<ul")
+		expect(html).toContain("<li")
+		expect(html).toContain("item one")
+		expect(html).toContain("item two")
+	})
+
+	it("renders agent pseudo-list pattern as structured list with bold titles", () => {
+		const html = renderMarkdown(
+			"**Qwen2.5-1.5B-Instruct — la mejor relación\n**Qwen2.5-0.5B-Instruct — ~mitad de RAM",
+		)
+		expect(html).toContain("<ul")
+		expect(html).toContain("<li")
+		expect(html).toMatch(
+			/<strong[^>]*>Qwen2\.5-1\.5B-Instruct<\/strong>/,
+		)
+		expect(html).not.toContain("**")
+	})
+
+	it("strips trailing incomplete bold when streaming", () => {
+		const html = renderToStaticMarkup(
+			<Markdown text="partial **bol" streaming />,
+		)
+		expect(html).not.toContain("**")
+		expect(html).toContain("partial bol")
+	})
 })
