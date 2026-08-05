@@ -1,5 +1,5 @@
 import { getDefaultStore, useAtomValue, useSetAtom } from "jotai"
-import { Download, FileDiff, MessageSquarePlus, Terminal } from "lucide-react"
+import { Download, FileDiff, FolderTree, MessageSquarePlus, Terminal } from "lucide-react"
 import { WindowChromeControls } from "@/components/layout/window-chrome-controls"
 import { cn } from "@/lib/utils"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -12,6 +12,7 @@ import { OpencodeSetupBanner } from "@/components/onboarding/opencode-setup"
 import { OpenProjectModal } from "@/components/project/open-project-modal"
 import { SettingsPanel } from "@/components/settings/settings-panel"
 import { DiffPanel } from "@/components/tools/diff-panel"
+import { FileTreePanel } from "@/components/tools/file-tree-panel"
 import { TerminalDrawer } from "@/components/terminal/terminal-drawer"
 import { useAcpBridge } from "@/hooks/use-acp-bridge"
 import { useTerminalBridge } from "@/hooks/use-terminal-bridge"
@@ -68,6 +69,7 @@ import {
 	capabilitiesAtom,
 	diffPanelOpenAtom,
 	errorMessageAtom,
+	fileTreeOpenAtom,
 	generalChatSessionsAtom,
 	generalChatsPathAtom,
 	historyMessagesAtom,
@@ -126,11 +128,13 @@ export default function App() {
 		[sessionsMap],
 	)
 	const diffPanelOpen = useAtomValue(diffPanelOpenAtom)
+	const fileTreeOpen = useAtomValue(fileTreeOpenAtom)
 	const terminalDrawerOpen = useAtomValue(terminalDrawerOpenAtom)
 	const terminals = useAtomValue(terminalsAtom)
 	const userTerminalTabs = useAtomValue(userTerminalTabsAtom)
 	const sidebarOpen = useAtomValue(sidebarOpenAtom)
 	const setDiffPanelOpen = useSetAtom(diffPanelOpenAtom)
+	const setFileTreeOpen = useSetAtom(fileTreeOpenAtom)
 	const setTerminalDrawerOpen = useSetAtom(terminalDrawerOpenAtom)
 	const setSidebarOpen = useSetAtom(sidebarOpenAtom)
 	const setSelectedDiff = useSetAtom(selectedDiffToolAtom)
@@ -212,12 +216,26 @@ export default function App() {
 	}, [activeChatTitle, messages, setError])
 
 	const toggleDiffPanel = useCallback(() => {
-		setDiffPanelOpen((open) => !open)
-	}, [setDiffPanelOpen])
+		setDiffPanelOpen((open) => {
+			if (!open) setFileTreeOpen(false)
+			return !open
+		})
+	}, [setDiffPanelOpen, setFileTreeOpen])
 
 	const closeDiffPanel = useCallback(() => {
 		setDiffPanelOpen(false)
 	}, [setDiffPanelOpen])
+
+	const toggleFileTree = useCallback(() => {
+		setFileTreeOpen((open) => {
+			if (!open) setDiffPanelOpen(false)
+			return !open
+		})
+	}, [setFileTreeOpen, setDiffPanelOpen])
+
+	const closeFileTree = useCallback(() => {
+		setFileTreeOpen(false)
+	}, [setFileTreeOpen])
 
 	const handleOpenInEditor = useCallback(
 		(editor: "vscode" | "cursor" | "terminal") => {
@@ -641,6 +659,11 @@ export default function App() {
 				onSelect: () => toggleDiffPanel(),
 			},
 			{
+				id: "file-tree-panel",
+				label: fileTreeOpen ? "Close Files Panel" : "Open Files Panel",
+				onSelect: () => toggleFileTree(),
+			},
+			{
 				id: "terminal-drawer",
 				label: terminalDrawerOpen ? "Close Terminal" : "Open Terminal",
 				onSelect: () => toggleTerminalDrawer(),
@@ -659,6 +682,7 @@ export default function App() {
 		[
 			automations,
 			diffPanelOpen,
+			fileTreeOpen,
 			handleExportTranscript,
 			handleNewChat,
 			handleOpenInEditor,
@@ -667,6 +691,7 @@ export default function App() {
 			projectPath,
 			terminalDrawerOpen,
 			toggleDiffPanel,
+			toggleFileTree,
 			toggleTerminalDrawer,
 		],
 	)
@@ -805,15 +830,24 @@ export default function App() {
 		<>
 			<AppShell
 				sidebarOpen={sidebarOpen}
-				panelOpen={diffPanelOpen}
+				panelOpen={diffPanelOpen || fileTreeOpen}
 				panel={
-					<DiffPanel
-						projectPath={projectPath}
-						onClose={() => {
-							closeDiffPanel()
-							setSelectedDiff(null)
-						}}
-					/>
+					diffPanelOpen ? (
+						<DiffPanel
+							projectPath={projectPath}
+							onClose={() => {
+								closeDiffPanel()
+								setSelectedDiff(null)
+							}}
+						/>
+					) : fileTreeOpen ? (
+						<FileTreePanel
+							projectPath={projectPath}
+							onClose={closeFileTree}
+							onOpenFile={handleOpenFile}
+							onMentionFile={handleMentionFile}
+						/>
+					) : null
 				}
 				sidebar={
 			<AppSidebar
@@ -846,8 +880,6 @@ export default function App() {
 						onSelectWorkspace={(id) => void handleSelectWorkspace(id)}
 					onDeleteWorkspace={(id) => void handleDeleteWorkspace(id)}
 					onHideSidebar={() => setSidebarOpen(false)}
-					onOpenFile={handleOpenFile}
-					onMentionFile={handleMentionFile}
 				/>
 				}
 			>
@@ -904,6 +936,20 @@ export default function App() {
 									{terminalCount > 9 ? "9+" : terminalCount}
 								</span>
 							) : null}
+						</button>
+						<button
+							type="button"
+							onClick={toggleFileTree}
+							className={`relative inline-flex items-center justify-center rounded-md border p-1.5 transition ${
+								fileTreeOpen
+									? "border-violet-500/40 bg-violet-500/10 text-violet-200"
+									: "border-border text-muted hover:bg-white/5 hover:text-fg"
+							}`}
+							title="Toggle files panel"
+							aria-label="Toggle files panel"
+							data-tauri-drag-region="false"
+						>
+							<FolderTree className="size-3.5" />
 						</button>
 						<button
 							type="button"
