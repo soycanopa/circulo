@@ -1,4 +1,5 @@
 import { atom } from "jotai"
+import type { SettingsSectionId } from "@/lib/settings-sections"
 import type {
 	AgentCapabilities,
 	AppSettings,
@@ -118,6 +119,8 @@ export const userTerminalTabsAtom = atom<UserTerminalTab[]>([])
 export const activeTerminalIdAtom = atom<string | null>(null)
 export const terminalsAtom = atom<Record<string, TerminalState>>({})
 export const sidebarOpenAtom = atom(true)
+/** Settings mode: active section rendered in the main area. */
+export const settingsSectionAtom = atom<SettingsSectionId>("general")
 export const selectedDiffToolAtom = atom<ToolCall | null>(null)
 
 const DRAFTS_KEY = "circulo.drafts"
