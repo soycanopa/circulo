@@ -20,6 +20,15 @@ export interface AgentCapabilities {
 	closeSession: boolean
 	/** Multiple ACP sessions may run concurrently against the same agent process. */
 	concurrentSessions: boolean
+	/** MCP transport support advertised in `initialize`. Stdio is mandatory per ACP. */
+	mcpStdio: boolean
+	mcpHttp: boolean
+	mcpSse: boolean
+	/**
+	 * Empirically observed: the agent delegated a `terminal/*` request to the
+	 * client. Grok does; OpenCode runs bash internally.
+	 */
+	terminalDelegation: boolean
 }
 
 export interface ProjectStatus {
@@ -181,6 +190,8 @@ export interface AppSettings {
 	allowedToolPatterns?: string[]
 	/** User-defined slash commands shown in the composer menu. */
 	customSlashCommands?: CustomSlashCommand[]
+	/** Optional Vercel OIDC token for the authenticated skills.sh /api/v1 API. */
+	vercelOidcToken?: string | null
 }
 
 export interface CustomSlashCommand {
@@ -202,4 +213,99 @@ export interface Automation {
 	prompt: string
 	createdAt: number
 	updatedAt: number
+}
+
+// ---------------------------------------------------------------------------
+// MCP registry (Settings > MCP)
+// ---------------------------------------------------------------------------
+
+export type McpServerKind = "stdio" | "http" | "sse"
+
+export interface McpEnvVar {
+	name: string
+	value: string
+}
+
+export interface ManagedMcpServer {
+	id: string
+	name: string
+	kind: McpServerKind
+	/** Stdio: executable path. Http/Sse: server URL. */
+	command: string
+	args: string[]
+	env: McpEnvVar[]
+	/** Eligible for on-demand loading via `/mcp name` → `mcp_load`. */
+	enabled: boolean
+	/** Injected natively into `session/new` with the full tool catalogue. */
+	autoLoad: boolean
+	/** Built-in servers (e.g. the orchestrator) cannot be deleted. */
+	builtIn: boolean
+}
+
+export interface McpImportCandidate {
+	id: string
+	name: string
+	kind: McpServerKind
+	command: string
+	args: string[]
+	env: McpEnvVar[]
+	/** Config file the server came from (`.mcp.json` / `opencode.json`). */
+	source: string
+}
+
+export interface McpValidationResult {
+	ok: boolean
+	error: string | null
+	tools: string[]
+	toolCount: number
+}
+
+export interface CirculoMcpStatus {
+	available: boolean
+	path: string | null
+	registryPath: string
+}
+
+// ---------------------------------------------------------------------------
+// Skills (Settings > Skills)
+// ---------------------------------------------------------------------------
+
+export interface SkillSearchResult {
+	/** Stable `{source}/{slug}` id (skills.sh). */
+	id: string
+	/** Legacy search endpoint's `skillId` (also the v1 `slug`). */
+	skillId: string
+	slug: string
+	name: string
+	installs: number
+	source: string
+	description: string
+	/** GitHub repo URL / well-known base (authenticated API only). */
+	installUrl: string | null
+	/** Link to the skill page on skills.sh (authenticated API only). */
+	url: string | null
+	/** "github" | "well-known" (authenticated API only). */
+	sourceType: string | null
+}
+
+export interface SkillSearchResponse {
+	skills: SkillSearchResult[]
+	count: number
+	/** "authenticated" (official /api/v1) or "public" (fallback endpoint). */
+	mode: string
+	/** True when the chosen skills.sh path failed/changed. */
+	degraded: boolean
+	error: string | null
+}
+
+export interface InstalledSkill {
+	name: string
+	description: string
+	/** "project" | "global" */
+	scope: string
+	path: string
+}
+
+export interface SkillListResponse {
+	skills: InstalledSkill[]
 }

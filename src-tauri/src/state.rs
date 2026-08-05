@@ -36,6 +36,14 @@ pub struct AgentCapabilitiesDto {
     /// OpenCode (and most ACP agents) accept multiple sessions active per process.
     /// We surface this so the UI can keep N chats in flight concurrently.
     pub concurrent_sessions: bool,
+    /// MCP transport support advertised in `initialize`. Stdio is mandatory per
+    /// ACP, so it always reflects `true`; http/sse come from `mcp_capabilities`.
+    pub mcp_stdio: bool,
+    pub mcp_http: bool,
+    pub mcp_sse: bool,
+    /// Empirically observed: the agent delegated a `terminal/*` request to the
+    /// client (Grok does, OpenCode runs bash internally). Starts `false`.
+    pub terminal_delegation: bool,
 }
 
 impl AgentCapabilitiesDto {
@@ -48,6 +56,10 @@ impl AgentCapabilitiesDto {
             // Default to true: OpenCode and most ACP agents support multiple
             // concurrent sessions per process. Users can opt-out per agent later.
             concurrent_sessions: true,
+            mcp_stdio: true,
+            mcp_http: caps.mcp_capabilities.http,
+            mcp_sse: caps.mcp_capabilities.sse,
+            terminal_delegation: false,
         }
     }
 
@@ -58,6 +70,10 @@ impl AgentCapabilitiesDto {
             resume_session: false,
             close_session: false,
             concurrent_sessions: true,
+            mcp_stdio: true,
+            mcp_http: false,
+            mcp_sse: false,
+            terminal_delegation: false,
         }
     }
 }
