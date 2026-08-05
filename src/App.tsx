@@ -2,7 +2,14 @@ import { getDefaultStore, useAtomValue, useSetAtom } from "jotai"
 import { Download, FileDiff, FolderTree, MessageSquarePlus, Terminal } from "lucide-react"
 import { WindowChromeControls } from "@/components/layout/window-chrome-controls"
 import { cn } from "@/lib/utils"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+	startTransition,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react"
 import { ChatInput } from "@/components/chat/chat-input"
 import { MessageList } from "@/components/chat/message-list"
 import { CommandPalette } from "@/components/layout/command-palette"
@@ -16,9 +23,12 @@ import { AboutSection } from "@/components/settings/sections/about-section"
 import { AgentsSection } from "@/components/settings/sections/agents-section"
 import { AutomationsSection } from "@/components/settings/sections/automations-section"
 import { GeneralSection } from "@/components/settings/sections/general-section"
+import { McpSection } from "@/components/settings/sections/mcp-section"
 import { ModelsSection } from "@/components/settings/sections/models-section"
 import { PermissionsSection } from "@/components/settings/sections/permissions-section"
+import { SkillsSection } from "@/components/settings/sections/skills-section"
 import { SlashCommandsSection } from "@/components/settings/sections/slash-commands-section"
+import { UsageSection } from "@/components/settings/sections/usage-section"
 import { WorkspacesSection } from "@/components/settings/sections/workspaces-section"
 import { DiffPanel } from "@/components/tools/diff-panel"
 import { FileTreePanel } from "@/components/tools/file-tree-panel"
@@ -161,6 +171,7 @@ export default function App() {
 
 	const [busy, setBusy] = useState(false)
 	const [settingsOpen, setSettingsOpen] = useState(false)
+	const [settingsEverOpened, setSettingsEverOpened] = useState(false)
 	const [openProjectModalOpen, setOpenProjectModalOpen] = useState(false)
 	const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
 	const [terminalMounted, setTerminalMounted] = useState(false)
@@ -168,10 +179,13 @@ export default function App() {
 	const [agentId, setAgentId] = useState<string | null>("opencode")
 
 	const openSettings = useCallback(() => {
-		setSettingsOpen(true)
+		setSettingsEverOpened(true)
 		setSidebarOpen(true)
 		setDiffPanelOpen(false)
 		setFileTreeOpen(false)
+		startTransition(() => {
+			setSettingsOpen(true)
+		})
 	}, [setSidebarOpen, setDiffPanelOpen, setFileTreeOpen])
 
 	const closeSettings = useCallback(() => {
@@ -930,6 +944,12 @@ export default function App() {
 						onClose={closeSettings}
 					/>
 				)
+			case "mcp":
+				return <McpSection />
+			case "skills":
+				return <SkillsSection />
+			case "usage":
+				return <UsageSection />
 			case "about":
 				return <AboutSection />
 		}
@@ -959,59 +979,70 @@ export default function App() {
 					) : null
 				}
 			sidebar={
-			settingsOpen ? (
-				<SettingsSidebar
-					activeSection={settingsSection}
-					onSelectSection={setSettingsSection}
-					onClose={closeSettings}
-					onHideSidebar={() => setSidebarOpen(false)}
-				/>
-			) : (
-			<AppSidebar
-				sessionId={sessionId}
-				historyViewSessionId={historyViewSessionId}
-				agentRuntimes={agentRuntimes}
-				busy={busy}
-				generalChatsPath={generalChatsPath}
-				generalChats={generalChatSessions}
-				projectChatsByPath={projectChatsByPath}
-				workspaces={appSettings?.workspaces ?? []}
-				activeWorkspaceId={appSettings?.activeWorkspaceId ?? null}
-				currentProjectPath={projectPath}
-				liveSessionIds={liveSessionIds}
-				onNewChat={() => void handleNewChat()}
-				onNewChatInProject={(path) => void handleNewChat(path)}
-						onOpenProject={() => handleOpenProject()}
-						onOpenSettings={openSettings}
-						onOpenChat={(id, ownerPath) => void handleOpenChat(id, ownerPath)}
-						onRenameChat={(id, ownerPath, title) =>
-							void handleRenameChat(id, ownerPath, title)
-						}
-						onDeleteChat={(id, ownerPath) =>
-							void handleDeleteChat(id, ownerPath)
-						}
-						onSelectProject={(path) => void handleSelectProject(path)}
-						onRemoveProject={(path) => void handleRemoveProject(path)}
-						onSelectGeneralChats={() => void handleSelectGeneralChats()}
-						onAddWorkspace={() => void handleAddWorkspace()}
-						onSelectWorkspace={(id) => void handleSelectWorkspace(id)}
-					onDeleteWorkspace={(id) => void handleDeleteWorkspace(id)}
-					onHideSidebar={() => setSidebarOpen(false)}
-				/>
-			)
+				<div className="relative h-full min-h-0 w-full">
+					<div
+						className={cn("h-full", settingsOpen && "hidden")}
+						aria-hidden={settingsOpen}
+					>
+						<AppSidebar
+							sessionId={sessionId}
+							historyViewSessionId={historyViewSessionId}
+							agentRuntimes={agentRuntimes}
+							busy={busy}
+							generalChatsPath={generalChatsPath}
+							generalChats={generalChatSessions}
+							projectChatsByPath={projectChatsByPath}
+							workspaces={appSettings?.workspaces ?? []}
+							activeWorkspaceId={appSettings?.activeWorkspaceId ?? null}
+							currentProjectPath={projectPath}
+							liveSessionIds={liveSessionIds}
+							onNewChat={() => void handleNewChat()}
+							onNewChatInProject={(path) => void handleNewChat(path)}
+							onOpenProject={() => handleOpenProject()}
+							onOpenSettings={openSettings}
+							onOpenChat={(id, ownerPath) => void handleOpenChat(id, ownerPath)}
+							onRenameChat={(id, ownerPath, title) =>
+								void handleRenameChat(id, ownerPath, title)
+							}
+							onDeleteChat={(id, ownerPath) =>
+								void handleDeleteChat(id, ownerPath)
+							}
+							onSelectProject={(path) => void handleSelectProject(path)}
+							onRemoveProject={(path) => void handleRemoveProject(path)}
+							onSelectGeneralChats={() => void handleSelectGeneralChats()}
+							onAddWorkspace={() => void handleAddWorkspace()}
+							onSelectWorkspace={(id) => void handleSelectWorkspace(id)}
+							onDeleteWorkspace={(id) => void handleDeleteWorkspace(id)}
+							onHideSidebar={() => setSidebarOpen(false)}
+						/>
+					</div>
+					{settingsEverOpened ? (
+						<div
+							className={cn(
+								"absolute inset-0 flex min-h-0 flex-col",
+								!settingsOpen && "hidden",
+							)}
+							aria-hidden={!settingsOpen}
+						>
+							<SettingsSidebar
+								activeSection={settingsSection}
+								onSelectSection={setSettingsSection}
+								onClose={closeSettings}
+								onHideSidebar={() => setSidebarOpen(false)}
+							/>
+						</div>
+					) : null}
+				</div>
 			}
 			>
-				{settingsOpen ? (
-					<SettingsView
-						activeSection={settingsSection}
-						onClose={closeSettings}
-						sidebarVisible={sidebarOpen}
-						onToggleSidebar={() => setSidebarOpen((open) => !open)}
+				<div className="relative flex min-h-0 flex-1 flex-col">
+					<div
+						className={cn(
+							"flex min-h-0 flex-1 flex-col",
+							settingsOpen && "hidden",
+						)}
+						aria-hidden={settingsOpen}
 					>
-						{renderSettingsSection()}
-					</SettingsView>
-				) : (
-					<>
 						<div
 							className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border pb-0.5"
 							data-tauri-drag-region="deep"
@@ -1164,8 +1195,26 @@ export default function App() {
 					) : null}
 				</div>
 			</div>
-					</>
-				)}
+					</div>
+					{settingsEverOpened ? (
+						<div
+							className={cn(
+								"absolute inset-0 flex min-h-0 flex-col",
+								!settingsOpen && "hidden",
+							)}
+							aria-hidden={!settingsOpen}
+						>
+							<SettingsView
+								activeSection={settingsSection}
+								onClose={closeSettings}
+								sidebarVisible={sidebarOpen}
+								onToggleSidebar={() => setSidebarOpen((open) => !open)}
+							>
+								{renderSettingsSection()}
+							</SettingsView>
+						</div>
+					) : null}
+				</div>
 			<OpenProjectModal
 				open={openProjectModalOpen}
 				busy={busy}
