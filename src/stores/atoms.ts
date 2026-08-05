@@ -64,8 +64,13 @@ export const visiblePromptInFlightAtom = atom((get) => {
 })
 export const visibleConfigOptionsAtom = atom((get) => {
 	const sid = get(activeSessionIdAtom)
-	if (!sid) return get(configOptionsAtom)
-	return get(sessionsAtom)[sid]?.configOptions ?? get(configOptionsAtom)
+	const global = get(configOptionsAtom)
+	if (!sid) return global
+	const sessionOpts = get(sessionsAtom)[sid]?.configOptions
+	// Prefer per-session options; fall back to global when the session slot is
+	// still empty (e.g. after agent switch + reconcile race).
+	if (sessionOpts && sessionOpts.length > 0) return sessionOpts
+	return global
 })
 export const visibleSessionStatusAtom = atom((get) => {
 	const sid = get(activeSessionIdAtom)

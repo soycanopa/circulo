@@ -4,12 +4,31 @@ import { reconcileSessionFromProjectStatus } from "@/hooks/session-reconcile"
 import {
 	activeSessionIdAtom,
 	agentConnectedAtom,
+	configOptionsAtom,
 	connectionGenerationAtom,
 	historyMessagesAtom,
 	historyViewSessionIdAtom,
 	sessionsAtom,
 } from "@/stores/atoms"
-import type { ProjectStatus } from "@/types/acp"
+import type { ConfigOption, ProjectStatus } from "@/types/acp"
+
+const modelOption: ConfigOption = {
+	id: "model",
+	name: "Model",
+	category: "model",
+	currentValue: "opencode/gpt-5",
+	options: [
+		{ value: "opencode/gpt-5", name: "GPT-5" },
+	],
+}
+
+const modeOption: ConfigOption = {
+	id: "mode",
+	name: "Mode",
+	category: "mode",
+	currentValue: "agent",
+	options: [{ value: "agent", name: "Agent" }],
+}
 
 const baseStatus: ProjectStatus = {
 	connected: true,
@@ -24,6 +43,10 @@ const baseStatus: ProjectStatus = {
 		resumeSession: false,
 		closeSession: true,
 		concurrentSessions: true,
+		mcpStdio: true,
+		mcpHttp: false,
+		mcpSse: false,
+		terminalDelegation: false,
 	},
 	agentCommand: "opencode acp",
 }
@@ -50,5 +73,19 @@ describe("reconcileSessionFromProjectStatus", () => {
 		expect(store.get(historyViewSessionIdAtom)).toBeNull()
 		expect(store.get(historyMessagesAtom)).toEqual([])
 		expect(store.get(sessionsAtom)["session-abc"]).toBeDefined()
+	})
+
+	it("writes config options into the session slot (not only the global atom)", () => {
+		const store = createStore()
+		reconcileSessionFromProjectStatus(store, {
+			...baseStatus,
+			configOptions: [modelOption, modeOption],
+		})
+
+		expect(store.get(configOptionsAtom)).toEqual([modelOption, modeOption])
+		expect(store.get(sessionsAtom)["session-abc"]?.configOptions).toEqual([
+			modelOption,
+			modeOption,
+		])
 	})
 })

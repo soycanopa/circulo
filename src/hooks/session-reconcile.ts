@@ -55,6 +55,16 @@ export function reconcileSessionFromProjectStatus(
 		ensureSessionSlot(store, status.sessionId)
 		if (status.configOptions.length) {
 			store.set(configOptionsAtom, status.configOptions)
+			store.set(sessionsAtom, (prev) => {
+				const current = prev[status.sessionId!] ?? { ...EMPTY_SESSION }
+				return {
+					...prev,
+					[status.sessionId!]: {
+						...current,
+						configOptions: status.configOptions,
+					},
+				}
+			})
 		}
 	} else if (status.configOptions.length) {
 		store.set(configOptionsAtom, status.configOptions)
