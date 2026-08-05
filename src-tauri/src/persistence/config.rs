@@ -72,6 +72,10 @@ pub struct AppSettings {
     /// User-defined slash commands shown in the composer menu.
     #[serde(default)]
     pub custom_slash_commands: Vec<CustomSlashCommand>,
+    /// Optional Vercel OIDC token for the authenticated skills.sh `/api/v1`
+    /// endpoints (search + skill detail). Empty when the public fallback is used.
+    #[serde(default)]
+    pub vercel_oidc_token: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -88,6 +92,7 @@ impl Default for AppSettings {
             auto_approve_enabled: false,
             allowed_tool_patterns: Vec::new(),
             custom_slash_commands: Vec::new(),
+            vercel_oidc_token: None,
         };
         let _ = ensure_workspaces(&mut settings);
         settings
@@ -113,6 +118,7 @@ pub fn load_settings() -> Result<AppSettings, String> {
             auto_approve_enabled: false,
             allowed_tool_patterns: Vec::new(),
             custom_slash_commands: Vec::new(),
+            vercel_oidc_token: None,
         }
     } else {
         let raw = std::fs::read_to_string(&path).map_err(|err| err.to_string())?;

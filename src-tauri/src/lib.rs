@@ -91,6 +91,7 @@ pub fn run() {
             commands::persistence::mark_model_used_cmd,
             commands::persistence::set_auto_approve_cmd,
             commands::persistence::set_allowed_tool_cmd,
+            commands::persistence::set_vercel_oidc_token_cmd,
             commands::persistence::save_custom_slash_command_cmd,
             commands::persistence::delete_custom_slash_command_cmd,
             commands::persistence::list_automations_cmd,
@@ -117,6 +118,10 @@ pub fn run() {
             commands::mcp::list_mcp_imports_cmd,
             commands::mcp::import_mcp_cmd,
             commands::mcp::get_circulo_mcp_status_cmd,
+            commands::skills::search_skills_cmd,
+            commands::skills::list_skills_cmd,
+            commands::skills::install_skill_cmd,
+            commands::skills::delete_skill_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

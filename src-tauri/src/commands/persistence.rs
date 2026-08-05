@@ -180,6 +180,19 @@ pub fn set_auto_approve_cmd(enabled: bool) -> Result<AppSettings, String> {
     load_settings()
 }
 
+/// Store (or clear) the optional Vercel OIDC token used by the authenticated
+/// skills.sh `/api/v1` endpoints. `None` keeps the public fallback in use.
+#[tauri::command]
+pub fn set_vercel_oidc_token_cmd(token: Option<String>) -> Result<AppSettings, String> {
+    let token = token
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty());
+    let mut settings = load_settings()?;
+    settings.vercel_oidc_token = token;
+    save_settings(&settings)?;
+    load_settings()
+}
+
 /// Add or remove a remembered "allow always" tool pattern. Exact or glob
 /// (`*`) matches against the tool call name/title when a permission arrives.
 #[tauri::command]
