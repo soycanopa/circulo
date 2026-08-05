@@ -119,6 +119,13 @@ Cursor’s native ACP (`cursor-agent acp`) often returns modes but **not** a rel
 
 To pin a model for Cursor, use the CLI at spawn time (outside Circulo today): `cursor-agent --model <id> acp` (`cursor-agent --list-models` for valid ids).
 
+### Pi (`pi-acp`)
+
+[Pi](https://github.com/badlogic/pi-mono) speaks ACP through the community adapter [`pi-acp`](https://www.npmjs.com/package/pi-acp) (same entry as [Zed’s ACP registry](https://zed.dev/acp/agent/pi)): JSON-RPC 2.0 over stdio, no extra args.
+
+- Requires `pi` on `PATH` plus either `pi-acp` (`npm install -g pi-acp`) or `npx` (Circulo falls back to `npx -y pi-acp`).
+- Override binaries with `PI_BIN` / `PI_ACP_BIN` when needed.
+
 ## Conventions
 
 - File paths are **absolute**.

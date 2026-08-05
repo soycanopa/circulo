@@ -8,6 +8,7 @@ export const KNOWN_AGENTS: Record<string, AgentDescriptor> = {
 	opencode: { id: "opencode", label: "OpenCode" },
 	"cursor-agent": { id: "cursor-agent", label: "Cursor Agent" },
 	grok: { id: "grok", label: "Grok" },
+	pi: { id: "pi", label: "Pi" },
 	custom: { id: "custom", label: "Custom ACP" },
 }
 
