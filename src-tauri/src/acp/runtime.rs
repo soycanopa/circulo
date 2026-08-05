@@ -203,6 +203,13 @@ pub async fn start_agent_connection(
                     let _ = responder.respond_with_error(AcpError::internal_error());
                     return Ok(());
                 }
+                // Empirical capability: the agent delegated a terminal to us.
+                {
+                    let mut guard = state_for_terminals_create.lock().await;
+                    if let Some(agent) = guard.agent_for_generation_mut(generation) {
+                        agent.agent_capabilities.terminal_delegation = true;
+                    }
+                }
                 let response = terminals_for_create.lock().await.create(request).await;
                 let _ = responder.respond_with_result(
                     response.map_err(|err| AcpError::invalid_params().data(err)),
@@ -969,8 +976,20 @@ async fn create_session_on_connection(
     );
     let started = Instant::now();
 
+    // Inject the `circulo-mcp` orchestrator (always, when available) plus any
+    // auto-load servers marked in Settings > MCP. Other servers load on-demand
+    // via the `/mcp` slash command → `mcp_load`.
+    let mcp_servers = crate::commands::mcp::build_injected_mcp_servers(app, project_path);
+    if mcp_servers.is_empty() {
+        info!("session/new without MCP injection (no sidecar / no auto-load servers)");
+    } else {
+        info!(count = mcp_servers.len(), "Injecting MCP servers into session/new");
+    }
+
     let response = connection
-        .send_request(NewSessionRequest::new(project_path.clone()))
+        .send_request(
+            NewSessionRequest::new(project_path.clone()).mcp_servers(mcp_servers),
+        )
         .block_task()
         .await
         .map_err(|err| format!("session/new failed: {err}"))?;

@@ -109,6 +109,14 @@ pub fn run() {
             commands::persistence::seed_chat_transcript_cmd,
             commands::persistence::delete_chat_transcript_cmd,
             commands::persistence::rename_chat_transcript_cmd,
+            commands::mcp::get_mcp_servers_cmd,
+            commands::mcp::upsert_mcp_server_cmd,
+            commands::mcp::delete_mcp_server_cmd,
+            commands::mcp::set_mcp_server_state_cmd,
+            commands::mcp::validate_mcp_server_cmd,
+            commands::mcp::list_mcp_imports_cmd,
+            commands::mcp::import_mcp_cmd,
+            commands::mcp::get_circulo_mcp_status_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
