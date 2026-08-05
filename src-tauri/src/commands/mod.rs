@@ -13,7 +13,9 @@ use tracing::info;
 
 pub mod fs;
 pub mod git;
+pub mod mcp;
 pub mod persistence;
+pub mod skills;
 
 use serde::Serialize;
 

@@ -1,8 +1,14 @@
 mod automations;
 mod config;
+mod mcp;
 mod transcripts;
 
 pub use automations::{delete_automation, list_automations, save_automation, Automation};
+pub use mcp::{
+    auto_load_servers, delete_mcp_server, import_mcp, list_mcp_imports, load_mcp_servers,
+    mcp_registry_path, save_mcp_servers, slugify_id, upsert_mcp_server, validate_mcp_server,
+    ManagedMcpServer, McpEnvVar, McpImportCandidate, McpServerKind,
+};
 pub use config::{
     active_workspace_chats_path, create_workspace, delete_workspace, load_settings,
     remove_project_from_workspace, save_settings, set_active_workspace, touch_recent_project,
