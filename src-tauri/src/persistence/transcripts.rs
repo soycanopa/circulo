@@ -145,7 +145,7 @@ pub fn list_chat_sessions(project_path: &str) -> Result<Vec<ChatSessionSummary>,
             chat.created_at = chat.updated_at;
         }
     }
-    chats.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    chats.sort_by_key(|chat| chat.created_at);
     Ok(chats)
 }
 
@@ -306,7 +306,7 @@ pub fn seed_chat_transcript(
 }
 
 fn upsert_summary(
-    path: &PathBuf,
+    path: &Path,
     project_path: &str,
     summary: &ChatSessionSummary,
 ) -> Result<(), String> {

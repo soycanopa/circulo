@@ -20,13 +20,11 @@ const DEFAULT_OUTPUT_BYTE_LIMIT: u64 = 256 * 1024;
 
 struct TerminalEntry {
     session_id: String,
-    label: String,
     output: Arc<Mutex<String>>,
     truncated: Arc<Mutex<bool>>,
     exit_status: Arc<Mutex<Option<TerminalExitStatus>>>,
     done: Arc<Notify>,
     child: Arc<Mutex<Option<Child>>>,
-    output_byte_limit: u64,
     released: Arc<Mutex<bool>>,
 }
 
@@ -94,13 +92,11 @@ impl TerminalManager {
 
         let entry = TerminalEntry {
             session_id: session_id.clone(),
-            label: label.clone(),
             output: output.clone(),
             truncated: truncated.clone(),
             exit_status: exit_status.clone(),
             done: done.clone(),
             child: child_handle.clone(),
-            output_byte_limit: limit,
             released: released.clone(),
         };
         self.terminals.insert(terminal_id.clone(), entry);
@@ -318,6 +314,7 @@ impl TerminalManager {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn emit_snapshot(
         &self,
         terminal_id: &str,
@@ -364,7 +361,7 @@ fn append_with_limit(buffer: &mut String, truncated: &mut bool, chunk: &str, lim
     }
     buffer.push_str(chunk);
     let limit = limit as usize;
-    while buffer.as_bytes().len() > limit {
+    while buffer.len() > limit {
         let mut cut = 0usize;
         for (idx, _) in buffer.char_indices() {
             if idx == 0 {
@@ -384,6 +381,7 @@ fn append_with_limit(buffer: &mut String, truncated: &mut bool, chunk: &str, lim
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_output_pump<R>(
     reader: R,
     output: Arc<Mutex<String>>,
@@ -429,6 +427,7 @@ fn spawn_output_pump<R>(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_terminal_event(
     app: &AppHandle,
     terminal_id: &str,
@@ -463,7 +462,7 @@ mod tests {
         let mut truncated = false;
         append_with_limit(&mut buf, &mut truncated, "!!!!", 8);
         assert!(truncated);
-        assert!(buf.as_bytes().len() <= 8);
+        assert!(buf.len() <= 8);
     }
 
     #[test]

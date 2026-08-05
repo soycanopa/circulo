@@ -141,7 +141,6 @@ pub struct SessionHandle {
     /// True after the user sends at least one prompt in this session.
     pub user_prompt_sent: bool,
     pub config_options: Vec<ConfigOptionDto>,
-    pub session_done: Arc<Notify>,
 }
 
 impl ActiveAgent {
@@ -157,13 +156,6 @@ impl ActiveAgent {
             .as_ref()
             .and_then(|sid| self.sessions.get(sid))
             .is_some_and(|s| s.session_ready_for_ui)
-    }
-
-    pub fn prompt_in_flight(&self) -> bool {
-        self.visible_session_id
-            .as_ref()
-            .and_then(|sid| self.sessions.get(sid))
-            .is_some_and(|s| s.prompt_in_flight)
     }
 
     pub fn config_options(&self) -> Vec<ConfigOptionDto> {
@@ -283,12 +275,6 @@ impl CirculoState {
         self.agent
             .as_ref()
             .is_some_and(|agent| agent.generation == generation)
-    }
-
-    pub fn is_pooled_generation(&self, generation: u64) -> bool {
-        self.warm_pool
-            .values()
-            .any(|agent| agent.generation == generation)
     }
 
     pub fn agent_for_generation(&self, generation: u64) -> Option<&ActiveAgent> {

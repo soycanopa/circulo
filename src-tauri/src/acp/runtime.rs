@@ -16,7 +16,7 @@ use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, ConnectionTo, Error as AcpError};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{mpsc, oneshot, Mutex, Notify};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tracing::{error, info};
 
 use crate::agents::build_agent;
@@ -618,7 +618,6 @@ async fn run_command_loop(
                     let state = state.clone();
                     let app = app.clone();
                     let session_id = session_id.clone();
-                    let generation = generation;
                     async move {
                         let result = prompt_connection
                             .send_request(PromptRequest::new(session_id.clone(), blocks))
@@ -800,7 +799,7 @@ async fn publish_prewarmed_session(
     app: &AppHandle,
     state: &SharedState,
     generation: u64,
-    project_path: &PathBuf,
+    project_path: &Path,
 ) -> Result<Option<String>, String> {
     let (session_id, config_options) = {
         let mut guard = state.lock().await;
@@ -1370,7 +1369,6 @@ fn upsert_session(
             prompt_in_flight: false,
             user_prompt_sent: false,
             config_options: Vec::new(),
-            session_done: Arc::new(Notify::new()),
         });
     let _ = project_path; // reserved for future per-session metadata
 }
