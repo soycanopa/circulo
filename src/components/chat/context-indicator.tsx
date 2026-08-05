@@ -87,7 +87,7 @@ export function ContextIndicator({ usage, className }: ContextIndicatorProps) {
 			<PopoverAnchor asChild>
 				<div
 					role="img"
-					aria-label="Uso de contexto del modelo"
+					aria-label="Model context usage"
 					onMouseEnter={showPopover}
 					onMouseLeave={scheduleClose}
 					onFocus={showPopover}
@@ -109,7 +109,7 @@ export function ContextIndicator({ usage, className }: ContextIndicatorProps) {
 				onMouseLeave={scheduleClose}
 				onOpenAutoFocus={(event) => event.preventDefault()}
 			>
-				<p className="text-xs font-medium text-fg">Contexto del modelo</p>
+				<p className="text-xs font-medium text-fg">Model context</p>
 				<div className="mt-3 flex items-center gap-3">
 					<div className="relative flex shrink-0 items-center justify-center">
 						<ContextRing ratio={ratio} size="lg" strokeClass={strokeClass} />
@@ -119,20 +119,20 @@ export function ContextIndicator({ usage, className }: ContextIndicatorProps) {
 					</div>
 					<dl className="min-w-0 flex-1 space-y-1.5 text-xs">
 						<div className="flex items-baseline justify-between gap-2">
-							<dt className="text-white/50">Máximo</dt>
+							<dt className="text-white/50">Max</dt>
 							<dd className="font-medium tabular-nums text-fg">
 								{size > 0 ? `${formatTokens(size)} tokens` : "—"}
 							</dd>
 						</div>
 						<div className="flex items-baseline justify-between gap-2">
-							<dt className="text-white/50">Consumido</dt>
+							<dt className="text-white/50">Used</dt>
 							<dd className="font-medium tabular-nums text-fg">
 								{formatTokens(used)} tokens
 							</dd>
 						</div>
 						{size > 0 ? (
 							<div className="flex items-baseline justify-between gap-2">
-								<dt className="text-white/50">Disponible</dt>
+								<dt className="text-white/50">Available</dt>
 								<dd className="font-medium tabular-nums text-fg">
 									{formatTokens(Math.max(0, size - used))} tokens
 								</dd>

@@ -68,7 +68,7 @@ export function useBootstrapAgent() {
 		}
 
 		if (!bootstrapPromise) {
-			setProgress("Preparando agentes…")
+			setProgress("Preparing agents…")
 			bootstrapPromise = waitForListeners()
 				.then(() => warmDefaultAgents())
 				.then(() => {

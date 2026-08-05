@@ -90,8 +90,8 @@ export function AutoApproveToggle({ className }: AutoApproveToggleProps) {
 					disabled={promptInFlight}
 					aria-label={
 						enabled
-							? "Edición automática activada — el agente no pedirá permiso"
-							: "Edición automática desactivada — el agente pedirá permiso"
+							? "Auto-edit enabled — the agent won't ask for permission"
+							: "Auto-edit disabled — the agent will ask for permission"
 					}
 					onClick={() => void handleToggle()}
 					onMouseEnter={showPopover}
@@ -123,11 +123,11 @@ export function AutoApproveToggle({ className }: AutoApproveToggleProps) {
 				onMouseLeave={scheduleClose}
 				onOpenAutoFocus={(event) => event.preventDefault()}
 			>
-				<p className="text-xs font-medium text-fg">Edición automática</p>
+				<p className="text-xs font-medium text-fg">Auto-edit</p>
 				<p className="mt-1.5 text-xs leading-snug text-white/60">
 					{enabled
-						? "El agente puede editar sin pedir permiso en cada cambio."
-						: "El agente pedirá permiso antes de editar archivos."}
+						? "The agent can edit without asking for permission on every change."
+						: "The agent will ask for permission before editing files."}
 				</p>
 				<p
 					className={cn(

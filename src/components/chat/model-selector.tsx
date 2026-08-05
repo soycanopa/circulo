@@ -162,7 +162,7 @@ export function ModelSelector({
 				</button>
 				<button
 					type="button"
-					title={favorited ? "Quitar de favoritos" : "Agregar a favoritos"}
+					title={favorited ? "Remove from favorites" : "Add to favorites"}
 					disabled={favoritePending}
 					className="shrink-0 rounded p-1 text-white/35 transition-colors hover:bg-white/5 hover:text-white/70 disabled:opacity-40"
 					onPointerDown={(event) => {
@@ -228,7 +228,7 @@ export function ModelSelector({
 						<Input
 							type="search"
 							value={searchQuery}
-							placeholder="Buscar modelo…"
+							placeholder="Search models…"
 							autoComplete="off"
 							className="h-8 pl-8"
 							onChange={(event) => setSearchQuery(event.target.value)}
@@ -245,7 +245,7 @@ export function ModelSelector({
 				<div className="max-h-72 overflow-y-auto overscroll-contain p-1">
 					{!hasResults ? (
 						<p className="px-3 py-6 text-center text-xs text-muted">
-							Sin resultados
+							No results
 						</p>
 					) : null}
 
@@ -253,9 +253,9 @@ export function ModelSelector({
 						<div>
 							<div className={GROUP_LABEL_CLASS}>
 								<span className="flex items-center gap-1.5">
-									<Clock3 className="size-3 text-white/70" />
-									Recientes
-								</span>
+								<Clock3 className="size-3 text-white/70" />
+								Recents
+							</span>
 							</div>
 							{filteredRecents.map((item) => renderModelRow(item))}
 						</div>
@@ -269,9 +269,9 @@ export function ModelSelector({
 						<div>
 							<div className={GROUP_LABEL_CLASS}>
 								<span className="flex items-center gap-1.5">
-									<Star className="size-3 fill-white/70 text-white/70" />
-									Favoritos
-								</span>
+								<Star className="size-3 fill-white/70 text-white/70" />
+								Favorites
+							</span>
 							</div>
 							{filteredFavorites.map((item) => renderModelRow(item))}
 						</div>

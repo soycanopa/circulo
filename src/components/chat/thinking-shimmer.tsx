@@ -2,21 +2,21 @@ import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 
 const THINKING_PHRASES = [
-	"Consultando al oráculo…",
-	"Cocinando la respuesta a fuego lento…",
-	"Pidiendo permiso a los bits…",
-	"Rebuscando en la RAM emocional…",
-	"Negociando con el compilador…",
-	"Haciendo magia negra (legal)…",
-	"Preguntándole a Stack Overflow…",
-	"Calentando las neuronas artificiales…",
-	"Traduciendo del binario al humano…",
-	"Sacando cuentas en el sótano del servidor…",
-	"Persuadiendo a un if/else…",
-	"Esperando que el WiFi coopere…",
-	"Contando tokens como quien cuenta ovejas…",
-	"Revisando si esto era un bug o feature…",
-	"Invocando al espíritu de Turing…",
+	"Consulting the oracle…",
+	"Simmering the answer…",
+	"Asking the bits for permission…",
+	"Digging through emotional RAM…",
+	"Negotiating with the compiler…",
+	"Doing (legal) black magic…",
+	"Checking Stack Overflow…",
+	"Warming up the artificial neurons…",
+	"Translating from binary to human…",
+	"Doing the math in the server basement…",
+	"Persuading an if/else…",
+	"Hoping the WiFi cooperates…",
+	"Counting tokens like sheep…",
+	"Checking if it was a bug or a feature…",
+	"Invoking the spirit of Turing…",
 ] as const
 
 interface ThinkingShimmerProps {
