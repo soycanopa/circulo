@@ -205,6 +205,82 @@ Optional: `RUST_LOG=circulo_lib=info` for timing logs.
 
 ---
 
+## F11 — MCP orchestrator + Skills + Usage (plan: MCP y Skills en Settings)
+
+### MCP section
+
+| Step | Expected |
+|------|----------|
+| Settings → MCP servers | Orchestrator `circulo-mcp` listed, built-in (not deletable), `on-demand` on |
+| Toggle `auto-load` on a server | Server injected natively in next `session/new` with its full tool catalogue |
+| Presets (Filesystem, GitHub, Brave…) | Clicking fills the guided form; validate spawns the server and lists its tools |
+| Import | Reads `.mcp.json` (Claude Code) and `opencode.json` (mcp section); **read-only**, agent configs untouched |
+| Delete a server | Removed from `~/.circulo/mcp.json` / project `.mcp.json`; `circulo-mcp` survives |
+| `/mcp <name>` in composer | Inserts directive `mcp_load("<id>")` so the agent loads the server on-demand |
+| Agent capabilities panel | Shows MCP stdio/http/sse + `terminal/*` delegation (runtime-observed) |
+
+### Skills section
+
+| Step | Expected |
+|------|----------|
+| Search a skill (e.g. "tdd") | Results from skills.sh; degraded banner if the endpoint changes |
+| Search without a token | Uses the public `/api/search` endpoint (mode indicator shows "public") |
+| Set a Vercel OIDC token | Search uses the official `/api/v1/skills/search` (semantic search); mode shows "authenticated" |
+| Install to project | `SKILL.md` written under `.opencode/skills/<name>/` (inside project root) |
+| Install globally | Written under `~/.config/opencode/skills/` |
+| Install with a token | SKILL.md fetched from `/api/v1/skills/{id}` (handles well-known/domain sources) |
+| Install without a token | SKILL.md resolved via the GitHub tree + raw URL |
+| Delete | Removed from the chosen scope |
+
+### skills.sh API (docs: https://skills.sh/docs/api)
+
+- **Official endpoints (`/api/v1/*`)** require a Vercel OIDC token (`Authorization: Bearer`). Circulo stores it
+  in `AppSettings.vercelOidcToken` (Settings > Skills) and uses it for search + install. The token is scoped
+  to a Vercel project (OIDC Federation); without one the official API returns `authentication_required`.
+- **Public fallback**: `GET /api/search` (undocumented but unauthenticated) returns `{ skills: [{id,
+  skillId, name, installs, source}] }`. Install falls back to walking the GitHub tree for `SKILL.md`.
+- Every search response reports `mode` ("authenticated" | "public") and `degraded: true` when the chosen
+  path failed — the UI shows a banner instead of failing.
+
+### Usage section
+
+| Step | Expected |
+|------|----------|
+| Send prompts in a session | Sparkline grows from `usage_update` samples |
+| Tool calls stream | "Tool output measured" accumulates bytes from `tool_call_update` |
+| `compact_result` on terminal output | Savings counted; "Savings from compact_result" > 0 |
+| `/mcp <name>` used | "MCP servers loaded" shows `<name> ×N` |
+
+---
+
+## F12 — Empirical capabilities matrix (fill as you test each agent)
+
+`mcp_capabilities` comes from ACP `initialize`; `terminal/*` delegation is observed at runtime
+(first `terminal/create` received). "Honors `mcp_servers`" = its tools are visible to the agent.
+
+| Agent | Honors `mcp_servers` (stdio) | Exposes MCP tools | Delegates `terminal/*` | Notes |
+|-------|------------------------------|-------------------|-------------------------|-------|
+| OpenCode (`opencode acp`) | ✅ (verified: `sdk.mcp.add`) | ✅ | ❌ runs bash internally | No `terminal/*` → Fase 5 filter inactive |
+| Grok (X ACP) | ⏳ to test | ⏳ to test | ✅ expected | `terminal/*` delegation → Fase 5 filter active |
+| Cursor ACP | ⏳ to test | ⏳ to test | ⏳ to test | — |
+| Generic ACP agent | ⏳ to test | ⏳ to test | ⏳ to test | Stdio mandatory per spec |
+
+### Degradación limpia
+
+- **Agent no honra `mcp_servers`**: circulo-mcp no aparece en el catálogo → el slash `/mcp` sigue
+  mostrando el registro, pero el agente no puede llamar `mcp_load`. La sección MCP muestra
+  `mcpStdio` (spec: siempre `true`) y el estado del orquestador; no hay crash.
+- **skills.sh sin token OIDC**: se usa el endpoint público `/api/search` (buscar) + GitHub tree (instalar).
+  La UI indica `mode: "public"`; no hay fallo.
+- **skills.sh token inválido**: `search_skills_cmd` recibe 401 → devuelve `degraded: true` con mensaje
+  claro; el instalador cae al GitHub tree. La UI muestra banner en vez de fallar.
+- **Binario circulo-mcp ausente** (placeholder de `cargo check`): `resolve_circulo_mcp_binary`
+  exige tamaño > 0; la UI avisa "Orchestrator binary not found" y desactiva la orquestación.
+- **`terminal/output` sin filtro aplicable**: `filter_terminal_output` devuelve `applied: false`
+  con passthrough (con el truncado de 256 KB como fallback); las métricas no se emiten.
+
+---
+
 ## PRD success criteria
 
 - [x] No “no active session” after successful New Chat + send  
