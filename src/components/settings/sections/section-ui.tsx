@@ -26,7 +26,7 @@ export function SettingRow({
 	description,
 	control,
 }: {
-	label: string
+	label: ReactNode
 	description?: ReactNode
 	control?: ReactNode
 }) {
