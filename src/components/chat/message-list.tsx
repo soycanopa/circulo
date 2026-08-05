@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/message-scroller"
 import { agentTerminalTabId } from "@/components/terminal/terminal-drawer"
 import { ThinkingShimmer } from "@/components/chat/thinking-shimmer"
-import { SimpleMarkdown } from "@/lib/simple-markdown"
+import { Markdown } from "@/components/chat/markdown"
 import { terminalIdFromTool } from "@/lib/terminal-tools"
 import {
 	diffPanelOpenAtom,
@@ -46,7 +46,7 @@ function MessageRow({
 			{message.content ? (
 				<div className="text-sm leading-relaxed text-fg">
 					{message.role === "assistant" ? (
-						<SimpleMarkdown text={message.content} />
+						<Markdown text={message.content} />
 					) : (
 						<p className="whitespace-pre-wrap">{message.content}</p>
 					)}
@@ -151,7 +151,7 @@ export function MessageList() {
 										Agent
 									</div>
 									<div className="text-sm leading-relaxed text-fg">
-										<SimpleMarkdown text={streaming} />
+										<Markdown text={streaming} />
 										<span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 animate-pulse bg-fg/70" />
 									</div>
 								</div>

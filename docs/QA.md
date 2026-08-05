@@ -157,7 +157,7 @@ Optional: `RUST_LOG=circulo_lib=info` for timing logs.
 
 | Step | Expected | Verified |
 |------|----------|----------|
-| Assistant reply with fenced code blocks | Code renders in a monospace panel | [x] `SimpleMarkdown` + `simple-markdown.test.ts` |
+| Assistant reply with fenced code blocks | Code renders in a highlighted monospace panel | [x] `Markdown` + `markdown.test.tsx` |
 | Long chat while streaming | Message list auto-scrolls to the bottom | [x] `MessageList` `scrollIntoView` on messages/streaming |
 | Tool output with diff content | Card uses diff styling (sky border) | [x] `ToolCallCard` sky border when `isDiffTool` |
 | macOS window | Overlay titlebar; sidebar header is draggable | [x] `WindowChromeControls` + `data-tauri-drag-region` |
@@ -185,7 +185,7 @@ Optional: `RUST_LOG=circulo_lib=info` for timing logs.
 |------|----------|----------|
 | Hover chat → pencil | Inline rename; title updates in sidebar | [x] inline edit in `AppSidebar` + `renameChatTranscript` |
 | Export button / ⌘⇧E | Native save dialog writes `.md` file | [x] `exportTranscriptMarkdown` + `export-transcript.test.ts` |
-| Assistant reply with `#` heading or `-` list | Renders headings and lists | [x] `parseMarkdownBlocks` tests |
+| Assistant reply with `#` heading or `-` list | Renders headings and lists | [x] `Markdown` + `markdown.test.tsx` |
 | `⌘N` / `⌘K` | New Chat / command palette | [x] `useAppShortcuts` |
 | Empty workspace sidebar | Shows helpful empty-state copy | [x] “No general chats…” / “No chats in this project” |
 
