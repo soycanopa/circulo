@@ -267,6 +267,26 @@ pub async fn shutdown_all_pooled(app: &AppHandle, state: &SharedState) {
     }
 }
 
+/// Shut down every pooled process for `agent_id` (e.g. after disabling it in Settings).
+pub async fn shutdown_pooled_agents_for_agent(
+    app: &AppHandle,
+    state: &SharedState,
+    agent_id: &str,
+) {
+    let keys: Vec<AgentPoolKey> = {
+        let guard = state.lock().await;
+        guard
+            .warm_pool
+            .keys()
+            .filter(|key| key.agent_id == agent_id)
+            .cloned()
+            .collect()
+    };
+    for key in keys {
+        shutdown_pooled_agent(app, state, &key).await;
+    }
+}
+
 pub async fn shutdown_pool_for_path(app: &AppHandle, state: &SharedState, path: &Path) {
     let keys: Vec<AgentPoolKey> = {
         let guard = state.lock().await;

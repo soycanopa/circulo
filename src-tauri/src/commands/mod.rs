@@ -1050,6 +1050,53 @@ pub async fn export_transcript_cmd(
     }
 }
 
+/// Open a file/folder in an external editor: VS Code (`code`), Cursor, or the
+/// system terminal. Falls back to the OS default app via tauri-plugin-opener.
+#[tauri::command]
+pub async fn open_in_editor(
+    app: AppHandle,
+    editor: String,
+    path: String,
+) -> Result<(), String> {
+    let target = PathBuf::from(path);
+    if !target.exists() {
+        return Err(format!("Path does not exist: {}", target.display()));
+    }
+
+    let opened = match editor.as_str() {
+        "vscode" | "code" => spawn_detached("code", &["--reuse-window"], &target),
+        "cursor" => spawn_detached("cursor", &["--reuse-window"], &target),
+        "terminal" => spawn_detached(
+            "open",
+            &["-a", "Terminal"],
+            &target,
+        ),
+        other => return Err(format!("Unknown editor: {other}")),
+    };
+
+    opened
+        .or_else(|_| open_with_opener(&app, &target))
+        .map_err(|err| err.to_string())
+}
+
+/// Spawn a GUI app detached from Circulo; returns Err when the binary is missing.
+fn spawn_detached(bin: &str, args: &[&str], target: &std::path::Path) -> Result<(), String> {
+    std::process::Command::new(bin)
+        .args(args)
+        .arg(target)
+        .spawn()
+        .map(|_| ())
+        .map_err(|err| format!("Could not launch {bin}: {err}"))
+}
+
+fn open_with_opener(app: &AppHandle, target: &std::path::Path) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_path(target.to_string_lossy().to_string(), None::<&str>)
+        .map(|_| ())
+        .map_err(|err| err.to_string())
+}
+
 async fn shutdown_agent(app: &AppHandle, state: &SharedState) {
     let (cmd_tx, generation) = {
         let mut guard = state.lock().await;

@@ -50,9 +50,15 @@ pub struct AppSettings {
     /// ACP model ids marked as favorites in the composer (e.g. opencode/gpt-5.5).
     #[serde(default)]
     pub favorite_model_ids: Vec<String>,
+    /// Recently selected ACP model ids (most recent first, capped at 5).
+    #[serde(default)]
+    pub recent_model_ids: Vec<String>,
     /// When true, Circulo auto-approves tool permissions (allow-always when offered).
     #[serde(default)]
     pub auto_approve_enabled: bool,
+    /// Tool patterns the user chose to always allow (remembered across sessions).
+    #[serde(default)]
+    pub allowed_tool_patterns: Vec<String>,
 }
 
 impl Default for AppSettings {
@@ -65,7 +71,9 @@ impl Default for AppSettings {
             preferred_agent_id: None,
             enabled_agent_ids: default_enabled_agent_ids(),
             favorite_model_ids: Vec::new(),
+            recent_model_ids: Vec::new(),
             auto_approve_enabled: false,
+            allowed_tool_patterns: Vec::new(),
         };
         let _ = ensure_workspaces(&mut settings);
         settings
@@ -87,7 +95,9 @@ pub fn load_settings() -> Result<AppSettings, String> {
             preferred_agent_id: None,
             enabled_agent_ids: Vec::new(),
             favorite_model_ids: Vec::new(),
+            recent_model_ids: Vec::new(),
             auto_approve_enabled: false,
+            allowed_tool_patterns: Vec::new(),
         }
     } else {
         let raw = std::fs::read_to_string(&path).map_err(|err| err.to_string())?;

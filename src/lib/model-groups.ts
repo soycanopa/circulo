@@ -16,6 +16,20 @@ export interface GroupedModelOptions {
 	groups: ModelGroup[]
 }
 
+/** Models in the order the user last selected them (from `recentModelIds`). */
+export function extractRecentModels(
+	options: ConfigOptionValue[],
+	recentIds: string[],
+): ConfigOptionValue[] {
+	const byValue = new Map(options.map((item) => [item.value, item]))
+	const recents: ConfigOptionValue[] = []
+	for (const id of recentIds) {
+		const hit = byValue.get(id)
+		if (hit) recents.push(hit)
+	}
+	return recents
+}
+
 function groupKey(item: ConfigOptionValue): string {
 	const providerId = providerIdFromGroupOrValue(item.group, item.value)
 	const label = providerLabelFromGroupOrValue(item.group, item.value)

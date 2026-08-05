@@ -117,6 +117,70 @@ export const terminalsAtom = atom<Record<string, TerminalState>>({})
 export const sidebarOpenAtom = atom(true)
 export const selectedDiffToolAtom = atom<ToolCall | null>(null)
 
+const DRAFTS_KEY = "circulo.drafts"
+
+function readDrafts(): Record<string, string> {
+	try {
+		const raw = localStorage.getItem(DRAFTS_KEY)
+		if (!raw) return {}
+		const parsed = JSON.parse(raw) as Record<string, unknown>
+		const next: Record<string, string> = {}
+		for (const [sessionId, text] of Object.entries(parsed)) {
+			if (typeof text === "string") next[sessionId] = text
+		}
+		return next
+	} catch {
+		return {}
+	}
+}
+
+/** Unsent composer text per session id, persisted in localStorage. */
+export const draftBySessionAtom = atom<Record<string, string>>(readDrafts())
+
+export const setDraftAtom = atom(
+	null,
+	(get, set, sessionId: string, text: string) => {
+		const prev = get(draftBySessionAtom)
+		const next = { ...prev }
+		if (text.trim()) next[sessionId] = text
+		else delete next[sessionId]
+		try {
+			localStorage.setItem(DRAFTS_KEY, JSON.stringify(next))
+		} catch {
+			// Persistence is best-effort.
+		}
+		set(draftBySessionAtom, next)
+	},
+)
+
+export interface PendingComment {
+	path: string
+	line: number
+	text: string
+}
+
+/** Diff comments accumulated in the review panel, waiting to be sent. */
+export const pendingCommentsAtom = atom<PendingComment[]>([])
+
+export interface ComposerInsertRequest {
+	text: string
+	nonce: number
+}
+
+/**
+ * Cross-component request to append text to the composer. The nonce guarantees
+ * repeat inserts (same text twice) still re-trigger the watcher.
+ */
+export const composerInsertRequestAtom = atom<ComposerInsertRequest | null>(null)
+
+export const appendComposerTextAtom = atom(null, (get, set, text: string) => {
+	const prev = get(composerInsertRequestAtom)
+	set(composerInsertRequestAtom, {
+		text,
+		nonce: (prev?.nonce ?? 0) + 1,
+	})
+})
+
 const SIDEBAR_WIDTH_KEY = "circulo.sidebarWidth"
 const DIFF_PANEL_WIDTH_KEY = "circulo.diffPanelWidth"
 

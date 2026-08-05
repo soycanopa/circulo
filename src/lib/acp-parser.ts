@@ -169,6 +169,41 @@ function appendChunkToAssistantMessages(
 	return next
 }
 
+/** Detect tool calls that delegate to a sub-agent (OpenCode `task`). */
+export function isTaskToolCall(update: Record<string, unknown>): boolean {
+	const title = (asString(update.title) ?? "").toLowerCase()
+	const kind = (asString(update.kind) ?? "").toLowerCase()
+	const combined = `${title} ${kind}`
+	if (/sub-agent|subagent|\btask\b/.test(combined)) return true
+	const rawInput = asRecord(update.rawInput ?? update.input)
+	if (!rawInput) return false
+	if (typeof rawInput.task === "string") return true
+	// Some agents only carry `cwd`; require an agent hint to avoid false positives.
+	return typeof rawInput.cwd === "string" && /\bagent\b/.test(combined)
+}
+
+export function taskStateFromStatus(status: string): ToolCall["taskState"] {
+	if (status === "completed" || status === "done") return "completed"
+	if (status === "failed" || status === "error") return "failed"
+	if (status === "running") return "running"
+	return "pending"
+}
+
+/** Detect tool calls that ask the user a question (elicitation). */
+export function isQuestionToolCall(update: Record<string, unknown>): boolean {
+	const title = (asString(update.title) ?? "").toLowerCase()
+	const kind = (asString(update.kind) ?? "").toLowerCase()
+	const combined = `${title} ${kind}`
+	if (/\bquestion\b|\bask\b|prompt_user|elicitation/.test(combined)) {
+		return true
+	}
+	const rawInput = asRecord(update.rawInput ?? update.input)
+	if (!rawInput) return false
+	const type = asString(rawInput.type)
+	if (type && /radio|checkbox|text|select/.test(type)) return true
+	return false
+}
+
 function mapToolFromUpdate(update: Record<string, unknown>): ToolCall {
 	const id =
 		asString(update.toolCallId) ??
@@ -179,15 +214,18 @@ function mapToolFromUpdate(update: Record<string, unknown>): ToolCall {
 	const status = asString(update.status) ?? "pending"
 	const kind = asString(update.kind)
 	const content = extractToolContent(update.content)
+	const isTask = isTaskToolCall(update)
+	const isQuestion = isQuestionToolCall(update)
 
 	return {
 		id,
 		title,
-		kind,
+		kind: isTask ? "task" : isQuestion ? "question" : kind,
 		status,
 		content,
 		rawInput: update.rawInput ?? update.input,
 		rawOutput: update.rawOutput ?? update.output,
+		...(isTask ? { taskState: taskStateFromStatus(status) } : {}),
 	}
 }
 

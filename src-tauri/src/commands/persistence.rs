@@ -1,3 +1,12 @@
+use std::path::PathBuf;
+
+use tauri::{AppHandle, State};
+use tracing::info;
+
+use crate::agent_pool::{
+    shutdown_pooled_agents_for_agent, warm_agent_in_pool,
+};
+use crate::state::SharedState;
 use crate::persistence::{
     create_workspace, delete_automation, delete_chat_transcript, delete_workspace, list_automations,
     list_chat_sessions, load_chat_transcript, load_settings, remove_project_from_workspace,
@@ -19,7 +28,11 @@ pub fn set_preferred_agent_cmd(agent_id: String) -> Result<AppSettings, String> 
 }
 
 #[tauri::command]
-pub fn set_enabled_agents_cmd(ids: Vec<String>) -> Result<AppSettings, String> {
+pub async fn set_enabled_agents_cmd(
+    app: AppHandle,
+    state: State<'_, SharedState>,
+    ids: Vec<String>,
+) -> Result<AppSettings, String> {
     if ids.is_empty() {
         return Err("At least one agent must be enabled".to_string());
     }
@@ -31,6 +44,7 @@ pub fn set_enabled_agents_cmd(ids: Vec<String>) -> Result<AppSettings, String> {
     }
 
     let mut settings = load_settings()?;
+    let previous_enabled = settings.enabled_agent_ids.clone();
     settings.enabled_agent_ids = ids;
 
     let preferred = settings.preferred_agent_id.as_deref();
@@ -41,7 +55,79 @@ pub fn set_enabled_agents_cmd(ids: Vec<String>) -> Result<AppSettings, String> {
     settings.preferred_agent_id = Some(resolved);
 
     save_settings(&settings)?;
-    load_settings()
+    let saved = load_settings()?;
+
+    reconcile_pool_for_enabled(&app, state.inner(), &previous_enabled, &saved).await;
+
+    Ok(saved)
+}
+
+/// Warm agents added to the enabled set (same cwd as startup warm) and tear down
+/// pooled processes for agents that were disabled — so enabling a provider makes
+/// switching to it instant instead of a cold start.
+async fn reconcile_pool_for_enabled(
+    app: &AppHandle,
+    state: &SharedState,
+    previous_enabled: &[String],
+    settings: &AppSettings,
+) {
+    let newly_enabled: Vec<String> = settings
+        .enabled_agent_ids
+        .iter()
+        .filter(|id| !previous_enabled.contains(id))
+        .cloned()
+        .collect();
+    let now_disabled: Vec<String> = previous_enabled
+        .iter()
+        .filter(|id| !settings.enabled_agent_ids.contains(id))
+        .cloned()
+        .collect();
+
+    for agent_id in &now_disabled {
+        shutdown_pooled_agents_for_agent(app, state, agent_id).await;
+    }
+    if newly_enabled.is_empty() {
+        return;
+    }
+
+    // Warm where the user actually switches agents: the open project and the
+    // general-chats folder (they coincide on first launch).
+    let open_path = {
+        let guard = state.lock().await;
+        guard.agent.as_ref().map(|agent| agent.project_path.clone())
+    };
+    let chats_path = crate::commands::default_chats_path().ok().map(PathBuf::from);
+
+    let mut paths = Vec::new();
+    if let Some(path) = open_path {
+        paths.push(path);
+    }
+    if let Some(path) = chats_path {
+        if !paths.iter().any(|existing| existing == &path) {
+            paths.push(path);
+        }
+    }
+
+    for path in paths {
+        for agent_id in &newly_enabled {
+            if crate::agents::ensure_agent_available(agent_id).is_err() {
+                tracing::info!(agent_id = %agent_id, "Skipping pool warm — agent not available");
+                continue;
+            }
+            let app = app.clone();
+            let state = state.clone();
+            let path = path.clone();
+            let agent_id = agent_id.clone();
+            tauri::async_runtime::spawn(async move {
+                match warm_agent_in_pool(&app, &state, path, agent_id.clone()).await {
+                    Ok(()) => info!(agent_id = %agent_id, "Warm: newly enabled agent queued"),
+                    Err(err) => {
+                        tracing::warn!(agent_id = %agent_id, %err, "Warm: newly enabled agent failed")
+                    }
+                }
+            });
+        }
+    }
 }
 
 #[tauri::command]
@@ -68,26 +154,48 @@ pub fn set_favorite_model_cmd(
     load_settings()
 }
 
+const MAX_RECENT_MODELS: usize = 5;
+
+/// Remember a model the user selected, most-recent-first, capped at 5.
 #[tauri::command]
-pub fn toggle_favorite_model_cmd(model_id: String) -> Result<AppSettings, String> {
+pub fn mark_model_used_cmd(model_id: String) -> Result<AppSettings, String> {
     let model_id = model_id.trim();
     if model_id.is_empty() {
         return Err("Model id must not be empty".to_string());
     }
 
-    let settings = load_settings()?;
-    let favorite = !settings
-        .favorite_model_ids
-        .iter()
-        .any(|id| id == model_id);
-    drop(settings);
-    set_favorite_model_cmd(model_id.to_string(), favorite)
+    let mut settings = load_settings()?;
+    settings.recent_model_ids.retain(|id| id != model_id);
+    settings.recent_model_ids.insert(0, model_id.to_string());
+    settings.recent_model_ids.truncate(MAX_RECENT_MODELS);
+    save_settings(&settings)?;
+    load_settings()
 }
 
 #[tauri::command]
 pub fn set_auto_approve_cmd(enabled: bool) -> Result<AppSettings, String> {
     let mut settings = load_settings()?;
     settings.auto_approve_enabled = enabled;
+    save_settings(&settings)?;
+    load_settings()
+}
+
+/// Add or remove a remembered "allow always" tool pattern. Exact or glob
+/// (`*`) matches against the tool call name/title when a permission arrives.
+#[tauri::command]
+pub fn set_allowed_tool_cmd(pattern: String, enabled: bool) -> Result<AppSettings, String> {
+    let pattern = pattern.trim();
+    if pattern.is_empty() {
+        return Err("Tool pattern must not be empty".to_string());
+    }
+    let mut settings = load_settings()?;
+    if enabled {
+        if !settings.allowed_tool_patterns.iter().any(|p| p == pattern) {
+            settings.allowed_tool_patterns.push(pattern.to_string());
+        }
+    } else {
+        settings.allowed_tool_patterns.retain(|p| p != pattern);
+    }
     save_settings(&settings)?;
     load_settings()
 }

@@ -16,8 +16,10 @@ interface SettingsPanelProps {
 	agentCommand: string
 	preferredAgentId?: string | null
 	enabledAgentIds?: string[]
+	allowedToolPatterns?: string[]
 	onPreferredAgentChange?: (agentId: string) => void
 	onEnabledAgentsChange?: (settings: AppSettings) => void
+	onSetAllowedTool?: (pattern: string, enabled: boolean) => Promise<void>
 	automations: Automation[]
 	onAutomationsChange: () => void
 	onDeleteAutomation: (id: string) => Promise<void>
@@ -29,8 +31,10 @@ export function SettingsPanel({
 	agentCommand,
 	preferredAgentId,
 	enabledAgentIds = ["opencode", "cursor-agent"],
+	allowedToolPatterns = [],
 	onPreferredAgentChange,
 	onEnabledAgentsChange,
+	onSetAllowedTool,
 	automations,
 	onAutomationsChange,
 	onDeleteAutomation,
@@ -44,6 +48,7 @@ export function SettingsPanel({
 	const [title, setTitle] = useState("")
 	const [prompt, setPrompt] = useState("")
 	const [saving, setSaving] = useState(false)
+	const [newPattern, setNewPattern] = useState("")
 
 	useEffect(() => {
 		if (!open) return
@@ -105,6 +110,18 @@ export function SettingsPanel({
 			setTitle("")
 			setPrompt("")
 			onAutomationsChange()
+		} finally {
+			setSaving(false)
+		}
+	}
+
+	async function handleAddAllowedTool() {
+		const pattern = newPattern.trim()
+		if (!pattern) return
+		setSaving(true)
+		try {
+			await onSetAllowedTool?.(pattern, true)
+			setNewPattern("")
 		} finally {
 			setSaving(false)
 		}
@@ -279,12 +296,66 @@ export function SettingsPanel({
 						</div>
 					</div>
 
-					<div>
-						<div className="text-[11px] uppercase tracking-wider text-muted">
-							General chats folder
-						</div>
-						<p className="mt-1 break-all font-mono text-fg/90">{chatsPath}</p>
+				<div>
+					<div className="text-[11px] uppercase tracking-wider text-muted">
+						Always allow tools
 					</div>
+					<p className="mt-1 text-[11px] text-muted">
+						Tools matching these patterns (exact or <code className="rounded bg-white/5 px-1">*</code> glob)
+						skip the permission prompt. Use the bookmark button on a permission card to add one.
+					</p>
+					{allowedToolPatterns.length > 0 ? (
+						<ul className="mt-2 space-y-1">
+							{allowedToolPatterns.map((pattern) => (
+								<li
+									key={pattern}
+									className="flex items-center justify-between gap-2 rounded border border-border bg-black/20 px-2 py-1.5"
+								>
+									<span className="truncate font-mono text-fg/90">
+										{pattern}
+									</span>
+									<button
+										type="button"
+										disabled={saving}
+										onClick={() => void onSetAllowedTool?.(pattern, false)}
+										className="shrink-0 rounded p-1 text-muted hover:bg-white/5 hover:text-red-300 disabled:opacity-40"
+										title="Forget pattern"
+									>
+										<Trash2 className="size-3.5" />
+									</button>
+								</li>
+							))}
+						</ul>
+					) : (
+						<p className="mt-2 text-muted">No remembered tools yet.</p>
+					)}
+					<div className="mt-2 flex gap-1.5">
+						<input
+							value={newPattern}
+							onChange={(event) => setNewPattern(event.target.value)}
+							onKeyDown={(event) => {
+								if (event.key === "Enter") void handleAddAllowedTool()
+							}}
+							placeholder="e.g. bash or edit*"
+							className="w-full rounded-md border border-border bg-black/20 px-2 py-1.5 text-sm text-fg"
+						/>
+						<button
+							type="button"
+							disabled={saving || !newPattern.trim() || !onSetAllowedTool}
+							onClick={() => void handleAddAllowedTool()}
+							className="shrink-0 rounded-md border border-border px-2 py-1 text-[11px] text-fg transition hover:bg-white/5 disabled:opacity-40"
+						>
+							Add
+						</button>
+					</div>
+				</div>
+
+				<div>
+					<div className="text-[11px] uppercase tracking-wider text-muted">
+						General chats folder
+					</div>
+					<p className="mt-1 break-all font-mono text-fg/90">{chatsPath}</p>
+				</div>
 					<div>
 						<div className="text-[11px] uppercase tracking-wider text-muted">
 							About

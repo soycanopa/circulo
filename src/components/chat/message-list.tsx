@@ -1,4 +1,6 @@
 import { useAtomValue, useSetAtom } from "jotai"
+import { QuestionCard } from "@/components/tools/question-card"
+import { SubAgentCard } from "@/components/tools/sub-agent-card"
 import { ToolCallCard } from "@/components/tools/tool-call-card"
 import {
 	MessageScroller,
@@ -57,14 +59,22 @@ function MessageRow({
 			) : null}
 			{message.toolCalls.length > 0 ? (
 				<div className="mt-2 space-y-1.5">
-					{message.toolCalls.map((tool) => (
+				{message.toolCalls.map((tool) => {
+					if (tool.kind === "task") {
+						return <SubAgentCard key={tool.id} tool={tool} />
+					}
+					if (tool.kind === "question") {
+						return <QuestionCard key={tool.id} tool={tool} />
+					}
+					return (
 						<ToolCallCard
 							key={tool.id}
 							tool={tool}
 							onOpenDiff={onOpenDiff}
 							onOpenTerminal={() => onOpenTerminal(tool)}
 						/>
-					))}
+					)
+				})}
 				</div>
 			) : null}
 		</div>

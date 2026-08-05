@@ -55,8 +55,22 @@ export async function setAutoApprove(enabled: boolean): Promise<AppSettings> {
 	return invoke("set_auto_approve_cmd", { enabled })
 }
 
-export async function toggleFavoriteModel(modelId: string): Promise<AppSettings> {
-	return invoke("toggle_favorite_model_cmd", { modelId })
+export async function setAllowedTool(
+	pattern: string,
+	enabled: boolean,
+): Promise<AppSettings> {
+	return invoke("set_allowed_tool_cmd", { pattern, enabled })
+}
+
+export async function markModelUsed(modelId: string): Promise<AppSettings> {
+	return invoke("mark_model_used_cmd", { modelId })
+}
+
+export async function openInEditor(
+	editor: "vscode" | "cursor" | "terminal",
+	path: string,
+): Promise<void> {
+	return invoke("open_in_editor", { editor, path })
 }
 
 export async function getHomePath(): Promise<string> {

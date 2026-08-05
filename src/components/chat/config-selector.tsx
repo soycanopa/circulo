@@ -255,6 +255,7 @@ export function ConfigSelectors() {
 							key={option.id}
 							option={option}
 							favoriteModelIds={favoriteModelIds}
+							recentModelIds={appSettings?.recentModelIds ?? []}
 							pendingFavoriteIds={pendingFavoriteIds}
 							onToggleFavorite={handleToggleFavorite}
 						/>

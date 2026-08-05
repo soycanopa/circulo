@@ -1,4 +1,8 @@
-import type { ConfigOption, PermissionOption } from "@/types/acp"
+import type {
+	ConfigOption,
+	PermissionOption,
+	PermissionRequest,
+} from "@/types/acp"
 
 const AUTO_APPROVE_CONFIG =
 	/\b(brave|always.?approve|auto.?approve|auto.?permission|yolo)\b/
@@ -91,4 +95,55 @@ export function pickAutoApprovePermissionOption(
 	}
 
 	return options[0]?.optionId ?? null
+}
+
+/** Whether an option grants permission (vs. denying/rejecting). */
+export function isAllowPermissionOption(option: PermissionOption): boolean {
+	const id = option.optionId.toLowerCase()
+	const name = option.name.toLowerCase()
+	return (
+		/allow|approve|accept|always/.test(id) ||
+		/allow|approve|accept|always/.test(name)
+	)
+}
+
+/** Best-effort tool name from a permission request's toolCall payload. */
+export function permissionToolName(permission: PermissionRequest): string {
+	const tool = permission.toolCall
+	if (!tool) return ""
+	if (typeof tool === "string") return tool
+	if (typeof tool === "object") {
+		const record = tool as Record<string, unknown>
+		return String(record.title ?? record.name ?? record.tool ?? record.kind ?? "")
+	}
+	return ""
+}
+
+function patternToRegex(pattern: string): RegExp | null {
+	const trimmed = pattern.trim()
+	if (!trimmed) return null
+	let source = ""
+	for (const char of trimmed) {
+		if (char === "*") source += ".*"
+		else if (/[.+?^${}()|[\]\\]/.test(char)) source += `\\${char}`
+		else source += char
+	}
+	return new RegExp(`^${source}$`, "i")
+}
+
+/**
+ * Whether a tool name matches a remembered allow-always pattern.
+ * Exact match, or simple glob (`*` wildcard) on the tool name/title.
+ */
+export function matchesAllowedPattern(
+	toolName: string,
+	patterns: string[],
+): boolean {
+	const name = (toolName ?? "").trim()
+	if (!name) return false
+	return patterns.some((pattern) => {
+		if (!pattern) return false
+		const regex = patternToRegex(pattern)
+		return regex ? regex.test(name) : false
+	})
 }

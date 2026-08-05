@@ -45,6 +45,7 @@ import {
 	getWorkspacePaths,
 	loadChatTranscript,
 	loadSession,
+	openInEditor,
 	openProject,
 	pickDirectory,
 	renameChatTranscript,
@@ -52,6 +53,7 @@ import {
 	seedChatTranscript,
 	sendPrompt,
 	setActiveWorkspace,
+	setAllowedTool,
 	setPreferredAgent,
 	setVisibleSession,
 } from "@/lib/tauri"
@@ -213,6 +215,19 @@ export default function App() {
 	const closeDiffPanel = useCallback(() => {
 		setDiffPanelOpen(false)
 	}, [setDiffPanelOpen])
+
+	const handleOpenInEditor = useCallback(
+		(editor: "vscode" | "cursor" | "terminal") => {
+			if (!projectPath) return
+			setError(null)
+			void openInEditor(editor, projectPath).catch((err: unknown) => {
+				setError(
+					err instanceof Error ? err.message : "Failed to open in editor",
+				)
+			})
+		},
+		[projectPath, setError],
+	)
 
 	const toggleTerminalDrawer = useCallback(() => {
 		setTerminalDrawerOpen((open) => {
@@ -575,6 +590,25 @@ export default function App() {
 				label: "Settings",
 				onSelect: () => setSettingsOpen(true),
 			},
+			...(projectPath
+				? [
+						{
+							id: "open-in-vscode",
+							label: "Open in VS Code",
+							onSelect: () => void handleOpenInEditor("vscode"),
+						},
+						{
+							id: "open-in-cursor",
+							label: "Open in Cursor",
+							onSelect: () => void handleOpenInEditor("cursor"),
+						},
+						{
+							id: "open-in-terminal",
+							label: "Open in Terminal",
+							onSelect: () => void handleOpenInEditor("terminal"),
+						},
+					]
+				: []),
 			...automations.map((automation) => ({
 				id: `automation-${automation.id}`,
 				label: `Run: ${automation.title}`,
@@ -606,8 +640,10 @@ export default function App() {
 			diffPanelOpen,
 			handleExportTranscript,
 			handleNewChat,
+			handleOpenInEditor,
 			handleRunAutomation,
 			messages.length,
+			projectPath,
 			terminalDrawerOpen,
 			toggleDiffPanel,
 			toggleTerminalDrawer,
@@ -897,9 +933,10 @@ export default function App() {
 					enabledAgentIds={appSettings.enabledAgentIds ?? []}
 					preferredAgentId={appSettings.preferredAgentId ?? agentId}
 					onAgentChange={handleAgentChange}
+					onNewChat={() => void handleNewChat()}
 				/>
 			) : (
-				<ChatInput onAgentChange={undefined} />
+				<ChatInput onAgentChange={undefined} onNewChat={() => void handleNewChat()} />
 			)}
 
 			<div
@@ -935,10 +972,15 @@ export default function App() {
 				enabledAgentIds={
 					appSettings?.enabledAgentIds ?? ["opencode", "cursor-agent"]
 				}
+				allowedToolPatterns={appSettings?.allowedToolPatterns ?? []}
 				onPreferredAgentChange={(agentId) => void handleAgentChange(agentId)}
 				onEnabledAgentsChange={(settings) =>
 					void handleEnabledAgentsChange(settings)
 				}
+				onSetAllowedTool={async (pattern, enabled) => {
+					const settings = await setAllowedTool(pattern, enabled)
+					setAppSettings(settings)
+				}}
 				automations={automations}
 				onAutomationsChange={() => void refreshAutomations()}
 				onDeleteAutomation={async (id) => {

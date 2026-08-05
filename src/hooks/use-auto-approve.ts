@@ -3,6 +3,8 @@ import { useEffect, useRef } from "react"
 import {
 	findAutoApproveConfigOption,
 	isAutoApproveConfigEnabled,
+	matchesAllowedPattern,
+	permissionToolName,
 	pickAutoApprovePermissionOption,
 } from "@/lib/auto-approve"
 import { respondPermission } from "@/lib/tauri"
@@ -33,7 +35,15 @@ export function useAutoApprove() {
 		: (appSettings?.autoApproveEnabled ?? false)
 
 	useEffect(() => {
-		if (!enabled || !permission) return
+		if (!permission) return
+
+		// A remembered "allow always" pattern overrides the global toggle:
+		// it should be honored even when unattended edits are off.
+		const remembered = matchesAllowedPattern(
+			permissionToolName(permission),
+			appSettings?.allowedToolPatterns ?? [],
+		)
+		if (!enabled && !remembered) return
 		if (handling.current === permission.requestId) return
 
 		const optionId = pickAutoApprovePermissionOption(permission.options)
@@ -63,6 +73,7 @@ export function useAutoApprove() {
 		enabled,
 		permission,
 		queue,
+		appSettings?.allowedToolPatterns,
 		setError,
 		setPermission,
 		setQueue,

@@ -69,6 +69,8 @@ export interface ToolCall {
 	content?: ToolCallContent
 	rawInput?: unknown
 	rawOutput?: unknown
+	/** Set when the tool call delegates to a sub-agent (e.g. OpenCode `task`). */
+	taskState?: "pending" | "running" | "completed" | "failed"
 }
 
 export interface ChatMessage {
@@ -148,7 +150,10 @@ export interface AppSettings {
 	preferredAgentId?: string | null
 	enabledAgentIds?: string[]
 	favoriteModelIds?: string[]
+	recentModelIds?: string[]
 	autoApproveEnabled?: boolean
+	/** Tool patterns the user chose to always allow (exact or simple glob). */
+	allowedToolPatterns?: string[]
 }
 
 export interface AgentDescriptor {

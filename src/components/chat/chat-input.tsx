@@ -1,10 +1,11 @@
 import { useAtomValue, useSetAtom } from "jotai"
 import { getDefaultStore } from "jotai"
 import { CornerDownLeft, Loader2, Square } from "lucide-react"
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ConfigSelectors } from "@/components/chat/config-selector"
 import { AgentSelector } from "@/components/chat/agent-selector"
 import { FileMentionPicker } from "@/components/chat/file-mention-picker"
+import { SlashMenu } from "@/components/chat/slash-menu"
 import { PermissionPrompt } from "@/components/permissions/permission-prompt"
 import { reconcileSessionFromProjectStatus } from "@/hooks/session-reconcile"
 import { useAutoApprove } from "@/hooks/use-auto-approve"
@@ -13,14 +14,25 @@ import {
 	getActiveMention,
 	insertMention,
 } from "@/lib/mention-parser"
+import {
+	DEFAULT_SLASH_COMMANDS,
+	type SlashCommand,
+} from "@/lib/slash-commands"
+import {
+	filterSlashCommands,
+	getActiveSlash,
+} from "@/lib/slash-parser"
 import { cancelPrompt, createSession, sendPrompt } from "@/lib/tauri"
 import {
 	activePermissionAtom,
 	activeSessionIdAtom,
 	agentConnectedAtom,
+	composerInsertRequestAtom,
+	draftBySessionAtom,
 	errorMessageAtom,
 	projectPathAtom,
 	sessionsAtom,
+	setDraftAtom,
 	visiblePromptInFlightAtom,
 } from "@/stores/atoms"
 import type { ChatMessage } from "@/types/acp"
@@ -29,12 +41,14 @@ interface ChatInputProps {
 	enabledAgentIds?: string[]
 	preferredAgentId?: string | null
 	onAgentChange?: (agentId: string) => void | Promise<void>
+	onNewChat?: () => void
 }
 
 export function ChatInput({
 	enabledAgentIds = [],
 	preferredAgentId,
 	onAgentChange,
+	onNewChat,
 }: ChatInputProps) {
 	useAutoApprove()
 	const sessionId = useAtomValue(activeSessionIdAtom)
@@ -42,13 +56,34 @@ export function ChatInput({
 	const projectPath = useAtomValue(projectPathAtom)
 	const promptInFlight = useAtomValue(visiblePromptInFlightAtom)
 	const permission = useAtomValue(activePermissionAtom)
+	const drafts = useAtomValue(draftBySessionAtom)
+	const setDraft = useSetAtom(setDraftAtom)
+	const composerInsert = useAtomValue(composerInsertRequestAtom)
 	const setSessions = useSetAtom(sessionsAtom)
 	const setError = useSetAtom(errorMessageAtom)
 	const [value, setValue] = useState("")
 	const [startingSession, setStartingSession] = useState(false)
 	const [mentionIndex, setMentionIndex] = useState(0)
 	const [mentionResults, setMentionResults] = useState<string[]>([])
+	const [slashIndex, setSlashIndex] = useState(0)
 	const textareaRef = useRef<HTMLTextAreaElement>(null)
+	const draftSessionRef = useRef<string | null>(null)
+
+	// Restore the per-session draft when the visible session changes.
+	useEffect(() => {
+		const current = sessionId ?? ""
+		if (draftSessionRef.current === current) return
+		draftSessionRef.current = current
+		setValue(current ? (drafts[current] ?? "") : "")
+	}, [sessionId, drafts])
+
+	// Append feedback/diff comments requested from other panels (e.g. DiffPanel).
+	useEffect(() => {
+		if (!composerInsert) return
+		setValue((prev) =>
+			prev.trim() ? `${prev.trim()}\n\n${composerInsert.text}` : composerInsert.text,
+		)
+	}, [composerInsert])
 
 	const disabled =
 		!agentConnected || promptInFlight || Boolean(permission) || startingSession
@@ -57,14 +92,28 @@ export function ChatInput({
 	const activeMention = getActiveMention(value, cursor)
 	const showMentionPicker = Boolean(activeMention && projectPath && !disabled)
 
+	const activeSlash = getActiveSlash(value, cursor)
+	const slashResults = activeSlash
+		? filterSlashCommands(activeSlash.query, DEFAULT_SLASH_COMMANDS)
+		: []
+	const showSlashMenu = Boolean(activeSlash && !disabled)
+
 	function updateValue(next: string, nextCursor: number) {
 		setValue(next)
+		if (sessionId) setDraft(sessionId, next)
 		requestAnimationFrame(() => {
 			const el = textareaRef.current
 			if (!el) return
 			el.focus()
 			el.setSelectionRange(nextCursor, nextCursor)
 		})
+	}
+
+	function handleValueChange(next: string) {
+		setValue(next)
+		setMentionIndex(0)
+		setSlashIndex(0)
+		if (sessionId) setDraft(sessionId, next)
 	}
 
 	function applyMention(path: string) {
@@ -89,6 +138,15 @@ export function ChatInput({
 		return true
 	}
 
+	function selectHighlightedSlash(): boolean {
+		if (!showSlashMenu || slashResults.length === 0) return false
+		const command =
+			slashResults[slashIndex % slashResults.length] ?? slashResults[0]
+		if (!command) return false
+		applySlash(command)
+		return true
+	}
+
 	async function ensureSessionId(): Promise<string | null> {
 		const current = getDefaultStore().get(activeSessionIdAtom)
 		if (current) return current
@@ -105,9 +163,8 @@ export function ChatInput({
 		}
 	}
 
-	async function handleSubmit(event?: React.FormEvent) {
-		event?.preventDefault()
-		const trimmed = value.trim()
+	async function submitText(text: string) {
+		const trimmed = text.trim()
 		if (!trimmed || disabled) return
 
 		const contextPaths = extractMentionPaths(trimmed)
@@ -173,7 +230,9 @@ export function ChatInput({
 		setValue("")
 		setMentionIndex(0)
 		setMentionResults([])
+		setSlashIndex(0)
 		setError(null)
+		setDraft(targetSid, "")
 
 		try {
 			await sendPrompt(trimmed, contextPaths)
@@ -194,6 +253,24 @@ export function ChatInput({
 		}
 	}
 
+	async function handleSubmit(event?: React.FormEvent) {
+		event?.preventDefault()
+		await submitText(value)
+	}
+
+	function applySlash(command: SlashCommand) {
+		if (!activeSlash) return
+		if (command.action === "new-chat") {
+			setValue("")
+			if (sessionId) setDraft(sessionId, "")
+			setSlashIndex(0)
+			onNewChat?.()
+			return
+		}
+		// Send the command on its own; drop anything already typed after the token.
+		void submitText(command.label)
+	}
+
 	async function handleCancel() {
 		try {
 			await cancelPrompt()
@@ -210,6 +287,13 @@ export function ChatInput({
 					onSubmit={(e) => void handleSubmit(e)}
 					className="relative rounded-lg border border-border bg-surface focus-within:border-white/20"
 				>
+					{showSlashMenu && activeSlash ? (
+						<SlashMenu
+							results={slashResults}
+							selectedIndex={slashIndex}
+							onSelect={applySlash}
+						/>
+					) : null}
 					{showMentionPicker && activeMention ? (
 						<FileMentionPicker
 							query={activeMention.query}
@@ -221,12 +305,45 @@ export function ChatInput({
 					<textarea
 						ref={textareaRef}
 						value={value}
-						onChange={(e) => {
-							setValue(e.target.value)
+						onChange={(e) => handleValueChange(e.target.value)}
+						onClick={() => {
 							setMentionIndex(0)
+							setSlashIndex(0)
 						}}
-						onClick={() => setMentionIndex(0)}
 						onKeyDown={(e) => {
+							if (showSlashMenu) {
+								if (e.key === "ArrowDown") {
+									e.preventDefault()
+									setSlashIndex((i) =>
+										slashResults.length > 0
+											? (i + 1) % slashResults.length
+											: i + 1,
+									)
+									return
+								}
+								if (e.key === "ArrowUp") {
+									e.preventDefault()
+									setSlashIndex((i) =>
+										slashResults.length > 0
+											? (i - 1 + slashResults.length) %
+												slashResults.length
+											: Math.max(0, i - 1),
+									)
+									return
+								}
+								if (e.key === "Escape") {
+									e.preventDefault()
+									setSlashIndex(0)
+									return
+								}
+								if (e.key === "Tab" || e.key === "Enter") {
+									if (selectHighlightedSlash()) {
+										e.preventDefault()
+									}
+									return
+								}
+							}
+
 							if (showMentionPicker) {
 								if (e.key === "ArrowDown") {
 									e.preventDefault()

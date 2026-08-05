@@ -1,5 +1,5 @@
 import { useAtomValue, useSetAtom } from "jotai"
-import { Check, ChevronDown, Search, Star } from "lucide-react"
+import { Check, ChevronDown, Clock3, Search, Star } from "lucide-react"
 import { useMemo, useState } from "react"
 import { ProviderIcon } from "@/components/chat/provider-icon"
 import { Input } from "@/components/ui/input"
@@ -10,13 +10,14 @@ import {
 } from "@/components/ui/popover"
 import {
 	currentModelLabel,
+	extractRecentModels,
 	groupModelOptions,
 	modelMatchesQuery,
 	modelShortName,
 } from "@/lib/model-groups"
 import { providerIdFromGroupOrValue } from "@/lib/provider-registry"
 import { cn } from "@/lib/utils"
-import { setConfigOption } from "@/lib/tauri"
+import { markModelUsed, setConfigOption } from "@/lib/tauri"
 import {
 	activeSessionIdAtom,
 	sessionsAtom,
@@ -27,6 +28,7 @@ import type { ConfigOption, ConfigOptionValue } from "@/types/acp"
 interface ModelSelectorProps {
 	option: ConfigOption
 	favoriteModelIds: string[]
+	recentModelIds?: string[]
 	pendingFavoriteIds?: ReadonlySet<string>
 	onToggleFavorite: (modelId: string, favorite: boolean) => void | Promise<void>
 }
@@ -37,6 +39,7 @@ const GROUP_LABEL_CLASS =
 export function ModelSelector({
 	option,
 	favoriteModelIds,
+	recentModelIds = [],
 	pendingFavoriteIds,
 	onToggleFavorite,
 }: ModelSelectorProps) {
@@ -59,9 +62,27 @@ export function ModelSelector({
 		[favoriteModelIds],
 	)
 
+	const recentSet = useMemo(
+		() => new Set(recentModelIds),
+		[recentModelIds],
+	)
+
+	const recents = useMemo(
+		() =>
+			extractRecentModels(option.options, recentModelIds).filter(
+				(item) => !favoriteSet.has(item.value),
+			),
+		[option.options, recentModelIds, favoriteSet],
+	)
+
 	const filteredFavorites = useMemo(
 		() => favorites.filter((item) => modelMatchesQuery(item, searchQuery)),
 		[favorites, searchQuery],
+	)
+
+	const filteredRecents = useMemo(
+		() => recents.filter((item) => modelMatchesQuery(item, searchQuery)),
+		[recents, searchQuery],
 	)
 
 	const filteredGroups = useMemo(
@@ -69,16 +90,20 @@ export function ModelSelector({
 			groups
 				.map((group) => ({
 					...group,
-					models: group.models.filter((item) =>
-						modelMatchesQuery(item, searchQuery),
+					models: group.models.filter(
+						(item) =>
+							modelMatchesQuery(item, searchQuery) &&
+							!recentSet.has(item.value),
 					),
 				}))
 				.filter((group) => group.models.length > 0),
-		[groups, searchQuery],
+		[groups, searchQuery, recentSet],
 	)
 
 	const hasResults =
-		filteredFavorites.length > 0 || filteredGroups.length > 0
+		filteredFavorites.length > 0 ||
+		filteredRecents.length > 0 ||
+		filteredGroups.length > 0
 
 	function handleModelChange(next: string) {
 		const targetSid = activeSessionId
@@ -100,6 +125,7 @@ export function ModelSelector({
 			})
 		}
 		void setConfigOption(option.id, next)
+		void markModelUsed(next)
 		setOpen(false)
 		setSearchQuery("")
 	}
@@ -223,6 +249,22 @@ export function ModelSelector({
 						</p>
 					) : null}
 
+					{filteredRecents.length > 0 ? (
+						<div>
+							<div className={GROUP_LABEL_CLASS}>
+								<span className="flex items-center gap-1.5">
+									<Clock3 className="size-3 text-white/70" />
+									Recientes
+								</span>
+							</div>
+							{filteredRecents.map((item) => renderModelRow(item))}
+						</div>
+					) : null}
+
+					{filteredRecents.length > 0 && filteredFavorites.length > 0 ? (
+						<div className="mx-2 my-2 h-px bg-border" />
+					) : null}
+
 					{filteredFavorites.length > 0 ? (
 						<div>
 							<div className={GROUP_LABEL_CLASS}>
@@ -236,6 +278,10 @@ export function ModelSelector({
 					) : null}
 
 					{filteredFavorites.length > 0 && filteredGroups.length > 0 ? (
+						<div className="mx-2 my-2 h-px bg-border" />
+					) : null}
+
+					{filteredRecents.length > 0 && filteredGroups.length > 0 ? (
 						<div className="mx-2 my-2 h-px bg-border" />
 					) : null}
 

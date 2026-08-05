@@ -3,7 +3,10 @@ import {
 	appendStreamToMessages,
 	applySessionUpdate,
 	extractTextFromContent,
+	isQuestionToolCall,
+	isTaskToolCall,
 	parseUsageUpdate,
+	taskStateFromStatus,
 } from "@/lib/acp-parser"
 import type { ChatMessage } from "@/types/acp"
 
@@ -176,5 +179,99 @@ describe("parseUsageUpdate", () => {
 				update: { sessionUpdate: "agent_message_chunk", content: "hi" },
 			}),
 		).toBeNull()
+	})
+})
+
+describe("isTaskToolCall", () => {
+	it("detects task kind from title", () => {
+		expect(
+			isTaskToolCall({
+				title: "Run task",
+				kind: "task",
+				rawInput: { task: "investigate bug", cwd: "/proj" },
+			}),
+		).toBe(true)
+	})
+
+	it("detects subagent naming", () => {
+		expect(isTaskToolCall({ title: "Start subagent", kind: "custom" })).toBe(true)
+	})
+
+	it("detects rawInput task field", () => {
+		expect(
+			isTaskToolCall({
+				title: "t",
+				kind: "other",
+				rawInput: { task: "write tests" },
+			}),
+		).toBe(true)
+	})
+
+	it("requires an agent hint when only cwd is present", () => {
+		expect(
+			isTaskToolCall({ title: "bash", kind: "shell", rawInput: { cwd: "/proj" } }),
+		).toBe(false)
+		expect(
+			isTaskToolCall({
+				title: "agent start",
+				kind: "shell",
+				rawInput: { cwd: "/proj" },
+			}),
+		).toBe(true)
+	})
+
+	it("ignores unrelated tools", () => {
+		expect(
+			isTaskToolCall({ title: "Edit file", kind: "edit", rawInput: { filePath: "a.ts" } }),
+		).toBe(false)
+	})
+})
+
+describe("taskStateFromStatus", () => {
+	it("maps ACP statuses to task states", () => {
+		expect(taskStateFromStatus("pending")).toBe("pending")
+		expect(taskStateFromStatus("running")).toBe("running")
+		expect(taskStateFromStatus("completed")).toBe("completed")
+		expect(taskStateFromStatus("done")).toBe("completed")
+		expect(taskStateFromStatus("failed")).toBe("failed")
+		expect(taskStateFromStatus("error")).toBe("failed")
+	})
+})
+
+describe("isQuestionToolCall", () => {
+	it("detects question kind from title", () => {
+		expect(isQuestionToolCall({ title: "Ask user a question", kind: "custom" })).toBe(
+			true,
+		)
+	})
+
+	it("detects radio/checkbox/text rawInput", () => {
+		expect(
+			isQuestionToolCall({
+				title: "t",
+				kind: "other",
+				rawInput: { type: "radio", question: "Pick one", options: ["a", "b"] },
+			}),
+		).toBe(true)
+		expect(
+			isQuestionToolCall({
+				title: "t",
+				kind: "other",
+				rawInput: { type: "checkbox", question: "Pick many", options: [] },
+			}),
+		).toBe(true)
+		expect(
+			isQuestionToolCall({
+				title: "t",
+				kind: "other",
+				rawInput: { type: "text", prompt: "Type it" },
+			}),
+		).toBe(true)
+	})
+
+	it("ignores unrelated tools", () => {
+		expect(
+			isQuestionToolCall({ title: "Edit file", kind: "edit", rawInput: { filePath: "a.ts" } }),
+		).toBe(false)
 	})
 })
