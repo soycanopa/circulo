@@ -787,6 +787,7 @@ export default function App() {
 				panelOpen={diffPanelOpen}
 				panel={
 					<DiffPanel
+						projectPath={projectPath}
 						onClose={() => {
 							closeDiffPanel()
 							setSelectedDiff(null)

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
+import type { SessionDiff } from "@/lib/diff-tools"
 import type {
 	AgentCapabilities,
 	AgentDescriptor,
@@ -8,6 +9,7 @@ import type {
 	ChatMessage,
 	ChatSessionSummary,
 	ConfigOption,
+	GitStatus,
 	PermissionRequest,
 	ProjectStatus,
 	StoredChatMessage,
@@ -71,6 +73,19 @@ export async function openInEditor(
 	path: string,
 ): Promise<void> {
 	return invoke("open_in_editor", { editor, path })
+}
+
+export async function getGitStatus(
+	projectPath: string,
+): Promise<GitStatus> {
+	return invoke("git_status_cmd", { projectPath })
+}
+
+export async function getGitFileDiff(
+	projectPath: string,
+	path: string,
+): Promise<SessionDiff> {
+	return invoke("git_file_diff_cmd", { projectPath, path })
 }
 
 export async function getHomePath(): Promise<string> {

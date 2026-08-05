@@ -61,6 +61,17 @@ export interface ToolCallTerminal {
 
 export type ToolCallContent = string | ToolCallDiff | ToolCallTerminal
 
+export interface GitFileStatus {
+	path: string
+	status: "created" | "modified" | "deleted" | "untracked"
+	staged: boolean
+}
+
+export interface GitStatus {
+	branch: string
+	files: GitFileStatus[]
+}
+
 export interface ToolCall {
 	id: string
 	title: string

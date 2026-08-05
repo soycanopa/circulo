@@ -3,14 +3,19 @@ import {
 	FileDiff,
 	FileMinus2,
 	FilePlus2,
+	GitBranch,
+	Loader2,
 	MessageSquareText,
 	Plus,
+	RefreshCw,
 	Send,
 	Trash2,
 	X,
 } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { useGitStatus } from "@/hooks/use-git-status"
 import { collectSessionDiffs, type SessionDiff } from "@/lib/diff-tools"
+import { getGitFileDiff } from "@/lib/tauri"
 import { cn } from "@/lib/utils"
 import {
 	appendComposerTextAtom,
@@ -18,9 +23,11 @@ import {
 	selectedDiffToolAtom,
 	visibleMessagesAtom,
 } from "@/stores/atoms"
+import type { GitFileStatus } from "@/types/acp"
 
 interface DiffPanelProps {
 	onClose: () => void
+	projectPath?: string | null
 }
 
 const STATUS_LABEL: Record<SessionDiff["status"], string> = {
@@ -30,7 +37,14 @@ const STATUS_LABEL: Record<SessionDiff["status"], string> = {
 	unchanged: "unchanged",
 }
 
-export function DiffPanel({ onClose }: DiffPanelProps) {
+const GIT_STATUS_LABEL: Record<GitFileStatus["status"], string> = {
+	created: "new",
+	modified: "modified",
+	deleted: "deleted",
+	untracked: "untracked",
+}
+
+export function DiffPanel({ onClose, projectPath }: DiffPanelProps) {
 	const messages = useAtomValue(visibleMessagesAtom)
 	const [tool, setTool] = useAtom(selectedDiffToolAtom)
 	const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -38,6 +52,25 @@ export function DiffPanel({ onClose }: DiffPanelProps) {
 	const setPendingComments = useSetAtom(pendingCommentsAtom)
 	const appendComposerText = useSetAtom(appendComposerTextAtom)
 	const diffs = collectSessionDiffs(messages)
+
+	const [view, setView] = useState<"session" | "git">("session")
+	const git = useGitStatus(projectPath ?? null)
+	const [gitPath, setGitPath] = useState<string | null>(null)
+	const [gitDiff, setGitDiff] = useState<SessionDiff | null>(null)
+	const [gitLoading, setGitLoading] = useState(false)
+	const [gitError, setGitError] = useState<string | null>(null)
+
+	// Opening a diff from the chat jumps back to the session view.
+	useEffect(() => {
+		if (tool) setView("session")
+	}, [tool])
+
+	// Drop any selected git file when the project changes.
+	useEffect(() => {
+		setGitPath(null)
+		setGitDiff(null)
+		setGitError(null)
+	}, [projectPath])
 
 	const selectedPath =
 		tool && typeof tool.content === "object"
@@ -80,6 +113,24 @@ export function DiffPanel({ onClose }: DiffPanelProps) {
 		setPendingComments([])
 	}
 
+	async function openGitFile(file: GitFileStatus) {
+		if (!projectPath) return
+		setGitPath(file.path)
+		setGitLoading(true)
+		setGitError(null)
+		setGitDiff(null)
+		try {
+			const diff = await getGitFileDiff(projectPath, file.path)
+			setGitDiff(diff)
+		} catch (err) {
+			setGitError(
+				err instanceof Error ? err.message : "Failed to load file diff",
+			)
+		} finally {
+			setGitLoading(false)
+		}
+	}
+
 	const created = diffs.filter((d) => d.status === "created").length
 	const modified = diffs.filter((d) => d.status === "modified").length
 
@@ -93,7 +144,11 @@ export function DiffPanel({ onClose }: DiffPanelProps) {
 					<FileDiff className="size-4 shrink-0 text-sky-300" />
 					<div className="min-w-0">
 						<p className="truncate text-sm font-medium text-fg">Diff review</p>
-						{selectedDiff ? (
+						{view === "git" ? (
+							<p className="truncate text-xs text-muted">
+								{git.status?.branch ?? "git"}
+							</p>
+						) : selectedDiff ? (
 							<p className="truncate text-xs text-muted">{selectedDiff.path}</p>
 						) : diffs.length > 0 ? (
 							<p className="truncate text-xs text-muted">
@@ -113,7 +168,40 @@ export function DiffPanel({ onClose }: DiffPanelProps) {
 				</button>
 			</div>
 
-			{selectedDiff ? (
+			<div className="flex shrink-0 items-center gap-1 border-b border-border px-3 py-1.5">
+				<TabButton
+					active={view === "session"}
+					onClick={() => setView("session")}
+					label="Session"
+				/>
+				<TabButton
+					active={view === "git"}
+					onClick={() => setView("git")}
+					label="Git"
+				/>
+			</div>
+
+			{view === "git" ? (
+				<GitView
+					isRepo={git.isRepo}
+					loading={git.loading || gitLoading}
+					error={gitError ?? git.error}
+					files={git.status?.files ?? []}
+					selectedPath={gitPath}
+					diff={gitDiff}
+					branch={git.status?.branch ?? ""}
+					onSelect={(file) => void openGitFile(file)}
+					onBack={() => {
+						setGitPath(null)
+						setGitDiff(null)
+						setGitError(null)
+					}}
+					onAddComment={(line, text) => {
+						if (gitDiff) addComment(gitDiff, line, text)
+					}}
+					onRefresh={git.refresh}
+				/>
+			) : selectedDiff ? (
 				<DiffView
 					diff={selectedDiff}
 					onBack={() => setTool(null)}
@@ -212,6 +300,146 @@ export function DiffPanel({ onClose }: DiffPanelProps) {
 				</div>
 			) : null}
 		</aside>
+	)
+}
+
+function TabButton({
+	active,
+	onClick,
+	label,
+}: {
+	active: boolean
+	onClick: () => void
+	label: string
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onClick}
+			className={cn(
+				"rounded px-2.5 py-1 text-[11px] font-medium transition",
+				active
+					? "bg-white/10 text-fg"
+					: "text-muted hover:bg-white/5 hover:text-fg",
+			)}
+		>
+			{label}
+		</button>
+	)
+}
+
+function GitView({
+	isRepo,
+	loading,
+	error,
+	files,
+	selectedPath,
+	diff,
+	branch,
+	onSelect,
+	onBack,
+	onAddComment,
+	onRefresh,
+}: {
+	isRepo: boolean
+	loading: boolean
+	error: string | null
+	files: GitFileStatus[]
+	selectedPath: string | null
+	diff: SessionDiff | null
+	branch: string
+	onSelect: (file: GitFileStatus) => void
+	onBack: () => void
+	onAddComment: (line: number, text: string) => void
+	onRefresh: () => void
+}) {
+	if (diff) {
+		return <DiffView diff={diff} onBack={onBack} onAddComment={onAddComment} />
+	}
+
+	if (!isRepo) {
+		return (
+			<div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted">
+				<GitBranch className="size-5 opacity-60" />
+				<p>{error ?? "This project is not a git repository."}</p>
+			</div>
+		)
+	}
+
+	if (loading && files.length === 0) {
+		return (
+			<div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-xs text-muted">
+				<Loader2 className="size-4 animate-spin" />
+				Loading git status…
+			</div>
+		)
+	}
+
+	if (error && files.length === 0) {
+		return (
+			<div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs text-muted">
+				{error}
+			</div>
+		)
+	}
+
+	if (files.length === 0) {
+		return (
+			<div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-xs text-muted">
+				<p>Working tree is clean on {branch}.</p>
+				<button
+					type="button"
+					onClick={onRefresh}
+					className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] transition hover:bg-white/5 hover:text-fg"
+				>
+					<RefreshCw className="size-3" />
+					Refresh
+				</button>
+			</div>
+		)
+	}
+
+	return (
+		<ul className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3">
+			{files.map((file) => {
+				const active = file.path === selectedPath
+				return (
+					<li key={file.path}>
+						<button
+							type="button"
+							onClick={() => onSelect(file)}
+							className={cn(
+								"w-full rounded-md border px-3 py-2 text-left text-xs transition",
+								active
+									? "border-sky-500/30 bg-sky-500/10 text-fg"
+									: "border-border bg-surface text-fg hover:bg-white/5",
+							)}
+						>
+							<span className="flex items-center gap-1.5">
+								{file.status === "created" || file.status === "untracked" ? (
+									<FilePlus2 className="size-3.5 shrink-0 text-emerald-300" />
+								) : file.status === "deleted" ? (
+									<FileMinus2 className="size-3.5 shrink-0 text-red-300" />
+								) : (
+									<FileDiff className="size-3.5 shrink-0 text-sky-300" />
+								)}
+								<span className="min-w-0 flex-1 truncate font-medium">
+									{file.path}
+								</span>
+								{file.staged ? (
+									<span className="shrink-0 rounded bg-emerald-500/15 px-1 py-0.5 text-[9px] uppercase tracking-wide text-emerald-200">
+										staged
+									</span>
+								) : null}
+							</span>
+							<span className="mt-1 block text-[10px] uppercase tracking-wide text-muted">
+								{GIT_STATUS_LABEL[file.status]}
+							</span>
+						</button>
+					</li>
+				)
+			})}
+		</ul>
 	)
 }
 

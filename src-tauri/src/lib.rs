@@ -73,6 +73,8 @@ pub fn run() {
             commands::pick_directory,
             commands::complete_directory_path,
             commands::open_in_editor,
+            commands::git::git_status_cmd,
+            commands::git::git_file_diff_cmd,
             commands::list_agents_cmd,
             commands::export_transcript_cmd,
             commands::persistence::set_preferred_agent_cmd,
