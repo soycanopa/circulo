@@ -23,7 +23,7 @@ import {
 	filterSlashCommands,
 	getActiveSlash,
 } from "@/lib/slash-parser"
-import { cancelPrompt, createSession, sendPrompt } from "@/lib/tauri"
+import { cancelPrompt, createSession, getMcpServers, sendPrompt } from "@/lib/tauri"
 import {
 	activePermissionAtom,
 	activeSessionIdAtom,
@@ -37,7 +37,7 @@ import {
 	setDraftAtom,
 	visiblePromptInFlightAtom,
 } from "@/stores/atoms"
-import type { ChatMessage } from "@/types/acp"
+import type { ChatMessage, ManagedMcpServer } from "@/types/acp"
 
 interface ChatInputProps {
 	enabledAgentIds?: string[]
@@ -101,9 +101,48 @@ export function ChatInput({
 			mergeSlashCommands(appSettings?.customSlashCommands ?? []),
 		[appSettings?.customSlashCommands],
 	)
-	const slashResults = activeSlash
-		? filterSlashCommands(activeSlash.query, allSlashCommands)
-		: []
+
+	// Registered MCP servers power the dynamic `/mcp` sub-menu.
+	const [mcpServers, setMcpServers] = useState<ManagedMcpServer[]>([])
+	useEffect(() => {
+		void getMcpServers()
+			.then(setMcpServers)
+			.catch(() => setMcpServers([]))
+	}, [])
+
+	const mcpCommands = useMemo(() => {
+		if (!activeSlash || !activeSlash.query.toLowerCase().startsWith("mcp")) {
+			return null
+		}
+		const enabled = mcpServers.filter((server) => server.enabled)
+		if (enabled.length === 0) {
+			return [
+				{
+					command: "mcp:none",
+					label: "No MCP servers registered",
+					description: "Add one in Settings > MCP servers",
+					action: "insert" as const,
+					prompt: "",
+				},
+			]
+		}
+		return enabled.map((server) => ({
+			command: `mcp:${server.id}`,
+			label: server.name,
+			description: `${server.kind} · ${
+				server.autoLoad ? "auto-load" : "on-demand"
+			}`,
+			action: "insert" as const,
+			prompt: `Usa el servidor MCP "${server.name}": llama mcp_load("${server.id}") en circulo-mcp y luego usa sus tools vía mcp_call.`,
+		}))
+	}, [activeSlash, mcpServers])
+
+	const slashResults = useMemo(() => {
+		if (mcpCommands) return mcpCommands
+		return activeSlash
+			? filterSlashCommands(activeSlash.query, allSlashCommands)
+			: []
+	}, [activeSlash, allSlashCommands, mcpCommands])
 	const showSlashMenu = Boolean(activeSlash && !disabled)
 
 	function updateValue(next: string, nextCursor: number) {
@@ -273,6 +312,18 @@ export function ChatInput({
 			if (sessionId) setDraft(sessionId, "")
 			setSlashIndex(0)
 			onNewChat?.()
+			return
+		}
+		if (command.action === "insert") {
+			if (!command.prompt) {
+				// Placeholder entry (e.g. "no servers registered"): just close the menu.
+				setSlashIndex(0)
+				return
+			}
+			// Insert the `/mcp <server>` directive into the composer for review.
+			const next = value.slice(0, activeSlash.start) + command.prompt
+			updateValue(next, next.length)
+			setSlashIndex(0)
 			return
 		}
 		// Send the command on its own; drop anything already typed after the token.

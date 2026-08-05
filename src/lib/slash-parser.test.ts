@@ -36,7 +36,7 @@ describe("getActiveSlash", () => {
 
 describe("filterSlashCommands", () => {
 	it("returns all commands for an empty query", () => {
-		expect(filterSlashCommands("", DEFAULT_SLASH_COMMANDS)).toHaveLength(3)
+		expect(filterSlashCommands("", DEFAULT_SLASH_COMMANDS)).toHaveLength(4)
 	})
 
 	it("filters by prefix", () => {
@@ -55,8 +55,8 @@ describe("mergeSlashCommands", () => {
 		const merged = mergeSlashCommands([
 			{ command: "/review", label: "Review the current diff", description: "Run a review" },
 		])
-		expect(merged).toHaveLength(4)
-		const custom = merged[3]
+		expect(merged).toHaveLength(5)
+		const custom = merged[4]
 		expect(custom.command).toBe("review")
 		expect(custom.label).toBe("/review")
 		expect(custom.prompt).toBe("Review the current diff")
@@ -68,8 +68,8 @@ describe("mergeSlashCommands", () => {
 			{ command: "/clear", label: "custom", description: "custom" },
 			{ command: "/compact", label: "custom2", description: "custom2" },
 		])
-		expect(merged).toHaveLength(3)
-		expect(merged.map((c) => c.command)).toEqual(["compact", "help", "clear"])
+		expect(merged).toHaveLength(4)
+		expect(merged.map((c) => c.command)).toEqual(["compact", "help", "clear", "mcp"])
 		expect(merged[0].prompt).toBeUndefined()
 	})
 

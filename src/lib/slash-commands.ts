@@ -5,7 +5,7 @@ export interface SlashCommand {
 	label: string
 	description: string
 	/** How the command is executed. Defaults to sending the label as text. */
-	action?: "text" | "new-chat"
+	action?: "text" | "new-chat" | "insert"
 	/** Prompt sent to the agent; defaults to `label`. */
 	prompt?: string
 }
@@ -26,6 +26,11 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
 		label: "/clear",
 		description: "Start a fresh conversation",
 		action: "new-chat",
+	},
+	{
+		command: "mcp",
+		label: "/mcp",
+		description: "Load a registered MCP server on demand (circulo-mcp)",
 	},
 ]
 
