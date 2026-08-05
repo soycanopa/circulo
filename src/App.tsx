@@ -1011,7 +1011,8 @@ export default function App() {
 
 			<div
 				className={cn(
-					"terminal-panel-shell shrink-0 overflow-hidden border-t border-border",
+					"terminal-panel-shell shrink-0 overflow-hidden",
+					terminalDrawerOpen && "border-t border-border",
 					shellTransition,
 				)}
 				style={{
