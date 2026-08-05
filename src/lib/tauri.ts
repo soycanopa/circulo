@@ -9,6 +9,7 @@ import type {
 	ChatMessage,
 	ChatSessionSummary,
 	ConfigOption,
+	GitBranches,
 	GitStatus,
 	PermissionRequest,
 	ProjectStatus,
@@ -86,6 +87,27 @@ export async function getGitFileDiff(
 	path: string,
 ): Promise<SessionDiff> {
 	return invoke("git_file_diff_cmd", { projectPath, path })
+}
+
+export async function getGitBranches(
+	projectPath: string,
+): Promise<GitBranches> {
+	return invoke("git_branches_cmd", { projectPath })
+}
+
+export async function gitCheckout(
+	projectPath: string,
+	name: string,
+): Promise<GitBranches> {
+	return invoke("git_checkout_cmd", { projectPath, name })
+}
+
+export async function gitCreateBranch(
+	projectPath: string,
+	name: string,
+	startPoint?: string,
+): Promise<GitBranches> {
+	return invoke("git_create_branch_cmd", { projectPath, name, startPoint })
 }
 
 export interface DirectoryEntry {

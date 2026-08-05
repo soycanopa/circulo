@@ -72,6 +72,20 @@ export interface GitStatus {
 	files: GitFileStatus[]
 }
 
+export interface GitBranchInfo {
+	name: string
+	current: boolean
+	remote: boolean
+	upstream: string | null
+}
+
+export interface GitBranches {
+	current: string
+	detached: boolean
+	local: GitBranchInfo[]
+	remote: GitBranchInfo[]
+}
+
 export interface ToolCall {
 	id: string
 	title: string
