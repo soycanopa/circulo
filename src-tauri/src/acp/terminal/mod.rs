@@ -16,10 +16,13 @@ use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, Notify};
 use tracing::{info, warn};
 
+use crate::token_optimizer::filter_terminal_output;
+
 const DEFAULT_OUTPUT_BYTE_LIMIT: u64 = 256 * 1024;
 
 struct TerminalEntry {
     session_id: String,
+    command: String,
     output: Arc<Mutex<String>>,
     truncated: Arc<Mutex<bool>>,
     exit_status: Arc<Mutex<Option<TerminalExitStatus>>>,
@@ -92,6 +95,7 @@ impl TerminalManager {
 
         let entry = TerminalEntry {
             session_id: session_id.clone(),
+            command: request.command.clone(),
             output: output.clone(),
             truncated: truncated.clone(),
             exit_status: exit_status.clone(),
@@ -234,7 +238,37 @@ impl TerminalManager {
         let truncated = *entry.truncated.lock().await;
         let exit_status = entry.exit_status.lock().await.clone();
 
-        Ok(TerminalOutputResponse::new(output, truncated).exit_status(exit_status))
+        // Fase 5: the raw output is streamed to the UI via acp:terminal_output;
+        // the *agent* gets a command-aware compaction (git status/diff, ls, tests)
+        // that stays reversible via retrieve_original on circulo-mcp.
+        let stats = filter_terminal_output(&entry.command, &output);
+        if stats.applied && stats.saved_bytes > 0 {
+            self.emit_filter_stats(&terminal_id, &entry.session_id, &stats);
+        }
+        let agent_output = if stats.applied {
+            stats.filtered
+        } else {
+            output
+        };
+
+        Ok(TerminalOutputResponse::new(agent_output, truncated).exit_status(exit_status))
+    }
+
+    fn emit_filter_stats(
+        &self,
+        terminal_id: &str,
+        session_id: &str,
+        stats: &crate::token_optimizer::TerminalFilterStats,
+    ) {
+        let payload = serde_json::json!({
+            "terminalId": terminal_id,
+            "sessionId": session_id,
+            "originalBytes": stats.original_bytes,
+            "filteredBytes": stats.filtered_bytes,
+            "savedBytes": stats.saved_bytes,
+            "connectionGeneration": self.generation,
+        });
+        let _ = self.app.emit("acp:terminal_filter_stats", payload);
     }
 
     pub async fn wait_for_exit(
