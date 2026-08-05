@@ -40,6 +40,12 @@ export function useAppShortcuts(handlers: AppShortcutHandlers) {
 				return
 			}
 
+			if (mod && key === ",") {
+				event.preventDefault()
+				handlersRef.current.onOpenSettings()
+				return
+			}
+
 			if (mod && key === "k") {
 				event.preventDefault()
 				handlersRef.current.onOpenCommandPalette()
