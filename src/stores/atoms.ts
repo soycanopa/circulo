@@ -123,6 +123,47 @@ export const sidebarOpenAtom = atom(true)
 export const settingsSectionAtom = atom<SettingsSectionId>("general")
 export const selectedDiffToolAtom = atom<ToolCall | null>(null)
 
+// ---------------------------------------------------------------------------
+// Usage tracking (Settings > Usage)
+// ---------------------------------------------------------------------------
+
+export interface UsageSample {
+	timestamp: number
+	/** tokens used in the context window */
+	used: number
+	/** context window size in tokens */
+	size: number
+}
+
+/** usage_update samples per session (kept in memory for the current run). */
+export const usageHistoryBySessionAtom = atom<Record<string, UsageSample[]>>({})
+
+export interface ToolOutputStats {
+	toolCallCount: number
+	totalOutputBytes: number
+}
+
+/** Aggregate tool-call output volume measured from `tool_call_update`. */
+export const toolOutputStatsAtom = atom<ToolOutputStats>({
+	toolCallCount: 0,
+	totalOutputBytes: 0,
+})
+
+export interface McpSavings {
+	/** server id -> times loaded via mcp_load/mcp_call */
+	loadedServers: Record<string, number>
+	/** bytes saved by compact_result (terminal filters, orchestrator) */
+	savingsBytes: number
+	compactionCount: number
+}
+
+/** Measured savings from compaction and MCP usage. */
+export const mcpSavingsAtom = atom<McpSavings>({
+	loadedServers: {},
+	savingsBytes: 0,
+	compactionCount: 0,
+})
+
 const DRAFTS_KEY = "circulo.drafts"
 
 function readDrafts(): Record<string, string> {

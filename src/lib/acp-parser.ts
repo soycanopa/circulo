@@ -238,7 +238,13 @@ export function applySessionUpdate(
 	messages: ChatMessage[],
 	streamingText: string,
 	payload: unknown,
-): { messages: ChatMessage[]; streamingText: string; didStream: boolean } {
+): {
+	messages: ChatMessage[]
+	streamingText: string
+	didStream: boolean
+	/** Bytes of tool output seen in this update (tool_call/tool_call_update). */
+	toolOutputBytes?: number
+} {
 	const root = asRecord(payload)
 	if (!root) return { messages, streamingText, didStream: false }
 
@@ -312,7 +318,13 @@ export function applySessionUpdate(
 		}
 		nextMessages[targetIdx] = { ...base, toolCalls: tools }
 		didStream = true
-		return { messages: nextMessages, streamingText: nextStreaming, didStream }
+		const toolOutputBytes = extractTextFromContent(update.content).length
+		return {
+			messages: nextMessages,
+			streamingText: nextStreaming,
+			didStream,
+			toolOutputBytes,
+		}
 	}
 
 	return { messages, streamingText, didStream: false }

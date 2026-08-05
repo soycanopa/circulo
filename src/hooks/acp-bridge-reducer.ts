@@ -11,8 +11,11 @@ import {
 	errorMessageAtom,
 	historyMessagesAtom,
 	historyViewSessionIdAtom,
+	mcpSavingsAtom,
 	pendingPermissionsAtom,
 	progressMessageAtom,
+	toolOutputStatsAtom,
+	usageHistoryBySessionAtom,
 	warmTimingsAtom,
 	projectPathAtom,
 	sessionStatusAtom,
@@ -108,6 +111,66 @@ function isUnknownSession(
 	if (active === eventSessionId) return false
 	const sessions = store.get(sessionsAtom)
 	return !sessions[eventSessionId]
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null
+}
+
+function toolCount(messages: { toolCalls: unknown[] }[]): number {
+	return messages.reduce((n, m) => n + m.toolCalls.length, 0)
+}
+
+/** Detect mcp_load / mcp_call tool usage and record it for the Usage dashboard. */
+function recordMcpUsage(store: Store, payload: unknown) {
+	const root = asRecord(payload)
+	if (!root) return
+	const update = asRecord(root.update) ?? root
+	const title = (typeof update.title === "string" ? update.title : "").toLowerCase()
+	const kind = (typeof update.kind === "string" ? update.kind : "").toLowerCase()
+	const combined = `${title} ${kind}`
+	if (!combined.includes("mcp_load") && !combined.includes("mcp_call")) return
+	const rawInput = asRecord(update.rawInput ?? update.input)
+	const server =
+		typeof rawInput?.name === "string" && rawInput.name
+			? (rawInput.name as string)
+			: "unknown"
+	store.set(mcpSavingsAtom, (prev) => ({
+		...prev,
+		loadedServers: {
+			...prev.loadedServers,
+			[server]: (prev.loadedServers[server] ?? 0) + 1,
+		},
+	}))
+}
+
+/** Record usage_update samples and tool-output volume for the Usage dashboard. */
+function recordUsageMetrics(
+	store: Store,
+	sessionId: string,
+	payload: unknown,
+	before: { toolCalls: unknown[] }[],
+	after: { toolCalls: unknown[] }[],
+	toolOutputBytes?: number,
+) {
+	if (toolOutputBytes !== undefined) {
+		store.set(toolOutputStatsAtom, (prev) => ({
+			toolCallCount: prev.toolCallCount + Math.max(0, toolCount(after) - toolCount(before)),
+			totalOutputBytes: prev.totalOutputBytes + toolOutputBytes,
+		}))
+	}
+	const usage = parseUsageUpdate(payload)
+	if (!usage) return
+	const sample = { timestamp: Date.now(), ...usage }
+	store.set(usageHistoryBySessionAtom, (prev) => {
+		const samples = prev[sessionId] ?? []
+		// Keep at most 200 samples per session.
+		const next = [...samples, sample]
+		if (next.length > 200) next.splice(0, next.length - 200)
+		return { ...prev, [sessionId]: next }
+	})
 }
 
 const EMPTY_SESSION: SessionUiState = {
@@ -271,6 +334,7 @@ export function processAcpEvent(
 			if (isUnknownSession(store, eventSessionId)) return
 
 			const sessionState = ensureSession(store, eventSessionId)
+			const before = sessionState.messages
 			const result = applySessionUpdate(
 				sessionState.messages,
 				streamFor(refs, eventSessionId),
@@ -285,6 +349,15 @@ export function processAcpEvent(
 			if (usage) {
 				updateSession(store, eventSessionId, { contextUsage: usage })
 			}
+			recordMcpUsage(store, event.payload)
+			recordUsageMetrics(
+				store,
+				eventSessionId,
+				event.payload,
+				before,
+				result.messages,
+				result.toolOutputBytes,
+			)
 			if (result.didStream) {
 				updateSession(store, eventSessionId, {
 					promptInFlight: true,
