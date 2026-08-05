@@ -236,4 +236,78 @@ body {
   background-color: var(--color-content) !important;
 }
 
+/* ---- Rich markdown (react-markdown) ---- */
+
+/* Code block pre inside the markdown wrapper keeps its own scroll + color. */
+.markdown-body pre {
+  margin: 0;
+  background: transparent;
+}
+
+/* KaTeX scrolls horizontally instead of overflowing the message. */
+.markdown-body .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+
+/* Mermaid SVG should scale down instead of overflowing. */
+.markdown-body .mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* highlight.js dark token theme — tuned to the existing tokens. */
+.hljs {
+  color: #d6d6d8;
+}
+.hljs-comment,
+.hljs-quote {
+  color: #7d7d85;
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-tag {
+  color: #8ab4f8;
+}
+.hljs-string,
+.hljs-attr,
+.hljs-template-tag,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: #a8d5a2;
+}
+.hljs-number,
+.hljs-literal,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-meta,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link,
+.hljs-deletion {
+  color: #f6a8c8;
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-section,
+.hljs-name,
+.hljs-built_in,
+.hljs-type,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: #fcd28f;
+}
+.hljs-regexp,
+.hljs-addition {
+  color: #9ddcdc;
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 700;
+}
+
 
