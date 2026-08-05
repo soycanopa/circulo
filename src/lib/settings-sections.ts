@@ -1,8 +1,10 @@
 import {
+	Blocks,
 	Bot,
 	Command,
 	Info,
 	LayoutGrid,
+	Plug,
 	ShieldCheck,
 	SlidersHorizontal,
 	Sparkles,
@@ -18,6 +20,9 @@ export type SettingsSectionId =
 	| "slash"
 	| "permissions"
 	| "workspaces"
+	| "mcp"
+	| "skills"
+	| "usage"
 	| "about"
 
 export interface SettingsSectionDef {
@@ -69,6 +74,24 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
 		label: "Workspaces",
 		description: "Spaces and recent projects",
 		icon: LayoutGrid,
+	},
+	{
+		id: "mcp",
+		label: "MCP servers",
+		description: "Orchestrator, presets, imports and auto-load",
+		icon: Plug,
+	},
+	{
+		id: "skills",
+		label: "Skills",
+		description: "Install skills from skills.sh to projects or globally",
+		icon: Blocks,
+	},
+	{
+		id: "usage",
+		label: "Usage",
+		description: "Token tracking and measured savings",
+		icon: Zap,
 	},
 	{
 		id: "about",

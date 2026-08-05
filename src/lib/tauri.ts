@@ -8,11 +8,18 @@ import type {
 	Automation,
 	ChatMessage,
 	ChatSessionSummary,
+	CirculoMcpStatus,
 	ConfigOption,
 	GitBranches,
 	GitStatus,
+	InstalledSkill,
+	ManagedMcpServer,
+	McpImportCandidate,
+	McpValidationResult,
 	PermissionRequest,
 	ProjectStatus,
+	SkillListResponse,
+	SkillSearchResponse,
 	StoredChatMessage,
 	StoredTranscript,
 } from "@/types/acp"
@@ -56,6 +63,12 @@ export async function setFavoriteModel(
 
 export async function setAutoApprove(enabled: boolean): Promise<AppSettings> {
 	return invoke("set_auto_approve_cmd", { enabled })
+}
+
+export async function setVercelOidcToken(
+	token: string | null,
+): Promise<AppSettings> {
+	return invoke("set_vercel_oidc_token_cmd", { token })
 }
 
 export async function setAllowedTool(
@@ -269,6 +282,99 @@ export async function saveAutomation(
 
 export async function deleteAutomation(id: string): Promise<void> {
 	return invoke("delete_automation_cmd", { id })
+}
+
+export async function getMcpServers(): Promise<ManagedMcpServer[]> {
+	return invoke("get_mcp_servers_cmd")
+}
+
+export async function upsertMcpServer(
+	server: ManagedMcpServer,
+): Promise<ManagedMcpServer[]> {
+	return invoke("upsert_mcp_server_cmd", { server })
+}
+
+export async function deleteMcpServer(id: string): Promise<ManagedMcpServer[]> {
+	return invoke("delete_mcp_server_cmd", { id })
+}
+
+export async function setMcpServerState(
+	id: string,
+	enabled: boolean,
+	autoLoad: boolean,
+): Promise<ManagedMcpServer[]> {
+	return invoke("set_mcp_server_state_cmd", { id, enabled, autoLoad })
+}
+
+export async function validateMcpServer(
+	server: ManagedMcpServer,
+): Promise<McpValidationResult> {
+	return invoke("validate_mcp_server_cmd", { server })
+}
+
+export async function listMcpImports(
+	projectPath: string,
+): Promise<McpImportCandidate[]> {
+	return invoke("list_mcp_imports_cmd", { projectPath })
+}
+
+export async function importMcp(
+	projectPath: string,
+	serverId: string,
+): Promise<ManagedMcpServer[]> {
+	return invoke("import_mcp_cmd", { projectPath, serverId })
+}
+
+export async function getCirculoMcpStatus(): Promise<CirculoMcpStatus> {
+	return invoke("get_circulo_mcp_status_cmd")
+}
+
+export async function searchSkills(
+	query: string,
+	limit?: number,
+	oidcToken?: string | null,
+): Promise<SkillSearchResponse> {
+	return invoke("search_skills_cmd", {
+		query,
+		limit: limit ?? 10,
+		oidcToken: oidcToken ?? null,
+	})
+}
+
+export async function listSkills(
+	projectPath?: string | null,
+): Promise<SkillListResponse> {
+	return invoke("list_skills_cmd", { projectPath: projectPath ?? null })
+}
+
+export async function installSkill(
+	name: string,
+	source: string,
+	target: string,
+	projectPath?: string | null,
+	id?: string,
+	oidcToken?: string | null,
+): Promise<InstalledSkill> {
+	return invoke("install_skill_cmd", {
+		name,
+		source,
+		target,
+		projectPath: projectPath ?? null,
+		id: id ?? null,
+		oidcToken: oidcToken ?? null,
+	})
+}
+
+export async function deleteSkill(
+	name: string,
+	scope: string,
+	projectPath?: string | null,
+): Promise<void> {
+	return invoke("delete_skill_cmd", {
+		name,
+		scope,
+		projectPath: projectPath ?? null,
+	})
 }
 
 export async function createWorkspace(): Promise<AppSettings> {
