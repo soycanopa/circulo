@@ -1406,7 +1406,6 @@ pub fn read_context_file(project_root: &Path, relative_path: &str) -> Result<Str
 
 pub fn search_project_files(project_root: &Path, query: &str, limit: usize) -> Vec<String> {
     const MAX_SEARCH_DEPTH: usize = 12;
-    const IGNORED_DIRECTORIES: [&str; 4] = ["node_modules", ".git", "target", ".build"];
 
     let query_lower = query.to_lowercase();
     let mut results = Vec::new();
@@ -1418,7 +1417,7 @@ pub fn search_project_files(project_root: &Path, query: &str, limit: usize) -> V
         .filter_entry(|entry| {
             entry.depth() == 0
                 || !entry.file_type().is_dir()
-                || !IGNORED_DIRECTORIES.contains(&entry.file_name().to_string_lossy().as_ref())
+                || !crate::project_fs::should_ignore_dir(&entry.file_name().to_string_lossy())
         })
         .filter_map(Result::ok)
     {

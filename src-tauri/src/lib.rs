@@ -4,6 +4,7 @@ mod agents;
 mod cli_resolve;
 mod commands;
 mod persistence;
+mod project_fs;
 mod state;
 mod user_terminal;
 
@@ -75,6 +76,7 @@ pub fn run() {
             commands::open_in_editor,
             commands::git::git_status_cmd,
             commands::git::git_file_diff_cmd,
+            commands::fs::read_directory_cmd,
             commands::list_agents_cmd,
             commands::export_transcript_cmd,
             commands::persistence::set_preferred_agent_cmd,

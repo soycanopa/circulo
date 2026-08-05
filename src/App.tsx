@@ -61,6 +61,7 @@ import {
 import {
 	activeSessionIdAtom,
 	agentConnectedAtom,
+	appendComposerTextAtom,
 	appSettingsAtom,
 	capabilitiesAtom,
 	diffPanelOpenAtom,
@@ -227,6 +228,24 @@ export default function App() {
 			})
 		},
 		[projectPath, setError],
+	)
+
+	const handleOpenFile = useCallback(
+		(path: string) => {
+			setError(null)
+			void openInEditor("vscode", path).catch((err: unknown) => {
+				setError(err instanceof Error ? err.message : "Failed to open file")
+			})
+		},
+		[setError],
+	)
+
+	const appendComposerText = useSetAtom(appendComposerTextAtom)
+	const handleMentionFile = useCallback(
+		(relativePath: string) => {
+			appendComposerText(`@${relativePath}`)
+		},
+		[appendComposerText],
 	)
 
 	const toggleTerminalDrawer = useCallback(() => {
@@ -823,9 +842,11 @@ export default function App() {
 						onSelectGeneralChats={() => void handleSelectGeneralChats()}
 						onAddWorkspace={() => void handleAddWorkspace()}
 						onSelectWorkspace={(id) => void handleSelectWorkspace(id)}
-						onDeleteWorkspace={(id) => void handleDeleteWorkspace(id)}
-						onHideSidebar={() => setSidebarOpen(false)}
-					/>
+					onDeleteWorkspace={(id) => void handleDeleteWorkspace(id)}
+					onHideSidebar={() => setSidebarOpen(false)}
+					onOpenFile={handleOpenFile}
+					onMentionFile={handleMentionFile}
+				/>
 				}
 			>
 				<div

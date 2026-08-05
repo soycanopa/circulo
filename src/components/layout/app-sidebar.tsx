@@ -1,6 +1,7 @@
 import {
 	ChevronDown,
 	ChevronRight,
+	Files,
 	FolderOpen,
 	MessageSquare,
 	MessageSquarePlus,
@@ -17,6 +18,7 @@ import {
 	type MouseEvent as ReactMouseEvent,
 	type PointerEvent as ReactPointerEvent,
 } from "react"
+import { FileTree } from "@/components/layout/file-tree"
 import { WindowChromeControls } from "@/components/layout/window-chrome-controls"
 import { AgentStatusIndicator } from "@/components/layout/agent-status-indicator"
 import { Spinner } from "@/components/ui/spinner"
@@ -60,6 +62,10 @@ interface AppSidebarProps {
 	/** Remove a space (drag dot out). Cannot remove the last one. */
 	onDeleteWorkspace: (workspaceId: string) => void
 	onHideSidebar: () => void
+	/** Open a file path in the configured editor. */
+	onOpenFile: (path: string) => void
+	/** Insert `@relative/path` into the composer. */
+	onMentionFile: (relativePath: string) => void
 }
 
 export function AppSidebar({
@@ -88,8 +94,11 @@ export function AppSidebar({
 	onSelectWorkspace,
 	onDeleteWorkspace,
 	onHideSidebar,
+	onOpenFile,
+	onMentionFile,
 }: AppSidebarProps) {
 	const generalActive = isGeneralChatsPath(currentProjectPath)
+	const [sidebarView, setSidebarView] = useState<"chats" | "files">("chats")
 
 	const activeWorkspace = useMemo(
 		() => workspaces.find((w) => w.id === activeWorkspaceId) ?? null,
@@ -352,6 +361,36 @@ export function AppSidebar({
 				/>
 			</div>
 
+			{/* Chats / Files view toggle */}
+			<div className="flex shrink-0 items-center gap-1 px-3 pb-1 pt-2">
+				<button
+					type="button"
+					onClick={() => setSidebarView("chats")}
+					className={cn(
+						"flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition",
+						sidebarView === "chats"
+							? "bg-white/10 text-fg"
+							: "text-muted hover:bg-white/5 hover:text-fg",
+					)}
+				>
+					<MessageSquare className="size-3.5" />
+					Chats
+				</button>
+				<button
+					type="button"
+					onClick={() => setSidebarView("files")}
+					className={cn(
+						"flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition",
+						sidebarView === "files"
+							? "bg-white/10 text-fg"
+							: "text-muted hover:bg-white/5 hover:text-fg",
+					)}
+				>
+					<Files className="size-3.5" />
+					Files
+				</button>
+			</div>
+
 			{/* Chats + Projects + workspace dots (middle zone, above ACP/settings). */}
 			<div className="flex min-h-0 flex-1 flex-col">
 				<div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-3 pb-2">
@@ -377,6 +416,16 @@ export function AppSidebar({
 						Open project
 					</button>
 
+					{sidebarView === "files" ? (
+						<div className="mt-3">
+							<FileTree
+								rootPath={currentProjectPath}
+								onOpenFile={onOpenFile}
+								onMentionFile={onMentionFile}
+							/>
+						</div>
+					) : (
+						<>
 					<div className="mt-4 flex items-center justify-between px-2.5">
 						<button
 							type="button"
@@ -499,6 +548,8 @@ export function AppSidebar({
 								)
 							})}
 						</div>
+					)}
+						</>
 					)}
 				</div>
 

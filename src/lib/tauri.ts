@@ -88,6 +88,18 @@ export async function getGitFileDiff(
 	return invoke("git_file_diff_cmd", { projectPath, path })
 }
 
+export interface DirectoryEntry {
+	name: string
+	path: string
+	isDir: boolean
+}
+
+export async function readDirectory(
+	dirPath: string,
+): Promise<DirectoryEntry[]> {
+	return invoke("read_directory_cmd", { dirPath })
+}
+
 export async function getHomePath(): Promise<string> {
 	return invoke("get_home_path")
 }

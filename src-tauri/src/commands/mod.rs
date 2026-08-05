@@ -11,6 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::oneshot;
 use tracing::info;
 
+pub mod fs;
 pub mod git;
 pub mod persistence;
 
