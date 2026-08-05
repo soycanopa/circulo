@@ -9,6 +9,7 @@ export const KNOWN_AGENTS: Record<string, AgentDescriptor> = {
 	"cursor-agent": { id: "cursor-agent", label: "Cursor Agent" },
 	grok: { id: "grok", label: "Grok" },
 	pi: { id: "pi", label: "Pi" },
+	agy: { id: "agy", label: "Antigravity" },
 	custom: { id: "custom", label: "Custom ACP" },
 }
 

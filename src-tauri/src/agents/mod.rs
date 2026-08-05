@@ -4,13 +4,15 @@ use agent_client_protocol::AcpAgent;
 use serde::Serialize;
 
 use crate::cli_resolve::{
-    resolve_cursor_agent, resolve_grok, resolve_npx, resolve_opencode, resolve_pi, resolve_pi_acp,
+    resolve_agy, resolve_agy_acp, resolve_cursor_agent, resolve_grok, resolve_npx, resolve_opencode,
+    resolve_pi, resolve_pi_acp,
 };
 
 pub const AGENT_ID_OPENCODE: &str = "opencode";
 pub const AGENT_ID_CURSOR: &str = "cursor-agent";
 pub const AGENT_ID_GROK: &str = "grok";
 pub const AGENT_ID_PI: &str = "pi";
+pub const AGENT_ID_AGY: &str = "agy";
 pub const AGENT_ID_CUSTOM: &str = "custom";
 pub const DEFAULT_AGENT_ID: &str = AGENT_ID_OPENCODE;
 
@@ -60,6 +62,14 @@ pub fn list_agents() -> Vec<AgentDescriptor> {
         available: pi_available,
     });
 
+    let agy_available = agy_agent_available();
+    agents.push(AgentDescriptor {
+        id: AGENT_ID_AGY.to_string(),
+        label: "Antigravity".to_string(),
+        command: agy_agent_command_label(),
+        available: agy_available,
+    });
+
     if let Some((program, args)) = custom_agent_spec() {
         let command = format!("{} {}", program, args.join(" "));
         let available = command_exists(&program);
@@ -84,6 +94,7 @@ pub fn normalize_agent_id(agent_id: Option<&str>) -> &'static str {
         Some(id) if id == AGENT_ID_CURSOR => AGENT_ID_CURSOR,
         Some(id) if id == AGENT_ID_GROK => AGENT_ID_GROK,
         Some(id) if id == AGENT_ID_PI => AGENT_ID_PI,
+        Some(id) if id == AGENT_ID_AGY => AGENT_ID_AGY,
         Some(id) if id == AGENT_ID_CUSTOM && custom_agent_spec().is_some() => AGENT_ID_CUSTOM,
         Some(_) | None => DEFAULT_AGENT_ID,
     }
@@ -146,6 +157,7 @@ pub fn build_agent(agent_id: &str, _project_path: &Path) -> Result<AcpAgent, Str
         AGENT_ID_CURSOR => build_cursor_agent(),
         AGENT_ID_GROK => build_grok_agent(),
         AGENT_ID_PI => build_pi_agent(),
+        AGENT_ID_AGY => build_agy_agent(),
         AGENT_ID_CUSTOM => build_custom_agent(),
         other => Err(format!("Unsupported agent: {other}")),
     }
@@ -219,6 +231,36 @@ fn pi_agent_command_label() -> String {
     }
 }
 
+/// Antigravity via the community ACP adapter (`agy-acp`), same as Zed's registry entry.
+pub fn build_agy_agent() -> Result<AcpAgent, String> {
+    resolve_agy()?;
+
+    if let Ok(agy_acp) = resolve_agy_acp() {
+        return AcpAgent::from_args([agy_acp.display().to_string()])
+            .map_err(|err| format!("Failed to configure Antigravity agent: {err}"));
+    }
+
+    let npx = resolve_npx()?;
+    AcpAgent::from_args([
+        npx.display().to_string(),
+        "-y".to_string(),
+        "agy-acp".to_string(),
+    ])
+    .map_err(|err| format!("Failed to configure Antigravity agent (npx agy-acp): {err}"))
+}
+
+fn agy_agent_available() -> bool {
+    resolve_agy().is_ok() && (resolve_agy_acp().is_ok() || resolve_npx().is_ok())
+}
+
+fn agy_agent_command_label() -> String {
+    if resolve_agy_acp().is_ok() {
+        "agy-acp".to_string()
+    } else {
+        "npx -y agy-acp".to_string()
+    }
+}
+
 fn build_custom_agent() -> Result<AcpAgent, String> {
     let (program, args) =
         custom_agent_spec().ok_or_else(|| format!("Set {CUSTOM_ACP_ENV} to enable custom agent"))?;
@@ -257,6 +299,7 @@ mod tests {
         assert!(agents.iter().any(|a| a.id == AGENT_ID_CURSOR));
         assert!(agents.iter().any(|a| a.id == AGENT_ID_GROK));
         assert!(agents.iter().any(|a| a.id == AGENT_ID_PI));
+        assert!(agents.iter().any(|a| a.id == AGENT_ID_AGY));
     }
 
     #[test]
@@ -275,5 +318,10 @@ mod tests {
     #[test]
     fn normalize_pi_agent_id() {
         assert_eq!(normalize_agent_id(Some(AGENT_ID_PI)), AGENT_ID_PI);
+    }
+
+    #[test]
+    fn normalize_agy_agent_id() {
+        assert_eq!(normalize_agent_id(Some(AGENT_ID_AGY)), AGENT_ID_AGY);
     }
 }

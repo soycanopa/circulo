@@ -126,6 +126,13 @@ To pin a model for Cursor, use the CLI at spawn time (outside Circulo today): `c
 - Requires `pi` on `PATH` plus either `pi-acp` (`npm install -g pi-acp`) or `npx` (Circulo falls back to `npx -y pi-acp`).
 - Override binaries with `PI_BIN` / `PI_ACP_BIN` when needed.
 
+### Antigravity (`agy-acp`)
+
+Google’s [Antigravity](https://antigravity.google/) CLI speaks ACP through the community adapter [`agy-acp`](https://www.npmjs.com/package/agy-acp) (same entry as [Zed’s ACP registry](https://zed.dev/acp/agent/agy)): JSON-RPC 2.0 over stdio, no extra args.
+
+- Requires `agy` on `PATH` plus either `agy-acp` (`npm install -g agy-acp`) or `npx` (Circulo falls back to `npx -y agy-acp`).
+- Override binaries with `AGY_BIN` / `AGY_ACP_BIN` when needed.
+
 ## Conventions
 
 - File paths are **absolute**.
