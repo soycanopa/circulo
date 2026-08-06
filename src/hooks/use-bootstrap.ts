@@ -1,6 +1,7 @@
 import { getDefaultStore, useSetAtom, useAtomValue } from "jotai"
 import { useEffect } from "react"
-import { getDefaultChatsPath, getProjectStatus, listAgents, openProject } from "@/lib/tauri"
+import { getDefaultChatsPath, getProjectStatus, openProject } from "@/lib/tauri"
+import { refreshAgentsList } from "@/lib/agents-cache"
 import { reconcileFromStatus } from "@/hooks/session-reconcile"
 import {
 	agentConnectedAtom,
@@ -26,7 +27,8 @@ export function waitForListeners(): Promise<void> {
 }
 
 async function warmDefaultAgents(): Promise<void> {
-	const agents = await listAgents()
+	const store = getDefaultStore()
+	const agents = await refreshAgentsList(store)
 	const opencode = agents.find((a) => a.id === "opencode")
 	if (opencode) {
 		getDefaultStore().set(opencodeStatusAtom, {

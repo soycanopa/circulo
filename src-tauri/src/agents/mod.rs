@@ -1,4 +1,6 @@
 use std::path::Path;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use agent_client_protocol::AcpAgent;
 use serde::Serialize;
@@ -17,6 +19,15 @@ pub const AGENT_ID_CUSTOM: &str = "custom";
 pub const DEFAULT_AGENT_ID: &str = AGENT_ID_OPENCODE;
 
 const CUSTOM_ACP_ENV: &str = "CIRCULO_CUSTOM_ACP";
+/// Avoid re-spawning login shells on every settings tab switch.
+const AGENTS_LIST_CACHE_TTL: Duration = Duration::from_secs(60);
+
+struct AgentsListCache {
+    fetched_at: Instant,
+    agents: Vec<AgentDescriptor>,
+}
+
+static AGENTS_LIST_CACHE: Mutex<Option<AgentsListCache>> = Mutex::new(None);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,6 +39,24 @@ pub struct AgentDescriptor {
 }
 
 pub fn list_agents() -> Vec<AgentDescriptor> {
+    let mut guard = AGENTS_LIST_CACHE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(cache) = guard.as_ref() {
+        if cache.fetched_at.elapsed() < AGENTS_LIST_CACHE_TTL {
+            return cache.agents.clone();
+        }
+    }
+
+    let agents = list_agents_uncached();
+    *guard = Some(AgentsListCache {
+        fetched_at: Instant::now(),
+        agents: agents.clone(),
+    });
+    agents
+}
+
+fn list_agents_uncached() -> Vec<AgentDescriptor> {
     let mut agents = Vec::new();
 
     let opencode_available = resolve_opencode().is_ok();

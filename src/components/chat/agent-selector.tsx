@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo } from "react"
 import {
 	Select,
 	SelectContent,
@@ -7,9 +7,9 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select"
+import { refreshAgentsList } from "@/lib/agents-cache"
 import { agentLabel } from "@/lib/agent-registry"
-import { listAgents } from "@/lib/tauri"
-import { visiblePromptInFlightAtom } from "@/stores/atoms"
+import { agentsAtom, visiblePromptInFlightAtom } from "@/stores/atoms"
 import type { AgentDescriptor } from "@/types/acp"
 
 interface AgentSelectorProps {
@@ -40,12 +40,15 @@ export function AgentSelector({
 	onAgentChange,
 }: AgentSelectorProps) {
 	const promptInFlight = useAtomValue(visiblePromptInFlightAtom)
-	const [agents, setAgents] = useState<AgentDescriptor[]>([])
+	const agents = useAtomValue(agentsAtom)
 	const enabledKey = enabledAgentIds.join("\0")
 
 	useEffect(() => {
-		void listAgents().then(setAgents)
-	}, [enabledKey])
+		if (agents.length > 0) return
+		void refreshAgentsList().catch(() => {
+			// Composer falls back to enabled ids without availability hints.
+		})
+	}, [agents.length, enabledKey])
 
 	const entries = useMemo(
 		() => mergeEnabledAgents(enabledAgentIds, agents),

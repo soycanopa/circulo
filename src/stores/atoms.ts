@@ -2,6 +2,7 @@ import { atom } from "jotai"
 import type { SettingsSectionId } from "@/lib/settings-sections"
 import type {
 	AgentCapabilities,
+	AgentDescriptor,
 	AppSettings,
 	ChatMessage,
 	ChatSessionSummary,
@@ -99,6 +100,8 @@ export interface WarmTimings {
 
 export const warmTimingsAtom = atom<WarmTimings>({})
 export const opencodeStatusAtom = atom<OpencodeStatus | null>(null)
+/** Cached agent registry from `list_agents` (shared across settings + composer). */
+export const agentsAtom = atom<AgentDescriptor[]>([])
 /** Resolved `~/.circulo/chats` path for the general Chats section. */
 export const generalChatsPathAtom = atom<string | null>(null)
 /** Sessions that belong only to the general chats workspace. */
