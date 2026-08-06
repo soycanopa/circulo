@@ -813,19 +813,6 @@ export default function App() {
 				setHistoryMessages([])
 				return
 			}
-			try {
-				const transcript = await loadChatTranscript(
-					ownerPath,
-					targetSessionId,
-				)
-				if (transcript.messages.length > 0) {
-					setHistoryMessages(transcript.messages)
-					setHistoryView(targetSessionId)
-					return
-				}
-			} catch {
-				// Fall through to clearing history view for a truly empty chat.
-			}
 			setHistoryView(null)
 			return
 		}
