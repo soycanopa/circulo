@@ -824,8 +824,7 @@ export default function App() {
 		const maySwapLiveSession =
 			sameWorkspace &&
 			sessionState &&
-			(targetSessionId === sessionId ||
-				sessionState.promptInFlight ||
+			(sessionState.promptInFlight ||
 				sessionState.status === "generating" ||
 				sessionState.status === "awaiting_permission" ||
 				sessionState.messages.length > 0)
