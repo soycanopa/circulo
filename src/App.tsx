@@ -10,6 +10,7 @@ import {
 	useRef,
 	useState,
 } from "react"
+import type { ReactNode } from "react"
 import { ChatInput } from "@/components/chat/chat-input"
 import { MessageList } from "@/components/chat/message-list"
 import { CommandPalette } from "@/components/layout/command-palette"
@@ -40,9 +41,10 @@ import { useAppShortcuts } from "@/hooks/use-app-shortcuts"
 import { useBootstrapAgent } from "@/hooks/use-bootstrap"
 import { useAutomations } from "@/hooks/use-automations"
 import { useChatPersistence } from "@/hooks/use-chat-persistence"
-import { reconcileSessionFromProjectStatus } from "@/hooks/session-reconcile"
+import { reconcileSessionFromProjectStatus, removeSessionFromUi } from "@/hooks/session-reconcile"
 import type { AppSettings } from "@/types/acp"
-import { exportTranscriptMarkdown } from "@/lib/export-transcript"
+import { refreshAgentsList } from "@/lib/agents-cache"
+import type { SettingsSectionId } from "@/lib/settings-sections"
 import {
 	agentLabel,
 	resolveAgentConnectionStatus,
@@ -50,6 +52,11 @@ import {
 	type AgentRuntimeState,
 } from "@/lib/agent-registry"
 import { collectDiffTools } from "@/lib/diff-tools"
+import { exportTranscriptMarkdown } from "@/lib/export-transcript"
+import {
+	hydrateSessionFromDisk,
+	isLiveSessionPristine,
+} from "@/lib/session-transcript"
 import { collectTerminalTools } from "@/lib/terminal-tools"
 import {
 	closeSession,
@@ -183,6 +190,9 @@ export default function App() {
 		setSidebarOpen(true)
 		setDiffPanelOpen(false)
 		setFileTreeOpen(false)
+		void refreshAgentsList().catch(() => {
+			// Settings can still render from cache or retry on Agents tab.
+		})
 		startTransition(() => {
 			setSettingsOpen(true)
 		})
@@ -366,9 +376,13 @@ export default function App() {
 
 	async function handleAgentChange(agentId: string) {
 		setError(null)
-		const priorSid = getDefaultStore().get(activeSessionIdAtom)
-		const priorMessages = getDefaultStore().get(visibleMessagesAtom)
-		if (priorSid && projectPath && priorMessages.length === 0) {
+		const store = getDefaultStore()
+		const priorSid = store.get(activeSessionIdAtom)
+		if (
+			priorSid &&
+			projectPath &&
+			(await isLiveSessionPristine(store, projectPath, priorSid))
+		) {
 			try {
 				await deleteChatTranscript(projectPath, priorSid)
 			} catch {
@@ -479,6 +493,9 @@ export default function App() {
 	/** New chat in current context, or in a specific project path. */
 	async function handleNewChat(targetProjectPath?: string) {
 		setError(null)
+		const store = getDefaultStore()
+		const priorSid = store.get(activeSessionIdAtom)
+		const priorOwnerPath = projectPath ?? targetProjectPath
 		setBusy(true)
 		setStatus("connecting")
 		setHistoryView(null)
@@ -497,9 +514,12 @@ export default function App() {
 			// appears in the workspace list as soon as the reducer emits
 			// session_ready. The reducer is the source of truth for the new
 			// active session id; we do not write activeSessionIdAtom here.
-			const priorSid = getDefaultStore().get(activeSessionIdAtom)
-			const priorMessages = getDefaultStore().get(visibleMessagesAtom)
-			if (priorSid && desired && priorMessages.length === 0) {
+			if (
+				priorSid &&
+				desired &&
+				priorOwnerPath === desired &&
+				(await isLiveSessionPristine(store, desired, priorSid))
+			) {
 				try {
 					await deleteChatTranscript(desired, priorSid)
 				} catch {
@@ -762,10 +782,6 @@ export default function App() {
 		setError(null)
 
 		const sameWorkspace = projectPath === ownerPath
-		if (sameWorkspace && targetSessionId === sessionId) {
-			setHistoryView(null)
-			return
-		}
 
 		async function showSavedTranscript() {
 			const transcript = await loadChatTranscript(ownerPath, targetSessionId)
@@ -780,21 +796,64 @@ export default function App() {
 			}
 		}
 
-		// If the session is already alive on the same agent process (background run),
-		// swap the visible session instead of resuming from disk. The reducer mirrors
-		// the active buffer into messagesAtom/streamingTextAtom automatically.
-		if (sameWorkspace && sessionsMap[targetSessionId]) {
-			try {
-				const status = await setVisibleSession(targetSessionId)
-				reconcileSessionFromProjectStatus(getDefaultStore(), status)
+		if (sameWorkspace && targetSessionId === sessionId) {
+			const store = getDefaultStore()
+			const historySid = store.get(historyViewSessionIdAtom)
+			if (historySid === targetSessionId) {
+				const historyMsgs = store.get(historyMessagesAtom)
+				if (historyMsgs.length > 0) return
+			}
+			const hydrated = await hydrateSessionFromDisk(
+				store,
+				ownerPath,
+				targetSessionId,
+			)
+			if (hydrated.length > 0) {
 				setHistoryView(null)
 				setHistoryMessages([])
 				return
-			} catch (err) {
-				setError(
-					err instanceof Error ? err.message : "Failed to swap session",
+			}
+			try {
+				const transcript = await loadChatTranscript(
+					ownerPath,
+					targetSessionId,
 				)
+				if (transcript.messages.length > 0) {
+					setHistoryMessages(transcript.messages)
+					setHistoryView(targetSessionId)
+					return
+				}
+			} catch {
+				// Fall through to clearing history view for a truly empty chat.
+			}
+			setHistoryView(null)
+			return
+		}
+
+		// If the session is already alive on the same agent process (background run),
+		// swap the visible session instead of resuming from disk. The reducer mirrors
+		// the active buffer into messagesAtom/streamingTextAtom automatically.
+		const sessionState = sessionsMap[targetSessionId]
+		const maySwapLiveSession =
+			sameWorkspace &&
+			sessionState &&
+			(targetSessionId === sessionId ||
+				sessionState.promptInFlight ||
+				sessionState.status === "generating" ||
+				sessionState.status === "awaiting_permission" ||
+				sessionState.messages.length > 0)
+
+		if (maySwapLiveSession) {
+			try {
+				const status = await setVisibleSession(targetSessionId)
+				const store = getDefaultStore()
+				reconcileSessionFromProjectStatus(store, status)
+				setHistoryView(null)
+				setHistoryMessages([])
+				await hydrateSessionFromDisk(store, ownerPath, targetSessionId)
 				return
+			} catch {
+				// Stale UI slot or agent restarted — fall through to load/resume from disk.
 			}
 		}
 
@@ -808,9 +867,11 @@ export default function App() {
 			if (capabilities?.loadSession && sameWorkspace) {
 				try {
 					const status = await loadSession(targetSessionId)
-					reconcileSessionFromProjectStatus(getDefaultStore(), status)
+					const store = getDefaultStore()
+					reconcileSessionFromProjectStatus(store, status)
 					setHistoryView(null)
 					setHistoryMessages([])
+					await hydrateSessionFromDisk(store, ownerPath, targetSessionId)
 					setStatus("idle")
 					return
 				} catch {
@@ -846,6 +907,7 @@ export default function App() {
 				}
 			}
 			await deleteChatTranscript(ownerPath, targetSessionId)
+			removeSessionFromUi(getDefaultStore(), targetSessionId)
 			await refreshPath(ownerPath)
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to delete chat")
@@ -866,12 +928,28 @@ export default function App() {
 	const shellTransition =
 		"transition-[height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
 
-	function renderSettingsSection() {
-		switch (settingsSection) {
-			case "general":
-				return <GeneralSection />
-			case "agents":
-				return (
+	function SettingsSectionPanel({
+		id,
+		children,
+	}: {
+		id: SettingsSectionId
+		children: ReactNode
+	}) {
+		const active = settingsSection === id
+		return (
+			<div className={cn(!active && "hidden")} aria-hidden={!active}>
+				{children}
+			</div>
+		)
+	}
+
+	function renderSettingsSections() {
+		return (
+			<>
+				<SettingsSectionPanel id="general">
+					<GeneralSection />
+				</SettingsSectionPanel>
+				<SettingsSectionPanel id="agents">
 					<AgentsSection
 						agentCommand={agentCommand}
 						preferredAgentId={appSettings?.preferredAgentId}
@@ -885,16 +963,14 @@ export default function App() {
 							void handleEnabledAgentsChange(settings)
 						}
 					/>
-				)
-			case "models":
-				return (
+				</SettingsSectionPanel>
+				<SettingsSectionPanel id="models">
 					<ModelsSection
 						favoriteModelIds={appSettings?.favoriteModelIds ?? []}
 						recentModelIds={appSettings?.recentModelIds ?? []}
 					/>
-				)
-			case "automations":
-				return (
+				</SettingsSectionPanel>
+				<SettingsSectionPanel id="automations">
 					<AutomationsSection
 						automations={automations}
 						onAutomationsChange={() => void refreshAutomations()}
@@ -903,9 +979,8 @@ export default function App() {
 							await refreshAutomations()
 						}}
 					/>
-				)
-			case "slash":
-				return (
+				</SettingsSectionPanel>
+				<SettingsSectionPanel id="slash">
 					<SlashCommandsSection
 						customSlashCommands={appSettings?.customSlashCommands ?? []}
 						onSaveSlashCommand={async (command, label, description) => {
@@ -921,9 +996,8 @@ export default function App() {
 							setAppSettings(settings)
 						}}
 					/>
-				)
-			case "permissions":
-				return (
+				</SettingsSectionPanel>
+				<SettingsSectionPanel id="permissions">
 					<PermissionsSection
 						allowedToolPatterns={appSettings?.allowedToolPatterns ?? []}
 						onSetAllowedTool={async (pattern, enabled) => {
@@ -931,9 +1005,8 @@ export default function App() {
 							setAppSettings(settings)
 						}}
 					/>
-				)
-			case "workspaces":
-				return (
+				</SettingsSectionPanel>
+				<SettingsSectionPanel id="workspaces">
 					<WorkspacesSection
 						workspaces={appSettings?.workspaces ?? []}
 						activeWorkspaceId={appSettings?.activeWorkspaceId ?? null}
@@ -943,16 +1016,21 @@ export default function App() {
 						onSelectWorkspace={(id) => void handleSelectWorkspace(id)}
 						onClose={closeSettings}
 					/>
-				)
-			case "mcp":
-				return <McpSection />
-			case "skills":
-				return <SkillsSection />
-			case "usage":
-				return <UsageSection />
-			case "about":
-				return <AboutSection />
-		}
+				</SettingsSectionPanel>
+				<SettingsSectionPanel id="mcp">
+					<McpSection />
+				</SettingsSectionPanel>
+				<SettingsSectionPanel id="skills">
+					<SkillsSection />
+				</SettingsSectionPanel>
+				<SettingsSectionPanel id="usage">
+					<UsageSection />
+				</SettingsSectionPanel>
+				<SettingsSectionPanel id="about">
+					<AboutSection />
+				</SettingsSectionPanel>
+			</>
+		)
 	}
 
 	return (
@@ -1210,7 +1288,7 @@ export default function App() {
 								sidebarVisible={sidebarOpen}
 								onToggleSidebar={() => setSidebarOpen((open) => !open)}
 							>
-								{renderSettingsSection()}
+								{renderSettingsSections()}
 							</SettingsView>
 						</div>
 					) : null}
