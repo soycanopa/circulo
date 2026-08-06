@@ -33,6 +33,23 @@ function ensureSessionSlot(store: Store, sessionId: string) {
 	})
 }
 
+/** Remove a deleted or closed session from client UI state. */
+export function removeSessionFromUi(store: Store, sessionId: string): void {
+	store.set(sessionsAtom, (prev) => {
+		if (!prev[sessionId]) return prev
+		const next = { ...prev }
+		delete next[sessionId]
+		return next
+	})
+	if (store.get(activeSessionIdAtom) === sessionId) {
+		store.set(activeSessionIdAtom, null)
+	}
+	if (store.get(historyViewSessionIdAtom) === sessionId) {
+		store.set(historyViewSessionIdAtom, null)
+		store.set(historyMessagesAtom, [])
+	}
+}
+
 /**
  * Apply Rust `ProjectStatus` after a session command returns. Authoritative for
  * the invoke that produced this status (no stale-generation guard).
