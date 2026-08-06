@@ -161,6 +161,22 @@ export function ModelsSection({
 		[groups, searchQuery],
 	)
 
+	const filteredFavorites = useMemo(() => {
+		const live = favorites.filter((item) => modelMatchesQuery(item, searchQuery))
+		const offline = offlineFavorites.filter((id) =>
+			modelMatchesQuery({ value: id, name: id, description: "" }, searchQuery),
+		)
+		return { live, offline }
+	}, [favorites, offlineFavorites, searchQuery])
+
+	const filteredRecents = useMemo(() => {
+		const live = recents.filter((item) => modelMatchesQuery(item, searchQuery))
+		const offline = offlineRecents.filter((id) =>
+			modelMatchesQuery({ value: id, name: id, description: "" }, searchQuery),
+		)
+		return { live, offline }
+	}, [recents, offlineRecents, searchQuery])
+
 	async function handleToggleFavorite(value: string, next: boolean) {
 		setPending((prev) => new Set(prev).add(value))
 		try {
@@ -176,6 +192,11 @@ export function ModelsSection({
 	}
 
 	const hasLiveModels = allModels.length > 0
+	const showFavorites =
+		filteredFavorites.live.length > 0 || filteredFavorites.offline.length > 0
+	const showRecents =
+		filteredRecents.live.length > 0 || filteredRecents.offline.length > 0
+	const showCatalog = hasLiveModels || favoriteModelIds.length > 0 || recentModelIds.length > 0
 
 	return (
 		<div>
@@ -190,23 +211,38 @@ export function ModelsSection({
 					</p>
 				) : null}
 
-				{favorites.length > 0 || offlineFavorites.length > 0 ? (
+				{showCatalog ? (
+					<div className="relative">
+						<Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted" />
+						<Input
+							type="search"
+							value={searchQuery}
+							placeholder="Search models…"
+							autoComplete="off"
+							className="h-8 pl-8"
+							onChange={(event) => setSearchQuery(event.target.value)}
+						/>
+					</div>
+				) : null}
+
+				{showFavorites ? (
 					<div>
 						<div className="mb-1.5 text-[11px] uppercase tracking-wider text-muted">
 							Favorites
 						</div>
 						<div className="space-y-0.5">
-							{favorites.map((item) => (
+							{filteredFavorites.live.map((item) => (
 								<ModelRow
 									key={item.value}
 									item={item}
 									favorite
+									pending={pending.has(item.value)}
 									onToggleFavorite={(value, next) =>
 										void handleToggleFavorite(value, next)
 									}
 								/>
 							))}
-							{offlineFavorites.map((value) => (
+							{filteredFavorites.offline.map((value) => (
 								<BareModelRow
 									key={value}
 									value={value}
@@ -220,24 +256,25 @@ export function ModelsSection({
 					</div>
 				) : null}
 
-				{recents.length > 0 || offlineRecents.length > 0 ? (
+				{showRecents ? (
 					<div>
 						<div className="mb-1.5 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted">
 							<Clock3 className="size-3" />
 							Recents
 						</div>
 						<div className="space-y-0.5">
-							{recents.map((item) => (
+							{filteredRecents.live.map((item) => (
 								<ModelRow
 									key={item.value}
 									item={item}
 									favorite={false}
+									pending={pending.has(item.value)}
 									onToggleFavorite={(value, next) =>
 										void handleToggleFavorite(value, next)
 									}
 								/>
 							))}
-							{offlineRecents.map((value) => (
+							{filteredRecents.offline.map((value) => (
 								<BareModelRow
 									key={value}
 									value={value}
@@ -255,17 +292,6 @@ export function ModelsSection({
 					<div>
 						<div className="mb-2 text-[11px] uppercase tracking-wider text-muted">
 							All models
-						</div>
-						<div className="relative mb-2">
-							<Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted" />
-							<Input
-								type="search"
-								value={searchQuery}
-								placeholder="Search models…"
-								autoComplete="off"
-								className="h-8 pl-8"
-								onChange={(event) => setSearchQuery(event.target.value)}
-							/>
 						</div>
 						{filteredGroups.length === 0 ? (
 							<p className="px-2 py-4 text-center text-xs text-muted">
