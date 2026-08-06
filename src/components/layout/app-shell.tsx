@@ -66,6 +66,9 @@ export function AppShell({
 			return () => cancelAnimationFrame(frame)
 		}
 		setPanelShown(false)
+		// Fallback in case the width transition never fires (e.g. width already 0).
+		const timer = window.setTimeout(() => setPanelInDom(false), 400)
+		return () => window.clearTimeout(timer)
 	}, [panelOpen])
 
 	const handlePanelTransitionEnd = (
