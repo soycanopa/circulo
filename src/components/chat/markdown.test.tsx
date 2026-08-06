@@ -14,6 +14,87 @@ describe("Markdown", () => {
 		expect(html).toContain(">2<")
 	})
 
+	it("renders agent single-line GFM tables", () => {
+		const html = renderMarkdown(
+			"| Modelo | Rol | Tamaño | |---|---|---| | **parakeet-tdt-0.6b-v3** | Transcripción | 461M | | **Llama-3.2-1B-Instruct-8bit** | Cleanup | 1.2G |",
+		)
+		expect(html).toContain("<table")
+		expect(html).toMatch(
+			/<strong[^>]*>parakeet-tdt-0\.6b-v3<\/strong>/,
+		)
+		expect(html).toMatch(
+			/<strong[^>]*>Llama-3\.2-1B-Instruct-8bit<\/strong>/,
+		)
+		expect(html).not.toContain("|---|---|")
+	})
+
+	it("renders inline GFM tables after intro text (anime case)", () => {
+		const html = renderMarkdown(
+			"Claro, aquí tienes una tabla con algunos isekai populares: | Anime | Estudio | Año | Nota | |---|---|---|---| | Sword Art Online | A-1 Pictures | 2012 | Precursor del género moderno | | Re:Zero | White Fox | 2016 | Drama psicológico |",
+		)
+		expect(html).toContain("<table")
+		expect(html).toContain("Sword Art Online")
+		expect(html).toContain("Re:Zero")
+		expect(html).not.toContain("|---|---|")
+	})
+
+	it("renders fenced GFM tables as HTML tables", () => {
+		const html = renderMarkdown(
+			"Prueba con esta versión:\n\n```markdown\n| Anime | Estudio | Año | Nota |\n|-------|---------|-----|------|\n| Sword Art Online | A-1 Pictures | 2012 | Precursor del género |\n| Re:Zero | White Fox | 2016 | Drama psicológico |\n```",
+		)
+		expect(html).toContain("<table")
+		expect(html).toContain("Sword Art Online")
+		expect(html).toContain("Re:Zero")
+		expect(html).not.toContain("<pre")
+	})
+
+	it("renders indented GFM tables as HTML tables", () => {
+		const html = renderMarkdown(
+			"Prueba:\n\n    | Anime | Estudio |\n    |-------|---------|\n    | SAO | A-1 |\n    | Re:Zero | White Fox |",
+		)
+		expect(html).toContain("<table")
+		expect(html).toContain("SAO")
+		expect(html).toContain("Re:Zero")
+		expect(html).not.toContain("<pre")
+	})
+
+	it("renders isekai table with short separator row", () => {
+		const html = renderMarkdown(
+			"Aquí tienes una tabla de los isekai más populares:\n\n| Anime | Año | Protagonista | Mundo | |---|---| | Sword Art Online | 2012 | Kirito | VRMMO atrapado | | No Game No Life | 2014 | Sora & Shiro | Mundo regido por juegos | | Re:Zero | 2016 | Subaru | Reino de Lugunica (magia) |",
+		)
+		expect(html).toContain("<table")
+		expect(html).toContain("Sword Art Online")
+		expect(html).toContain("Re:Zero")
+		expect(html).not.toContain("|---|---|")
+	})
+
+	it("renders inline headings after punctuation", () => {
+		const html = renderMarkdown("Resumen: ## Título principal")
+		expect(html).toContain("<h2")
+		expect(html).toContain("Título principal")
+	})
+
+	it("renders inline bullet lists after punctuation", () => {
+		const html = renderMarkdown("Opciones: - uno\n- dos")
+		expect(html).toContain("<ul")
+		expect(html).toContain("uno")
+		expect(html).toContain("dos")
+	})
+
+	it("renders inline numbered lists", () => {
+		const html = renderMarkdown("Pasos: 1. primero 2. segundo 3. tercero")
+		expect(html).toContain("<ol")
+		expect(html).toContain("primero")
+		expect(html).toContain("tercero")
+	})
+
+	it("renders inline code fences after punctuation", () => {
+		const html = renderMarkdown("Mira esto: ```js\nconst x = 1\n```")
+		expect(html).toContain("<pre")
+		expect(html).toContain("hljs")
+		expect(html).not.toMatch(/Mira esto: ```/)
+	})
+
 	it("renders task lists with disabled checkboxes", () => {
 		const html = renderMarkdown("- [x] done\n- [ ] todo")
 		expect(html).toContain('type="checkbox"')
