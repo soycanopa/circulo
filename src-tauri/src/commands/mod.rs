@@ -33,6 +33,11 @@ pub fn list_agents_cmd() -> Vec<crate::agents::AgentDescriptor> {
 }
 
 #[tauri::command]
+pub fn invalidate_agents_cache_cmd() {
+    crate::agents::invalidate_agents_cache();
+}
+
+#[tauri::command]
 pub async fn get_project_status(state: State<'_, SharedState>) -> Result<ProjectStatus, String> {
     Ok(state.lock().await.status())
 }

@@ -84,6 +84,7 @@ pub fn run() {
             commands::git::git_create_branch_cmd,
             commands::fs::read_directory_cmd,
             commands::list_agents_cmd,
+            commands::invalidate_agents_cache_cmd,
             commands::export_transcript_cmd,
             commands::persistence::set_preferred_agent_cmd,
             commands::persistence::set_enabled_agents_cmd,

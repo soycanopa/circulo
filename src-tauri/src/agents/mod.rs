@@ -56,6 +56,12 @@ pub fn list_agents() -> Vec<AgentDescriptor> {
     agents
 }
 
+pub fn invalidate_agents_cache() {
+    if let Ok(mut guard) = AGENTS_LIST_CACHE.lock() {
+        *guard = None;
+    }
+}
+
 fn list_agents_uncached() -> Vec<AgentDescriptor> {
     let mut agents = Vec::new();
 

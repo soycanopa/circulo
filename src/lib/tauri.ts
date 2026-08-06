@@ -46,6 +46,10 @@ export async function listAgents(): Promise<AgentDescriptor[]> {
 	return invoke("list_agents_cmd")
 }
 
+export async function invalidateAgentsCache(): Promise<void> {
+	return invoke("invalidate_agents_cache_cmd")
+}
+
 export async function setPreferredAgent(agentId: string): Promise<AppSettings> {
 	return invoke("set_preferred_agent_cmd", { agentId })
 }

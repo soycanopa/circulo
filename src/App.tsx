@@ -71,6 +71,7 @@ import {
 	getHomePath,
 	getProjectStatus,
 	getWorkspacePaths,
+	invalidateAgentsCache,
 	loadChatTranscript,
 	loadSession,
 	openInEditor,
@@ -190,9 +191,16 @@ export default function App() {
 		setSidebarOpen(true)
 		setDiffPanelOpen(false)
 		setFileTreeOpen(false)
-		void refreshAgentsList().catch(() => {
-			// Settings can still render from cache or retry on Agents tab.
-		})
+		void (async () => {
+			try {
+				await invalidateAgentsCache()
+			} catch {
+				// Best-effort: the TTL cache still refreshes on its own.
+			}
+			void refreshAgentsList().catch(() => {
+				// Settings can still render from cache or retry on Agents tab.
+			})
+		})()
 		startTransition(() => {
 			setSettingsOpen(true)
 		})
