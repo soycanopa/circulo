@@ -9,3 +9,4 @@ description = "Deterministic fake adapter for UI and daemon tests."
 
 [dependencies]
 circulo-adapter.workspace = true
+serde_json.workspace = true
