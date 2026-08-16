@@ -1,0 +1,11 @@
+[package]
+name = "circulo-adapter-opencode"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "OpenCode server adapter. Implementation lands in a later change."
+
+[dependencies]
+circulo-adapter.workspace = true
