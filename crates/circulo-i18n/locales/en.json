@@ -10,5 +10,9 @@
   "session.no_project": "No project",
   "session.empty": "Write to get started",
   "session.none": "No session selected",
-  "composer.placeholder": "Write what you want to create…"
+  "composer.placeholder": "Write what you want to create…",
+  "sidebar.new_project": "New project",
+  "sidebar.empty_sessions": "No sessions yet",
+  "sidebar.empty_groups": "No projects yet",
+  "sidebar.daemon_down": "Couldn’t connect to Circulo. Is the daemon running?"
 }
