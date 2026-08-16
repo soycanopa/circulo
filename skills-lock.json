@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "skills": {
+    "design-taste-frontend": {
+      "source": "leonxlnx/taste-skill",
+      "sourceType": "github",
+      "skillPath": "skills/taste-skill/SKILL.md",
+      "computedHash": "6d838b246d0e35d0b53f4f23f98ba7a1dd561937e64f7d0c7553b0928e376c3e"
+    },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "4eabc66183767153e404b39d1b839b1c37f2d82d86f0a0d7e880a579d8d62336"
+    },
+    "gpui": {
+      "source": "longbridge/gpui-component",
+      "sourceType": "github",
+      "skillPath": "skills/gpui/SKILL.md",
+      "computedHash": "9cd5f4cfa1eb49f5b17e7b209010420f2caf97c4ca93f79910bb449a5a988a1b"
+    },
+    "gpui-component": {
+      "source": "longbridge/gpui-component",
+      "sourceType": "github",
+      "skillPath": "skills/gpui-component/SKILL.md",
+      "computedHash": "232b89966beb01bfda5f697f966cc80014d52b4d94ad724734a93e2452850394"
+    },
+    "rust-async-patterns": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/systems-programming/skills/rust-async-patterns/SKILL.md",
+      "computedHash": "20d32ef58158c94eb4dfc4aaf19bec7ae2a025ae5d42da7b49ccfbaeda389273"
+    },
+    "rust-best-practices": {
+      "source": "apollographql/skills",
+      "sourceType": "github",
+      "skillPath": "skills/rust-best-practices/SKILL.md",
+      "computedHash": "0ac6606adb27e64a31bdc8c1ed34e446ae0c14bff1c7648867c46e106adc048f"
+    },
+    "rust-engineer": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/rust-engineer/SKILL.md",
+      "computedHash": "f8093c6253afe24bbac3c3328c3ca07e9ef089758896ba10221ed0f2078cb2a0"
+    },
+    "rust-patterns": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/rust-patterns/SKILL.md",
+      "computedHash": "7119b88682b5773ef83ac6d01153ac2a0683be28b01ea46a2b0512fe74b30420"
+    },
+    "rust-testing": {
+      "source": "affaan-m/ecc",
+      "sourceType": "github",
+      "skillPath": "skills/rust-testing/SKILL.md",
+      "computedHash": "bd66d6441ff6d3a6acb89c902cd6a01bf58410aec3ecbc43d45409b3a3788ac8"
+    },
+    "shadcn": {
+      "source": "shadcn-ui/ui",
+      "sourceType": "github",
+      "skillPath": "skills/shadcn/SKILL.md",
+      "computedHash": "c1a68ee06a668aced9ab2b5fbdea5f989864123794eb2e056b339a072dbb7f10"
+    },
+    "shadcn-ui": {
+      "source": "google-labs-code/stitch-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/stitch-build/skills/shadcn-ui/SKILL.md",
+      "computedHash": "6c1f0ce10a1ceaee5715a1e50a2e3a3159496910364d643bc2a8cab3f2eec4a8"
+    }
+  }
+}
