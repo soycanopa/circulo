@@ -8,5 +8,11 @@ rust-version.workspace = true
 description = "Circulo GPUI application process."
 
 [dependencies]
+circulo-core.workspace = true
 circulo-i18n.workspace = true
+circulo-protocol.workspace = true
 gpui.workspace = true
+serde.workspace = true
+time.workspace = true
+ureq.workspace = true
+uuid.workspace = true

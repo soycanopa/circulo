@@ -9,7 +9,13 @@ fn main() {
         if options.window_bounds.is_none() {
             options.window_bounds = Some(WindowBounds::Windowed(bounds));
         }
-        let _ = cx.open_window(options, |_, cx| cx.new(|_| AppShell::default()));
+        let _ = cx.open_window(options, |_, cx| {
+            cx.new(|cx| {
+                let mut shell = AppShell::default();
+                shell.schedule_refresh(cx);
+                shell
+            })
+        });
         cx.activate(true);
     });
 }
