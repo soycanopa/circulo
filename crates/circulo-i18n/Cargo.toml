@@ -6,3 +6,6 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Locale loading and lookup. Default locale is English."
+
+[dependencies]
+serde_json.workspace = true
