@@ -21,6 +21,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync"]
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+gpui = "0.2.2"
 circulo-core = { path = "crates/circulo-core" }
 circulo-protocol = { path = "crates/circulo-protocol" }
 circulo-adapter = { path = "crates/circulo-adapter" }

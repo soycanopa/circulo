@@ -1,0 +1,14 @@
+{
+  "app.title": "Circulo",
+  "sidebar.hide": "Hide sidebar",
+  "sidebar.show": "Show sidebar",
+  "sidebar.sessions": "Sessions",
+  "sidebar.groups": "Groups",
+  "sidebar.new_session": "New session",
+  "sidebar.search": "Search",
+  "sidebar.settings": "Settings",
+  "session.no_project": "No project",
+  "session.empty": "Write to get started",
+  "session.none": "No session selected",
+  "composer.placeholder": "Write what you want to create…"
+}

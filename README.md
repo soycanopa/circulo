@@ -98,6 +98,12 @@ scripts/check-crate-boundaries.py
 
 macOS. Install [rustup](https://rustup.rs/) if you do not have Rust. The repo pins `stable` via `rust-toolchain.toml`.
 
+Building `circulo-app` needs Xcode (Metal). If `xcrun metal` fails, point at the full Xcode app:
+
+```bash
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+```
+
 ```bash
 cargo build --workspace
 cargo test --workspace
@@ -111,7 +117,7 @@ cargo run -p circulo-app
 cargo run -p circulo-daemon
 ```
 
-`circulo-app` still prints a scaffold line (no window yet).
+`circulo-app` opens a dark GPUI window (custom title bar, sidebar rail). It does not talk to the daemon yet.
 
 `circulo-daemon` listens on `http://127.0.0.1:7432` (override with `CIRCULO_DAEMON_ADDR`, loopback only). It uses the fake adapter. TLS is not enabled yet. `GET /v1/health` is the smoke check.
 
