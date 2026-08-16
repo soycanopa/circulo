@@ -1,0 +1,98 @@
+schema: spec-driven
+
+# Shown to AI when creating artifacts. Constraints for the agent, not file content.
+context: |
+  Product: Circulo — native macOS desktop client (GPUI + Rust) for non-technical
+  users (marketing, product, design) to work with AI agents through a rich chat.
+
+  Philosophy: enough tools to do great work. Depth over feature count.
+  Clarity over complexity. Speed is a first-class requirement.
+
+  Product docs (read before writing artifacts):
+    - docs/PRD.md
+    - docs/TRD.md
+    - docs/UX-UI.md
+    - docs/FLOWS.md
+    - docs/IMPLEMENTATION.md
+    - Circulo-Project-Definition.md (source idea v0.5)
+    - AGENTS.md (engineering contract)
+
+  Stack (closed decisions):
+    - UI: GPUI (Rust), custom components, Heroicons, native GPUI animations only
+    - No native title bar; traffic lights + hide/show aligned in the Sidebar
+      (collapsed = min rail; controls never move to the header)
+    - Two Circulo processes: circulo-app and circulo-daemon
+    - App ↔ daemon: Circulo HTTPS + SSE on localhost
+    - Daemon ↔ OpenCode: OpenCode HTTP + SSE via adapter only
+    - Persistence: SQLite; session.project_id is nullable
+    - New session has no project; system folder is unassigned Sessions
+    - Sidebar list is flat unless the user assigns a project by hand
+    - SessionItem: title, relative active time, "No project" or project name
+    - UI language: English via locale catalogs (i18n-ready)
+    - Agent access: adapter modules; frontend never talks to OpenCode
+    - MVP provider: OpenCode only
+    - Tooling scripts: Bun + TypeScript (not the app runtime)
+    - Dark theme default; no deep theming in MVP
+
+  MVP in: rich chat (Markdown, tool call cards, diffs, basic task lists),
+  sessions grouped by project, simple local daemon, macOS.
+  MVP out: other providers, interactive questions UI, full plugin system,
+  collaboration, Windows/Linux, advanced themes.
+
+  Architecture: circulo-app (GPUI) → protocol over HTTPS/SSE → circulo-daemon
+  → AgentAdapter trait → circulo-adapter-opencode.
+  Shared types live in core/protocol crates. One adapter = one crate.
+
+  Engineering contract (mandatory):
+    - Ask; do not assume. Open questions in PRD §12 and TRD §15 are blockers.
+    - Never hardcode UI strings; use locale catalogs (default en).
+    - Investigate before any change. Then ask permission. Then change.
+    - Build only via OpenSpec changes. One change = one feature = one branch.
+    - Modular construction. No god objects, no premature plugin frameworks.
+    - Tests matter more than pleasing. Push back on scope that hurts quality.
+    - Clean code, typed errors, no unwrap in production paths.
+    - Granular conventional commits. Commit only after automated tests and,
+      for observable slices, manual verification. Do not commit unsolicited.
+
+  Data model (normative sketch): Project 1—* Session 1—* Message 1—* MessagePart
+  (Text | ToolCall | TaskList | Question). Question exists in the model but is
+  not implemented in MVP UI. IDs are UUIDs. JSON serialization must be clean.
+
+rules:
+  proposal:
+    - Keep the proposal grounded in docs/PRD.md. Do not invent features.
+    - Always include Why, What Changes, Capabilities, Impact, and Non-goals.
+    - List open questions that would change behavior; do not silently resolve them.
+    - Reference PRD requirement IDs when they exist (PRD-CHT-*, PRD-SES-*, etc.).
+    - One change = one coherent feature. Refuse MVP-sized proposals.
+  specs:
+    - Specs describe observable behavior, not crate layout.
+    - Use Given/When/Then. Cover empty, error, and streaming states where relevant.
+    - Do not specify Question/interactive-prompt behavior as in-scope for MVP changes
+      unless the change is explicitly post-MVP.
+    - Frontend must not be specified as calling OpenCode directly.
+  design:
+    - Respect crate boundaries in docs/TRD.md.
+    - Investigate real APIs (GPUI, OpenCode server) before designing adapters.
+    - Call out persistence, process model, and TLS decisions as open if still open.
+    - Prefer an adapter fake for UI work over depending on live OpenCode.
+  tasks:
+    - Tasks are small, sequential, and testable.
+    - Include automated tests in the same change as the logic.
+    - Include a manual verification task for any UI or end-to-end flow.
+    - Do not include a "commit" task that runs before manual verification.
+
+operations:
+  apply:
+    guidance:
+      - Do not start apply without explicit user permission for that change.
+      - Re-read product docs and the change artifacts from disk before coding.
+      - Stop and ask if a task would close an open product/technical decision.
+      - Work on feature/<change-name>. Do not mix another change into the branch.
+      - After implementation, run relevant tests. For UI, follow docs/FLOWS.md manually.
+      - Do not commit unless the user asked and verification is done.
+      - Keep the diff scoped to the tasks. No opportunistic refactors.
+  archive:
+    guidance:
+      - Archive only when tasks are complete and the user confirms.
+      - Summarize what landed vs what remains open before finishing.
