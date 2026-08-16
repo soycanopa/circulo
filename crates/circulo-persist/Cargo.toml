@@ -1,0 +1,11 @@
+[package]
+name = "circulo-persist"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Local SQLite persistence. Schema lands in a later change."
+
+[dependencies]
+circulo-core.workspace = true

@@ -1,0 +1,8 @@
+[package]
+name = "circulo-markdown"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Markdown parse and layout for GPUI. Implementation lands later."

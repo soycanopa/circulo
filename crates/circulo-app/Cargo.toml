@@ -1,0 +1,12 @@
+[package]
+name = "circulo-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Circulo GPUI application process. Window/UI lands in a later change."
+
+[dependencies]
+circulo-i18n.workspace = true
+circulo-protocol.workspace = true
