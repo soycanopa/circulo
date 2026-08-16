@@ -26,7 +26,7 @@ FORBIDDEN = {
 
 def cargo_metadata() -> dict:
     raw = subprocess.check_output(
-        ["cargo", "metadata", "--format-version", "1", "--offline"],
+        ["cargo", "metadata", "--format-version", "1"],
         stderr=subprocess.DEVNULL,
     )
     return json.loads(raw)
