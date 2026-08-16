@@ -1,0 +1,121 @@
+# Circulo
+
+A fast, native **macOS** desktop client for talking to AI agents.
+
+Circulo is built for **marketers, product people, and designers** — not for people who live in a terminal. The goal is a clean, structured chat that feels instant, plus a simple way to keep work in sessions and (when you want) group those sessions into projects.
+
+> Enough tools to do great work.
+
+This repository is in **pre-MVP planning**. Product and engineering docs exist; the app binaries are not implemented yet. We build through [OpenSpec](https://openspec.dev/) changes, not by dumping an entire MVP into one branch.
+
+## Why Circulo
+
+Most agent clients are made for developers. Streaming is a wall of plain text. Organizing work means a flat dump of chats. The apps themselves often feel heavy.
+
+Circulo is the opposite bet:
+
+- A **rich chat**: Markdown, tool-call cards, diffs, and basic task lists — rendered while the agent is still streaming.
+- **Sessions first.** A new session has no project. It lives in Circulo’s special **Sessions** folder and shows **No project** until you assign one by hand.
+- **Native and fast.** GPUI + Rust. No Electron shell. Custom window chrome (traffic lights live in the sidebar).
+- **Modular.** The UI never talks to an agent CLI. A small local daemon owns persistence and adapters. The first adapter is OpenCode.
+
+## Status
+
+| Item | State |
+| --- | --- |
+| Product definition | Current (`Circulo-Project-Definition.md` v0.6) |
+| PRD / TRD / UX / Flows / Implementation | Current in `docs/` |
+| Engineering contract | `AGENTS.md` |
+| Application code | Not started |
+| Platform | macOS first (Windows / Linux later) |
+| MVP agent | OpenCode only |
+
+## How it fits together
+
+Circulo is **two of our processes**. OpenCode is a third, external process.
+
+```
+circulo-app (GPUI)          process 1
+        │
+        │  HTTPS + SSE
+        │  Circulo protocol (localhost)
+        ▼
+circulo-daemon              process 2
+  SQLite · session store · adapters
+        │
+        │  HTTP + SSE
+        │  OpenCode server API
+        ▼
+opencode serve              external
+```
+
+The app does **not** call OpenCode. The daemon does, through `circulo-adapter-opencode`. OpenCode’s own server (`opencode serve`) already speaks HTTP and SSE; we translate that into Circulo’s model.
+
+If you only remember one sentence: **UI → Circulo daemon → OpenCode**.
+
+## What the MVP includes
+
+- Native macOS window, hidden title bar, traffic lights + sidebar hide control aligned in the sidebar (a min rail when collapsed).
+- Dark theme. English UI, with every string in a locale catalog so more languages can land later.
+- New session → unassigned → listed under **Sessions** with **No project**.
+- Flat session list: **name**, **how long it has been active**, **project or “No project”**.
+- Manual grouping only (assign / move / unassign a project).
+- Rich streaming chat: Markdown, tool cards, diffs, basic tasks.
+- Local **SQLite** store.
+- One provider: OpenCode.
+
+Explicitly out of the MVP: other agents, interactive question cards, a plugin marketplace, collaboration, cloud sync, deep theming, Windows/Linux.
+
+## Repository layout
+
+```
+AGENTS.md                       How we work (read this before coding)
+Circulo-Project-Definition.md   Product source
+README.md
+LICENSE                         MIT
+docs/
+  PRD.md                        What and why
+  TRD.md                        Architecture
+  UX-UI.md                      Surface and components
+  FLOWS.md                      User and system flows
+  IMPLEMENTATION.md             Change order and definition of done
+openspec/                       Spec-driven changes
+```
+
+Application crates (`circulo-app`, `circulo-daemon`, `circulo-core`, …) will appear when the first OpenSpec change (`scaffold-workspace`) is proposed and applied. Do not invent that tree in a drive-by commit.
+
+## Building (later)
+
+There is nothing to compile yet.
+
+When the workspace exists, expect a normal Rust workspace on macOS, plus Bun only for scripts/tooling — not as the app runtime.
+
+You will also need [OpenCode](https://opencode.ai/) installed for the real agent path. UI development should be possible against a fake adapter so the app is not hostage to a live provider.
+
+## How we build
+
+Circulo is **spec-first**. Every feature is:
+
+1. An OpenSpec change (`proposal` → `specs` → `design` → `tasks`)
+2. One git branch: `feature/<change-name>`
+3. Implementation only after investigation and explicit permission
+4. Automated tests + manual checks
+5. Granular conventional commits — **after** those checks, not before
+
+Rules of the road live in [`AGENTS.md`](./AGENTS.md). Product requirements live in [`docs/PRD.md`](./docs/PRD.md).
+
+If you use an AI coding agent, point it at `AGENTS.md` and the OpenSpec skills under `.agents/` / `.cursor/` / `.agent/`.
+
+## Contributing
+
+The project is public and early. Useful contributions right now:
+
+- Review the docs and open issues on contradictions or missing decisions.
+- Do **not** send a giant “here is the app” PR.
+- One OpenSpec change per PR, mapped to one feature branch.
+
+Please file issues in English or Spanish. User-facing product copy is English.
+
+## License
+
+[MIT](./LICENSE).
