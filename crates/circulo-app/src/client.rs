@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use circulo_core::{Project, Session, SidebarView, Uuid};
+use circulo_core::{Message, Project, Session, SidebarView, Uuid};
 use circulo_protocol::{
-    CreateProjectRequest, CreateSessionRequest, HealthResponse, PreferencesBody,
+    CreateMessageRequest, CreateProjectRequest, CreateSessionRequest, HealthResponse,
+    PatchSessionRequest, PreferencesBody,
 };
 
 const DEFAULT_BASE: &str = "http://127.0.0.1:7432";
@@ -63,6 +64,35 @@ impl DaemonClient {
         self.put("/v1/preferences", &PreferencesBody { sidebar_view: view })
     }
 
+    pub fn list_messages(&self, session_id: Uuid) -> Result<Vec<Message>, String> {
+        self.get(&format!("/v1/sessions/{session_id}/messages"))
+    }
+
+    pub fn post_message(&self, session_id: Uuid, content: &str) -> Result<Message, String> {
+        self.post_timed(
+            &format!("/v1/sessions/{session_id}/messages"),
+            &CreateMessageRequest {
+                content: content.into(),
+            },
+            Duration::from_secs(30),
+        )
+    }
+
+    pub fn set_session_project(
+        &self,
+        session_id: Uuid,
+        project_id: Option<Uuid>,
+    ) -> Result<Session, String> {
+        self.patch(
+            &format!("/v1/sessions/{session_id}"),
+            &PatchSessionRequest {
+                title: None,
+                project_id: Some(project_id),
+                archive: None,
+            },
+        )
+    }
+
     fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T, String> {
         ureq::get(&format!("{}{path}", self.base))
             .timeout(Duration::from_secs(2))
@@ -77,7 +107,29 @@ impl DaemonClient {
         path: &str,
         body: &B,
     ) -> Result<T, String> {
+        self.post_timed(path, body, Duration::from_secs(2))
+    }
+
+    fn post_timed<B: serde::Serialize, T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+        timeout: Duration,
+    ) -> Result<T, String> {
         ureq::post(&format!("{}{path}", self.base))
+            .timeout(timeout)
+            .send_json(body)
+            .map_err(|err| err.to_string())?
+            .into_json()
+            .map_err(|err| err.to_string())
+    }
+
+    fn patch<B: serde::Serialize, T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T, String> {
+        ureq::request("PATCH", &format!("{}{path}", self.base))
             .timeout(Duration::from_secs(2))
             .send_json(body)
             .map_err(|err| err.to_string())?
