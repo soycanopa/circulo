@@ -1,0 +1,51 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.key
+
+# Node / Bun tooling (scripts)
+node_modules/
+.bun/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test / coverage
+coverage/
+*.profraw
+*.lcov
+
+# Local app data (never commit user sessions or databases)
+.circulo/
+data/local/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Xcode / Apple
+xcuserdata/
+DerivedData/
+*.xcuserstate
