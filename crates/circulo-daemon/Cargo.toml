@@ -5,9 +5,23 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Local Circulo daemon process. HTTP/SSE lands in a later change."
+description = "Local Circulo daemon process."
 
 [dependencies]
+axum.workspace = true
 circulo-adapter.workspace = true
+circulo-adapter-fake.workspace = true
+circulo-core.workspace = true
 circulo-persist.workspace = true
 circulo-protocol.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+reqwest.workspace = true
+tempfile.workspace = true

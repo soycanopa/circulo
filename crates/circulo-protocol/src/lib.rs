@@ -12,6 +12,8 @@ pub enum ErrorCode {
     ProjectAssignmentLocked,
     NotFound,
     InvalidRequest,
+    Unavailable,
+    Internal,
 }
 
 impl ErrorCode {
@@ -20,6 +22,8 @@ impl ErrorCode {
             Self::ProjectAssignmentLocked => "project_assignment_locked",
             Self::NotFound => "not_found",
             Self::InvalidRequest => "invalid_request",
+            Self::Unavailable => "unavailable",
+            Self::Internal => "internal",
         }
     }
 }
@@ -45,6 +49,22 @@ impl ApiError {
             ErrorCode::ProjectAssignmentLocked,
             "The project folder can only be chosen when the chat starts.",
         )
+    }
+
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::NotFound, message)
+    }
+
+    pub fn invalid_request(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::InvalidRequest, message)
+    }
+
+    pub fn unavailable(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::Unavailable, message)
+    }
+
+    pub fn internal() -> Self {
+        Self::new(ErrorCode::Internal, "Something went wrong inside Circulo.")
     }
 }
 
@@ -108,6 +128,75 @@ impl ProtocolEvent {
             api_version: API_VERSION,
         }
     }
+
+    pub fn session_id(&self) -> Option<Uuid> {
+        match self {
+            Self::ServerConnected { .. } => None,
+            Self::SessionMessageCreated { session_id, .. }
+            | Self::SessionMessageUpdated { session_id, .. }
+            | Self::SessionPartAppended { session_id, .. }
+            | Self::SessionPartUpdated { session_id, .. }
+            | Self::SessionToolCallUpdated { session_id, .. }
+            | Self::SessionMessageCompleted { session_id, .. }
+            | Self::SessionMessageFailed { session_id, .. } => Some(*session_id),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateProjectRequest {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PatchProjectRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateSessionRequest {
+    #[serde(default)]
+    pub project_id: Option<Uuid>,
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PatchSessionRequest {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<Option<Uuid>>,
+    #[serde(default)]
+    pub archive: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateMessageRequest {
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PreferencesBody {
+    pub sidebar_view: circulo_core::SidebarView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HealthResponse {
+    pub api_version: u32,
+    pub daemon: String,
+    pub adapter: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adapter_message: Option<String>,
 }
 
 #[cfg(test)]

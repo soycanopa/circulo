@@ -111,7 +111,9 @@ cargo run -p circulo-app
 cargo run -p circulo-daemon
 ```
 
-They only print a scaffold line. There is no window and no HTTP API yet.
+`circulo-app` still prints a scaffold line (no window yet).
+
+`circulo-daemon` listens on `http://127.0.0.1:7432` (override with `CIRCULO_DAEMON_ADDR`, loopback only). It uses the fake adapter. TLS is not enabled yet. `GET /v1/health` is the smoke check.
 
 OpenCode is not required until the OpenCode adapter change. UI work should use the fake adapter so the app is not hostage to a live provider. Bun is only for scripts/tooling, not the app runtime.
 

@@ -95,6 +95,38 @@ impl Store {
         Ok(())
     }
 
+    pub fn get_project(&self, id: Uuid) -> Result<Option<Project>, PersistError> {
+        self.conn
+            .query_row(
+                "SELECT id, name, description, color, status, created_at, updated_at
+                 FROM projects WHERE id = ?1",
+                [id.to_string()],
+                map_project,
+            )
+            .optional()
+            .map_err(PersistError::from)
+    }
+
+    pub fn update_project(&self, project: &Project) -> Result<(), PersistError> {
+        let n = self.conn.execute(
+            "UPDATE projects
+             SET name = ?1, description = ?2, color = ?3, status = ?4, updated_at = ?5
+             WHERE id = ?6",
+            params![
+                project.name,
+                project.description,
+                project.color,
+                enum_to_db(&project.status)?,
+                format_time(project.updated_at)?,
+                project.id.to_string(),
+            ],
+        )?;
+        if n == 0 {
+            return Err(PersistError::NotFound);
+        }
+        Ok(())
+    }
+
     pub fn create_session(&self, session: &Session) -> Result<(), PersistError> {
         self.conn.execute(
             "INSERT INTO sessions
@@ -172,6 +204,28 @@ impl Store {
              ORDER BY s.last_message_at IS NULL, s.last_message_at DESC, s.created_at DESC",
             [pattern],
         )
+    }
+
+    pub fn update_session(&self, session: &Session) -> Result<(), PersistError> {
+        let n = self.conn.execute(
+            "UPDATE sessions
+             SET project_id = ?1, title = ?2, status = ?3, updated_at = ?4,
+                 last_message_at = ?5, first_send_at = ?6
+             WHERE id = ?7",
+            params![
+                session.project_id.map(|id| id.to_string()),
+                session.title,
+                enum_to_db(&session.status)?,
+                format_time(session.updated_at)?,
+                session.last_message_at.map(format_time).transpose()?,
+                session.first_send_at.map(format_time).transpose()?,
+                session.id.to_string(),
+            ],
+        )?;
+        if n == 0 {
+            return Err(PersistError::NotFound);
+        }
+        Ok(())
     }
 
     pub fn assign_session_project(
