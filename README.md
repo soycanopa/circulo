@@ -27,7 +27,7 @@ Circulo is the opposite bet:
 | Product definition | Current (`Circulo-Project-Definition.md` v0.6) |
 | PRD / TRD / UX / Flows / Implementation | Current in `docs/` |
 | Engineering contract | `AGENTS.md` |
-| Application code | Not started |
+| Application code | Workspace scaffold only (no product behavior) |
 | Platform | macOS first (Windows / Linux later) |
 | MVP agent | OpenCode only |
 
@@ -76,24 +76,44 @@ AGENTS.md                       How we work (read this before coding)
 Circulo-Project-Definition.md   Product source
 README.md
 LICENSE                         MIT
+Cargo.toml                      Workspace
+rust-toolchain.toml             Pinned stable Rust
+crates/
+  circulo-app/                  UI process (no-op until app-shell)
+  circulo-daemon/               Daemon process (no-op until local-daemon-api)
+  circulo-core/
+  circulo-protocol/
+  circulo-adapter/
+  circulo-adapter-fake/
+  circulo-adapter-opencode/
+  circulo-persist/
+  circulo-i18n/
+  circulo-markdown/
 docs/
-  PRD.md                        What and why
-  TRD.md                        Architecture
-  UX-UI.md                      Surface and components
-  FLOWS.md                      User and system flows
-  IMPLEMENTATION.md             Change order and definition of done
-openspec/                       Spec-driven changes
+openspec/
+scripts/check-crate-boundaries.py
 ```
 
-Application crates (`circulo-app`, `circulo-daemon`, `circulo-core`, …) will appear when the first OpenSpec change (`scaffold-workspace`) is proposed and applied. Do not invent that tree in a drive-by commit.
+## Building
 
-## Building (later)
+macOS. Install [rustup](https://rustup.rs/) if you do not have Rust. The repo pins `stable` via `rust-toolchain.toml`.
 
-There is nothing to compile yet.
+```bash
+cargo build --workspace
+cargo test --workspace
+python3 scripts/check-crate-boundaries.py
+```
 
-When the workspace exists, expect a normal Rust workspace on macOS, plus Bun only for scripts/tooling — not as the app runtime.
+Binaries:
 
-You will also need [OpenCode](https://opencode.ai/) installed for the real agent path. UI development should be possible against a fake adapter so the app is not hostage to a live provider.
+```bash
+cargo run -p circulo-app
+cargo run -p circulo-daemon
+```
+
+They only print a scaffold line. There is no window and no HTTP API yet.
+
+OpenCode is not required until the OpenCode adapter change. UI work should use the fake adapter so the app is not hostage to a live provider. Bun is only for scripts/tooling, not the app runtime.
 
 ## How we build
 
