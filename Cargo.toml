@@ -10,6 +10,10 @@ repository = "https://github.com/soycanopa/circulo"
 rust-version = "1.85"
 
 [workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["serde", "v4"] }
+time = { version = "0.3", features = ["serde", "serde-well-known", "formatting", "parsing"] }
 circulo-core = { path = "crates/circulo-core" }
 circulo-protocol = { path = "crates/circulo-protocol" }
 circulo-adapter = { path = "crates/circulo-adapter" }
