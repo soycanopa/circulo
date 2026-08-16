@@ -5,7 +5,15 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "App ↔ daemon API types and events. Logic lands in a later change."
+description = "App ↔ daemon API types and events."
 
 [dependencies]
 circulo-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+time.workspace = true
+uuid.workspace = true
