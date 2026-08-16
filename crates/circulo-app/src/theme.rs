@@ -42,6 +42,36 @@ pub const ACCENT: Rgba = Rgba {
     b: 0.95,
     a: 1.0,
 };
+pub const SUCCESS: Rgba = Rgba {
+    r: 0.45,
+    g: 0.78,
+    b: 0.55,
+    a: 1.0,
+};
+pub const DANGER: Rgba = Rgba {
+    r: 0.90,
+    g: 0.42,
+    b: 0.42,
+    a: 1.0,
+};
+pub const DIFF_ADD: Rgba = Rgba {
+    r: 0.22,
+    g: 0.42,
+    b: 0.28,
+    a: 1.0,
+};
+pub const DIFF_DEL: Rgba = Rgba {
+    r: 0.45,
+    g: 0.22,
+    b: 0.24,
+    a: 1.0,
+};
+pub const CODE_BG: Rgba = Rgba {
+    r: 0.08,
+    g: 0.08,
+    b: 0.09,
+    a: 1.0,
+};
 
 pub const SIDEBAR_EXPANDED_PX: f32 = 260.0;
 pub const SIDEBAR_RAIL_PX: f32 = 80.0;

@@ -1,4 +1,6 @@
-use circulo_core::{Message, MessageRole, Project, Session, SidebarView, Uuid};
+use std::collections::HashSet;
+
+use circulo_core::{Message, MessagePart, MessageRole, Project, Session, SidebarView, Uuid};
 use circulo_i18n::Catalog;
 use gpui::{
     Context, InteractiveElement, IntoElement, KeyDownEvent, ParentElement, Render,
@@ -10,7 +12,8 @@ use crate::client::{
     DaemonClient, ensure_daemon, filter_sessions, groups_need_new_project, resolve_view,
     session_project_label,
 };
-use crate::composer::{can_send, project_picker_locked, summarize_message};
+use crate::composer::{can_send, project_picker_locked};
+use crate::parts::{render_text, task_list, tool_card, unsupported};
 use crate::theme::{
     ACCENT, BG_APP, BG_MAIN, BG_SIDEBAR, BORDER, TEXT, TEXT_MUTED, sidebar_width_px,
 };
@@ -32,6 +35,7 @@ pub struct AppShell {
     draft_project: Option<Uuid>,
     picker_open: bool,
     generating: bool,
+    pub expanded_tools: HashSet<String>,
     error: Option<String>,
     loaded: bool,
 }
@@ -54,6 +58,7 @@ impl Default for AppShell {
             draft_project: None,
             picker_open: false,
             generating: false,
+            expanded_tools: HashSet::new(),
             error: None,
             loaded: false,
         }
@@ -601,11 +606,15 @@ fn main_column(
                 .border_color(BORDER)
                 .child(state.selected_title()),
         )
-        .child(message_list(state, catalog))
+        .child(message_list(state, catalog, cx))
         .child(composer(state, catalog, cx))
 }
 
-fn message_list(state: &AppShell, catalog: &Catalog) -> impl IntoElement {
+fn message_list(
+    state: &AppShell,
+    catalog: &Catalog,
+    cx: &mut Context<AppShell>,
+) -> impl IntoElement {
     let mut list = div()
         .id("messages")
         .flex()
@@ -628,34 +637,55 @@ fn message_list(state: &AppShell, catalog: &Catalog) -> impl IntoElement {
             .child(catalog.get("session.empty").to_string());
     }
     for (index, message) in state.messages.iter().enumerate() {
-        let role = match message.role {
-            MessageRole::User => catalog.get("message.user"),
-            MessageRole::Assistant => catalog.get("message.assistant"),
-            MessageRole::System => catalog.get("message.system"),
-        };
-        let body = summarize_message(message);
-        list = list.child(message_block(("msg", index), role, &body));
+        list = list.child(message_column(message, index, catalog, &state.expanded_tools, cx));
     }
     list
 }
 
-fn message_block(id: (&'static str, usize), role: &str, body: &str) -> impl IntoElement {
+fn message_column(
+    message: &Message,
+    index: usize,
+    catalog: &Catalog,
+    expanded: &HashSet<String>,
+    cx: &mut Context<AppShell>,
+) -> impl IntoElement {
+    let role = match message.role {
+        MessageRole::User => catalog.get("message.user"),
+        MessageRole::Assistant => catalog.get("message.assistant"),
+        MessageRole::System => catalog.get("message.system"),
+    };
     let mut col = div()
-        .id(id)
+        .id(("msg", index))
         .flex()
         .flex_col()
-        .gap_1()
+        .gap_2()
         .px_4()
-        .py_2()
+        .py_3()
+        .when(message.role == MessageRole::User, |el| el.pl(px(72.)))
         .child(div().text_xs().text_color(TEXT_MUTED).child(role.to_string()));
-    if body.is_empty() {
-        col
-    } else {
-        for line in body.lines() {
-            col = col.child(div().text_sm().child(line.to_string()));
-        }
-        col
+    for (part_index, part) in message.parts.iter().enumerate() {
+        col = col.child(match part {
+            MessagePart::Text { content } => render_text(content).into_any_element(),
+            MessagePart::TaskList { tasks } => task_list(tasks, catalog).into_any_element(),
+            MessagePart::Question { .. } => unsupported(catalog, index, part_index),
+            MessagePart::ToolCall { tool_call } => {
+                let id = tool_call.id.clone();
+                tool_card(
+                    tool_call,
+                    catalog,
+                    expanded,
+                    cx.listener(move |this, _, _, cx| {
+                        if !this.expanded_tools.remove(&id) {
+                            this.expanded_tools.insert(id.clone());
+                        }
+                        cx.notify();
+                    }),
+                )
+                .into_any_element()
+            }
+        });
     }
+    col
 }
 
 fn composer(

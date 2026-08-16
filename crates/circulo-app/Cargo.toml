@@ -10,9 +10,11 @@ description = "Circulo GPUI application process."
 [dependencies]
 circulo-core.workspace = true
 circulo-i18n.workspace = true
+circulo-markdown.workspace = true
 circulo-protocol.workspace = true
 gpui.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 time.workspace = true
 ureq.workspace = true
 uuid.workspace = true
