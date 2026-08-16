@@ -1,6 +1,6 @@
 # Circulo — Project Definition
 
-**Versión del documento:** 0.6  
+**Versión del documento:** 0.8  
 **Fecha:** 16 de agosto de 2026  
 **Estado:** Idea / Pre-MVP  
 **Nombre del proyecto:** Circulo
@@ -116,7 +116,7 @@ Tener una aplicación usable, rápida y bonita que permita a usuarios no técnic
 |-------------------------|-----------------------------------------------------|--------------------------------------------|
 | Proveedores             | Solo OpenCode                                       | Cursor, Claude Code, Grok, Codex, etc.     |
 | Chat                    | Markdown + Tool Calls + Diffs + Tasks básicos       | Preguntas interactivas avanzadas           |
-| Sesiones                | Lista plana; sesión nueva sin proyecto; agrupación solo manual | Colaboración, compartición, etc. |
+| Sesiones                | Vistas Sessions / Groups; selector de proyecto en composer; delete en cascada | Colaboración, compartición, etc. |
 | Arquitectura            | App + daemon (2 procesos) + adapter OpenCode + SQLite | Sistema de plugins completo      |
 | UI                      | Diseño limpio + animaciones nativas de GPUI         | Temas avanzados, personalización profunda  |
 | Plataforma              | macOS (prioridad)                                   | Windows / Linux (después)                  |
@@ -214,7 +214,9 @@ Al usar GPUI nativo no existe un ecosistema grande de componentes listos. Se con
 | Procesos                   | **Decidido: app + daemon**      | OpenCode es proceso externo vía HTTP/SSE           |
 | Persistencia               | **Decidido: SQLite**            | `project_id` opcional                              |
 | Sesión nueva               | **Decidido: sin proyecto**      | Carpeta especial Sessions; label “No project”      |
-| Agrupación                 | **Decidido: solo manual**       | Lista inicial plana                                |
+| Vistas Sidebar             | **Decidido: Sessions / Groups** | Recuerda última; si falla → Sessions. Groups vacío = New project |
+| Composer                   | **Decidido: selector al iniciar** | Locked tras el primer send. Sin worktree         |
+| Borrar / archivar          | **Decidido**                    | Delete = cascada. Archive + restore en Settings    |
 | Idioma UI                  | **Decidido: inglés + locales**  | Listo para más idiomas                             |
 | Público objetivo           | **Definido**                    | Marketing, producto, diseño, no-técnicos           |
 | Filosofía de producto      | **Definida**                    | Herramientas suficientes que funcionen muy bien    |
@@ -249,6 +251,7 @@ struct Project {
     name: String,
     description: Option<String>,
     color: Option<String>,         // Para identificación visual (ej: "#6366f1")
+    status: ProjectStatus,         // Active | Archived
     created_at: DateTime,
     updated_at: DateTime,
     // sessions se cargan por separado o se referencian por id
@@ -283,6 +286,11 @@ enum AgentType {
     // Grok,
     // Codex,
     // ...
+}
+
+enum ProjectStatus {
+    Active,
+    Archived,
 }
 
 enum SessionStatus {
@@ -560,12 +568,13 @@ Sidebar
 │   ├── TrafficLights          (● ● ●) — controles de ventana
 │   └── CollapseSidebarButton  (icono para ocultar/mostrar sidebar)
 ├── SidebarHeader
+│   ├── ViewSwitcher           (Sessions | Groups)
 │   ├── NewSessionButton
 │   └── SearchInput
-├── SessionList
-│   ├── SessionGroup           (ej: "Yesterday", "This Month")
-│   │   └── SessionItem        (título, proyecto, tiempo relativo)
-│   └── SessionGroup
+├── SessionsView               (lista plana)
+│   └── SessionItem            (nombre, tiempo, proyecto | No project)
+├── GroupsView                 (proyectos activos)
+│   └── ProjectGroup
 │       └── SessionItem
 └── SidebarFooter
     └── SettingsButton
@@ -583,7 +592,7 @@ Sidebar
 - Proyecto: nombre definido por el usuario, o **No project**
 - Estado activo (highlight)
 
-Las sesiones nuevas van a la carpeta especial de sistema `Sessions` (sin proyecto). La lista no se agrupa sola; el usuario asigna un proyecto a mano si quiere. Traffic lights y el botón de ocultar permanecen alineados en el Sidebar (rail mínimo al colapsar). UI en inglés, todas las cadenas en locales.
+Las sesiones nuevas van a la carpeta especial `Sessions` (sin proyecto) hasta que el composer asigne una carpeta. Vista Sessions = lista plana. Vista Groups = proyectos con sesiones dentro. Borrar un proyecto borra sus sesiones. Los archivados se ven en Settings. Traffic lights y hide alineados en el Sidebar. UI en inglés, cadenas en locales.
 
 ---
 
@@ -639,8 +648,8 @@ Componente visual importante. Muestra:
 Composer
 ├── TextInput (multiline)
 ├── ComposerToolbar
+│   ├── ProjectFolderSelector (carpetas de proyecto + No project)
 │   ├── AgentSelector (por ahora solo OpenCode)
-│   ├── ModeSelector (opcional)
 │   └── SendButton
 └── ComposerFooter (opcional)
     └── Project / Branch info
@@ -709,4 +718,4 @@ La interfaz se inspira en referencias como Waku: sidebar limpia con sesiones agr
 
 ---
 
-*Documento actualizado — Versión 0.6 (sesiones sin proyecto, SQLite, dos procesos, i18n)*
+*Documento actualizado — Versión 0.8 (restore, selector locked, vista persistida, sin worktree)*

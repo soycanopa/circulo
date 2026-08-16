@@ -15,7 +15,8 @@ Most agent clients are made for developers. Streaming is a wall of plain text. O
 Circulo is the opposite bet:
 
 - A **rich chat**: Markdown, tool-call cards, diffs, and basic task lists — rendered while the agent is still streaming.
-- **Sessions first.** A new session has no project. It lives in Circulo’s special **Sessions** folder and shows **No project** until you assign one by hand.
+- **Sessions first.** A new session has no project. It lives in Circulo’s special **Sessions** folder and shows **No project** until you pick a project folder in the composer.
+- **Two sidebar views.** **Sessions** is a flat list (name, time, project or “No project”). **Groups** shows your project folders and the sessions inside them.
 - **Native and fast.** GPUI + Rust. No Electron shell. Custom window chrome (traffic lights live in the sidebar).
 - **Modular.** The UI never talks to an agent CLI. A small local daemon owns persistence and adapters. The first adapter is OpenCode.
 
@@ -57,9 +58,11 @@ If you only remember one sentence: **UI → Circulo daemon → OpenCode**.
 
 - Native macOS window, hidden title bar, traffic lights + sidebar hide control aligned in the sidebar (a min rail when collapsed).
 - Dark theme. English UI, with every string in a locale catalog so more languages can land later.
-- New session → unassigned → listed under **Sessions** with **No project**.
-- Flat session list: **name**, **how long it has been active**, **project or “No project”**.
-- Manual grouping only (assign / move / unassign a project).
+- New session → unassigned → **Sessions** view with **No project**, unless the composer assigns a folder.
+- **Sessions** view: name, session time, project or “No project”. Last view is remembered; if that fails, Sessions.
+- **Groups** view: your projects, with their sessions nested. Empty state CTA: New project. Unassigned sessions stay out of this view.
+- Project folder is chosen in the composer when the chat starts, then locked. No worktree switching in this phase.
+- Delete a project and its sessions go with it. Archive a project and restore it from Settings.
 - Rich streaming chat: Markdown, tool cards, diffs, basic tasks.
 - Local **SQLite** store.
 - One provider: OpenCode.

@@ -3,7 +3,7 @@
 | Campo | Valor |
 | --- | --- |
 | Producto | Circulo |
-| Versión | 0.2 |
+| Versión | 0.4 |
 | Fecha | 16 de agosto de 2026 |
 | Plataforma | macOS, GPUI nativo |
 | Referencia visual | Waku (inspiración de layout y densidad, no copia literal) |
@@ -122,27 +122,35 @@ Sidebar
 │   ├── TrafficLights
 │   └── CollapseSidebarButton
 ├── SidebarHeader
+│   ├── ViewSwitcher          (Sessions | Groups)
 │   ├── NewSessionButton
 │   └── SearchInput
-├── SessionList          (plana por defecto; carpeta especial "Sessions")
-│   └── SessionItem
+├── SessionsView              (si vista = Sessions)
+│   └── SessionItem[]         (lista plana, todas las sesiones activas visibles)
+├── GroupsView                (si vista = Groups)
+│   └── ProjectGroup[]        (solo proyectos Active)
+│       └── SessionItem[]     (sesiones de ese proyecto)
 └── SidebarFooter
     └── SettingsButton
 ```
 
-**New session:** acción primaria. Crea una sesión **sin proyecto**, la guarda en la carpeta especial de Circulo (`Sessions`) y la abre. No pide proyecto.
+**ViewSwitcher:** dos modos. No se mezclan en la misma lista. Circulo persiste la última vista. Si no hay valor o no se puede leer: **Sessions**.
 
-**Search:** filtra la lista local. No es un command palette en el MVP.
+**Vista Sessions:** lista plana. Cada `SessionItem`:
 
-**SessionItem** muestra, en este orden conceptual:
+1. **Nombre**
+2. **Tiempo** de la sesión (relativo: `16m`, `14h`, `2d`)
+3. **Proyecto:** nombre definido por el usuario, o **“No project”**
 
-1. **Nombre** de la sesión
-2. **Tiempo activa** relativo (`16m`, `14h`, `2d`) — desde `last_message_at`, o `created_at` si aún no hay mensajes
-3. **Proyecto:** el nombre que el usuario definió, o la cadena de locale `session.no_project` → **“No project”**
+Incluye sesiones de la carpeta especial y las que ya tienen proyecto.
 
-También: highlight si está seleccionada. Agente opcional/discreto (MVP: OpenCode).
+**Vista Groups:** solo proyectos activos que el usuario creó. Cada grupo es una carpeta; dentro, sus sesiones. Las sesiones **No project** no aparecen aquí (viven en la vista Sessions / carpeta especial).
 
-**Agrupación:** ninguna automática (ni por día ni por proyecto). Lista plana. Solo hay agrupación visual extra si el usuario asignó sesiones a proyectos a mano (detalle de presentación: decisión abierta PRD §12.7).
+**New session:** crea una sesión sin proyecto, la abre, y deja el selector del composer en “No project” / carpeta especial. No obliga a elegir carpeta.
+
+**Search:** filtra lo visible en la vista actual. No es un command palette.
+
+Highlight si la sesión está seleccionada.
 
 ### 4.3 `SessionHeader`
 
@@ -225,18 +233,20 @@ Fuera de implementación MVP. El renderer no debe crashear si llega una part `Qu
 Composer
 ├── TextInput (multiline)
 ├── ComposerToolbar
-│   ├── AgentSelector   (OpenCode, deshabilitado o único)
-│   ├── ModeSelector    (fuera del MVP salvo que se justifique)
+│   ├── ProjectFolderSelector   (carpetas de proyecto + “No project”)
+│   ├── AgentSelector           (OpenCode, único en el MVP)
 │   └── SendButton
 └── ComposerFooter      (opcional; no en el primer corte)
 ```
+
+**ProjectFolderSelector:** usable **solo al iniciar el chat** (antes del primer Send). Lista proyectos Active + “No project”. Vacío = carpeta especial. Tras el primer envío: control **deshabilitado** (se ve la carpeta elegida, no se cambia). No hay cambio de worktree.
 
 Reglas:
 
 - Enter envía; Shift+Enter nueva línea. Convención a confirmar en el change de composer.
 - Send deshabilitado si el texto está vacío o no hay sesión.
-- Durante stream: indicador “Generando…” y, si PRD-CHT-09 se confirma, botón Cancelar.
-- Placeholder humano, en inglés, desde locale (p. ej. clave `composer.placeholder`). Copy final se aprueba; no se inventa en código.
+- Durante stream: indicador “Generating…” y, si PRD-CHT-09 se confirma, botón Cancelar.
+- Placeholder y labels del selector salen de locale. Copy final se aprueba.
 
 AgentSelector existe aunque solo haya un agente: educa el modelo mental para v0.3.
 
@@ -246,7 +256,12 @@ Opcional. No entra en el primer corte de UI.
 
 ### 4.13 Settings
 
-Entrada en el footer del Sidebar. Contenido MVP: estado de conexión con OpenCode y poco más. No un laboratorio.
+Entrada en el footer del Sidebar. Contenido MVP:
+
+- Estado de conexión con OpenCode.
+- Sección **Archived projects**: lista + acción **Restore**. Al restaurar, el proyecto vuelve a Groups y sus sesiones a ambas vistas.
+
+Borrar un proyecto (desde Groups o desde Settings) pide confirmación: se van el proyecto y todas sus sesiones.
 
 ---
 
@@ -254,8 +269,10 @@ Entrada en el footer del Sidebar. Contenido MVP: estado de conexión con OpenCod
 
 | Situación | UI |
 | --- | --- |
-| Primera apertura, sin datos | Lista `Sessions` vacía + CTA “New session” |
-| Sesiones sin proyecto | Viven en la carpeta especial; cada item dice “No project” |
+| Primera apertura, sin datos | Vista Sessions vacía + CTA “New session” |
+| Vista Groups sin proyectos | Empty + CTA **New project** |
+| Sesiones sin proyecto | Vista Sessions: “No project”. No aparecen en Groups |
+| Proyecto archivado | Fuera de ambas vistas; visible en Settings → Archived projects |
 | Sesión sin mensajes | Área central en calma + composer enfocado |
 | OpenCode no encontrado | Banner no técnico (locale); sin stack trace |
 | Fallo de red local / daemon | “Couldn’t connect to Circulo” (locale) + Retry |
@@ -338,6 +355,4 @@ Un cambio de UI no está listo si solo “se ve parecido a la referencia”. Est
 2. ¿El título se edita inline o en un diálogo?
 3. ¿Settings es panel, ventana, o popover?
 4. Densidad de `SessionItem` (dos vs tres líneas: nombre / tiempo / proyecto).
-5. Tras asignar proyectos a mano: ¿sigue todo en una lista plana o hay headers de grupo?
-
-Cerradas: TLs + hide alineados en Sidebar (rail al colapsar); sesión nueva sin proyecto; “No project”; UI en inglés vía locales.
+Cerradas: restore desde Settings; selector locked tras primer send; vista recordada con fallback Sessions; Groups vacío = New project; sin worktree.

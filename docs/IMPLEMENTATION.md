@@ -3,7 +3,7 @@
 | Campo | Valor |
 | --- | --- |
 | Producto | Circulo |
-| Versión | 0.2 |
+| Versión | 0.4 |
 | Fecha | 16 de agosto de 2026 |
 | Estado | Plan. Cero código de producto hasta un change OpenSpec aprobado y permiso explícito. |
 
@@ -63,15 +63,15 @@ Nombres tentativos. Cada uno = un branch `feature/<nombre>`. No crearlos todos a
 | --- | --- | --- | --- |
 | 1 | `scaffold-workspace` | Cargo workspace, dos binarios (`circulo-app`, `circulo-daemon`), toolchain | macOS mínimo sigue abierto |
 | 2 | `core-and-protocol` | Entidades (`project_id` opcional), serde, eventos, `api_version` | 1 |
-| 3 | `local-persistence` | SQLite + migraciones; sesiones unassigned; búsqueda de títulos | 2 |
+| 3 | `local-persistence` | SQLite + migraciones; `project_id` nullable; **ON DELETE CASCADE**; `Project.status` Active/Archived | 2 |
 | 4 | `adapter-trait-and-fake` | Trait + fake que emite texto, tool call y tasks | 2 |
 | 5 | `local-daemon-api` | HTTPS/HTTP localhost + SSE + health; spawn/reuso del daemon | 3, 4 + decisión certs |
 | 6 | `app-shell-window` | GPUI, hidden title bar, TLs + hide alineados, rail colapsado, i18n `en` | 1 |
-| 7 | `sessions-sidebar` | Lista plana, New session sin proyecto, “No project”, search, assign | 5, 6 |
-| 8 | `composer-and-message-stream` | Enviar, reducir eventos, estados de composer | 5, 7 |
+| 7 | `sessions-sidebar` | ViewSwitcher, persistencia de vista (fallback Sessions), Groups vacío = New project | 5, 6 |
+| 8 | `composer-and-message-stream` | Enviar, selector de carpeta solo pre-primer-send (luego locked) | 5, 7 |
 | 9 | `rich-message-render` | Markdown, ToolCallCard, Diff, TaskList | 8 |
 | 10 | `adapter-opencode` | Detección, mapping, errores humanos | 5 + investigación de API vigente |
-| 11 | `mvp-hardening` | Empty/error reales, health en UI, settings mínimo, prueba de extremo a extremo | 9, 10 |
+| 11 | `mvp-hardening` | Empty/error, health, Settings + archive/restore, confirmación de delete, E2E | 9, 10 |
 
 Un change puede partirse si las tasks superan un tamaño razonable. Unir dos de la lista requiere permiso.
 

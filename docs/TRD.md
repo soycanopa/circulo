@@ -3,7 +3,7 @@
 | Campo | Valor |
 | --- | --- |
 | Producto | Circulo |
-| Versión | 0.2 |
+| Versión | 0.4 |
 | Fecha | 16 de agosto de 2026 |
 | Estado | Pre-MVP / planificación |
 | Complementa | `docs/PRD.md` |
@@ -122,7 +122,7 @@ La carpeta especial `Sessions` no es una fila `Project`. Son las sesiones con `p
 
 ### 5.2 Entidades
 
-- **Project:** `id` (UUID), `name`, `description?`, `color?`, `created_at`, `updated_at`. Solo proyectos que el usuario crea.
+- **Project:** `id` (UUID), `name`, `description?`, `color?`, `status` (`Active` | `Archived`), `created_at`, `updated_at`. Solo proyectos que el usuario crea. No incluye la carpeta especial `Sessions`.
 - **Session:** `id`, `project_id: Option<UUID>`, `title`, `agent` (`AgentType`), `status` (`Active` | `Archived` | `Error`), timestamps, `last_message_at?`.
 - **Message:** `id`, `session_id`, `role` (`User` | `Assistant` | `System`), `parts`, `status` (`Pending` | `Streaming` | `Complete` | `Error`), `created_at`, `is_streaming`.
 - **MessagePart:** unión discriminada:
@@ -144,10 +144,13 @@ La carpeta especial `Sessions` no es una fila `Project`. Son las sesiones con `p
 
 - Motor: **SQLite**.
 - Ubicación candidata: `~/Library/Application Support/Circulo/circulo.sqlite` (confirmar path exacto en el change de persist).
-- `sessions.project_id` es nullable (FK a `projects`, `ON DELETE SET NULL`).
+- `sessions.project_id` es nullable (FK a `projects`, **`ON DELETE CASCADE`**). Borrar el proyecto borra sus sesiones y mensajes.
+- Archivar un proyecto: `projects.status = Archived`. Las sesiones **no** se borran. Las queries de las vistas principales excluyen proyectos archivados y las sesiones cuyo `project_id` apunta a un archivado.
+- Restaurar: `projects.status = Active`. Las sesiones vinculadas vuelven a las vistas (Groups + etiqueta en Sessions). No se tocan mensajes.
+- Preferencia de UI `sidebar.view` (`sessions` | `groups`) persistida (SQLite o prefs locales). Si falta, está corrupta o no se puede leer: **`sessions`**.
 - Migraciones versionadas en el crate `circulo-persist`.
-- Búsqueda de sesiones: SQL sobre título (MVP).
-- No hay una tabla “Inbox”. La carpeta especial es la query `WHERE project_id IS NULL`.
+- Búsqueda de sesiones: SQL sobre título (MVP), acotada a lo visible en la vista actual.
+- No hay una tabla “Inbox”. La carpeta especial es `WHERE project_id IS NULL`.
 
 ---
 
@@ -174,7 +177,11 @@ No es OpenAPI final. Es el perímetro. El schema concreto se especifica en el ch
 - `GET /v1/projects`
 - `POST /v1/projects`
 - `PATCH /v1/projects/{id}`
-- `DELETE /v1/projects/{id}` — no borra sesiones; deja `project_id = null`
+- `DELETE /v1/projects/{id}` — **cascada**: borra el proyecto y todas sus sesiones
+- `POST /v1/projects/{id}/archive` — marca `Archived` (o `PATCH` con `status`)
+- `POST /v1/projects/{id}/restore` — marca `Active`
+- `GET /v1/projects?status=archived` — para Settings → Archived projects
+- `GET` / `PUT /v1/preferences` — al menos `sidebar.view`; default `sessions`
 
 **Sessions**
 
@@ -183,7 +190,7 @@ No es OpenAPI final. Es el perímetro. El schema concreto se especifica en el ch
 - `GET /v1/sessions?unassigned=true` — carpeta especial `Sessions`
 - `POST /v1/sessions` — crea sin proyecto salvo que se envíe `project_id`
 - `GET /v1/sessions/{id}`
-- `PATCH /v1/sessions/{id}` (título, `project_id`, archive)
+- `PATCH /v1/sessions/{id}` (título, archive; `project_id` **solo si la sesión aún no tiene el primer mensaje enviado** — si no, 409)
 - `GET /v1/sessions/{id}/messages`
 
 **Chat**
@@ -393,7 +400,9 @@ Un adapter fake (`circulo-adapter-fake`) es deseable para desarrollar UI sin Ope
 
 Cerradas el 16 ago 2026: SQLite; dos procesos Circulo; `project_id` nullable; app no habla con OpenCode; UI `en` + locales.
 
-Hasta investigar y pedir permiso, estas decisiones no se “resuelven” en un commit.
+Cerradas: restore de proyecto; `project_id` inmutable tras el primer send; preferencia `sidebar.view` con fallback `sessions`; worktree no se implementa.
+
+Hasta investigar y pedir permiso, las abiertas no se “resuelven” en un commit.
 
 ---
 

@@ -26,8 +26,15 @@ context: |
     - Daemon ↔ OpenCode: OpenCode HTTP + SSE via adapter only
     - Persistence: SQLite; session.project_id is nullable
     - New session has no project; system folder is unassigned Sessions
-    - Sidebar list is flat unless the user assigns a project by hand
-    - SessionItem: title, relative active time, "No project" or project name
+    - Sidebar has two views: Sessions (flat: name, time, project or "No project")
+      and Groups (user projects with nested sessions). Unassigned sessions
+      do not appear in Groups.
+    - Composer project-folder picker is only enabled before the first send;
+      then it is locked. No worktree switching in this phase.
+    - Remember last sidebar view (sessions|groups). If that preference
+      cannot be read, default to Sessions. Empty Groups CTA: New project.
+    - Deleting a project CASCADE-deletes its sessions. Archive ≠ delete.
+      Archived projects are listed in Settings and can be restored.
     - UI language: English via locale catalogs (i18n-ready)
     - Agent access: adapter modules; frontend never talks to OpenCode
     - MVP provider: OpenCode only

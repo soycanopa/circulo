@@ -3,7 +3,7 @@
 | Campo | Valor |
 | --- | --- |
 | Producto | Circulo |
-| Versión | 0.2 |
+| Versión | 0.4 |
 | Fecha | 16 de agosto de 2026 |
 | Complementa | `docs/PRD.md`, `docs/UX-UI.md`, `docs/TRD.md` |
 
@@ -31,7 +31,7 @@ App spawnea o reutiliza circulo-daemon (proceso 2)
         ▼
 App pide GET /v1/health al daemon
         │
-        ├─ OK + OpenCode disponible → GET /v1/sessions → Shell (lista plana)
+        ├─ OK + OpenCode disponible → leer preferencia sidebar.view (fallback Sessions) → Shell
         ├─ OK + OpenCode ausente    → Shell + banner de setup
         └─ Daemon no responde       → pantalla de error local + reintentar
 ```
@@ -71,12 +71,22 @@ No hay que crear un proyecto para empezar. Empty state: **New session**, no “N
 1. Usuario pulsa “New session”.
 2. App `POST /v1/sessions` **sin** `project_id`, `agent = OpenCode`.
 3. El daemon persiste la sesión con `project_id = NULL` (carpeta especial `Sessions`).
-4. Se selecciona la sesión. Header muestra título placeholder. Composer recibe foco.
-5. El `SessionItem` muestra nombre, tiempo activa y **“No project”**.
+4. Se selecciona la sesión. Header muestra título placeholder. Composer recibe foco. El selector de carpeta queda en “No project”.
+5. En vista Sessions el item muestra nombre, tiempo y **“No project”**. En vista Groups esta sesión **no** se ve todavía.
 
-No se pide proyecto. Asignar proyecto es un flujo aparte (manual).
+**Título:** placeholder (“New session”). Generación automática: P1 y abierta.
 
-**Título:** placeholder (“New session” / primeras palabras del primer mensaje). Generación automática: P1 y abierta.
+## 5.1 Elegir carpeta en el composer (antes del chat)
+
+1. En el composer, el usuario abre **ProjectFolderSelector**.
+2. Elige una carpeta de proyecto activa, o deja “No project”.
+3. Si elige proyecto: `PATCH` de la sesión con `project_id`. La sesión pasa a ese grupo.
+4. Si no elige: permanece en la carpeta especial.
+5. Recién entonces envía el mensaje (flujo 6).
+6. Tras el primer send, el selector se bloquea. Un `PATCH` posterior de `project_id` es error.
+
+No bloquear el envío si no hay proyecto: “sesión normal”.
+No hay flujo de cambio de worktree.
 
 ---
 
@@ -163,15 +173,48 @@ Si la sesión anterior estaba streameando, el stream **sigue en background** (el
 
 ---
 
-## 9. Asignar / quitar proyecto (agrupación manual)
+## 9. Vistas Sessions y Groups
 
-1. Acción en SessionItem o Header: “Move to project…” / “Remove from project”.
-2. Elegir un proyecto existente, crear uno, o dejarla sin proyecto.
-3. `PATCH` con `project_id` o `null`.
-4. El item actualiza la etiqueta: nombre del proyecto o “No project”.
-5. Los mensajes no se tocan.
+```
+ViewSwitcher → Sessions
+  → persistir sidebar.view = sessions
+  → lista plana de sesiones activas visibles
+  → cada item: nombre + tiempo + proyecto | “No project”
 
-Sin esta acción, nada se agrupa.
+ViewSwitcher → Groups
+  → persistir sidebar.view = groups
+  → proyectos Active
+  → cada proyecto expande/lista sus sesiones
+  → sesiones sin proyecto no aparecen
+  → cero proyectos: empty + CTA “New project”
+```
+
+Si no se puede leer/escribir la preferencia: mostrar **Sessions**. No crashear.
+
+## 9.1 Archivar proyecto
+
+1. Acción Archive en el proyecto (Groups o Settings).
+2. `status = Archived`.
+3. El proyecto y sus sesiones salen de Sessions y de Groups.
+4. Aparece en Settings → Archived projects.
+5. Los datos **no** se borran.
+
+## 9.1.1 Restaurar proyecto
+
+1. Settings → Archived projects → Restore.
+2. `POST /v1/projects/{id}/restore` → `status = Active`.
+3. El proyecto reaparece en Groups.
+4. Sus sesiones reaparecen en Groups y en Sessions (con el nombre del proyecto).
+5. Si la vista actual es Groups, se ve de inmediato.
+
+## 9.2 Borrar proyecto
+
+1. Acción Delete + confirmación clara (se perderán N sesiones).
+2. `DELETE /v1/projects/{id}`.
+3. SQLite `ON DELETE CASCADE`: sesiones y mensajes de esa carpeta desaparecen.
+4. Si la sesión abierta pertenecía a ese proyecto: volver a empty / New session.
+
+No existe “borrar proyecto y conservar sesiones”. Eso sería desasignar, no borrar.
 
 ---
 

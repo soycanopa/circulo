@@ -3,7 +3,7 @@
 | Campo | Valor |
 | --- | --- |
 | Producto | Circulo |
-| Versión | 0.2 (derivado de Project Definition 0.6) |
+| Versión | 0.4 (derivado de Project Definition 0.8) |
 | Fecha | 16 de agosto de 2026 |
 | Estado | Pre-MVP / planificación |
 | Fuente | `Circulo-Project-Definition.md` |
@@ -83,9 +83,11 @@ Una app usable, rápida y bonita en **macOS** que permita conversar de forma ric
 
 - Un solo proveedor: OpenCode.
 - Chat rico: Markdown + tool calls + diffs + task lists básicos.
-- Lista plana de sesiones. Una sesión nueva nace **sin proyecto** en la carpeta especial de Circulo (`Sessions`).
-- Agrupar es **manual**: el usuario asigna una sesión a un proyecto cuando quiere.
-- Crear proyectos y asignar / mover / desasignar sesiones.
+- Dos vistas de Sidebar: **Sessions** (lista plana) y **Groups** (proyectos con sesiones dentro).
+- Una sesión nueva nace **sin proyecto** en la carpeta especial de Circulo (`Sessions`), salvo que el usuario elija una carpeta de proyecto en el composer.
+- El composer permite elegir una carpeta de proyecto **antes** de avanzar con el chat. Si no se elige, la sesión queda en `Sessions` / **No project**.
+- Borrar un proyecto borra también sus sesiones (están vinculadas a esa carpeta).
+- Settings incluye una sección de **proyectos archivados**.
 - Búsqueda y filtrado básico de sesiones.
 - Daemon local simple (conversar + stream).
 - Frontend nativo GPUI.
@@ -102,6 +104,7 @@ Una app usable, rápida y bonita en **macOS** que permita conversar de forma ric
 - Sistema de plugins completo.
 - Colaboración, compartición, multi-usuario, cloud sync.
 - Temas avanzados y personalización profunda.
+- Cambio de worktree / working directory por sesión (fuera de alcance ahora).
 - Flujos multi-agente.
 - Marketplace de adapters.
 - Autenticación de cuenta Circulo.
@@ -139,23 +142,27 @@ Los IDs son estables. Un cambio de OpenSpec debe referenciarlos.
 | PRD-PRJ-01 | El usuario puede crear un proyecto con nombre. | P0 |
 | PRD-PRJ-02 | Un proyecto puede tener descripción y color opcionales. | P1 |
 | PRD-PRJ-03 | El usuario puede renombrar un proyecto. | P0 |
-| PRD-PRJ-04 | El usuario puede archivar o eliminar un proyecto. Las sesiones de ese proyecto quedan sin proyecto (vuelven a la carpeta especial `Sessions`). No se borran en cascada. | P1 |
+| PRD-PRJ-04 | El usuario puede **archivar** un proyecto. El proyecto y sus sesiones salen de las vistas principales y se consultan en Settings → Archived projects. | P0 |
 | PRD-PRJ-05 | Un proyecto es opcional. Las sesiones pueden existir sin proyecto. | P0 |
 | PRD-PRJ-06 | Circulo tiene una carpeta especial de sistema, `Sessions`, para sesiones sin proyecto. No es un proyecto creado por el usuario. | P0 |
+| PRD-PRJ-07 | **Borrar** un proyecto borra en cascada todas sus sesiones. Están vinculadas a esa carpeta. Requiere confirmación explícita. | P0 |
+| PRD-PRJ-08 | Archivar y borrar no son lo mismo. Archivar conserva; borrar destruye. | P0 |
 
 ### 7.3 Sesiones
 
 | ID | Requisito | Prioridad |
 | --- | --- | --- |
-| PRD-SES-01 | “New session” crea una sesión **sin proyecto** y la abre. Queda en la carpeta especial `Sessions`. | P0 |
+| PRD-SES-01 | “New session” crea una sesión **sin proyecto** y la abre. Queda en la carpeta especial `Sessions` hasta que el composer asigne una carpeta. | P0 |
 | PRD-SES-02 | El usuario puede abrir una sesión existente y ver su historial. | P0 |
-| PRD-SES-03 | El usuario puede asignar una sesión a un proyecto, moverla a otro, o quitarle el proyecto (manual). | P0 |
+| PRD-SES-03 | El usuario puede asignar una sesión a un proyecto, moverla a otro, o dejarla sin proyecto (composer u otra acción). | P0 |
 | PRD-SES-04 | El usuario puede archivar una sesión. | P1 |
 | PRD-SES-05 | El título de la sesión es visible y editable. Puede generarse automáticamente. | P1 |
 | PRD-SES-06 | Cada sesión muestra qué agente usa. En el MVP: OpenCode. | P0 |
-| PRD-SES-07 | El Sidebar **no agrupa por recencia ni por proyecto de forma automática**. La lista por defecto es plana (`Sessions`). Solo hay agrupación si el usuario asignó proyectos a mano. | P0 |
+| PRD-SES-07 | El Sidebar tiene **dos vistas** conmutables: **Sessions** y **Groups**. Circulo **recuerda** la última vista. Si falla la persistencia de esa preferencia, el default es **Sessions**. | P0 |
 | PRD-SES-08 | El usuario puede buscar y filtrar sesiones por texto. | P0 |
-| PRD-SES-09 | Cada `SessionItem` muestra: nombre, tiempo activa (relativo), y proyecto (`No project` o el nombre que el usuario definió). | P0 |
+| PRD-SES-09 | En vista **Sessions**, cada item muestra: nombre, tiempo de la sesión, y proyecto (`No project` o el nombre definido). | P0 |
+| PRD-SES-10 | En vista **Groups**, se listan los proyectos activos del usuario; dentro de cada uno, sus sesiones. Las sesiones sin proyecto **no** aparecen en esta vista. | P0 |
+| PRD-SES-11 | Vista Groups vacía (cero proyectos activos): empty state con CTA **New project**. | P0 |
 
 ### 7.4 Chat
 
@@ -172,6 +179,9 @@ Los IDs son estables. Un cambio de OpenSpec debe referenciarlos.
 | PRD-CHT-09 | El usuario puede cancelar una generación en curso. | P1 |
 | PRD-CHT-10 | Preguntas interactivas estructuradas quedan fuera del MVP (el modelo las prevé). | — |
 | PRD-CHT-11 | Mientras el agente genera, el composer lo indica y evita envíos ambiguos. | P0 |
+| PRD-CHT-12 | El composer incluye un selector de carpeta de proyecto, usable **solo al iniciar el chat** (antes del primer envío). Elegir una asigna la sesión a ese proyecto. | P0 |
+| PRD-CHT-13 | Si el selector queda en vacío / “No project”, la sesión permanece en la carpeta especial `Sessions`. | P0 |
+| PRD-CHT-14 | Después del primer envío el selector queda bloqueado. No se cambia de proyecto a mitad de sesión. | P0 |
 
 ### 7.5 Agente y daemon
 
@@ -187,8 +197,10 @@ Los IDs son estables. Un cambio de OpenSpec debe referenciarlos.
 
 | ID | Requisito | Prioridad |
 | --- | --- | --- |
-| PRD-SET-01 | Existe un punto de entrada a Settings en el Sidebar. | P1 |
-| PRD-SET-02 | Settings del MVP se limita a lo imprescindible para conversar (p. ej. comprobar que OpenCode está disponible). No es un panel de power-user. | P1 |
+| PRD-SET-01 | Existe un punto de entrada a Settings en el Sidebar. | P0 |
+| PRD-SET-02 | Settings del MVP incluye lo imprescindible para conversar (p. ej. estado de OpenCode) y no es un panel de power-user. | P1 |
+| PRD-SET-03 | Settings tiene una sección **Archived projects** que lista los proyectos archivados. | P0 |
+| PRD-SET-04 | Desde Archived projects el usuario puede **restaurar** un proyecto. El proyecto vuelve a Active; sus sesiones reaparecen en Groups y, con su etiqueta, en Sessions. | P0 |
 
 ---
 
@@ -245,7 +257,12 @@ El roadmap no autoriza implementación. Cada incremento es un change de OpenSpec
 | UI framework | Cerrada | GPUI nativo |
 | Title bar | Cerrada | Sin title bar nativo; traffic lights + hide alineados en el Sidebar (rail al colapsar) |
 | Sesión nueva | Cerrada | Sin proyecto; carpeta especial de sistema `Sessions` |
-| Agrupación | Cerrada | Solo manual. Lista inicial plana. Item: nombre + tiempo activa + `No project` o nombre de proyecto |
+| Vistas Sidebar | Cerrada | **Sessions** / **Groups**. Se recuerda la última. Si falla: Sessions |
+| Groups vacío | Cerrada | CTA **New project** |
+| Composer | Cerrada | Selector de carpeta solo al iniciar el chat; después locked |
+| Worktree | Cerrada (fuera) | No se implementa cambio de worktree ahora |
+| Borrar proyecto | Cerrada | Cascada: se van todas sus sesiones. Confirmación obligatoria |
+| Archivar proyecto | Cerrada | Conserva; Settings → Archived projects; **se puede restaurar** |
 | Idioma UI | Cerrada | Inglés (`en`) + infraestructura de locales |
 | Temas | Cerrada para MVP | Dark por defecto; sin personalización profunda |
 | Preguntas interactivas | Cerrada para MVP | Fuera de alcance de implementación |
@@ -259,15 +276,14 @@ Estas preguntas bloquean o condicionan diseño/implementación. Hay que pregunta
 
 1. **Título automático:** ¿se genera tras el primer mensaje? ¿quién lo genera (app vs agente)?
 2. **Cancelar stream:** ¿P1 confirmado o se sube a P0?
-3. **Settings mínimos del MVP:** ¿solo estado de OpenCode, o también directorio de trabajo / modelo?
-4. **Working directory del agente:** ¿el usuario elige carpeta por sesión/proyecto, o es implícito?
-5. **Nombre visible / branding:** ¿wordmark en Sidebar o solo icono?
-6. **Orden de la lista plana:** ¿por `last_message_at` descendente?
-7. **Al asignar proyectos:** ¿la lista sigue plana con etiqueta, o aparece un grupo por proyecto además de `Sessions`?
+3. **Settings más allá de OpenCode + archived/restore:** ¿también modelo / extras? (worktree no).
+4. **Nombre visible / branding:** ¿wordmark en Sidebar o solo icono?
+5. **Orden de la lista plana:** ¿por `last_message_at` descendente?
+6. **Confirmación al restaurar:** ¿inmediato o diálogo?
 
 Hasta que se respondan, no se implementa el comportamiento correspondiente.
 
-Cerradas el 16 ago 2026: sidebar rail + TLs alineados; sesión nueva sin proyecto; agrupación solo manual; label `No project`; SQLite; dos procesos Circulo; UI `en` + locales.
+Cerradas el 16 ago 2026: restore desde Settings; selector locked tras el primer send; sin worktree; vista recordada con fallback Sessions; Groups vacío = New project.
 
 ---
 
@@ -286,7 +302,7 @@ No hay analytics en el MVP. El éxito se valida de forma manual:
 
 | Documento | Rol |
 | --- | --- |
-| `Circulo-Project-Definition.md` | Fuente de idea (v0.6) |
+| `Circulo-Project-Definition.md` | Fuente de idea (v0.8) |
 | `docs/TRD.md` | Cómo se construye |
 | `docs/UX-UI.md` | Superficie visual y componentes |
 | `docs/FLOWS.md` | Flujos y estados |
