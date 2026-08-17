@@ -13,6 +13,7 @@ circulo-i18n.workspace = true
 circulo-markdown.workspace = true
 circulo-protocol.workspace = true
 gpui.workspace = true
+rust-embed = "8.12"
 serde.workspace = true
 serde_json.workspace = true
 time.workspace = true
