@@ -73,6 +73,12 @@ pub const CODE_BG: Rgba = Rgba {
     a: 1.0,
 };
 
+/// Max width for chat transcript and floating composer card (Waku-style).
+pub const CONTENT_MAX_WIDTH_PX: f32 = 768.0;
+/// Horizontal inset shared by the transcript and floating composer.
+pub const COMPOSER_GUTTER_PX: f32 = 20.0;
+pub const MESSAGE_AVATAR_PX: f32 = 32.0;
+
 pub const SIDEBAR_EXPANDED_PX: f32 = 260.0;
 pub const SIDEBAR_RAIL_PX: f32 = 80.0;
 pub const TRAFFIC_LIGHT_X_PX: f32 = 12.0;

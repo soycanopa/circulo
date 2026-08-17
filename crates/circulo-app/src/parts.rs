@@ -2,10 +2,10 @@ use std::collections::HashSet;
 
 use circulo_core::{Task, TaskStatus, ToolCall, ToolCallStatus, ToolOutput};
 use circulo_i18n::Catalog;
-use circulo_markdown::{Block, DiffKind, Inline, diff_lines, parse};
+use circulo_markdown::{diff_lines, parse, Block, DiffKind, Inline};
 use gpui::{
-    FontWeight, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled,
-    Window, div, prelude::FluentBuilder, px,
+    div, prelude::FluentBuilder, px, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::Value;
 
@@ -69,7 +69,7 @@ pub fn unsupported(catalog: &Catalog, message_index: usize, part_index: usize) -
 }
 
 pub fn markdown_blocks(blocks: &[Block]) -> impl IntoElement {
-    let mut col = div().flex().flex_col().gap_2();
+    let mut col = div().flex().flex_col().gap_2().w_full().min_w_0();
     for (index, block) in blocks.iter().enumerate() {
         col = col.child(markdown_block(block, index));
     }
@@ -94,7 +94,7 @@ fn markdown_block(block: &Block, index: usize) -> gpui::AnyElement {
             start,
             items,
         } => {
-            let mut col = div().flex().flex_col().gap_1().pl(px(12.));
+            let mut col = div().flex().flex_col().gap_1().w_full().pl(px(12.));
             for (offset, item) in items.iter().enumerate() {
                 let marker = if *ordered {
                     format!("{}.", start + offset as u64)
@@ -105,8 +105,21 @@ fn markdown_block(block: &Block, index: usize) -> gpui::AnyElement {
                     div()
                         .flex()
                         .gap_2()
-                        .child(div().text_sm().text_color(TEXT_MUTED).child(marker))
-                        .child(markdown_blocks(item)),
+                        .items_start()
+                        .w_full()
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_sm()
+                                .text_color(TEXT_MUTED)
+                                .child(marker),
+                        )
+                        .child(
+                            div()
+                                .min_w_0()
+                                .flex_1()
+                                .child(markdown_blocks(item)),
+                        ),
                 );
             }
             col.into_any_element()
@@ -142,11 +155,7 @@ fn markdown_block(block: &Block, index: usize) -> gpui::AnyElement {
             }
             table.into_any_element()
         }
-        Block::ThematicBreak => div()
-            .h(px(1.))
-            .bg(BORDER)
-            .py_2()
-            .into_any_element(),
+        Block::ThematicBreak => div().h(px(1.)).bg(BORDER).py_2().into_any_element(),
     }
 }
 
@@ -167,7 +176,7 @@ fn table_row(cells: &[Vec<Inline>], header: bool) -> impl IntoElement {
 }
 
 fn render_inlines(inlines: &[Inline]) -> impl IntoElement {
-    let mut row = div().flex().flex_row().flex_wrap();
+    let mut row = div().flex().flex_row().flex_wrap().w_full().min_w_0();
     for (text, style) in flatten_inlines(inlines, InlineStyle::default()) {
         row = row.child(styled_span(&text, style));
     }
@@ -316,7 +325,9 @@ pub fn tool_card(
 
 fn tool_output(output: Option<&ToolOutput>) -> impl IntoElement {
     match output {
-        Some(ToolOutput::Text { content }) => div().text_sm().child(content.clone()).into_any_element(),
+        Some(ToolOutput::Text { content }) => {
+            div().text_sm().child(content.clone()).into_any_element()
+        }
         Some(ToolOutput::Json { data }) => div()
             .text_xs()
             .font_family("Menlo")
@@ -369,7 +380,14 @@ fn tool_output(output: Option<&ToolOutput>) -> impl IntoElement {
 }
 
 pub fn task_list(tasks: &[Task], catalog: &Catalog) -> impl IntoElement {
-    let mut col = div().flex().flex_col().gap_1().p_2().rounded_md().border_1().border_color(BORDER);
+    let mut col = div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .p_2()
+        .rounded_md()
+        .border_1()
+        .border_color(BORDER);
     for task in ordered_tasks(tasks) {
         let status = catalog.get(task_status_key(task.status)).to_string();
         let color = match task.status {

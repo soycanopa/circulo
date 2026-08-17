@@ -78,6 +78,25 @@ impl DaemonClient {
         )
     }
 
+    /// Opens the session's SSE stream. Blocking reads on the returned iterator
+    /// wait up to `STREAM_READ_TIMEOUT` between frames; there is no overall
+    /// timeout because the stream lives as long as the subscription.
+    pub fn session_events(
+        &self,
+        session_id: Uuid,
+    ) -> Result<crate::stream::SessionEventStream, String> {
+        let agent = ureq::AgentBuilder::new()
+            .timeout_read(crate::stream::STREAM_READ_TIMEOUT)
+            .build();
+        let response = agent
+            .get(format!("{}/v1/sessions/{session_id}/events", self.base).as_str())
+            .call()
+            .map_err(|err| err.to_string())?;
+        Ok(crate::stream::SessionEventStream::new(
+            response.into_reader(),
+        ))
+    }
+
     pub fn set_session_project(
         &self,
         session_id: Uuid,
@@ -195,9 +214,7 @@ pub fn filter_sessions<'a>(sessions: &'a [Session], query: &str) -> Vec<&'a Sess
     let q = query.trim().to_ascii_lowercase();
     sessions
         .iter()
-        .filter(|session| {
-            q.is_empty() || session.title.to_ascii_lowercase().contains(&q)
-        })
+        .filter(|session| q.is_empty() || session.title.to_ascii_lowercase().contains(&q))
         .collect()
 }
 
@@ -221,10 +238,7 @@ mod tests {
 
     #[test]
     fn unassigned_uses_no_project_label() {
-        assert_eq!(
-            session_project_label(None, &[], "No project"),
-            "No project"
-        );
+        assert_eq!(session_project_label(None, &[], "No project"), "No project");
     }
 
     #[test]

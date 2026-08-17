@@ -1,6 +1,4 @@
-use gpui::{
-    Bounds, Pixels, Point, TitlebarOptions, WindowBounds, WindowOptions, point, px, size,
-};
+use gpui::{point, px, size, Bounds, Pixels, Point, TitlebarOptions, WindowBounds, WindowOptions};
 
 use crate::theme::{TRAFFIC_LIGHT_X_PX, TRAFFIC_LIGHT_Y_PX};
 
@@ -33,10 +31,10 @@ pub fn traffic_light_position(options: &WindowOptions) -> Option<Point<Pixels>> 
 
 #[cfg(test)]
 mod tests {
-    use gpui::{Bounds, point, px, size};
+    use gpui::{point, px, size, Bounds};
 
     use super::*;
-    use crate::theme::{SIDEBAR_EXPANDED_PX, SIDEBAR_RAIL_PX, sidebar_width_px};
+    use crate::theme::{sidebar_width_px, SIDEBAR_EXPANDED_PX, SIDEBAR_RAIL_PX};
 
     #[test]
     fn window_uses_transparent_titlebar_and_traffic_lights() {
