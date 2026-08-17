@@ -5,7 +5,23 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "OpenCode server adapter. Implementation lands in a later change."
+description = "OpenCode server adapter: manages `opencode serve` and streams normalized turns."
 
 [dependencies]
 circulo-adapter.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+ureq.workspace = true
+axum = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+tokio-stream = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+
+[features]
+# Exposes `testing::FakeOpenCodeServer` for integration tests in this crate and the daemon.
+test-support = ["dep:axum", "dep:tokio", "dep:tokio-stream", "dep:futures-util"]
+
+[dev-dependencies]
+# Self dependency so integration tests can use the `test-support` feature.
+circulo-adapter-opencode = { path = ".", features = ["test-support"] }
