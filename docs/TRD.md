@@ -146,8 +146,7 @@ La carpeta especial `Sessions` no es una fila `Project`. Son las sesiones con `p
 - Ubicación candidata: `~/Library/Application Support/Circulo/circulo.sqlite` (confirmar path exacto en el change de persist).
 - `sessions.project_id` es nullable (FK a `projects`, **`ON DELETE CASCADE`**). Borrar el proyecto borra sus sesiones y mensajes.
 - Archivar un proyecto: `projects.status = Archived`. Las sesiones **no** se borran. Las queries de las vistas principales excluyen proyectos archivados y las sesiones cuyo `project_id` apunta a un archivado.
-- Restaurar: `projects.status = Active`. Las sesiones vinculadas vuelven a las vistas (Groups + etiqueta en Sessions). No se tocan mensajes.
-- Preferencia de UI `sidebar.view` (`sessions` | `groups`) persistida (SQLite o prefs locales). Si falta, está corrupta o no se puede leer: **`sessions`**.
+- Restaurar: `projects.status = Active`. Las sesiones vinculadas vuelven al sidebar (Today/Earlier). No se tocan mensajes.
 - Migraciones versionadas en el crate `circulo-persist`.
 - Búsqueda de sesiones: SQL sobre título (MVP), acotada a lo visible en la vista actual.
 - No hay una tabla “Inbox”. La carpeta especial es `WHERE project_id IS NULL`.
@@ -181,7 +180,7 @@ No es OpenAPI final. Es el perímetro. El schema concreto se especifica en el ch
 - `POST /v1/projects/{id}/archive` — marca `Archived` (o `PATCH` con `status`)
 - `POST /v1/projects/{id}/restore` — marca `Active`
 - `GET /v1/projects?status=archived` — para Settings → Archived projects
-- `GET` / `PUT /v1/preferences` — al menos `sidebar.view`; default `sessions`
+- `GET` / `PUT /v1/preferences` — reservado para prefs futuras (body vacío en MVP)
 
 **Sessions**
 
@@ -300,7 +299,7 @@ Dos procesos Circulo, cerrados:
 ### 8.5 i18n
 
 - Default locale: `en`.
-- Todas las cadenas de UI (incluyendo `No project`, empty states, errores humanos) viven en archivos de locale.
+- Todas las cadenas de UI (incluyendo `Without Folder`, empty states, errores humanos) viven en archivos de locale.
 - Lookup por clave; fallback a `en` si falta una traducción.
 - El crate de UI depende de `circulo-i18n`, no de literales.
 - Formato del catálogo se elige en el change de i18n (Fluent o JSON). No hardcodear mientras tanto.
@@ -400,7 +399,7 @@ Un adapter fake (`circulo-adapter-fake`) es deseable para desarrollar UI sin Ope
 
 Cerradas el 16 ago 2026: SQLite; dos procesos Circulo; `project_id` nullable; app no habla con OpenCode; UI `en` + locales.
 
-Cerradas: restore de proyecto; `project_id` inmutable tras el primer send; preferencia `sidebar.view` con fallback `sessions`; worktree no se implementa.
+Cerradas: restore de proyecto; `project_id` inmutable tras el primer send; sidebar Today/Earlier; worktree no se implementa.
 
 Hasta investigar y pedir permiso, las abiertas no se “resuelven” en un commit.
 

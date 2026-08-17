@@ -31,7 +31,7 @@ App spawnea o reutiliza circulo-daemon (proceso 2)
         ▼
 App pide GET /v1/health al daemon
         │
-        ├─ OK + OpenCode disponible → leer preferencia sidebar.view (fallback Sessions) → Shell
+        ├─ OK + OpenCode disponible → Shell
         ├─ OK + OpenCode ausente    → Shell + banner de setup
         └─ Daemon no responde       → pantalla de error local + reintentar
 ```
@@ -71,15 +71,15 @@ No hay que crear un proyecto para empezar. Empty state: **New session**, no “N
 1. Usuario pulsa “New session”.
 2. App `POST /v1/sessions` **sin** `project_id`, `agent = OpenCode`.
 3. El daemon persiste la sesión con `project_id = NULL` (carpeta especial `Sessions`).
-4. Se selecciona la sesión. Header muestra título placeholder. Composer recibe foco. El selector de carpeta queda en “No project”.
-5. En vista Sessions el item muestra nombre, tiempo y **“No project”**. En vista Groups esta sesión **no** se ve todavía.
+4. Se selecciona la sesión. Header muestra título placeholder. Composer recibe foco. El selector de carpeta queda en **Without Folder**.
+5. El item aparece en **Today** con nombre, duración relativa y **Without Folder**.
 
 **Título:** placeholder (“New session”). Generación automática: P1 y abierta.
 
 ## 5.1 Elegir carpeta en el composer (antes del chat)
 
 1. En el composer, el usuario abre **ProjectFolderSelector**.
-2. Elige una carpeta de proyecto activa, o deja “No project”.
+2. Elige una carpeta de proyecto activa, o deja **Without Folder**.
 3. Si elige proyecto: `PATCH` de la sesión con `project_id`. La sesión pasa a ese grupo.
 4. Si no elige: permanece en la carpeta especial.
 5. Recién entonces envía el mensaje (flujo 6).
@@ -173,29 +173,22 @@ Si la sesión anterior estaba streameando, el stream **sigue en background** (el
 
 ---
 
-## 9. Vistas Sessions y Groups
+## 9. Sidebar Today y Earlier
 
 ```
-ViewSwitcher → Sessions
-  → persistir sidebar.view = sessions
-  → lista plana de sesiones activas visibles
-  → cada item: nombre + tiempo + proyecto | “No project”
-
-ViewSwitcher → Groups
-  → persistir sidebar.view = groups
-  → proyectos Active
-  → cada proyecto expande/lista sus sesiones
-  → sesiones sin proyecto no aparecen
-  → cero proyectos: empty + CTA “New project”
+Sidebar
+  → sección Today: sesiones con actividad en el día local
+  → sección Earlier: sesiones con actividad en días anteriores
+  → cada item: nombre + carpeta | “Without Folder” + duración relativa (derecha)
+  → búsqueda filtra ambas secciones
+  → sección vacía no muestra header
 ```
-
-Si no se puede leer/escribir la preferencia: mostrar **Sessions**. No crashear.
 
 ## 9.1 Archivar proyecto
 
-1. Acción Archive en el proyecto (Groups o Settings).
+1. Acción Archive en el proyecto (Settings u otra superficie de proyecto).
 2. `status = Archived`.
-3. El proyecto y sus sesiones salen de Sessions y de Groups.
+3. El proyecto y sus sesiones salen del sidebar.
 4. Aparece en Settings → Archived projects.
 5. Los datos **no** se borran.
 
@@ -203,9 +196,7 @@ Si no se puede leer/escribir la preferencia: mostrar **Sessions**. No crashear.
 
 1. Settings → Archived projects → Restore.
 2. `POST /v1/projects/{id}/restore` → `status = Active`.
-3. El proyecto reaparece en Groups.
-4. Sus sesiones reaparecen en Groups y en Sessions (con el nombre del proyecto).
-5. Si la vista actual es Groups, se ve de inmediato.
+3. Sus sesiones reaparecen en Today o Earlier según actividad (con el nombre del proyecto en la card).
 
 ## 9.2 Borrar proyecto
 

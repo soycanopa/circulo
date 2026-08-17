@@ -166,9 +166,7 @@ Si algún recuadro es no: no escribes código.
 - Dark theme. Animaciones nativas solamente.
 - Sin title bar nativo; traffic lights y hide/show alineados en el Sidebar (rail al colapsar).
 - Copy humano en inglés, sin jerga de CLI en primer nivel. **Cero literales de UI** fuera de locale files.
-- Dos vistas de Sidebar: Sessions (plana: nombre, tiempo, proyecto o “No project”) y Groups (proyectos → sesiones). Sin proyecto no aparece en Groups.
-- Composer: selector de carpeta **solo al iniciar el chat**; después locked. Sin cambio de worktree.
-- Recordar vista Sessions/Groups; si falla, default Sessions. Groups vacío = New project.
+- Sidebar: secciones **Today** / **Earlier**; card con nombre, carpeta o **Without Folder**, duración relativa. Composer: selector de carpeta **solo al iniciar el chat**; después locked. Sin cambio de worktree.
 - Borrar proyecto = cascada. Archivar ≠ borrar; Settings lista y **restaura**.
 - Verificar el flujo a mano, no solo “se renderiza”.
 
@@ -222,7 +220,7 @@ Ya cerrado (no reabrir sin preguntar):
 
 - Traffic lights + hide alineados en el Sidebar; rail mínimo al colapsar.
 - Sesión nueva sin proyecto, carpeta especial `Sessions` (`project_id` null) hasta el selector del composer.
-- Vistas Sessions / Groups (preferencia persistida, fallback Sessions). Delete = CASCADE. Archive + restore en Settings. Selector de proyecto locked tras el primer send. Sin worktree.
+- Sidebar Today/Earlier por actividad local. Delete = CASCADE. Archive + restore en Settings. Selector de proyecto locked tras el primer send. Sin worktree.
 - SQLite.
 - Dos procesos Circulo. OpenCode es externo.
 - UI en inglés con infraestructura de locales.

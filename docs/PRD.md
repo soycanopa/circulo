@@ -83,9 +83,9 @@ Una app usable, rápida y bonita en **macOS** que permita conversar de forma ric
 
 - Un solo proveedor: OpenCode.
 - Chat rico: Markdown + tool calls + diffs + task lists básicos.
-- Dos vistas de Sidebar: **Sessions** (lista plana) y **Groups** (proyectos con sesiones dentro).
+- Sidebar con secciones **Today** y **Earlier** (actividad en el día local vs días anteriores).
 - Una sesión nueva nace **sin proyecto** en la carpeta especial de Circulo (`Sessions`), salvo que el usuario elija una carpeta de proyecto en el composer.
-- El composer permite elegir una carpeta de proyecto **antes** de avanzar con el chat. Si no se elige, la sesión queda en `Sessions` / **No project**.
+- El composer permite elegir una carpeta de proyecto **antes** de avanzar con el chat. Si no se elige, la sesión queda en la carpeta especial `Sessions` / **Without Folder**.
 - Borrar un proyecto borra también sus sesiones (están vinculadas a esa carpeta).
 - Settings incluye una sección de **proyectos archivados**.
 - Búsqueda y filtrado básico de sesiones.
@@ -158,11 +158,9 @@ Los IDs son estables. Un cambio de OpenSpec debe referenciarlos.
 | PRD-SES-04 | El usuario puede archivar una sesión. | P1 |
 | PRD-SES-05 | El título de la sesión es visible y editable. Puede generarse automáticamente. | P1 |
 | PRD-SES-06 | Cada sesión muestra qué agente usa. En el MVP: OpenCode. | P0 |
-| PRD-SES-07 | El Sidebar tiene **dos vistas** conmutables: **Sessions** y **Groups**. Circulo **recuerda** la última vista. Si falla la persistencia de esa preferencia, el default es **Sessions**. | P0 |
-| PRD-SES-08 | El usuario puede buscar y filtrar sesiones por texto. | P0 |
-| PRD-SES-09 | En vista **Sessions**, cada item muestra: nombre, tiempo de la sesión, y proyecto (`No project` o el nombre definido). | P0 |
-| PRD-SES-10 | En vista **Groups**, se listan los proyectos activos del usuario; dentro de cada uno, sus sesiones. Las sesiones sin proyecto **no** aparecen en esta vista. | P0 |
-| PRD-SES-11 | Vista Groups vacía (cero proyectos activos): empty state con CTA **New project**. | P0 |
+| PRD-SES-07 | El Sidebar lista sesiones en dos secciones: **Today** (actividad en el día local actual) y **Earlier** (actividad en días anteriores). | P0 |
+| PRD-SES-08 | El usuario puede buscar y filtrar sesiones por texto en ambas secciones. | P0 |
+| PRD-SES-09 | Cada item muestra: nombre, duración relativa de la sesión (derecha), y carpeta (nombre del proyecto o **Without Folder**). | P0 |
 
 ### 7.4 Chat
 
@@ -180,7 +178,7 @@ Los IDs son estables. Un cambio de OpenSpec debe referenciarlos.
 | PRD-CHT-10 | Preguntas interactivas estructuradas quedan fuera del MVP (el modelo las prevé). | — |
 | PRD-CHT-11 | Mientras el agente genera, el composer lo indica y evita envíos ambiguos. | P0 |
 | PRD-CHT-12 | El composer incluye un selector de carpeta de proyecto, usable **solo al iniciar el chat** (antes del primer envío). Elegir una asigna la sesión a ese proyecto. | P0 |
-| PRD-CHT-13 | Si el selector queda en vacío / “No project”, la sesión permanece en la carpeta especial `Sessions`. | P0 |
+| PRD-CHT-13 | Si el selector queda en vacío / **Without Folder**, la sesión permanece en la carpeta especial `Sessions`. | P0 |
 | PRD-CHT-14 | Después del primer envío el selector queda bloqueado. No se cambia de proyecto a mitad de sesión. | P0 |
 
 ### 7.5 Agente y daemon
@@ -200,7 +198,7 @@ Los IDs son estables. Un cambio de OpenSpec debe referenciarlos.
 | PRD-SET-01 | Existe un punto de entrada a Settings en el Sidebar. | P0 |
 | PRD-SET-02 | Settings del MVP incluye lo imprescindible para conversar (p. ej. estado de OpenCode) y no es un panel de power-user. | P1 |
 | PRD-SET-03 | Settings tiene una sección **Archived projects** que lista los proyectos archivados. | P0 |
-| PRD-SET-04 | Desde Archived projects el usuario puede **restaurar** un proyecto. El proyecto vuelve a Active; sus sesiones reaparecen en Groups y, con su etiqueta, en Sessions. | P0 |
+| PRD-SET-04 | Desde Archived projects el usuario puede **restaurar** un proyecto. El proyecto vuelve a Active; sus sesiones reaparecen en el sidebar (Today/Earlier) con su etiqueta de carpeta. | P0 |
 
 ---
 
@@ -257,8 +255,7 @@ El roadmap no autoriza implementación. Cada incremento es un change de OpenSpec
 | UI framework | Cerrada | GPUI nativo |
 | Title bar | Cerrada | Sin title bar nativo; traffic lights + hide alineados en el Sidebar (rail al colapsar) |
 | Sesión nueva | Cerrada | Sin proyecto; carpeta especial de sistema `Sessions` |
-| Vistas Sidebar | Cerrada | **Sessions** / **Groups**. Se recuerda la última. Si falla: Sessions |
-| Groups vacío | Cerrada | CTA **New project** |
+| Vistas Sidebar | Cerrada | **Today** / **Earlier** por actividad local |
 | Composer | Cerrada | Selector de carpeta solo al iniciar el chat; después locked |
 | Worktree | Cerrada (fuera) | No se implementa cambio de worktree ahora |
 | Borrar proyecto | Cerrada | Cascada: se van todas sus sesiones. Confirmación obligatoria |
@@ -283,7 +280,7 @@ Estas preguntas bloquean o condicionan diseño/implementación. Hay que pregunta
 
 Hasta que se respondan, no se implementa el comportamiento correspondiente.
 
-Cerradas el 16 ago 2026: restore desde Settings; selector locked tras el primer send; sin worktree; vista recordada con fallback Sessions; Groups vacío = New project.
+Cerradas el 16 ago 2026: restore desde Settings; selector locked tras el primer send; sin worktree; sidebar Today/Earlier.
 
 ---
 

@@ -67,7 +67,7 @@ Nombres tentativos. Cada uno = un branch `feature/<nombre>`. No crearlos todos a
 | 4 | `adapter-trait-and-fake` | Trait + fake que emite texto, tool call y tasks | 2 |
 | 5 | `local-daemon-api` | HTTPS/HTTP localhost + SSE + health; spawn/reuso del daemon | 3, 4 + decisión certs |
 | 6 | `app-shell-window` | GPUI, hidden title bar, TLs + hide alineados, rail colapsado, i18n `en` | 1 |
-| 7 | `sessions-sidebar` | ViewSwitcher, persistencia de vista (fallback Sessions), Groups vacío = New project | 5, 6 |
+| 7 | `sessions-sidebar` | Today/Earlier sections, session cards, search | 5, 6 |
 | 8 | `composer-and-message-stream` | Enviar, selector de carpeta solo pre-primer-send (luego locked) | 5, 7 |
 | 9 | `rich-message-render` | Markdown, ToolCallCard, Diff, TaskList | 8 |
 | 10 | `adapter-opencode` | Detección, mapping, errores humanos | 5 + investigación de API vigente |

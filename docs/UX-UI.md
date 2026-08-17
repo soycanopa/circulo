@@ -122,33 +122,29 @@ Sidebar
 │   ├── TrafficLights
 │   └── CollapseSidebarButton
 ├── SidebarHeader
-│   ├── ViewSwitcher          (Sessions | Groups)
 │   ├── NewSessionButton
 │   └── SearchInput
-├── SessionsView              (si vista = Sessions)
-│   └── SessionItem[]         (lista plana, todas las sesiones activas visibles)
-├── GroupsView                (si vista = Groups)
-│   └── ProjectGroup[]        (solo proyectos Active)
-│       └── SessionItem[]     (sesiones de ese proyecto)
+├── TodaySection
+│   └── SessionItem[]         (actividad en el día local)
+├── EarlierSection
+│   └── SessionItem[]         (actividad en días anteriores)
 └── SidebarFooter
     └── SettingsButton
 ```
 
-**ViewSwitcher:** dos modos. No se mezclan en la misma lista. Circulo persiste la última vista. Si no hay valor o no se puede leer: **Sessions**.
+**Today:** sesiones cuya actividad (`last_message_at`, o `created_at` sin mensajes) cae en el día calendario local actual.
 
-**Vista Sessions:** lista plana. Cada `SessionItem`:
+**Earlier:** sesiones con actividad en días anteriores (misma regla de timestamp).
+
+Cada `SessionItem`:
 
 1. **Nombre**
-2. **Tiempo** de la sesión (relativo: `16m`, `14h`, `2d`)
-3. **Proyecto:** nombre definido por el usuario, o **“No project”**
+2. **Carpeta:** nombre del proyecto o **“Without Folder”**
+3. **Duración** relativa a la derecha (`16m`, `14h`, `2d`)
 
-Incluye sesiones de la carpeta especial y las que ya tienen proyecto.
+**New session:** crea una sesión sin proyecto, la abre, y deja el selector del composer en **Without Folder**. No obliga a elegir carpeta.
 
-**Vista Groups:** solo proyectos activos que el usuario creó. Cada grupo es una carpeta; dentro, sus sesiones. Las sesiones **No project** no aparecen aquí (viven en la vista Sessions / carpeta especial).
-
-**New session:** crea una sesión sin proyecto, la abre, y deja el selector del composer en “No project” / carpeta especial. No obliga a elegir carpeta.
-
-**Search:** filtra lo visible en la vista actual. No es un command palette.
+**Search:** filtra títulos en Today y Earlier. Sin resultados → “No matching sessions”. No es un command palette.
 
 Highlight si la sesión está seleccionada.
 
@@ -233,13 +229,13 @@ Fuera de implementación MVP. El renderer no debe crashear si llega una part `Qu
 Composer
 ├── TextInput (multiline)
 ├── ComposerToolbar
-│   ├── ProjectFolderSelector   (carpetas de proyecto + “No project”)
+│   ├── ProjectFolderSelector   (carpetas de proyecto + “Without Folder”)
 │   ├── AgentSelector           (OpenCode, único en el MVP)
 │   └── SendButton
 └── ComposerFooter      (opcional; no en el primer corte)
 ```
 
-**ProjectFolderSelector:** usable **solo al iniciar el chat** (antes del primer Send). Lista proyectos Active + “No project”. Vacío = carpeta especial. Tras el primer envío: control **deshabilitado** (se ve la carpeta elegida, no se cambia). No hay cambio de worktree.
+**ProjectFolderSelector:** usable **solo al iniciar el chat** (antes del primer Send). Lista proyectos Active + **Without Folder**. Vacío = carpeta especial. Tras el primer envío: control **deshabilitado** (se ve la carpeta elegida, no se cambia). No hay cambio de worktree.
 
 Reglas:
 
@@ -259,9 +255,9 @@ Opcional. No entra en el primer corte de UI.
 Entrada en el footer del Sidebar. Contenido MVP:
 
 - Estado de conexión con OpenCode.
-- Sección **Archived projects**: lista + acción **Restore**. Al restaurar, el proyecto vuelve a Groups y sus sesiones a ambas vistas.
+- Sección **Archived projects**: lista + acción **Restore**. Al restaurar, el proyecto y sus sesiones vuelven al sidebar.
 
-Borrar un proyecto (desde Groups o desde Settings) pide confirmación: se van el proyecto y todas sus sesiones.
+Borrar un proyecto (desde Settings u otra superficie de proyecto) pide confirmación: se van el proyecto y todas sus sesiones.
 
 ---
 
@@ -269,9 +265,8 @@ Borrar un proyecto (desde Groups o desde Settings) pide confirmación: se van el
 
 | Situación | UI |
 | --- | --- |
-| Primera apertura, sin datos | Vista Sessions vacía + CTA “New session” |
-| Vista Groups sin proyectos | Empty + CTA **New project** |
-| Sesiones sin proyecto | Vista Sessions: “No project”. No aparecen en Groups |
+| Primera apertura, sin datos | Sidebar vacío + CTA “New session” |
+| Sesiones sin carpeta | **Without Folder** en la card y en el composer |
 | Proyecto archivado | Fuera de ambas vistas; visible en Settings → Archived projects |
 | Sesión sin mensajes | Área central en calma + composer enfocado |
 | OpenCode no encontrado | Banner no técnico (locale); sin stack trace |
@@ -304,7 +299,7 @@ No se promete VoiceOver completo en el MVP sin investigación.
 | Diff | `hunk @ @@` as title | File path |
 | Error adapter | `ECONNREFUSED 127.0.0.1` | “OpenCode isn’t available. Is it installed?” |
 | Streaming | endless spinner | “Generating…” + Cancel if in scope |
-| Unassigned session | “null” / empty | “No project” |
+| Unassigned session | “null” / empty | “Without Folder” |
 
 Copy final se aprueba por pantalla, no se inventa en código.
 
@@ -314,7 +309,7 @@ Copy final se aprueba por pantalla, no se inventa en código.
 
 | Modelo | Componente |
 | --- | --- |
-| `Project` | línea de proyecto en `SessionItem` (o “No project”) |
+| `Project` | línea de carpeta en `SessionItem` (o “Without Folder”) |
 | `Session` | `SessionItem`, `SessionHeader` |
 | `Message` | `UserMessage` / `AssistantMessage` |
 | `MessagePart::Text` | `TextPart` |
@@ -355,4 +350,4 @@ Un cambio de UI no está listo si solo “se ve parecido a la referencia”. Est
 2. ¿El título se edita inline o en un diálogo?
 3. ¿Settings es panel, ventana, o popover?
 4. Densidad de `SessionItem` (dos vs tres líneas: nombre / tiempo / proyecto).
-Cerradas: restore desde Settings; selector locked tras primer send; vista recordada con fallback Sessions; Groups vacío = New project; sin worktree.
+Cerradas: restore desde Settings; selector locked tras primer send; sidebar Today/Earlier; sin worktree.
