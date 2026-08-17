@@ -59,6 +59,14 @@ mod tests {
     }
 
     #[test]
+    fn stream_dropped_copy_is_human() {
+        let catalog = Catalog::english();
+        let value = catalog.get("messages.stream_dropped");
+        assert!(!value.is_empty());
+        assert_ne!(value, "messages.stream_dropped");
+    }
+
+    #[test]
     fn missing_key_returns_the_key() {
         let catalog = Catalog::english();
         assert_eq!(catalog.get("does.not.exist"), "does.not.exist");
