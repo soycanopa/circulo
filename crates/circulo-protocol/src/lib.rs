@@ -1,6 +1,9 @@
 //! Versioned JSON contract between `circulo-app` and `circulo-daemon`.
 
-use circulo_core::{Message, MessagePart, ToolCall};
+use circulo_core::{
+    ComposerInteractionMode, ComposerPermissionMode, Message, MessagePart, ToolCall,
+    UserPreferences,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -178,6 +181,12 @@ pub struct PatchSessionRequest {
     pub project_id: Option<Option<Uuid>>,
     #[serde(default)]
     pub archive: Option<bool>,
+    #[serde(default)]
+    pub composer_model_id: Option<String>,
+    #[serde(default)]
+    pub composer_permission_mode: Option<ComposerPermissionMode>,
+    #[serde(default)]
+    pub composer_interaction_mode: Option<ComposerInteractionMode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -186,7 +195,26 @@ pub struct CreateMessageRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct PreferencesBody {}
+pub struct PreferencesBody {
+    #[serde(default)]
+    pub enabled_model_ids: Vec<String>,
+}
+
+impl From<UserPreferences> for PreferencesBody {
+    fn from(value: UserPreferences) -> Self {
+        Self {
+            enabled_model_ids: value.enabled_model_ids,
+        }
+    }
+}
+
+impl From<PreferencesBody> for UserPreferences {
+    fn from(value: PreferencesBody) -> Self {
+        Self {
+            enabled_model_ids: value.enabled_model_ids,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HealthResponse {

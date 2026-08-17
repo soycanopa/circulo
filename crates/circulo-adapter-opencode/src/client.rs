@@ -7,7 +7,7 @@ use std::time::Duration;
 use circulo_adapter::{AdapterError, ErrorReason};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Upper bound for per-read inactivity on the SSE stream; `generate` tightens
 /// it to the remaining turn deadline.
 pub const MAX_STREAM_READ_TIMEOUT: Duration = Duration::from_secs(90);
@@ -53,10 +53,25 @@ impl OpenCodeClient {
             })
     }
 
-    pub fn prompt_async(&self, session_id: &str, user_text: &str) -> Result<(), AdapterError> {
-        let body = serde_json::json!({
+    pub fn prompt_async(
+        &self,
+        session_id: &str,
+        user_text: &str,
+        model: Option<(String, String)>,
+        agent: Option<&str>,
+    ) -> Result<(), AdapterError> {
+        let mut body = serde_json::json!({
             "parts": [{ "type": "text", "text": user_text }],
         });
+        if let Some((provider_id, model_id)) = model {
+            body["model"] = serde_json::json!({
+                "providerID": provider_id,
+                "modelID": model_id,
+            });
+        }
+        if let Some(agent) = agent {
+            body["agent"] = serde_json::Value::String(agent.to_string());
+        }
         let response = self
             .http
             .post(format!("{}/session/{session_id}/prompt_async", self.base).as_str())
@@ -70,6 +85,45 @@ impl OpenCodeClient {
                 ErrorReason::StreamFailed,
                 format!(
                     "OpenCode rejected the prompt with status {}.",
+                    response.status()
+                ),
+            ))
+        }
+    }
+
+    pub fn list_providers(&self) -> Result<serde_json::Value, AdapterError> {
+        let response = self
+            .http
+            .get(format!("{}/provider", self.base).as_str())
+            .timeout(REQUEST_TIMEOUT)
+            .call()
+            .map_err(map_call_error)?;
+        response.into_json().map_err(|err| {
+            AdapterError::failed(
+                ErrorReason::StreamFailed,
+                format!("Unexpected provider list from OpenCode: {err}"),
+            )
+        })
+    }
+
+    pub fn update_session_permission(
+        &self,
+        session_id: &str,
+        permission: Vec<serde_json::Value>,
+    ) -> Result<(), AdapterError> {
+        let response = self
+            .http
+            .request("PATCH", format!("{}/session/{session_id}", self.base).as_str())
+            .timeout(REQUEST_TIMEOUT)
+            .send_json(serde_json::json!({ "permission": permission }))
+            .map_err(map_call_error)?;
+        if response.status() == 200 {
+            Ok(())
+        } else {
+            Err(AdapterError::failed(
+                ErrorReason::StreamFailed,
+                format!(
+                    "OpenCode rejected the session update with status {}.",
                     response.status()
                 ),
             ))

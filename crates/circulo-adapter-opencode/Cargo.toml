@@ -9,6 +9,7 @@ description = "OpenCode server adapter: manages `opencode serve` and streams nor
 
 [dependencies]
 circulo-adapter.workspace = true
+circulo-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 time.workspace = true

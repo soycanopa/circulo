@@ -1,8 +1,8 @@
 //! Fake `AgentAdapter` for tests and UI development without OpenCode.
 
 use circulo_adapter::{
-    AdapterError, AdapterEvent, AdapterHealth, AgentAdapter, ErrorReason, GenerateRequest, Task,
-    TaskStatus, ToolCall, ToolCallStatus, ToolOutput,
+    AdapterError, AdapterEvent, AdapterHealth, AgentAdapter, ErrorReason, GenerateRequest,
+    ModelCatalogEntry, Task, TaskStatus, ToolCall, ToolCallStatus, ToolOutput,
 };
 
 #[derive(Debug, Clone)]
@@ -33,6 +33,19 @@ impl AgentAdapter for FakeAdapter {
 
     fn probe(&self) -> AdapterHealth {
         AdapterHealth::Available
+    }
+
+    fn list_models(&self) -> Result<Vec<ModelCatalogEntry>, AdapterError> {
+        Ok(vec![
+            ModelCatalogEntry {
+                id: "fake/default".into(),
+                name: "Fake Default".into(),
+                provider_id: "fake".into(),
+                provider_name: "Fake".into(),
+                model_id: "default".into(),
+                context_window: Some("128K".into()),
+            },
+        ])
     }
 
     fn generate(
@@ -113,6 +126,9 @@ mod tests {
             session_id: Uuid::nil(),
             user_text: "Write a note".into(),
             agent_session_id: None,
+            composer_model_id: None,
+            composer_permission_mode: None,
+            composer_interaction_mode: None,
         }
     }
 

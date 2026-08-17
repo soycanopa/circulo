@@ -3,6 +3,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::DomainError;
+use crate::{ComposerInteractionMode, ComposerPermissionMode};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -34,6 +35,13 @@ pub struct Session {
     /// Set when the first user message is sent. After that, `project_id` is locked.
     #[serde(default, with = "time::serde::rfc3339::option")]
     pub first_send_at: Option<OffsetDateTime>,
+    /// Selected model catalog id (`providerID/modelID`).
+    #[serde(default)]
+    pub composer_model_id: Option<String>,
+    #[serde(default)]
+    pub composer_permission_mode: Option<ComposerPermissionMode>,
+    #[serde(default)]
+    pub composer_interaction_mode: Option<ComposerInteractionMode>,
 }
 
 impl Session {

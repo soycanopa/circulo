@@ -53,3 +53,10 @@ CREATE TABLE IF NOT EXISTS preferences (
 
 /// V2: agent-side session binding for OpenCode (see change adapter-opencode).
 pub const MIGRATION_V2: &str = "ALTER TABLE sessions ADD COLUMN opencode_session_id TEXT;";
+
+/// V3: per-session composer chip settings.
+pub const MIGRATION_V3: &str = "
+ALTER TABLE sessions ADD COLUMN composer_model_id TEXT;
+ALTER TABLE sessions ADD COLUMN composer_permission_mode TEXT;
+ALTER TABLE sessions ADD COLUMN composer_interaction_mode TEXT;
+";

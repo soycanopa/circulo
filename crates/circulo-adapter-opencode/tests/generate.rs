@@ -30,6 +30,9 @@ fn request(agent_session_id: Option<String>) -> GenerateRequest {
         session_id: Uuid::nil(),
         user_text: "List the files".into(),
         agent_session_id,
+        composer_model_id: None,
+        composer_permission_mode: None,
+        composer_interaction_mode: None,
     }
 }
 

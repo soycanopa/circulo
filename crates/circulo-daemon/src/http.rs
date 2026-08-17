@@ -8,9 +8,10 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use circulo_adapter::{AdapterHealth, AgentAdapter};
+use circulo_adapter::{AdapterHealth, AgentAdapter, AgentSessionSettings};
 use circulo_core::{
-    AgentType, OffsetDateTime, Project, ProjectStatus, Session, SessionStatus, Uuid,
+    AgentType, ModelCatalogEntry, OffsetDateTime, Project, ProjectStatus, Session, SessionStatus,
+    Uuid,
 };
 use circulo_persist::{PersistError, Store};
 use circulo_protocol::{
@@ -96,6 +97,7 @@ pub fn router(state: AppState) -> Router {
             get(list_messages).post(post_message),
         )
         .route("/v1/sessions/{id}/events", get(session_events))
+        .route("/v1/models", get(list_models))
         .route("/v1/preferences", get(get_preferences).put(put_preferences))
         .with_state(state)
 }
@@ -266,6 +268,9 @@ async fn create_session(
         updated_at: now,
         last_message_at: None,
         first_send_at: None,
+        composer_model_id: None,
+        composer_permission_mode: None,
+        composer_interaction_mode: None,
     };
     state.store()?.create_session(&session)?;
     Ok((StatusCode::CREATED, Json(session)))
@@ -287,21 +292,54 @@ async fn patch_session(
     Path(id): Path<Uuid>,
     Json(body): Json<PatchSessionRequest>,
 ) -> Result<Json<Session>, HttpError> {
-    let store = state.store()?;
-    if let Some(project_id) = body.project_id {
-        store.assign_session_project(id, project_id)?;
+    let (session, agent_session_id) = {
+        let store = state.store()?;
+        if let Some(project_id) = body.project_id {
+            store.assign_session_project(id, project_id)?;
+        }
+        let mut session = store
+            .get_session(id)?
+            .ok_or_else(|| ApiError::not_found("Session not found."))?;
+        if let Some(title) = body.title {
+            session.title = title;
+        }
+        if let Some(model_id) = body.composer_model_id {
+            session.composer_model_id = Some(model_id);
+        }
+        if let Some(mode) = body.composer_permission_mode {
+            session.composer_permission_mode = Some(mode);
+        }
+        if let Some(mode) = body.composer_interaction_mode {
+            session.composer_interaction_mode = Some(mode);
+        }
+        if body.archive == Some(true) {
+            session.status = SessionStatus::Archived;
+        }
+        session.updated_at = OffsetDateTime::now_utc();
+        store.update_session(&session)?;
+        let agent_session_id = if body.composer_permission_mode.is_some() {
+            store.opencode_session_id(id)?
+        } else {
+            None
+        };
+        (session, agent_session_id)
+    };
+
+    if let Some(agent_session_id) = agent_session_id {
+        let adapter = Arc::clone(&state.adapter);
+        let settings = AgentSessionSettings {
+            composer_permission_mode: session.composer_permission_mode,
+        };
+        let sync_result = tokio::task::spawn_blocking(move || {
+            adapter.sync_session_settings(&agent_session_id, &settings)
+        })
+        .await
+        .map_err(|_| HttpError::from(ApiError::internal()))?;
+        if let Err(err) = sync_result {
+            eprintln!("circulo-daemon: opencode permission sync failed: {}", err.message());
+        }
     }
-    let mut session = store
-        .get_session(id)?
-        .ok_or_else(|| ApiError::not_found("Session not found."))?;
-    if let Some(title) = body.title {
-        session.title = title;
-    }
-    if body.archive == Some(true) {
-        session.status = SessionStatus::Archived;
-    }
-    session.updated_at = OffsetDateTime::now_utc();
-    store.update_session(&session)?;
+
     Ok(Json(session))
 }
 
@@ -385,10 +423,30 @@ async fn session_events(
     Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
-async fn get_preferences() -> Json<PreferencesBody> {
-    Json(PreferencesBody::default())
+async fn get_preferences(State(state): State<AppState>) -> Result<Json<PreferencesBody>, HttpError> {
+    let prefs = state.store()?.get_preferences().map_err(HttpError::from)?;
+    Ok(Json(PreferencesBody::from(prefs)))
 }
 
-async fn put_preferences() -> Json<PreferencesBody> {
-    Json(PreferencesBody::default())
+async fn list_models(State(state): State<AppState>) -> Result<Json<Vec<ModelCatalogEntry>>, HttpError> {
+    let adapter = Arc::clone(&state.adapter);
+    let models = tokio::task::spawn_blocking(move || adapter.list_models())
+        .await
+        .map_err(|_| HttpError::from(ApiError::internal()))?
+        .map_err(|err| {
+            HttpError::from(ApiError::unavailable(format!(
+                "Could not load models from the agent adapter: {}",
+                err.message()
+            )))
+        })?;
+    Ok(Json(models))
+}
+
+async fn put_preferences(
+    State(state): State<AppState>,
+    Json(body): Json<PreferencesBody>,
+) -> Result<Json<PreferencesBody>, HttpError> {
+    let prefs = circulo_core::UserPreferences::from(body);
+    state.store()?.set_preferences(&prefs).map_err(HttpError::from)?;
+    Ok(Json(PreferencesBody::from(prefs)))
 }

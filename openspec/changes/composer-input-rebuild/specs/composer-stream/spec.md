@@ -52,3 +52,20 @@ Before first send, choosing a project in the picker MUST PATCH the session proje
 - **GIVEN** an unlocked picker and a selected session
 - **WHEN** the user picks a project
 - **THEN** the session project is updated on the daemon
+
+### Requirement: Composer grows with wrapped text and scrolls when tall
+
+Long lines MUST wrap inside the input width. The input MUST grow vertically with content up to five visual lines, then scroll internally. When content exceeds five visual lines, an expand control MUST allow raising the visible cap to about ten lines.
+
+#### Scenario: Long line wraps
+
+- **GIVEN** a selected session
+- **WHEN** the user types a long line without newlines
+- **THEN** the text wraps inside the input
+- **AND** the input height grows with wrapped lines up to five visible lines
+
+#### Scenario: Expand tall drafts
+
+- **GIVEN** a draft with more than five visual lines
+- **WHEN** the user clicks the expand control
+- **THEN** the input shows up to about ten visual lines before scrolling again

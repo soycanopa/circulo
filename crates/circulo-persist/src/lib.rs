@@ -44,6 +44,9 @@ mod tests {
             updated_at: now(),
             last_message_at: None,
             first_send_at: None,
+            composer_model_id: None,
+            composer_permission_mode: None,
+            composer_interaction_mode: None,
         }
     }
 

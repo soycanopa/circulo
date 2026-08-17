@@ -8,6 +8,8 @@
 
 mod client;
 mod mapping;
+mod models;
+mod permission;
 mod server;
 
 #[cfg(feature = "test-support")]
@@ -18,8 +20,10 @@ pub use server::{ServerConfig, ServerManager, DEFAULT_OPENCODE_PORT};
 use std::time::{Duration, Instant};
 
 use circulo_adapter::{
-    AdapterError, AdapterEvent, AdapterHealth, AgentAdapter, ErrorReason, GenerateRequest,
+    AdapterError, AdapterEvent, AdapterHealth, AgentAdapter, AgentSessionSettings,
+    ErrorReason, GenerateRequest, ModelCatalogEntry,
 };
+use circulo_core::{split_model_catalog_id, ComposerInteractionMode};
 
 const DEFAULT_TURN_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -61,6 +65,35 @@ impl AgentAdapter for OpenCodeAdapter {
         }
     }
 
+    fn list_models(&self) -> Result<Vec<ModelCatalogEntry>, AdapterError> {
+        self.servers.ensure_running()?;
+        let client = client::OpenCodeClient::with_read_timeout(
+            self.servers.config().port,
+            client::MAX_STREAM_READ_TIMEOUT,
+        );
+        let body = client.list_providers()?;
+        Ok(models::parse_provider_catalog(&body))
+    }
+
+    fn sync_session_settings(
+        &self,
+        agent_session_id: &str,
+        settings: &AgentSessionSettings,
+    ) -> Result<(), AdapterError> {
+        if let Some(mode) = settings.composer_permission_mode {
+            self.servers.ensure_running()?;
+            let client = client::OpenCodeClient::with_read_timeout(
+                self.servers.config().port,
+                client::REQUEST_TIMEOUT,
+            );
+            client.update_session_permission(
+                agent_session_id,
+                permission::ruleset_for(mode),
+            )?;
+        }
+        Ok(())
+    }
+
     fn generate(
         &self,
         request: GenerateRequest,
@@ -82,9 +115,30 @@ impl AgentAdapter for OpenCodeAdapter {
             }
         };
 
+        if let Some(mode) = request.composer_permission_mode {
+            client.update_session_permission(
+                &agent_session_id,
+                permission::ruleset_for(mode),
+            )?;
+        }
+
+        let model = request
+            .composer_model_id
+            .as_deref()
+            .and_then(split_model_catalog_id);
+        let interaction = request
+            .composer_interaction_mode
+            .unwrap_or(ComposerInteractionMode::Build);
+        let agent = interaction.agent_name();
+
         // Subscribe before prompting so early turn events are not missed.
         let mut stream = client.open_event_stream()?;
-        client.prompt_async(&agent_session_id, &request.user_text)?;
+        client.prompt_async(
+            &agent_session_id,
+            &request.user_text,
+            model,
+            Some(agent),
+        )?;
 
         let deadline = Instant::now() + self.turn_timeout;
         let mut state = mapping::TurnState::default();

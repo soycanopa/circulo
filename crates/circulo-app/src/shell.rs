@@ -2,9 +2,12 @@ use std::collections::HashSet;
 use std::sync::mpsc::{self, TryRecvError};
 use std::time::Duration;
 
-use circulo_core::{Message, MessagePart, MessageRole, Project, Session, Uuid};
+use circulo_core::{
+    ComposerInteractionMode, ComposerPermissionMode, Message, MessagePart, MessageRole,
+    ModelCatalogEntry, Project, Session, Uuid,
+};
 use circulo_i18n::Catalog;
-use circulo_protocol::ProtocolEvent;
+use circulo_protocol::{PreferencesBody, ProtocolEvent};
 use gpui::{
     div, linear_color_stop, linear_gradient, prelude::FluentBuilder, px, AppContext, Context,
     CursorStyle, DragMoveEvent, Entity, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
@@ -13,15 +16,21 @@ use gpui::{
 };
 
 use crate::command_palette::{palette_catalog, PaletteItemKind, OpenPalette};
+use crate::project_picker::{project_picker_catalog, ProjectPickerItem, ProjectPickerItemKind};
 use time::OffsetDateTime;
 
 use crate::client::{
     ensure_daemon, partition_sessions_by_day, session_project_label, DaemonClient,
 };
-use crate::composer::{can_send, project_picker_locked, Composer, ComposerEvent};
+use crate::composer::{
+    can_send, placeholder_models, project_picker_locked, Composer, ComposerEvent, ComposerModel,
+    InteractionMode, PermissionMode, WorkMode,
+};
+use crate::home::home_panel;
 use crate::icons::{icon, path as icon_path};
 use crate::parts::{render_text, task_list, tool_card, unsupported};
 use crate::session_overlay::{session_overlay, SessionOverlay};
+use crate::settings::{models_settings_panel, SettingsSection};
 use crate::stream::{
     apply_protocol_event, resubscribe_delay, should_apply_post_transcript,
     should_apply_refresh_transcript, stream_attempts_after_event,
@@ -29,7 +38,7 @@ use crate::stream::{
 use crate::ui::{TextInput, TextInputEvent};
 use crate::theme::{
     sidebar_width_px, ACCENT, ACCENT_SURFACE, BG_APP, BG_MAIN, BG_SIDEBAR, BORDER,
-    COMPOSER_GUTTER_PX, CONTENT_MAX_WIDTH_PX, MESSAGE_AVATAR_PX, APP_BAR_HEIGHT_PX,
+    COMPOSER_GUTTER_PX, COMPOSER_BOTTOM_PADDING_PX, CONTENT_MAX_WIDTH_PX, MESSAGE_AVATAR_PX, APP_BAR_HEIGHT_PX,
     MAIN_HEADER_TITLE_INSET_PX, MAIN_HEADER_TITLE_LEFT_PX, MAIN_HEADER_TITLE_TEXT_PX,
     SIDEBAR_EXPANDED_PX, SIDEBAR_MAX_PX, SIDEBAR_MIN_PX, SIDEBAR_RESIZE_HANDLE_CENTER,
     SIDEBAR_RESIZE_HANDLE_CENTER_ACTIVE, SIDEBAR_RESIZE_HANDLE_HIT_PX,
@@ -70,14 +79,28 @@ pub struct AppShell {
     palette_open: bool,
     palette_query: String,
     palette_selected: usize,
+    project_picker_open: bool,
+    project_picker_query: String,
+    project_picker_selected: usize,
+    project_picker_pending_focus: bool,
+    composer_pending_focus: bool,
     composer: Entity<Composer>,
     generating: bool,
+    work_mode: WorkMode,
+    selected_model: String,
+    permission_mode: PermissionMode,
+    interaction_mode: InteractionMode,
+    composer_models: Vec<ModelCatalogEntry>,
+    enabled_model_ids: Vec<String>,
+    settings_open: bool,
+    settings_section: SettingsSection,
     pub expanded_tools: HashSet<String>,
     error: Option<String>,
     loaded: bool,
     scroll: ScrollHandle,
     sidebar_scroll: ScrollHandle,
     palette_focus: gpui::FocusHandle,
+    project_picker_focus: gpui::FocusHandle,
     session_overlay: Option<SessionOverlay>,
     session_menu_focus: gpui::FocusHandle,
     pub(crate) session_menu_selected: usize,
@@ -121,14 +144,28 @@ impl AppShell {
             palette_open: false,
             palette_query: String::new(),
             palette_selected: 0,
+            project_picker_open: false,
+            project_picker_query: String::new(),
+            project_picker_selected: 0,
+            project_picker_pending_focus: false,
+            composer_pending_focus: false,
             composer,
             generating: false,
+            work_mode: WorkMode::Local,
+            selected_model: String::new(),
+            permission_mode: PermissionMode::default(),
+            interaction_mode: InteractionMode::default(),
+            composer_models: Vec::new(),
+            enabled_model_ids: Vec::new(),
+            settings_open: false,
+            settings_section: SettingsSection::Models,
             expanded_tools: HashSet::new(),
             error: None,
             loaded: false,
             scroll: ScrollHandle::new(),
             sidebar_scroll: ScrollHandle::new(),
             palette_focus: cx.focus_handle(),
+            project_picker_focus: cx.focus_handle(),
             session_overlay: None,
             session_menu_focus: cx.focus_handle(),
             session_menu_selected: 0,
@@ -150,12 +187,136 @@ impl AppShell {
         self.sidebar_resize_hovered = false;
     }
 
+    fn apply_session_composer_state(&mut self) {
+        let available_ids: Vec<String> = self
+            .composer_models
+            .iter()
+            .filter(|model| self.enabled_model_ids.contains(&model.id))
+            .map(|model| model.id.clone())
+            .collect();
+        let default_model_id = available_ids
+            .first()
+            .cloned()
+            .unwrap_or_default();
+        if let Some(session) = self.selected_session() {
+            let model_id = session
+                .composer_model_id
+                .clone()
+                .filter(|id| available_ids.contains(id))
+                .unwrap_or(default_model_id);
+            let permission_mode = session
+                .composer_permission_mode
+                .unwrap_or(ComposerPermissionMode::Supervised);
+            let interaction_mode = session
+                .composer_interaction_mode
+                .unwrap_or(ComposerInteractionMode::Build);
+            self.selected_model = model_id;
+            self.permission_mode = permission_mode;
+            self.interaction_mode = interaction_mode;
+        } else {
+            self.selected_model = default_model_id;
+            self.permission_mode = ComposerPermissionMode::default();
+            self.interaction_mode = ComposerInteractionMode::default();
+        }
+    }
+
+    fn filtered_composer_models(&self) -> Vec<ComposerModel> {
+        let catalog_models: Vec<ComposerModel> = if self.composer_models.is_empty() {
+            placeholder_models(&self.catalog)
+        } else {
+            self.composer_models
+                .iter()
+                .map(ComposerModel::from)
+                .collect()
+        };
+        if self.enabled_model_ids.is_empty() {
+            return Vec::new();
+        }
+        catalog_models
+            .into_iter()
+            .filter(|model| self.enabled_model_ids.contains(&model.id))
+            .collect()
+    }
+
+    fn bootstrap_enabled_models_if_needed(&mut self, cx: &mut Context<Self>) {
+        if !self.enabled_model_ids.is_empty() || self.composer_models.is_empty() {
+            return;
+        }
+        self.enabled_model_ids = self
+            .composer_models
+            .iter()
+            .map(|model| model.id.clone())
+            .collect();
+        self.save_preferences(cx);
+    }
+
+    pub(crate) fn open_settings(&mut self, cx: &mut Context<Self>) {
+        self.settings_open = true;
+        self.settings_section = SettingsSection::Models;
+        self.close_palette(cx);
+        self.close_project_picker(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn close_settings(&mut self, cx: &mut Context<Self>) {
+        self.settings_open = false;
+        cx.notify();
+    }
+
+    pub(crate) fn toggle_model_enabled(&mut self, model_id: &str, cx: &mut Context<Self>) {
+        if let Some(index) = self
+            .enabled_model_ids
+            .iter()
+            .position(|id| id == model_id)
+        {
+            self.enabled_model_ids.remove(index);
+        } else {
+            self.enabled_model_ids.push(model_id.to_string());
+        }
+        self.save_preferences(cx);
+        self.sync_composer(cx);
+        cx.notify();
+    }
+
+    fn save_preferences(&mut self, cx: &mut Context<Self>) {
+        let client = self.client.clone();
+        let body = PreferencesBody {
+            enabled_model_ids: self.enabled_model_ids.clone(),
+        };
+        cx.spawn(async move |this, cx| {
+            let saved = cx
+                .background_executor()
+                .spawn(async move { client.put_preferences(&body) })
+                .await;
+            this.update(cx, |this, cx| {
+                if let Ok(prefs) = saved {
+                    this.enabled_model_ids = prefs.enabled_model_ids;
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
     fn sync_composer(&mut self, cx: &mut Context<Self>) {
+        self.apply_session_composer_state();
         let session = self.selected_session().cloned();
         let projects = self.projects.clone();
         let catalog = self.catalog.clone();
+        let models: Vec<ComposerModel> = self.filtered_composer_models();
         self.composer.update(cx, |composer, cx| {
-            composer.set_render_context(projects, session, catalog, cx);
+            composer.set_render_context(
+                projects,
+                session,
+                self.work_mode,
+                models,
+                self.selected_model.clone(),
+                self.permission_mode,
+                self.interaction_mode,
+                catalog,
+                cx,
+            );
             composer.set_generating(self.generating, cx);
         });
     }
@@ -175,7 +336,123 @@ impl AppShell {
             ComposerEvent::ProjectCleared => {
                 self.patch_session_project(None, cx);
             }
+            ComposerEvent::OpenProject => {
+                self.open_project_picker(cx);
+            }
+            ComposerEvent::WorkModeChanged(mode) => {
+                self.work_mode = *mode;
+                cx.notify();
+            }
+            ComposerEvent::ModelChanged(model_id) => {
+                self.selected_model = model_id.clone();
+                self.patch_session_composer(cx);
+            }
+            ComposerEvent::PermissionModeChanged(mode) => {
+                self.permission_mode = *mode;
+                self.patch_session_composer(cx);
+            }
+            ComposerEvent::InteractionModeChanged(mode) => {
+                self.interaction_mode = *mode;
+                self.patch_session_composer(cx);
+            }
         }
+    }
+
+    fn open_project_picker(&mut self, cx: &mut Context<Self>) {
+        if project_picker_locked(self.selected_session()) {
+            return;
+        }
+        self.close_palette(cx);
+        self.project_picker_open = true;
+        self.project_picker_query.clear();
+        self.project_picker_selected = 0;
+        self.project_picker_pending_focus = true;
+        cx.notify();
+    }
+
+    fn close_project_picker(&mut self, cx: &mut Context<Self>) {
+        self.project_picker_open = false;
+        self.project_picker_query.clear();
+        self.project_picker_selected = 0;
+        cx.notify();
+    }
+
+    fn project_picker_item_count(&self) -> usize {
+        project_picker_catalog(&self.projects, &self.project_picker_query, &self.catalog)
+            .selectable_len()
+    }
+
+    fn clamp_project_picker_selection(&mut self) {
+        let count = self.project_picker_item_count();
+        if count == 0 {
+            self.project_picker_selected = 0;
+        } else if self.project_picker_selected >= count {
+            self.project_picker_selected = count - 1;
+        }
+    }
+
+    fn execute_project_picker_selection(&mut self, cx: &mut Context<Self>) {
+        let catalog = project_picker_catalog(
+            &self.projects,
+            &self.project_picker_query,
+            &self.catalog,
+        );
+        let Some(item) = catalog.selectable_item(self.project_picker_selected) else {
+            return;
+        };
+        match item.kind {
+            ProjectPickerItemKind::BrowseFinder => {
+                self.close_project_picker(cx);
+                self.prompt_open_project(cx);
+            }
+            ProjectPickerItemKind::Project(id) => {
+                self.close_project_picker(cx);
+                self.patch_session_project(Some(id), cx);
+            }
+        }
+        cx.notify();
+    }
+
+    fn prompt_open_project(&mut self, cx: &mut Context<Self>) {
+        if project_picker_locked(self.selected_session()) {
+            return;
+        }
+        let dialog_title = self
+            .catalog
+            .get("composer.open_project_dialog_title")
+            .to_string();
+        let client = self.client.clone();
+        let shell = cx.entity();
+        cx.defer(move |cx| {
+            let picked = crate::platform::pick_project_folder(&dialog_title);
+            if picked.is_none() {
+                return;
+            }
+            let path = picked.unwrap();
+            let name = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("Project")
+                .to_string();
+            let client = client.clone();
+            let _ = shell.update(cx, |_, cx| {
+                cx.spawn(async move |this, cx| {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move { client.create_project(&name) })
+                        .await;
+                    let _ = this.update(cx, |this, cx| {
+                        match result {
+                            Ok(project) => this.patch_session_project(Some(project.id), cx),
+                            Err(err) => this.error = Some(err),
+                        }
+                        cx.notify();
+                    });
+                })
+                .detach();
+            });
+        });
     }
 
     fn patch_session_project(&mut self, project_id: Option<Uuid>, cx: &mut Context<Self>) {
@@ -203,6 +480,48 @@ impl AppShell {
         })
         .detach();
     }
+
+    fn patch_session_composer(&mut self, cx: &mut Context<Self>) {
+        let Some(session_id) = self.selected else {
+            return;
+        };
+        if self.selected_model.is_empty() {
+            return;
+        }
+        let client = self.client.clone();
+        let model_id = self.selected_model.clone();
+        let permission_mode = self.permission_mode;
+        let interaction_mode = self.interaction_mode;
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    client.patch_session_composer(
+                        session_id,
+                        model_id,
+                        permission_mode,
+                        interaction_mode,
+                    )
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(session) => {
+                        if let Some(index) =
+                            this.sessions.iter().position(|entry| entry.id == session_id)
+                        {
+                            this.sessions[index] = session;
+                        }
+                        this.sync_composer(cx);
+                        this.error = None;
+                    }
+                    Err(err) => this.error = Some(err),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
 }
 
 impl AppShell {
@@ -220,10 +539,12 @@ impl AppShell {
                         Ok(()) => {
                             let sessions = client.list_sessions().unwrap_or_default();
                             let projects = client.list_projects().unwrap_or_default();
+                            let models = client.list_models().unwrap_or_default();
+                            let prefs = client.get_preferences().unwrap_or_default();
                             let messages = selected
                                 .and_then(|id| client.list_messages(id).ok())
                                 .unwrap_or_default();
-                            Ok((sessions, projects, messages))
+                            Ok((sessions, projects, messages, models, prefs))
                         }
                         Err(err) => Err(format!("{daemon_down} ({err})")),
                     }
@@ -232,9 +553,12 @@ impl AppShell {
             this.update(cx, |this, cx| {
                 this.loaded = true;
                 match snapshot {
-                    Ok((sessions, projects, messages)) => {
+                    Ok((sessions, projects, messages, models, prefs)) => {
                         this.sessions = sessions;
                         this.projects = projects;
+                        this.composer_models = models;
+                        this.enabled_model_ids = prefs.enabled_model_ids;
+                        this.bootstrap_enabled_models_if_needed(cx);
                         if should_apply_refresh_transcript(
                             this.selected == selected,
                             snapshot_gen,
@@ -392,6 +716,13 @@ impl AppShell {
     }
 
     fn select_session(&mut self, id: Uuid, window: &mut Window, cx: &mut Context<Self>) {
+        self.activate_session(id, cx);
+        self.composer_pending_focus = false;
+        self.composer
+            .update(cx, |composer, cx| composer.focus_after_session_select(window, cx));
+    }
+
+    fn activate_session(&mut self, id: Uuid, cx: &mut Context<Self>) {
         self.selected = Some(id);
         self.close_palette(cx);
         self.close_session_overlay(cx);
@@ -399,13 +730,72 @@ impl AppShell {
         self.stream_attempts = 0;
         self.error = None;
         self.sync_composer(cx);
-        self.composer
-            .update(cx, |composer, cx| composer.focus_after_session_select(window, cx));
         self.subscribe_stream(cx);
+        self.composer_pending_focus = true;
     }
 
-    fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn create_new_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Ok(session) = self.client.create_session() {
+            self.sessions.push(session.clone());
+            self.select_session(session.id, window, cx);
+            self.refresh();
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn open_project_from_home(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let dialog_title = self
+            .catalog
+            .get("composer.open_project_dialog_title")
+            .to_string();
+        let client = self.client.clone();
+        let shell = cx.entity();
+        cx.defer(move |cx| {
+            let picked = crate::platform::pick_project_folder(&dialog_title);
+            if picked.is_none() {
+                return;
+            }
+            let path = picked.unwrap();
+            let name = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("Project")
+                .to_string();
+            let _ = shell.update(cx, |_, cx| {
+                let client = client.clone();
+                cx.spawn(async move |this, cx| {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let project = client.create_project(&name)?;
+                            let session =
+                                client.create_session_with_project(Some(project.id))?;
+                            Ok((project, session))
+                        })
+                        .await;
+                    let _ = this.update(cx, |this, cx| {
+                        match result {
+                            Ok((project, session)) => {
+                                this.projects.push(project);
+                                this.sessions.push(session.clone());
+                                this.activate_session(session.id, cx);
+                                this.refresh();
+                                this.error = None;
+                            }
+                            Err(err) => this.error = Some(err),
+                        }
+                        cx.notify();
+                    });
+                })
+                .detach();
+            });
+        });
+    }
+
+    pub(crate) fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.close_session_overlay(cx);
+        self.close_project_picker(cx);
         self.palette_open = true;
         self.palette_query.clear();
         self.palette_selected = 0;
@@ -428,6 +818,7 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) {
         self.close_palette(cx);
+        self.close_project_picker(cx);
         self.session_overlay = Some(SessionOverlay::ContextMenu {
             session_id,
             position,
@@ -696,6 +1087,9 @@ impl AppShell {
     }
 
     fn selected_title(&self) -> String {
+        if self.selected.is_none() {
+            return self.catalog.get("home.title").to_string();
+        }
         self.selected_session()
             .map(|session| session.title.clone())
             .unwrap_or_else(|| self.catalog.get("session.none").to_string())
@@ -729,7 +1123,23 @@ impl AppShell {
 }
 
 impl Render for AppShell {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.project_picker_pending_focus {
+            self.project_picker_pending_focus = false;
+            let focus = self.project_picker_focus.clone();
+            window.on_next_frame(move |window, _| {
+                focus.focus(window);
+            });
+        }
+        if self.composer_pending_focus {
+            self.composer_pending_focus = false;
+            let composer = self.composer.clone();
+            window.on_next_frame(move |window, cx| {
+                composer.update(cx, |composer, cx| {
+                    composer.focus_after_session_select(window, cx);
+                });
+            });
+        }
         let collapsed = self.sidebar_collapsed;
         let catalog = self.catalog.clone();
 
@@ -772,6 +1182,9 @@ impl Render for AppShell {
             })
             .when(self.palette_open, |el| {
                 el.child(command_palette_overlay(self, &catalog, cx))
+            })
+            .when(self.project_picker_open, |el| {
+                el.child(project_picker_overlay(self, &catalog, cx))
             })
             .when(self.session_overlay.is_some(), |el| {
                 let overlay = self.session_overlay.clone().expect("overlay present");
@@ -833,6 +1246,211 @@ fn handle_palette_key(
     this.clamp_palette_selection();
     cx.stop_propagation();
     cx.notify();
+}
+
+fn handle_project_picker_key(
+    this: &mut AppShell,
+    event: &KeyDownEvent,
+    cx: &mut Context<AppShell>,
+) {
+    let key = event.keystroke.key.as_str();
+    if key == "escape" {
+        this.close_project_picker(cx);
+        cx.stop_propagation();
+        return;
+    }
+    if key == "up" {
+        if this.project_picker_selected > 0 {
+            this.project_picker_selected -= 1;
+        }
+        cx.stop_propagation();
+        cx.notify();
+        return;
+    }
+    if key == "down" {
+        this.clamp_project_picker_selection();
+        if this.project_picker_selected + 1 < this.project_picker_item_count() {
+            this.project_picker_selected += 1;
+        }
+        cx.stop_propagation();
+        cx.notify();
+        return;
+    }
+    if key == "enter" {
+        this.execute_project_picker_selection(cx);
+        cx.stop_propagation();
+        return;
+    }
+    if key == "backspace" {
+        this.project_picker_query.pop();
+        this.project_picker_selected = 0;
+    } else if let Some(ch) = typed_char(event) {
+        this.project_picker_query.push_str(&ch);
+        this.project_picker_selected = 0;
+    } else {
+        return;
+    }
+    this.clamp_project_picker_selection();
+    cx.stop_propagation();
+    cx.notify();
+}
+
+fn project_picker_overlay(
+    state: &AppShell,
+    catalog: &Catalog,
+    cx: &mut Context<AppShell>,
+) -> impl IntoElement {
+    let catalog_items = project_picker_catalog(
+        &state.projects,
+        &state.project_picker_query,
+        catalog,
+    );
+    let picker_focus = state.project_picker_focus.clone();
+    let query_display = if state.project_picker_query.is_empty() {
+        catalog.get("composer.project_picker.placeholder").to_string()
+    } else {
+        state.project_picker_query.clone()
+    };
+
+    let mut list = div().flex().flex_col().py_1();
+    if catalog_items.selectable_len() == 0 {
+        list = list.child(
+            div()
+                .px_3()
+                .py_2()
+                .text_sm()
+                .text_color(TEXT_MUTED)
+                .child(catalog.get("composer.project_picker.empty").to_string()),
+        );
+    } else {
+        let mut selectable_index = 0usize;
+        if !catalog_items.actions.is_empty() {
+            list = list.child(palette_section_label(
+                catalog
+                    .get("composer.project_picker.section_actions")
+                    .to_string(),
+            ));
+            for item in &catalog_items.actions {
+                list = list.child(project_picker_row(
+                    selectable_index,
+                    state.project_picker_selected == selectable_index,
+                    item,
+                    cx,
+                ));
+                selectable_index += 1;
+            }
+        }
+        if !catalog_items.actions.is_empty() && !catalog_items.projects.is_empty() {
+            list = list.child(palette_separator());
+        }
+        if !catalog_items.projects.is_empty() {
+            list = list.child(palette_section_label(
+                catalog
+                    .get("composer.project_picker.section_projects")
+                    .to_string(),
+            ));
+            for item in &catalog_items.projects {
+                list = list.child(project_picker_row(
+                    selectable_index,
+                    state.project_picker_selected == selectable_index,
+                    item,
+                    cx,
+                ));
+                selectable_index += 1;
+            }
+        }
+    }
+
+    div()
+        .absolute()
+        .size_full()
+        .occlude()
+        .bg(PALETTE_BACKDROP)
+        .flex()
+        .items_start()
+        .justify_center()
+        .pt(px(72.))
+        .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+            this.close_project_picker(cx);
+        }))
+        .child(
+            div()
+                .id("project-picker")
+                .track_focus(&picker_focus)
+                .w(px(520.))
+                .max_h(px(420.))
+                .flex()
+                .flex_col()
+                .rounded_lg()
+                .border_1()
+                .border_color(BORDER)
+                .bg(BG_SIDEBAR)
+                .shadow_lg()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_key_down(cx.listener(|this, event, window, cx| {
+                    if this.project_picker_focus.is_focused(window) {
+                        handle_project_picker_key(this, event, cx);
+                    }
+                }))
+                .child(
+                    div()
+                        .px_3()
+                        .py_3()
+                        .border_b_1()
+                        .border_color(BORDER)
+                        .text_sm()
+                        .text_color(if state.project_picker_query.is_empty() {
+                            TEXT_MUTED
+                        } else {
+                            TEXT
+                        })
+                        .child(query_display),
+                )
+                .child(
+                    div()
+                        .id("project-picker-results")
+                        .flex()
+                        .flex_col()
+                        .overflow_y_scroll()
+                        .child(list),
+                ),
+        )
+}
+
+fn project_picker_row(
+    index: usize,
+    selected: bool,
+    item: &ProjectPickerItem,
+    cx: &mut Context<AppShell>,
+) -> impl IntoElement {
+    let mut row = div()
+        .id(("project-picker-item", index))
+        .flex()
+        .flex_col()
+        .mx_1()
+        .px_2()
+        .py_1()
+        .rounded(px(4.))
+        .cursor_pointer()
+        .when(selected, |el| el.bg(ACCENT_SURFACE))
+        .when(!selected, |el| el.hover(|style| style.bg(ACCENT_SURFACE)))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, _, _, cx| {
+                this.project_picker_selected = index;
+                this.execute_project_picker_selection(cx);
+            }),
+        );
+    row = row.child(div().text_sm().child(item.label.clone()));
+    if let Some(detail) = &item.detail {
+        row = row.child(
+            div()
+                .text_xs()
+                .text_color(TEXT_MUTED)
+                .child(detail.clone()),
+        );
+    }
+    row
 }
 
 fn command_palette_overlay(
@@ -1159,6 +1777,10 @@ fn sidebar_toggle(collapsed: bool, cx: &mut Context<AppShell>) -> impl IntoEleme
 }
 
 fn sidebar_body(state: &AppShell, catalog: &Catalog, cx: &mut Context<AppShell>) -> gpui::Div {
+    if state.settings_open {
+        return settings_sidebar_body(state, catalog, cx);
+    }
+
     let fixed_header = div()
         .flex_none()
         .flex()
@@ -1240,7 +1862,91 @@ fn sidebar_body(state: &AppShell, catalog: &Catalog, cx: &mut Context<AppShell>)
                 .flex_none()
                 .px_3()
                 .pb_2()
-                .child(label(catalog.get("sidebar.settings"), false)),
+                .child(
+                    div()
+                        .id("open-settings")
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .text_sm()
+                        .text_color(TEXT_MUTED)
+                        .hover(|style| style.bg(BG_MAIN).text_color(TEXT))
+                        .cursor_pointer()
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.open_settings(cx);
+                        }))
+                        .child(catalog.get("sidebar.settings").to_string()),
+                ),
+        )
+}
+
+fn settings_sidebar_body(
+    state: &AppShell,
+    catalog: &Catalog,
+    cx: &mut Context<AppShell>,
+) -> gpui::Div {
+    let fixed_header = div()
+        .flex_none()
+        .flex()
+        .flex_col()
+        .px_3()
+        .pt_4()
+        .pb_2()
+        .gap_2()
+        .child(action_row(
+            "settings-back",
+            catalog.get("settings.back"),
+            cx.listener(|this, _, _, cx| {
+                this.close_settings(cx);
+            }),
+        ));
+
+    let mut nav = div().flex().flex_col().gap_1();
+    for section in SettingsSection::ALL {
+        let active = state.settings_section == section;
+        let label_text = catalog.get(section.label_key()).to_string();
+        nav = nav.child(
+            div()
+                .id("settings-nav-models")
+                .px_2()
+                .py_1()
+                .rounded_md()
+                .text_sm()
+                .cursor_pointer()
+                .when(active, |el| el.bg(ACCENT).text_color(TEXT))
+                .when(!active, |el| {
+                    el.text_color(TEXT_MUTED).hover(|style| style.bg(BG_MAIN).text_color(TEXT))
+                })
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.settings_section = SettingsSection::Models;
+                    cx.notify();
+                }))
+                .child(label_text),
+        );
+    }
+
+    div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .min_h_0()
+        .child(fixed_header)
+        .child(
+            div()
+                .id("settings-sidebar-nav")
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .px_3()
+                .pb_2()
+                .child(nav),
+        )
+        .child(
+            div()
+                .flex_none()
+                .px_3()
+                .pb_2()
+                .child(label(catalog.get("sidebar.settings"), true)),
         )
 }
 
@@ -1430,10 +2136,17 @@ fn main_column(
     state: &mut AppShell,
     catalog: &Catalog,
     cx: &mut Context<AppShell>,
-) -> impl IntoElement {
-    state.sync_composer(cx);
+) -> gpui::Div {
+    if state.settings_open {
+        return settings_main_column(state, catalog, cx);
+    }
+
+    let no_session = state.selected.is_none();
+    if !no_session {
+        state.sync_composer(cx);
+    }
     let collapsed = state.sidebar_collapsed;
-    div()
+    let mut column = div()
         .flex()
         .flex_col()
         .flex_1()
@@ -1458,15 +2171,68 @@ fn main_column(
                         .text_size(px(MAIN_HEADER_TITLE_TEXT_PX))
                         .child(state.selected_title()),
                 ),
-        )
-        .child(message_list(state, catalog, cx))
+        );
+
+    if no_session {
+        column = column.child(home_panel(catalog, cx));
+    } else {
+        column = column
+            .child(message_list(state, catalog, cx))
+            .child(
+                div()
+                    .flex_none()
+                    .px(px(COMPOSER_GUTTER_PX))
+                    .pb(px(COMPOSER_BOTTOM_PADDING_PX))
+                    .child(state.composer.clone()),
+            );
+    }
+
+    column
+}
+
+fn settings_main_column(
+    state: &AppShell,
+    catalog: &Catalog,
+    cx: &mut Context<AppShell>,
+) -> gpui::Div {
+    let collapsed = state.sidebar_collapsed;
+    let shell = cx.entity();
+    let panel = models_settings_panel(
+        &state.composer_models,
+        &state.enabled_model_ids,
+        catalog,
+        move |model_id: &str, cx: &mut gpui::App| {
+            shell.update(cx, |this, cx| this.toggle_model_enabled(model_id, cx));
+        },
+    );
+
+    div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .h_full()
+        .bg(BG_MAIN)
         .child(
             div()
-                .flex_none()
-                .px(px(COMPOSER_GUTTER_PX))
-                .pb(px(16.))
-                .child(state.composer.clone()),
+                .h(px(APP_BAR_HEIGHT_PX))
+                .when(collapsed, |el| el.pl(px(MAIN_HEADER_TITLE_LEFT_PX)))
+                .when(!collapsed, |el| {
+                    el.pl(px(MAIN_HEADER_TITLE_INSET_PX)).pr(px(16.))
+                })
+                .flex()
+                .items_center()
+                .border_b_1()
+                .border_color(BORDER)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(MAIN_HEADER_TITLE_TEXT_PX))
+                        .child(catalog.get("settings.title").to_string()),
+                ),
         )
+        .child(panel)
 }
 
 fn message_list(

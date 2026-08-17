@@ -1,6 +1,9 @@
-use circulo_adapter::{AdapterError, AdapterEvent, AgentAdapter, ErrorReason, GenerateRequest};
+use circulo_adapter::{
+    AdapterError, AdapterEvent, AgentAdapter, AgentSessionSettings, ErrorReason, GenerateRequest,
+};
 use circulo_core::{
-    Message, MessagePart, MessageRole, MessageStatus, OffsetDateTime, ToolCall, Uuid,
+    ComposerInteractionMode, Message, MessagePart, MessageRole, MessageStatus, OffsetDateTime,
+    ToolCall, Uuid,
 };
 use circulo_i18n::Catalog;
 use circulo_persist::Store;
@@ -45,6 +48,11 @@ pub fn run_turn(
         is_streaming: true,
     };
 
+    let session = store
+        .get_session(session_id)
+        .map_err(|_| ApiError::internal())?
+        .ok_or_else(|| ApiError::not_found("Session not found."))?;
+
     let agent_session_id = store
         .opencode_session_id(session_id)
         .map_err(|_| ApiError::internal())?;
@@ -55,6 +63,11 @@ pub fn run_turn(
             session_id,
             user_text: user_text.to_owned(),
             agent_session_id,
+            composer_model_id: session.composer_model_id.clone(),
+            composer_permission_mode: session.composer_permission_mode,
+            composer_interaction_mode: session
+                .composer_interaction_mode
+                .or(Some(ComposerInteractionMode::Build)),
         },
         &mut |event| {
             if let AdapterEvent::SessionBound {
@@ -230,6 +243,9 @@ mod tests {
             updated_at: OffsetDateTime::now_utc(),
             last_message_at: None,
             first_send_at: None,
+            composer_model_id: None,
+            composer_permission_mode: None,
+            composer_interaction_mode: None,
         };
         store.create_session(&session).unwrap();
         let adapter = BindingFakeAdapter {

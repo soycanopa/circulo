@@ -7,7 +7,7 @@ use gpui::{
 
 use crate::icons::icon;
 use crate::theme::{
-    ACCENT_SURFACE, BORDER, DANGER, DANGER_SURFACE, POPOVER_BG, POPOVER_RING, TEXT, TEXT_MUTED,
+    ACCENT_SURFACE, BORDER, DANGER, DANGER_SURFACE, BG_MAIN, BG_SIDEBAR, TEXT, TEXT_MUTED,
 };
 
 /// `ContextMenuContent` width from the shadcn demo (`w-48`).
@@ -23,6 +23,11 @@ const SEPARATOR_NEGATIVE_MX_PX: f32 = 4.0;
 
 /// `ContextMenuContent` / `ContextMenuSubContent` surface.
 pub fn menu_content() -> gpui::Div {
+    menu_surface_base().border_1().border_color(BORDER)
+}
+
+/// Chip dropdown popover: elevated opaque surface, no border.
+pub fn menu_chip_popover() -> gpui::Div {
     div()
         .w(px(MENU_WIDTH_PX))
         .min_w(px(CONTENT_MIN_WIDTH_PX))
@@ -30,11 +35,26 @@ pub fn menu_content() -> gpui::Div {
         .flex_col()
         .p(px(CONTENT_PADDING_PX))
         .rounded_lg()
-        .border_1()
-        .border_color(POPOVER_RING)
-        .bg(POPOVER_BG)
+        .bg(BG_MAIN)
         .text_color(TEXT)
-        .shadow_md()
+        .shadow_lg()
+        .occlude()
+        .overflow_hidden()
+}
+
+fn menu_surface_base() -> gpui::Div {
+    div()
+        .w(px(MENU_WIDTH_PX))
+        .min_w(px(CONTENT_MIN_WIDTH_PX))
+        .flex()
+        .flex_col()
+        .p(px(CONTENT_PADDING_PX))
+        .rounded_lg()
+        .bg(BG_SIDEBAR)
+        .text_color(TEXT)
+        .shadow_lg()
+        .occlude()
+        .overflow_hidden()
 }
 
 /// Alias kept for older call sites.
@@ -68,7 +88,7 @@ pub fn menu_shortcut(shortcut: impl Into<String>) -> impl IntoElement {
 
 /// `ContextMenuItem` (`variant` = default | destructive).
 pub fn menu_item(
-    id: &'static str,
+    id: impl Into<gpui::ElementId>,
     label: String,
     selected: bool,
     destructive: bool,
@@ -79,7 +99,7 @@ pub fn menu_item(
 }
 
 pub fn menu_item_with_shortcut(
-    id: &'static str,
+    id: impl Into<gpui::ElementId>,
     label: String,
     shortcut: Option<String>,
     selected: bool,
@@ -131,6 +151,63 @@ pub fn menu_item_with_shortcut(
 
     if let Some(shortcut) = shortcut {
         row = row.child(menu_shortcut(shortcut));
+    }
+
+    row
+}
+
+/// Menu row with a secondary description line (Waku access-control style).
+pub fn menu_item_with_description(
+    id: impl Into<gpui::ElementId>,
+    label: String,
+    description: String,
+    selected: bool,
+    icon_asset: Option<&'static str>,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    let mut row = div()
+        .id(id)
+        .flex()
+        .items_start()
+        .gap(px(ITEM_GAP_PX))
+        .px(px(ITEM_PX))
+        .py(px(ITEM_PY))
+        .rounded(px(ITEM_RADIUS_PX))
+        .text_sm()
+        .text_color(TEXT)
+        .cursor_default()
+        .when(selected, |el| el.bg(ACCENT_SURFACE))
+        .when(!selected, |el| el.hover(|style| style.bg(ACCENT_SURFACE)))
+        .on_click(on_click);
+
+    if let Some(asset) = icon_asset {
+        row = row.child(icon(asset, px(ICON_SIZE_PX), TEXT));
+    }
+
+    row = row.child(
+        div()
+            .flex_1()
+            .min_w_0()
+            .child(
+                div()
+                    .w_full()
+                    .truncate()
+                    .child(label),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .mt(px(2.))
+                    .text_size(px(10.5))
+                    .line_height(px(14.))
+                    .whitespace_normal()
+                    .text_color(TEXT_MUTED)
+                    .child(description),
+            ),
+    );
+
+    if selected {
+        row = row.child(icon("icons/check.svg", px(11.), TEXT_MUTED));
     }
 
     row

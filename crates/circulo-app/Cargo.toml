@@ -19,6 +19,7 @@ serde_json.workspace = true
 time.workspace = true
 ureq.workspace = true
 uuid.workspace = true
+rfd = "0.15"
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

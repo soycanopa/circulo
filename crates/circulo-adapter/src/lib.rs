@@ -3,7 +3,10 @@
 //! Implementations live in sibling crates. This crate must not depend on GPUI
 //! or on a specific agent CLI.
 
-pub use circulo_core::{Task, TaskStatus, ToolCall, ToolCallStatus, ToolOutput, Uuid};
+pub use circulo_core::{
+    ComposerInteractionMode, ComposerPermissionMode, ModelCatalogEntry, Task, TaskStatus,
+    ToolCall, ToolCallStatus, ToolOutput, Uuid,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdapterHealth {
@@ -103,6 +106,14 @@ pub struct GenerateRequest {
     pub user_text: String,
     /// Provider-side session binding persisted by the daemon, when one exists.
     pub agent_session_id: Option<String>,
+    pub composer_model_id: Option<String>,
+    pub composer_permission_mode: Option<ComposerPermissionMode>,
+    pub composer_interaction_mode: Option<ComposerInteractionMode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentSessionSettings {
+    pub composer_permission_mode: Option<ComposerPermissionMode>,
 }
 
 pub trait AgentAdapter: Send + Sync {
@@ -115,6 +126,19 @@ pub trait AgentAdapter: Send + Sync {
         request: GenerateRequest,
         emit: &mut dyn FnMut(AdapterEvent),
     ) -> Result<(), AdapterError>;
+
+    fn list_models(&self) -> Result<Vec<ModelCatalogEntry>, AdapterError> {
+        Ok(Vec::new())
+    }
+
+    fn sync_session_settings(
+        &self,
+        agent_session_id: &str,
+        settings: &AgentSessionSettings,
+    ) -> Result<(), AdapterError> {
+        let _ = (agent_session_id, settings);
+        Ok(())
+    }
 }
 
 #[cfg(test)]

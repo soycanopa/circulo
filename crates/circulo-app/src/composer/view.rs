@@ -1,4 +1,4 @@
-//! Composer container: floating card + toolbar (Waku-style layout).
+//! Composer container: input card + footer controls (project select, work mode).
 
 use std::collections::HashMap;
 
@@ -10,23 +10,51 @@ use gpui::{
 };
 
 use crate::client::session_project_label;
-use crate::composer::events::{ComposerEvent, ComposerInputEvent};
+use crate::composer::events::{
+    ComposerEvent, ComposerInputEvent, InteractionMode, PermissionMode, WorkMode,
+};
+use crate::composer::labels::{
+    interaction_accent, interaction_icon, interaction_label_key, permission_description_key,
+    permission_label_key,
+};
+use circulo_core::{ComposerInteractionMode, ComposerPermissionMode};
+use crate::composer::models::ComposerModel;
 use crate::composer::helpers::{can_send, project_picker_locked};
 use crate::composer::input::ComposerInput;
 use crate::icons::{icon, path as icon_path};
-use crate::theme::{ACCENT, BG_MAIN, BG_SIDEBAR, BORDER, CONTENT_MAX_WIDTH_PX, TEXT, TEXT_MUTED};
+use crate::context_menu::{
+    menu_chip_popover, menu_item, menu_item_with_description, menu_separator,
+};
+use crate::ui::menu_chip::{menu_chip, menu_chip_dropdown_above, model_context_indicator};
+use crate::theme::{
+    ACCENT, BG_MAIN, BG_SIDEBAR, BORDER, CONTENT_MAX_WIDTH_PX, TEXT, TEXT_MUTED,
+};
 
 const SEND_BUTTON_PX: f32 = 26.0;
+/// Vertical gap between the composer card and footer chips (project + work mode).
+const FOOTER_ROW_GAP_PX: f32 = 4.;
+/// Gap between footer chips (project folder + work mode).
+const FOOTER_CHIP_GAP_PX: f32 = 0.;
+const FOOTER_ROW_HEIGHT_PX: f32 = 24.;
 
 pub struct Composer {
     input: Entity<ComposerInput>,
     draft_project: Option<Uuid>,
-    picker_open: bool,
+    project_menu_open: bool,
+    work_mode_menu_open: bool,
+    model_menu_open: bool,
+    permission_menu_open: bool,
+    interaction_menu_open: bool,
+    selected_model: String,
+    models: Vec<ComposerModel>,
+    permission_mode: PermissionMode,
+    interaction_mode: InteractionMode,
     session_drafts: HashMap<Uuid, String>,
     active_session: Option<Uuid>,
     generating: bool,
     projects: Vec<Project>,
     selected_session: Option<Session>,
+    work_mode: WorkMode,
     catalog: Catalog,
     _input_subscription: Subscription,
 }
@@ -40,12 +68,21 @@ impl Composer {
         Self {
             input,
             draft_project: None,
-            picker_open: false,
+            project_menu_open: false,
+            work_mode_menu_open: false,
+            model_menu_open: false,
+            permission_menu_open: false,
+            interaction_menu_open: false,
+            selected_model: String::new(),
+            models: Vec::new(),
+            permission_mode: PermissionMode::default(),
+            interaction_mode: InteractionMode::default(),
             session_drafts: HashMap::new(),
             active_session: None,
             generating: false,
             projects: Vec::new(),
             selected_session: None,
+            work_mode: WorkMode::Local,
             catalog: Catalog::english(),
             _input_subscription: input_subscription,
         }
@@ -67,6 +104,11 @@ impl Composer {
         &mut self,
         projects: Vec<Project>,
         session: Option<Session>,
+        work_mode: WorkMode,
+        models: Vec<ComposerModel>,
+        selected_model: String,
+        permission_mode: PermissionMode,
+        interaction_mode: InteractionMode,
         catalog: Catalog,
         cx: &mut Context<Self>,
     ) {
@@ -77,6 +119,11 @@ impl Composer {
             != session.as_ref().map(|s| s.id);
         self.projects = projects;
         self.selected_session = session.clone();
+        self.work_mode = work_mode;
+        self.models = models;
+        self.selected_model = selected_model;
+        self.permission_mode = permission_mode;
+        self.interaction_mode = interaction_mode;
         self.catalog = catalog;
 
         if session_changed {
@@ -99,7 +146,11 @@ impl Composer {
             });
             self.active_session = new_id;
             self.draft_project = session.as_ref().and_then(|s| s.project_id);
-            self.picker_open = false;
+            self.project_menu_open = false;
+            self.work_mode_menu_open = false;
+            self.model_menu_open = false;
+            self.permission_menu_open = false;
+            self.interaction_menu_open = false;
             cx.notify();
         }
     }
@@ -159,7 +210,7 @@ impl Composer {
 
     fn pick_project(&mut self, project_id: Option<Uuid>, cx: &mut Context<Self>) {
         self.draft_project = project_id;
-        self.picker_open = false;
+        self.project_menu_open = false;
         if self.active_session.is_some() {
             if let Some(id) = project_id {
                 cx.emit(ComposerEvent::ProjectPicked(id));
@@ -170,8 +221,110 @@ impl Composer {
         cx.notify();
     }
 
+    fn open_project(&mut self, cx: &mut Context<Self>) {
+        self.project_menu_open = false;
+        cx.emit(ComposerEvent::OpenProject);
+        cx.notify();
+    }
+
+    fn close_footer_menus(&mut self) {
+        self.project_menu_open = false;
+        self.work_mode_menu_open = false;
+    }
+
+    fn close_toolbar_menus(&mut self) {
+        self.model_menu_open = false;
+        self.permission_menu_open = false;
+        self.interaction_menu_open = false;
+    }
+
+    fn close_all_menus(&mut self) {
+        self.close_footer_menus();
+        self.close_toolbar_menus();
+    }
+
+    fn toggle_project_menu(&mut self, cx: &mut Context<Self>) {
+        if self.active_session.is_some() && !self.locked() {
+            self.close_toolbar_menus();
+            self.work_mode_menu_open = false;
+            self.project_menu_open = !self.project_menu_open;
+            cx.notify();
+        }
+    }
+
+    fn toggle_work_mode_menu(&mut self, cx: &mut Context<Self>) {
+        if self.active_session.is_some() && !self.locked() {
+            self.close_toolbar_menus();
+            self.project_menu_open = false;
+            self.work_mode_menu_open = !self.work_mode_menu_open;
+            cx.notify();
+        }
+    }
+
+    fn toggle_model_menu(&mut self, cx: &mut Context<Self>) {
+        if self.active_session.is_some() && !self.generating {
+            self.close_footer_menus();
+            self.permission_menu_open = false;
+            self.interaction_menu_open = false;
+            self.model_menu_open = !self.model_menu_open;
+            cx.notify();
+        }
+    }
+
+    fn toggle_permission_menu(&mut self, cx: &mut Context<Self>) {
+        if self.active_session.is_some() && !self.generating {
+            self.close_footer_menus();
+            self.model_menu_open = false;
+            self.interaction_menu_open = false;
+            self.permission_menu_open = !self.permission_menu_open;
+            cx.notify();
+        }
+    }
+
+    fn toggle_interaction_menu(&mut self, cx: &mut Context<Self>) {
+        if self.active_session.is_some() && !self.generating {
+            self.close_footer_menus();
+            self.model_menu_open = false;
+            self.permission_menu_open = false;
+            self.interaction_menu_open = !self.interaction_menu_open;
+            cx.notify();
+        }
+    }
+
+    fn pick_model(&mut self, model_id: String, cx: &mut Context<Self>) {
+        self.model_menu_open = false;
+        self.selected_model = model_id;
+        cx.emit(ComposerEvent::ModelChanged(self.selected_model.clone()));
+        cx.notify();
+    }
+
+    fn pick_permission_mode(&mut self, mode: PermissionMode, cx: &mut Context<Self>) {
+        self.permission_menu_open = false;
+        self.permission_mode = mode;
+        cx.emit(ComposerEvent::PermissionModeChanged(mode));
+        cx.notify();
+    }
+
+    fn pick_interaction_mode(&mut self, mode: InteractionMode, cx: &mut Context<Self>) {
+        self.interaction_menu_open = false;
+        self.interaction_mode = mode;
+        cx.emit(ComposerEvent::InteractionModeChanged(mode));
+        cx.notify();
+    }
+
+    fn pick_work_mode(&mut self, mode: WorkMode, cx: &mut Context<Self>) {
+        self.work_mode_menu_open = false;
+        self.work_mode = mode;
+        cx.emit(ComposerEvent::WorkModeChanged(mode));
+        cx.notify();
+    }
+
     fn locked(&self) -> bool {
         project_picker_locked(self.selected_session.as_ref())
+    }
+
+    fn selected_model_entry(&self) -> Option<&ComposerModel> {
+        self.models.iter().find(|model| model.id == self.selected_model)
     }
 }
 
@@ -182,154 +335,328 @@ impl Render for Composer {
         let has_session = self.active_session.is_some();
         let locked = self.locked();
         let sendable = can_send(has_session, &self.content(cx), self.generating);
-        let project_label = session_project_label(
-            self.draft_project,
-            &self.projects,
-            self.catalog.get("session.without_folder"),
+        let project_label = if has_session {
+            session_project_label(
+                self.draft_project,
+                &self.projects,
+                self.catalog.get("session.without_folder"),
+            )
+        } else {
+            self.catalog.get("session.none").to_string()
+        };
+
+        let toolbar_enabled = has_session && !self.generating;
+
+        let model_label = if self.models.is_empty() {
+            self.catalog.get("composer.models.none").to_string()
+        } else {
+            self
+                .selected_model_entry()
+                .map(|model| model.name.clone())
+                .unwrap_or_else(|| self.catalog.get("composer.model.default").to_string())
+        };
+
+        let context_label = if has_session {
+            self.selected_model_entry()
+                .and_then(|model| model.context_label())
+                .map(|label| label.to_string())
+                .unwrap_or_else(|| self.catalog.get("composer.model_context.none").to_string())
+        } else {
+            self.catalog.get("composer.model_context.none").to_string()
+        };
+
+        let model_context = model_context_indicator(context_label);
+
+        let model_chip = menu_chip(
+            "composer-model",
+            icon_path::BOT,
+            model_label,
+            self.model_menu_open,
+            !toolbar_enabled,
+            false,
+            false,
+            cx.listener(|this, _, _, cx| this.toggle_model_menu(cx)),
+        );
+        let mut model_control = div().relative().child(model_chip);
+        if toolbar_enabled && self.model_menu_open {
+            let mut menu = menu_chip_popover().min_w(px(200.));
+            for (index, model) in self.models.iter().enumerate() {
+                let id = model.id.clone();
+                let selected = self.selected_model == id;
+                menu = menu.child(
+                    menu_item(
+                        ("composer-model", index),
+                        model.name.clone(),
+                        selected,
+                        false,
+                        Some(icon_path::BOT),
+                        cx.listener(move |this, _, _, cx| this.pick_model(id.clone(), cx)),
+                    ),
+                );
+            }
+            model_control = model_control.child(menu_chip_dropdown_above(menu));
+        }
+
+        let permission_chip = menu_chip(
+            "composer-permission",
+            icon_path::SHIELD,
+            self.catalog.get(permission_label_key(self.permission_mode)).to_string(),
+            self.permission_menu_open,
+            !toolbar_enabled,
+            false,
+            false,
+            cx.listener(|this, _, _, cx| this.toggle_permission_menu(cx)),
+        );
+        let mut permission_control = div().relative().child(permission_chip);
+        if toolbar_enabled && self.permission_menu_open {
+            let mut menu = menu_chip_popover().min_w(px(288.));
+            for (index, mode) in ComposerPermissionMode::ALL.into_iter().enumerate() {
+                let picked = mode;
+                let selected = self.permission_mode == mode;
+                menu = menu.child(
+                    menu_item_with_description(
+                        ("composer-permission", index),
+                        self.catalog.get(permission_label_key(mode)).to_string(),
+                        self.catalog.get(permission_description_key(mode)).to_string(),
+                        selected,
+                        Some(icon_path::SHIELD),
+                        cx.listener(move |this, _, _, cx| this.pick_permission_mode(picked, cx)),
+                    ),
+                );
+            }
+            permission_control = permission_control.child(menu_chip_dropdown_above(menu));
+        }
+
+        let interaction_icon_path = interaction_icon(self.interaction_mode);
+        let interaction_accent_flag = interaction_accent(self.interaction_mode);
+        let interaction_chip = menu_chip(
+            "composer-mode",
+            interaction_icon_path,
+            self.catalog
+                .get(interaction_label_key(self.interaction_mode))
+                .to_string(),
+            self.interaction_menu_open,
+            !toolbar_enabled,
+            interaction_accent_flag,
+            false,
+            cx.listener(|this, _, _, cx| this.toggle_interaction_menu(cx)),
+        );
+        let mut interaction_control = div().relative().child(interaction_chip);
+        if toolbar_enabled && self.interaction_menu_open {
+            let mut menu = menu_chip_popover().min_w(px(160.));
+            for (index, mode) in ComposerInteractionMode::ALL.into_iter().enumerate() {
+                let picked = mode;
+                let selected = self.interaction_mode == mode;
+                menu = menu.child(
+                    menu_item(
+                        ("composer-mode", index),
+                        self.catalog.get(interaction_label_key(mode)).to_string(),
+                        selected,
+                        false,
+                        Some(interaction_icon(mode)),
+                        cx.listener(move |this, _, _, cx| this.pick_interaction_mode(picked, cx)),
+                    ),
+                );
+            }
+            interaction_control = interaction_control.child(menu_chip_dropdown_above(menu));
+        }
+
+        let send_control = if self.generating {
+            div()
+                .id("generating")
+                .flex_none()
+                .w(px(SEND_BUTTON_PX))
+                .h(px(SEND_BUTTON_PX))
+                .rounded_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(BG_MAIN)
+                .text_color(TEXT_MUTED)
+                .child(icon(icon_path::ELLIPSIS, px(14.), TEXT_MUTED))
+        } else {
+            div()
+                .id("send")
+                .flex_none()
+                .w(px(SEND_BUTTON_PX))
+                .h(px(SEND_BUTTON_PX))
+                .rounded_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_sm()
+                .when(sendable, |el| {
+                    el.bg(ACCENT)
+                        .text_color(TEXT)
+                        .cursor_pointer()
+                        .hover(|style| style.opacity(0.85))
+                })
+                .when(!sendable, |el| {
+                    el.bg(BG_MAIN).text_color(TEXT_MUTED).cursor_default()
+                })
+                .on_click(cx.listener(|this, _, _, cx| this.submit(cx)))
+                .child(icon(
+                    icon_path::ARROW_UP,
+                    px(14.),
+                    if sendable { TEXT } else { TEXT_MUTED },
+                ))
+        };
+
+        let input_row = div()
+            .px(px(10.))
+            .pt(px(2.))
+            .pb(px(4.))
+            .child(self.input.clone());
+
+        let toolbar_row = div()
+            .mt(px(8.))
+            .px(px(10.))
+            .flex()
+            .items_center()
+            .gap(px(4.))
+            .text_size(px(11.5))
+            .line_height(px(14.))
+            .child(model_control)
+            .child(permission_control)
+            .child(interaction_control)
+            .child(div().flex_1())
+            .child(model_context)
+            .child(send_control);
+
+        let can_configure = has_session && !locked;
+
+        let project_chip = menu_chip(
+            "workspace-project",
+            icon_path::FOLDER,
+            project_label,
+            self.project_menu_open,
+            !can_configure,
+            true,
+            false,
+            cx.listener(|this, _, _, cx| this.toggle_project_menu(cx)),
         );
 
-        let mut card = div()
-            .w_full()
-            .max_w(px(CONTENT_MAX_WIDTH_PX))
-            .mx_auto()
-            .rounded(px(13.))
-            .border_1()
-            .border_color(BORDER)
-            .bg(BG_SIDEBAR)
-            .py(px(10.))
-            .relative();
-
-        if has_session && self.picker_open && !locked {
-            let mut menu = div()
-                .absolute()
-                .bottom_full()
-                .left(px(10.))
-                .right(px(10.))
-                .mb(px(6.))
-                .flex()
-                .flex_col()
-                .rounded_md()
-                .border_1()
-                .border_color(BORDER)
-                .bg(BG_SIDEBAR)
-                .shadow_md();
-            let none_selected = self.draft_project.is_none();
-            menu = menu.child(picker_item(
-                "picker-none",
-                self.catalog.get("session.without_folder"),
-                none_selected,
-                cx.listener(|this, _, _, cx| this.pick_project(None, cx)),
-            ));
+        let mut project_control = div().relative().child(project_chip);
+        if can_configure && self.project_menu_open {
+            let mut menu = menu_chip_popover().min_w(px(200.));
             for (index, project) in self.projects.iter().enumerate() {
                 let id = project.id;
                 let selected = self.draft_project == Some(id);
-                menu = menu.child(picker_item(
-                    ("picker-proj", index),
-                    &project.name,
-                    selected,
-                    cx.listener(move |this, _, _, cx| this.pick_project(Some(id), cx)),
-                ));
+                menu = menu.child(
+                    menu_item(
+                        ("select-proj", index),
+                        project.name.clone(),
+                        selected,
+                        false,
+                        Some(icon_path::FOLDER),
+                        cx.listener(move |this, _, _, cx| this.pick_project(Some(id), cx)),
+                    ),
+                );
             }
-            card = card.child(menu);
+            menu = menu.child(
+                menu_item(
+                    "select-none",
+                    self.catalog.get("session.without_folder").to_string(),
+                    self.draft_project.is_none(),
+                    false,
+                    None,
+                    cx.listener(|this, _, _, cx| this.pick_project(None, cx)),
+                ),
+            );
+            menu = menu.child(menu_separator());
+            menu = menu.child(
+                menu_item(
+                    "select-open-project",
+                    self.catalog.get("composer.open_project").to_string(),
+                    false,
+                    false,
+                    Some(icon_path::FOLDER_PLUS),
+                    cx.listener(|this, _, _, cx| this.open_project(cx)),
+                ),
+            );
+            project_control = project_control.child(menu_chip_dropdown_above(menu));
         }
 
-        card.child(div().px(px(10.)).pt(px(2.)).child(self.input.clone()))
+        let (work_mode_label, work_mode_icon) = match self.work_mode {
+            WorkMode::Local => (
+                self.catalog.get("composer.work_mode.local").to_string(),
+                icon_path::LAPTOP,
+            ),
+            WorkMode::Remote => (
+                self.catalog.get("composer.work_mode.remote").to_string(),
+                icon_path::FORK,
+            ),
+        };
+
+        let work_mode_chip = menu_chip(
+            "workspace-worktree",
+            work_mode_icon,
+            work_mode_label,
+            self.work_mode_menu_open,
+            !can_configure,
+            true,
+            false,
+            cx.listener(|this, _, _, cx| this.toggle_work_mode_menu(cx)),
+        );
+
+        let mut work_mode_control = div().relative().child(work_mode_chip);
+        if can_configure && self.work_mode_menu_open {
+            let local_selected = self.work_mode == WorkMode::Local;
+            let remote_selected = self.work_mode == WorkMode::Remote;
+            let menu = menu_chip_popover()
+                .min_w(px(180.))
+                .child(
+                    menu_item(
+                        "work-mode-local",
+                        self.catalog.get("composer.work_mode.local").to_string(),
+                        local_selected,
+                        false,
+                        Some(icon_path::LAPTOP),
+                        cx.listener(|this, _, _, cx| this.pick_work_mode(WorkMode::Local, cx)),
+                    ),
+                )
+                .child(
+                    menu_item(
+                        "work-mode-remote",
+                        self.catalog.get("composer.work_mode.remote").to_string(),
+                        remote_selected,
+                        false,
+                        Some(icon_path::FORK),
+                        cx.listener(|this, _, _, cx| this.pick_work_mode(WorkMode::Remote, cx)),
+                    ),
+                );
+            work_mode_control = work_mode_control.child(menu_chip_dropdown_above(menu));
+        }
+
+        div()
+            .w_full()
+            .max_w(px(CONTENT_MAX_WIDTH_PX))
+            .mx_auto()
+            .flex()
+            .flex_col()
+            .gap(px(FOOTER_ROW_GAP_PX))
             .child(
                 div()
-                    .mt(px(8.))
-                    .px(px(10.))
+                    .w_full()
+                    .relative()
+                    .rounded(px(13.))
+                    .border_1()
+                    .border_color(BORDER)
+                    .bg(BG_SIDEBAR)
+                    .py(px(10.))
+                    .child(input_row)
+                    .child(toolbar_row),
+            )
+            .child(
+                div()
+                    .h(px(FOOTER_ROW_HEIGHT_PX))
+                    .pl(px(10.))
+                    .pr(px(10.))
                     .flex()
                     .items_center()
-                    .gap(px(4.))
-                    .text_xs()
-                    .line_height(px(14.))
-                    .child(
-                        div()
-                            .id("project-picker")
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
-                            .text_color(TEXT_MUTED)
-                            .when(has_session && !locked, |el| {
-                                el.cursor_pointer()
-                                    .hover(|style| style.bg(BG_MAIN).text_color(TEXT))
-                            })
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                if this.active_session.is_some() && !this.locked() {
-                                    this.picker_open = !this.picker_open;
-                                }
-                                cx.notify();
-                            }))
-                            .child(if has_session {
-                                project_label
-                            } else {
-                                self.catalog.get("session.none").to_string()
-                            }),
-                    )
-                    .child(
-                        div()
-                            .px_2()
-                            .py_1()
-                            .text_color(TEXT_MUTED)
-                            .child(self.catalog.get("composer.agent_opencode").to_string()),
-                    )
-                    .child(div().flex_1())
-                    .child(if self.generating {
-                        div()
-                            .id("generating")
-                            .w(px(SEND_BUTTON_PX))
-                            .h(px(SEND_BUTTON_PX))
-                            .rounded_full()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .bg(BG_MAIN)
-                            .text_color(TEXT_MUTED)
-                            .child(icon(icon_path::ELLIPSIS, px(14.), TEXT_MUTED))
-                    } else {
-                        div()
-                            .id("send")
-                            .w(px(SEND_BUTTON_PX))
-                            .h(px(SEND_BUTTON_PX))
-                            .rounded_full()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_sm()
-                            .when(sendable, |el| {
-                                el.bg(ACCENT)
-                                    .text_color(TEXT)
-                                    .cursor_pointer()
-                                    .hover(|style| style.opacity(0.85))
-                            })
-                            .when(!sendable, |el| {
-                                el.bg(BG_MAIN).text_color(TEXT_MUTED).cursor_default()
-                            })
-                            .on_click(cx.listener(|this, _, _, cx| this.submit(cx)))
-                            .child(icon(
-                                icon_path::ARROW_UP,
-                                px(14.),
-                                if sendable { TEXT } else { TEXT_MUTED },
-                            ))
-                    }),
+                    .gap(px(FOOTER_CHIP_GAP_PX))
+                    .child(project_control)
+                    .child(work_mode_control),
             )
     }
-}
-
-fn picker_item(
-    id: impl Into<gpui::ElementId>,
-    text: &str,
-    selected: bool,
-    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
-) -> impl IntoElement {
-    div()
-        .id(id)
-        .px_2()
-        .py_1()
-        .text_sm()
-        .cursor_pointer()
-        .when(selected, |el| el.bg(BG_MAIN))
-        .hover(|style| style.bg(BG_MAIN))
-        .on_click(on_click)
-        .child(text.to_string())
 }

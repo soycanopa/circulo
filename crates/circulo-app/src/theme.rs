@@ -111,6 +111,8 @@ pub const DANGER_SURFACE: Rgba = Rgba {
 pub const CONTENT_MAX_WIDTH_PX: f32 = 768.0;
 /// Horizontal inset shared by the transcript and floating composer.
 pub const COMPOSER_GUTTER_PX: f32 = 20.0;
+/// Bottom inset for the floating composer block.
+pub const COMPOSER_BOTTOM_PADDING_PX: f32 = 8.0;
 pub const MESSAGE_AVATAR_PX: f32 = 32.0;
 
 pub const SIDEBAR_EXPANDED_PX: f32 = 260.0;

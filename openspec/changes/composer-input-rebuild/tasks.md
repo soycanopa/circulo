@@ -21,8 +21,16 @@
 - [x] 4.2 `read_only` while generating; focus on session select
 - [x] 4.3 Restore draft on POST error; PATCH project on picker select
 
-## 5. Tests and manual (slice 4)
+## 6. Multiline growth, scroll, and expand
 
-- [x] 5.1 Unit tests for input actions and composer helpers
-- [x] 5.2 Rewrite typing tests for `ComposerInput` (helpers + manual GPUI harness deferred)
-- [x] 5.3 `cargo test -p circulo-app --lib` passes; manual macOS click-type-send pass pending user
+- [x] 6.1 Wrap long lines with `shape_text`; grow height up to 5 visual lines
+- [x] 6.2 Scroll inside the input when content exceeds the visible cap
+- [x] 6.3 Expand icon when >5 lines; expanded mode shows up to 10 lines
+- [ ] 6.4 Manual macOS pass: long line wrap, scroll, expand/collapse
+
+## 7. Composer footer (project select + work mode)
+
+- [x] 7.1 Project select below composer card, left-aligned
+- [x] 7.2 Local / Remote work-mode indicator beside the select
+- [x] 7.3 Select lists projects, Without Folder, and Open project… (folder picker)
+- [ ] 7.4 Manual pass: footer layout, open project flow, locked state after first send

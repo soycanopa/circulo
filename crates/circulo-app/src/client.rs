@@ -1,10 +1,13 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use circulo_core::{Message, Project, Session, Uuid};
+use circulo_core::{
+    ComposerInteractionMode, ComposerPermissionMode, Message, ModelCatalogEntry, Project,
+    Session, Uuid,
+};
 use circulo_protocol::{
     CreateMessageRequest, CreateProjectRequest, CreateSessionRequest, HealthResponse,
-    PatchSessionRequest,
+    PatchSessionRequest, PreferencesBody,
 };
 use time::{OffsetDateTime, UtcOffset};
 
@@ -37,10 +40,17 @@ impl DaemonClient {
     }
 
     pub fn create_session(&self) -> Result<Session, String> {
+        self.create_session_with_project(None)
+    }
+
+    pub fn create_session_with_project(
+        &self,
+        project_id: Option<Uuid>,
+    ) -> Result<Session, String> {
         self.post(
             "/v1/sessions",
             &CreateSessionRequest {
-                project_id: None,
+                project_id,
                 title: None,
             },
         )
@@ -90,6 +100,43 @@ impl DaemonClient {
         ))
     }
 
+    pub fn list_models(&self) -> Result<Vec<ModelCatalogEntry>, String> {
+        self.get("/v1/models")
+    }
+
+    pub fn get_preferences(&self) -> Result<PreferencesBody, String> {
+        self.get("/v1/preferences")
+    }
+
+    pub fn put_preferences(&self, body: &PreferencesBody) -> Result<PreferencesBody, String> {
+        ureq::put(&format!("{}/v1/preferences", self.base))
+            .timeout(Duration::from_secs(2))
+            .send_json(body)
+            .map_err(|err| err.to_string())?
+            .into_json()
+            .map_err(|err| err.to_string())
+    }
+
+    pub fn patch_session_composer(
+        &self,
+        session_id: Uuid,
+        composer_model_id: String,
+        permission_mode: ComposerPermissionMode,
+        interaction_mode: ComposerInteractionMode,
+    ) -> Result<Session, String> {
+        self.patch(
+            &format!("/v1/sessions/{session_id}"),
+            &PatchSessionRequest {
+                title: None,
+                project_id: None,
+                archive: None,
+                composer_model_id: Some(composer_model_id),
+                composer_permission_mode: Some(permission_mode),
+                composer_interaction_mode: Some(interaction_mode),
+            },
+        )
+    }
+
     pub fn set_session_project(
         &self,
         session_id: Uuid,
@@ -101,6 +148,9 @@ impl DaemonClient {
                 title: None,
                 project_id: Some(project_id),
                 archive: None,
+                composer_model_id: None,
+                composer_permission_mode: None,
+                composer_interaction_mode: None,
             },
         )
     }
@@ -112,6 +162,9 @@ impl DaemonClient {
                 title: Some(title),
                 project_id: None,
                 archive: None,
+                composer_model_id: None,
+                composer_permission_mode: None,
+                composer_interaction_mode: None,
             },
         )
     }
@@ -324,6 +377,9 @@ mod tests {
             updated_at: activity,
             last_message_at: Some(activity),
             first_send_at: None,
+            composer_model_id: None,
+            composer_permission_mode: None,
+            composer_interaction_mode: None,
         }
     }
 
@@ -387,6 +443,9 @@ mod tests {
             updated_at: created,
             last_message_at: None,
             first_send_at: None,
+            composer_model_id: None,
+            composer_permission_mode: None,
+            composer_interaction_mode: None,
         };
         assert_eq!(session_activity_at(&session), created);
     }

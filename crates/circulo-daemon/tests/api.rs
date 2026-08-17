@@ -286,6 +286,9 @@ async fn project_patch_after_first_send_is_locked() {
         title: None,
         project_id: Some(Some(project.id)),
         archive: None,
+        composer_model_id: None,
+        composer_permission_mode: None,
+        composer_interaction_mode: None,
     };
 }
 

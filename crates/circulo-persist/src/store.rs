@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use circulo_core::{
-    Message, MessagePart, MessageRole, Project, ProjectStatus, Session, Uuid,
+    ComposerInteractionMode, ComposerPermissionMode, Message, MessagePart, MessageRole, Project,
+    ProjectStatus, Session, UserPreferences, Uuid,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::de::{DeserializeOwned, Error as _};
@@ -10,7 +11,12 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::error::PersistError;
-use crate::schema::{MIGRATION_V1, MIGRATION_V2};
+use crate::schema::{MIGRATION_V1, MIGRATION_V2, MIGRATION_V3};
+
+const SESSION_COLUMNS: &str =
+    "id, project_id, title, agent, status, created_at, updated_at, last_message_at, first_send_at, composer_model_id, composer_permission_mode, composer_interaction_mode";
+const SESSION_COLUMNS_ALIASED: &str =
+    "s.id, s.project_id, s.title, s.agent, s.status, s.created_at, s.updated_at, s.last_message_at, s.first_send_at, s.composer_model_id, s.composer_permission_mode, s.composer_interaction_mode";
 
 pub fn default_db_path() -> Result<PathBuf, PersistError> {
     let home = std::env::var_os("HOME").ok_or(PersistError::InvalidHome)?;
@@ -56,6 +62,18 @@ impl Store {
         }
         conn.execute(
             "INSERT OR IGNORE INTO schema_migrations (version) VALUES (2)",
+            [],
+        )?;
+        if conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'composer_model_id'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )? == 0
+        {
+            conn.execute_batch(MIGRATION_V3)?;
+        }
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version) VALUES (3)",
             [],
         )?;
         Ok(Self { conn })
@@ -149,8 +167,9 @@ impl Store {
     pub fn create_session(&self, session: &Session) -> Result<(), PersistError> {
         self.conn.execute(
             "INSERT INTO sessions
-                (id, project_id, title, agent, status, created_at, updated_at, last_message_at, first_send_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                (id, project_id, title, agent, status, created_at, updated_at, last_message_at, first_send_at,
+                 composer_model_id, composer_permission_mode, composer_interaction_mode)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 session.id.to_string(),
                 session.project_id.map(|id| id.to_string()),
@@ -161,6 +180,15 @@ impl Store {
                 format_time(session.updated_at)?,
                 session.last_message_at.map(format_time).transpose()?,
                 session.first_send_at.map(format_time).transpose()?,
+                session.composer_model_id,
+                session
+                    .composer_permission_mode
+                    .map(|mode| enum_to_db(&mode))
+                    .transpose()?,
+                session
+                    .composer_interaction_mode
+                    .map(|mode| enum_to_db(&mode))
+                    .transpose()?,
             ],
         )?;
         Ok(())
@@ -169,8 +197,7 @@ impl Store {
     pub fn get_session(&self, id: Uuid) -> Result<Option<Session>, PersistError> {
         self.conn
             .query_row(
-                "SELECT id, project_id, title, agent, status, created_at, updated_at, last_message_at, first_send_at
-                 FROM sessions WHERE id = ?1",
+                &format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE id = ?1"),
                 [id.to_string()],
                 map_session,
             )
@@ -180,22 +207,26 @@ impl Store {
 
     pub fn list_visible_sessions(&self) -> Result<Vec<Session>, PersistError> {
         self.query_sessions(
-            "SELECT s.id, s.project_id, s.title, s.agent, s.status, s.created_at, s.updated_at, s.last_message_at, s.first_send_at
+            &format!(
+                "SELECT {SESSION_COLUMNS_ALIASED}
              FROM sessions s
              LEFT JOIN projects p ON p.id = s.project_id
              WHERE s.status = 'active'
                AND (s.project_id IS NULL OR p.status = 'active')
-             ORDER BY s.last_message_at IS NULL, s.last_message_at DESC, s.created_at DESC",
+             ORDER BY s.last_message_at IS NULL, s.last_message_at DESC, s.created_at DESC"
+            ),
             [],
         )
     }
 
     pub fn list_unassigned_sessions(&self) -> Result<Vec<Session>, PersistError> {
         self.query_sessions(
-            "SELECT id, project_id, title, agent, status, created_at, updated_at, last_message_at, first_send_at
+            &format!(
+                "SELECT {SESSION_COLUMNS}
              FROM sessions
              WHERE project_id IS NULL AND status = 'active'
-             ORDER BY last_message_at IS NULL, last_message_at DESC, created_at DESC",
+             ORDER BY last_message_at IS NULL, last_message_at DESC, created_at DESC"
+            ),
             [],
         )
     }
@@ -205,11 +236,13 @@ impl Store {
         project_id: Uuid,
     ) -> Result<Vec<Session>, PersistError> {
         self.query_sessions(
-            "SELECT s.id, s.project_id, s.title, s.agent, s.status, s.created_at, s.updated_at, s.last_message_at, s.first_send_at
+            &format!(
+                "SELECT {SESSION_COLUMNS_ALIASED}
              FROM sessions s
              INNER JOIN projects p ON p.id = s.project_id
              WHERE s.project_id = ?1 AND s.status = 'active' AND p.status = 'active'
-             ORDER BY s.last_message_at IS NULL, s.last_message_at DESC, s.created_at DESC",
+             ORDER BY s.last_message_at IS NULL, s.last_message_at DESC, s.created_at DESC"
+            ),
             [project_id.to_string()],
         )
     }
@@ -217,13 +250,15 @@ impl Store {
     pub fn search_sessions(&self, query: &str) -> Result<Vec<Session>, PersistError> {
         let pattern = like_contains(query);
         self.query_sessions(
-            "SELECT s.id, s.project_id, s.title, s.agent, s.status, s.created_at, s.updated_at, s.last_message_at, s.first_send_at
+            &format!(
+                "SELECT {SESSION_COLUMNS_ALIASED}
              FROM sessions s
              LEFT JOIN projects p ON p.id = s.project_id
              WHERE s.status = 'active'
                AND (s.project_id IS NULL OR p.status = 'active')
                AND s.title LIKE ?1 ESCAPE '\\' COLLATE NOCASE
-             ORDER BY s.last_message_at IS NULL, s.last_message_at DESC, s.created_at DESC",
+             ORDER BY s.last_message_at IS NULL, s.last_message_at DESC, s.created_at DESC"
+            ),
             [pattern],
         )
     }
@@ -232,8 +267,9 @@ impl Store {
         let n = self.conn.execute(
             "UPDATE sessions
              SET project_id = ?1, title = ?2, status = ?3, updated_at = ?4,
-                 last_message_at = ?5, first_send_at = ?6
-             WHERE id = ?7",
+                 last_message_at = ?5, first_send_at = ?6, composer_model_id = ?7,
+                 composer_permission_mode = ?8, composer_interaction_mode = ?9
+             WHERE id = ?10",
             params![
                 session.project_id.map(|id| id.to_string()),
                 session.title,
@@ -241,6 +277,15 @@ impl Store {
                 format_time(session.updated_at)?,
                 session.last_message_at.map(format_time).transpose()?,
                 session.first_send_at.map(format_time).transpose()?,
+                session.composer_model_id,
+                session
+                    .composer_permission_mode
+                    .map(|mode| enum_to_db(&mode))
+                    .transpose()?,
+                session
+                    .composer_interaction_mode
+                    .map(|mode| enum_to_db(&mode))
+                    .transpose()?,
                 session.id.to_string(),
             ],
         )?;
@@ -368,6 +413,31 @@ impl Store {
         Ok(())
     }
 
+    pub fn get_preferences(&self) -> Result<UserPreferences, PersistError> {
+        let raw: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM preferences WHERE key = 'user'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match raw {
+            Some(json) => serde_json::from_str(&json).map_err(PersistError::from),
+            None => Ok(UserPreferences::default()),
+        }
+    }
+
+    pub fn set_preferences(&self, preferences: &UserPreferences) -> Result<(), PersistError> {
+        let json = serde_json::to_string(preferences)?;
+        self.conn.execute(
+            "INSERT INTO preferences (key, value) VALUES ('user', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [json],
+        )?;
+        Ok(())
+    }
+
     pub fn list_messages(&self, session_id: Uuid) -> Result<Vec<Message>, PersistError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, session_id, role, status, created_at, is_streaming
@@ -485,6 +555,15 @@ fn map_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
         first_send_at: row
             .get::<_, Option<String>>(8)?
             .map(|ts| parse_time_sql(&ts))
+            .transpose()?,
+        composer_model_id: row.get(9)?,
+        composer_permission_mode: row
+            .get::<_, Option<String>>(10)?
+            .map(|value| enum_from_db_sql(&value))
+            .transpose()?,
+        composer_interaction_mode: row
+            .get::<_, Option<String>>(11)?
+            .map(|value| enum_from_db_sql(&value))
             .transpose()?,
     })
 }

@@ -1,10 +1,15 @@
 //! Domain types shared by Circulo crates.
 
+mod composer;
 mod error;
 mod message;
 mod project;
 mod session;
 
+pub use composer::{
+    ComposerInteractionMode, ComposerPermissionMode, ModelCatalogEntry, UserPreferences,
+    model_catalog_id, split_model_catalog_id,
+};
 pub use error::DomainError;
 pub use message::{
     Message, MessagePart, MessageRole, MessageStatus, Question, QuestionStatus, QuestionType, Task,
@@ -38,6 +43,9 @@ mod tests {
             updated_at: now(),
             last_message_at: None,
             first_send_at: None,
+            composer_model_id: None,
+            composer_permission_mode: None,
+            composer_interaction_mode: None,
         }
     }
 
