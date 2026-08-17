@@ -12,6 +12,7 @@ Thumbs.db
 # Editors / IDEs
 .idea/
 .vscode/
+.zcode/plans/
 *.swp
 *.swo
 *~
