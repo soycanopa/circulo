@@ -4,14 +4,21 @@ use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, T
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Block {
-    Heading { level: u8, inlines: Vec<Inline> },
-    Paragraph { inlines: Vec<Inline> },
+    Heading {
+        level: u8,
+        inlines: Vec<Inline>,
+    },
+    Paragraph {
+        inlines: Vec<Inline>,
+    },
     List {
         ordered: bool,
         start: u64,
         items: Vec<Vec<Block>>,
     },
-    Quote { blocks: Vec<Block> },
+    Quote {
+        blocks: Vec<Block>,
+    },
     Code {
         language: Option<String>,
         text: String,
@@ -174,14 +181,18 @@ impl Builder {
                 inlines: Vec::new(),
             }),
             Tag::BlockQuote(_) => self.stack.push(Frame::Quote(Vec::new())),
-            Tag::List(start) => self.stack.push(Frame::List {
-                ordered: start.is_some(),
-                start: start.unwrap_or(1),
-                items: Vec::new(),
-                current: Vec::new(),
-            }),
+            Tag::List(start) => {
+                self.flush_open_paragraph();
+                self.stack.push(Frame::List {
+                    ordered: start.is_some(),
+                    start: start.unwrap_or(1),
+                    items: Vec::new(),
+                    current: Vec::new(),
+                });
+            }
             Tag::Item => {}
             Tag::CodeBlock(kind) => {
+                self.flush_open_paragraph();
                 let language = match kind {
                     CodeBlockKind::Fenced(lang) if !lang.is_empty() => Some(lang.into_string()),
                     _ => None,
@@ -239,6 +250,7 @@ impl Builder {
                 }
             }
             TagEnd::Item => {
+                self.flush_open_paragraph();
                 if let Some(Frame::List { current, items, .. }) = self.stack.last_mut() {
                     items.push(std::mem::take(current));
                 }
@@ -281,7 +293,10 @@ impl Builder {
                 }
             }
             TagEnd::TableRow => {
-                if let Some(Frame::Table { row, rows, in_head, .. }) = self.stack.last_mut() {
+                if let Some(Frame::Table {
+                    row, rows, in_head, ..
+                }) = self.stack.last_mut()
+                {
                     if !*in_head {
                         rows.push(std::mem::take(row));
                     }
@@ -321,7 +336,28 @@ impl Builder {
             body.push_str(text);
             return;
         }
+        self.ensure_paragraph_for_tight_list_item();
         self.push_inline(Inline::Text(text.to_string()));
+    }
+
+    /// Tight list items emit text without wrapping `Tag::Paragraph` events.
+    fn ensure_paragraph_for_tight_list_item(&mut self) {
+        if matches!(self.stack.last(), Some(Frame::List { .. })) {
+            self.stack.push(Frame::Paragraph(Vec::new()));
+        }
+    }
+
+    fn flush_open_paragraph(&mut self) {
+        if !matches!(self.stack.last(), Some(Frame::Paragraph(_))) {
+            return;
+        }
+        let Some(Frame::Paragraph(inlines)) = self.stack.pop() else {
+            return;
+        };
+        if inlines.is_empty() {
+            return;
+        }
+        self.push_block(Block::Paragraph { inlines });
     }
 
     fn push_inline(&mut self, inline: Inline) {
@@ -384,7 +420,7 @@ fn heading_level(level: HeadingLevel) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::{Block, DiffKind, Inline, diff_lines, parse, parse_unified_diff};
+    use super::{diff_lines, parse, parse_unified_diff, Block, DiffKind, Inline};
 
     #[test]
     fn parses_heading_emphasis_and_code() {
@@ -401,20 +437,59 @@ mod tests {
                 _ => None,
             })
             .expect("paragraph");
-        assert!(paragraph.iter().any(|inline| matches!(inline, Inline::Strong(_))));
-        assert!(paragraph.iter().any(|inline| matches!(inline, Inline::Code(code) if code == "path")));
+        assert!(paragraph
+            .iter()
+            .any(|inline| matches!(inline, Inline::Strong(_))));
+        assert!(paragraph
+            .iter()
+            .any(|inline| matches!(inline, Inline::Code(code) if code == "path")));
+    }
+
+    #[test]
+    fn parses_anime_style_grouped_list() {
+        let md = "\
+Aquí tienes una buena lista de shonen populares en Crunchyroll:
+
+**Clásicos / Long-running**
+- Naruto / Naruto Shippuden
+- One Piece
+
+**Acción / Combate**
+- Demon Slayer (Kimetsu no Yaiba)
+- Jujutsu Kaisen
+";
+        let blocks = parse(md);
+        let list = blocks
+            .iter()
+            .find_map(|block| match block {
+                Block::List { items, .. } => Some(items),
+                _ => None,
+            })
+            .expect("first list");
+        assert_eq!(list.len(), 2);
+        let first_item_text = list[0]
+            .iter()
+            .find_map(|block| match block {
+                Block::Paragraph { inlines } => Some(inlines.clone()),
+                _ => None,
+            })
+            .expect("paragraph in first item");
+        assert!(first_item_text.iter().any(|inline| matches!(
+            inline,
+            Inline::Text(text) if text.contains("Naruto")
+        )));
     }
 
     #[test]
     fn parses_list_quote_and_table() {
-        let blocks = parse(
-            "- one\n- two\n\n> quoted\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n",
-        );
+        let blocks = parse("- one\n- two\n\n> quoted\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n");
         assert!(blocks.iter().any(|block| matches!(
             block,
             Block::List { ordered: false, items, .. } if items.len() == 2
         )));
-        assert!(blocks.iter().any(|block| matches!(block, Block::Quote { .. })));
+        assert!(blocks
+            .iter()
+            .any(|block| matches!(block, Block::Quote { .. })));
         assert!(blocks.iter().any(|block| matches!(
             block,
             Block::Table { headers, rows } if headers.len() == 2 && rows.len() == 1
@@ -424,13 +499,17 @@ mod tests {
     #[test]
     fn incomplete_fence_does_not_panic() {
         let blocks = parse("```\nstill open");
-        assert!(blocks.iter().any(|block| matches!(block, Block::Code { .. })));
+        assert!(blocks
+            .iter()
+            .any(|block| matches!(block, Block::Code { .. })));
     }
 
     #[test]
     fn unified_diff_marks_additions() {
         let lines = parse_unified_diff("--- a/notes.md\n+++ b/notes.md\n+Hello from Circulo.\n");
-        assert!(lines.iter().any(|line| line.kind == DiffKind::Add && line.text.contains("Hello")));
+        assert!(lines
+            .iter()
+            .any(|line| line.kind == DiffKind::Add && line.text.contains("Hello")));
         assert!(lines.iter().any(|line| line.kind == DiffKind::Header));
     }
 
