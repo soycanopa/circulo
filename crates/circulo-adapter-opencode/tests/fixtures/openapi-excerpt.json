@@ -1,0 +1,2846 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "opencode",
+  "version": "1.0.0",
+  "description": "opencode api"
+ },
+ "note": "Excerpt of GET /doc from opencode 1.18.18 (2026-08-16). Only paths/schemas Circulo maps. Full spec: run `opencode serve` and GET /doc.",
+ "paths": {
+  "/session": {
+   "get": {
+    "tags": [
+     "session"
+    ],
+    "operationId": "session.list",
+    "parameters": [
+     {
+      "name": "directory",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     },
+     {
+      "name": "workspace",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     },
+     {
+      "name": "scope",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "project"
+       ]
+      },
+      "required": false
+     },
+     {
+      "name": "path",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     },
+     {
+      "name": "roots",
+      "in": "query",
+      "schema": {
+       "anyOf": [
+        {
+         "type": "boolean"
+        },
+        {
+         "type": "string",
+         "enum": [
+          "true",
+          "false"
+         ]
+        }
+       ]
+      },
+      "required": false
+     },
+     {
+      "name": "start",
+      "in": "query",
+      "schema": {
+       "type": "number"
+      },
+      "required": false
+     },
+     {
+      "name": "search",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "schema": {
+       "type": "number"
+      },
+      "required": false
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "List of sessions",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/Session"
+         },
+         "description": "List of sessions"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad request",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/BadRequestError"
+        }
+       }
+      }
+     }
+    },
+    "description": "Get a list of all OpenCode sessions, sorted by most recently updated.",
+    "summary": "List sessions"
+   },
+   "post": {
+    "tags": [
+     "session"
+    ],
+    "operationId": "session.create",
+    "parameters": [
+     {
+      "name": "directory",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     },
+     {
+      "name": "workspace",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successfully created session",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Session"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "BadRequest | InvalidRequestError",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+          },
+          {
+           "$ref": "#/components/schemas/InvalidRequestError"
+          }
+         ]
+        }
+       }
+      }
+     }
+    },
+    "description": "Create a new OpenCode session for interacting with AI assistants and managing conversations.",
+    "summary": "Create session",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "parentID": {
+          "type": "string",
+          "pattern": "^ses"
+         },
+         "title": {
+          "type": "string"
+         },
+         "agent": {
+          "type": "string"
+         },
+         "model": {
+          "type": "object",
+          "properties": {
+           "id": {
+            "type": "string"
+           },
+           "providerID": {
+            "type": "string"
+           },
+           "variant": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "id",
+           "providerID"
+          ],
+          "additionalProperties": false
+         },
+         "metadata": {
+          "type": "object"
+         },
+         "permission": {
+          "$ref": "#/components/schemas/PermissionRuleset"
+         },
+         "workspaceID": {
+          "type": "string",
+          "pattern": "^wrk"
+         }
+        },
+        "additionalProperties": false
+       }
+      }
+     }
+    }
+   }
+  },
+  "/session/{sessionID}": {
+   "get": {
+    "tags": [
+     "session"
+    ],
+    "operationId": "session.get",
+    "parameters": [
+     {
+      "name": "sessionID",
+      "in": "path",
+      "schema": {
+       "type": "string",
+       "pattern": "^ses"
+      },
+      "required": true
+     },
+     {
+      "name": "directory",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     },
+     {
+      "name": "workspace",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Get session",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Session"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "BadRequest | InvalidRequestError",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+          },
+          {
+           "$ref": "#/components/schemas/InvalidRequestError"
+          }
+         ]
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "NotFoundError",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotFoundError"
+        }
+       }
+      }
+     }
+    },
+    "description": "Retrieve detailed information about a specific OpenCode session.",
+    "summary": "Get session"
+   },
+   "delete": {
+    "tags": [
+     "session"
+    ],
+    "operationId": "session.delete",
+    "parameters": [
+     {
+      "name": "sessionID",
+      "in": "path",
+      "schema": {
+       "type": "string",
+       "pattern": "^ses"
+      },
+      "required": true
+     },
+     {
+      "name": "directory",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     },
+     {
+      "name": "workspace",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successfully deleted session",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "boolean",
+         "description": "Successfully deleted session"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "BadRequest | InvalidRequestError",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+          },
+          {
+           "$ref": "#/components/schemas/InvalidRequestError"
+          }
+         ]
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "NotFoundError",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotFoundError"
+        }
+       }
+      }
+     }
+    },
+    "description": "Delete a session and permanently remove all associated data, including messages and history.",
+    "summary": "Delete session"
+   },
+   "patch": {
+    "tags": [
+     "session"
+    ],
+    "operationId": "session.update",
+    "parameters": [
+     {
+      "name": "sessionID",
+      "in": "path",
+      "schema": {
+       "type": "string",
+       "pattern": "^ses"
+      },
+      "required": true
+     },
+     {
+      "name": "directory",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     },
+     {
+      "name": "workspace",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successfully updated session",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Session"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "BadRequest | InvalidRequestError",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+          },
+          {
+           "$ref": "#/components/schemas/InvalidRequestError"
+          }
+         ]
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "NotFoundError",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotFoundError"
+        }
+       }
+      }
+     }
+    },
+    "description": "Update properties of an existing session, such as title or other metadata.",
+    "summary": "Update session",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "title": {
+          "type": "string"
+         },
+         "metadata": {
+          "type": "object"
+         },
+         "permission": {
+          "$ref": "#/components/schemas/PermissionRuleset"
+         },
+         "time": {
+          "type": "object",
+          "properties": {
+           "archived": {
+            "type": "number"
+           }
+          },
+          "additionalProperties": false
+         }
+        },
+        "additionalProperties": false
+       }
+      }
+     }
+    }
+   }
+  },
+  "/session/{sessionID}/prompt_async": {
+   "post": {
+    "tags": [
+     "session"
+    ],
+    "operationId": "session.prompt_async",
+    "parameters": [
+     {
+      "name": "sessionID",
+      "in": "path",
+      "schema": {
+       "type": "string",
+       "pattern": "^ses"
+      },
+      "required": true
+     },
+     {
+      "name": "directory",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     },
+     {
+      "name": "workspace",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Prompt accepted"
+     },
+     "400": {
+      "description": "BadRequest | InvalidRequestError",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+          },
+          {
+           "$ref": "#/components/schemas/InvalidRequestError"
+          }
+         ]
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "NotFoundError",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotFoundError"
+        }
+       }
+      }
+     }
+    },
+    "description": "Create and send a new message to a session asynchronously, starting the session if needed and returning immediately.",
+    "summary": "Send async message",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "messageID": {
+          "type": "string",
+          "pattern": "^msg"
+         },
+         "model": {
+          "type": "object",
+          "properties": {
+           "providerID": {
+            "type": "string"
+           },
+           "modelID": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "providerID",
+           "modelID"
+          ],
+          "additionalProperties": false
+         },
+         "agent": {
+          "type": "string"
+         },
+         "noReply": {
+          "type": "boolean"
+         },
+         "tools": {
+          "type": "object",
+          "additionalProperties": {
+           "type": "boolean"
+          }
+         },
+         "format": {
+          "$ref": "#/components/schemas/OutputFormat"
+         },
+         "system": {
+          "type": "string"
+         },
+         "variant": {
+          "type": "string"
+         },
+         "parts": {
+          "type": "array",
+          "items": {
+           "anyOf": [
+            {
+             "$ref": "#/components/schemas/TextPartInput"
+            },
+            {
+             "$ref": "#/components/schemas/FilePartInput"
+            },
+            {
+             "$ref": "#/components/schemas/AgentPartInput"
+            },
+            {
+             "$ref": "#/components/schemas/SubtaskPartInput"
+            }
+           ]
+          }
+         }
+        },
+        "required": [
+         "parts"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    }
+   }
+  },
+  "/session/{sessionID}/message": {
+   "get": {
+    "tags": [
+     "session"
+    ],
+    "operationId": "session.messages",
+    "parameters": [
+     {
+      "name": "sessionID",
+      "in": "path",
+      "schema": {
+       "type": "string",
+       "pattern": "^ses"
+      },
+      "required": true
+     },
+     {
+      "name": "directory",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     },
+     {
+      "name": "workspace",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "maximum": 9007199254740991
+      },
+      "required": false
+     },
+     {
+      "name": "before",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "List of messages",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "info": {
+            "$ref": "#/components/schemas/Message"
+           },
+           "parts": {
+            "type": "array",
+            "items": {
+             "$ref": "#/components/schemas/Part"
+            }
+           }
+          },
+          "required": [
+           "info",
+           "parts"
+          ],
+          "additionalProperties": false
+         },
+         "description": "List of messages"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "BadRequest | InvalidRequestError",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+          },
+          {
+           "$ref": "#/components/schemas/InvalidRequestError"
+          }
+         ]
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "NotFoundError",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotFoundError"
+        }
+       }
+      }
+     }
+    },
+    "description": "Retrieve all messages in a session, including user prompts and AI responses.",
+    "summary": "Get session messages"
+   },
+   "post": {
+    "tags": [
+     "session"
+    ],
+    "operationId": "session.prompt",
+    "parameters": [
+     {
+      "name": "sessionID",
+      "in": "path",
+      "schema": {
+       "type": "string",
+       "pattern": "^ses"
+      },
+      "required": true
+     },
+     {
+      "name": "directory",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     },
+     {
+      "name": "workspace",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Created message",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "required": [
+          "info",
+          "parts"
+         ],
+         "properties": {
+          "info": {
+           "$ref": "#/components/schemas/AssistantMessage"
+          },
+          "parts": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Part"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "BadRequest | InvalidRequestError",
+      "content": {
+       "application/json": {
+        "schema": {
+         "anyOf": [
+          {
+           "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+          },
+          {
+           "$ref": "#/components/schemas/InvalidRequestError"
+          }
+         ]
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "NotFoundError",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotFoundError"
+        }
+       }
+      }
+     }
+    },
+    "description": "Create and send a new message to a session, streaming the AI response.",
+    "summary": "Send message",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "messageID": {
+          "type": "string",
+          "pattern": "^msg"
+         },
+         "model": {
+          "type": "object",
+          "properties": {
+           "providerID": {
+            "type": "string"
+           },
+           "modelID": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "providerID",
+           "modelID"
+          ],
+          "additionalProperties": false
+         },
+         "agent": {
+          "type": "string"
+         },
+         "noReply": {
+          "type": "boolean"
+         },
+         "tools": {
+          "type": "object",
+          "additionalProperties": {
+           "type": "boolean"
+          }
+         },
+         "format": {
+          "$ref": "#/components/schemas/OutputFormat"
+         },
+         "system": {
+          "type": "string"
+         },
+         "variant": {
+          "type": "string"
+         },
+         "parts": {
+          "type": "array",
+          "items": {
+           "anyOf": [
+            {
+             "$ref": "#/components/schemas/TextPartInput"
+            },
+            {
+             "$ref": "#/components/schemas/FilePartInput"
+            },
+            {
+             "$ref": "#/components/schemas/AgentPartInput"
+            },
+            {
+             "$ref": "#/components/schemas/SubtaskPartInput"
+            }
+           ]
+          }
+         }
+        },
+        "required": [
+         "parts"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    }
+   }
+  },
+  "/event": {
+   "get": {
+    "tags": [
+     "event"
+    ],
+    "operationId": "event.subscribe",
+    "parameters": [
+     {
+      "name": "directory",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     },
+     {
+      "name": "workspace",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "required": false
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Event stream",
+      "content": {
+       "text/event-stream": {
+        "schema": {
+         "$ref": "#/components/schemas/Event"
+        }
+       }
+      }
+     }
+    },
+    "description": "Get events",
+    "summary": "Subscribe to events"
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "EventServerConnected": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^evt_"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "server.connected"
+      ]
+     },
+     "properties": {
+      "type": "object",
+      "properties": {}
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "properties"
+    ],
+    "additionalProperties": false
+   },
+   "EventSessionUpdated": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^evt_"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "session.updated"
+      ]
+     },
+     "properties": {
+      "type": "object",
+      "properties": {
+       "sessionID": {
+        "type": "string",
+        "pattern": "^ses"
+       },
+       "info": {
+        "$ref": "#/components/schemas/Session"
+       }
+      },
+      "required": [
+       "sessionID",
+       "info"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "properties"
+    ],
+    "additionalProperties": false
+   },
+   "EventSessionStatus": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^evt_"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "session.status"
+      ]
+     },
+     "properties": {
+      "type": "object",
+      "properties": {
+       "sessionID": {
+        "type": "string",
+        "pattern": "^ses"
+       },
+       "status": {
+        "$ref": "#/components/schemas/SessionStatus"
+       }
+      },
+      "required": [
+       "sessionID",
+       "status"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "properties"
+    ],
+    "additionalProperties": false
+   },
+   "EventSessionIdle": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^evt_"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "session.idle"
+      ]
+     },
+     "properties": {
+      "type": "object",
+      "properties": {
+       "sessionID": {
+        "type": "string",
+        "pattern": "^ses"
+       }
+      },
+      "required": [
+       "sessionID"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "properties"
+    ],
+    "additionalProperties": false
+   },
+   "EventSessionError": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^evt_"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "session.error"
+      ]
+     },
+     "properties": {
+      "type": "object",
+      "properties": {
+       "sessionID": {
+        "type": "string",
+        "pattern": "^ses"
+       },
+       "error": {
+        "anyOf": [
+         {
+          "$ref": "#/components/schemas/ProviderAuthError"
+         },
+         {
+          "$ref": "#/components/schemas/UnknownError"
+         },
+         {
+          "$ref": "#/components/schemas/MessageOutputLengthError"
+         },
+         {
+          "$ref": "#/components/schemas/MessageAbortedError"
+         },
+         {
+          "$ref": "#/components/schemas/StructuredOutputError"
+         },
+         {
+          "$ref": "#/components/schemas/ContextOverflowError"
+         },
+         {
+          "$ref": "#/components/schemas/ContentFilterError"
+         },
+         {
+          "$ref": "#/components/schemas/APIError"
+         }
+        ]
+       }
+      },
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "properties"
+    ],
+    "additionalProperties": false
+   },
+   "EventMessageUpdated": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^evt_"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "message.updated"
+      ]
+     },
+     "properties": {
+      "type": "object",
+      "properties": {
+       "sessionID": {
+        "type": "string",
+        "pattern": "^ses"
+       },
+       "info": {
+        "$ref": "#/components/schemas/Message"
+       }
+      },
+      "required": [
+       "sessionID",
+       "info"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "properties"
+    ],
+    "additionalProperties": false
+   },
+   "EventMessageRemoved": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^evt_"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "message.removed"
+      ]
+     },
+     "properties": {
+      "type": "object",
+      "properties": {
+       "sessionID": {
+        "type": "string",
+        "pattern": "^ses"
+       },
+       "messageID": {
+        "type": "string",
+        "pattern": "^msg"
+       }
+      },
+      "required": [
+       "sessionID",
+       "messageID"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "properties"
+    ],
+    "additionalProperties": false
+   },
+   "EventMessagePartUpdated": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^evt_"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "message.part.updated"
+      ]
+     },
+     "properties": {
+      "type": "object",
+      "properties": {
+       "sessionID": {
+        "type": "string",
+        "pattern": "^ses"
+       },
+       "part": {
+        "$ref": "#/components/schemas/Part"
+       },
+       "time": {
+        "type": "number"
+       }
+      },
+      "required": [
+       "sessionID",
+       "part",
+       "time"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "properties"
+    ],
+    "additionalProperties": false
+   },
+   "EventMessagePartRemoved": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^evt_"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "message.part.removed"
+      ]
+     },
+     "properties": {
+      "type": "object",
+      "properties": {
+       "sessionID": {
+        "type": "string",
+        "pattern": "^ses"
+       },
+       "messageID": {
+        "type": "string",
+        "pattern": "^msg"
+       },
+       "partID": {
+        "type": "string",
+        "pattern": "^prt"
+       }
+      },
+      "required": [
+       "sessionID",
+       "messageID",
+       "partID"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "properties"
+    ],
+    "additionalProperties": false
+   },
+   "EventMessagePartDelta": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^evt_"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "message.part.delta"
+      ]
+     },
+     "properties": {
+      "type": "object",
+      "properties": {
+       "sessionID": {
+        "type": "string",
+        "pattern": "^ses"
+       },
+       "messageID": {
+        "type": "string",
+        "pattern": "^msg"
+       },
+       "partID": {
+        "type": "string",
+        "pattern": "^prt"
+       },
+       "field": {
+        "type": "string"
+       },
+       "delta": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "sessionID",
+       "messageID",
+       "partID",
+       "field",
+       "delta"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "properties"
+    ],
+    "additionalProperties": false
+   },
+   "EventTodoUpdated": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^evt_"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "todo.updated"
+      ]
+     },
+     "properties": {
+      "type": "object",
+      "properties": {
+       "sessionID": {
+        "type": "string",
+        "pattern": "^ses"
+       },
+       "todos": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/Todo"
+        }
+       }
+      },
+      "required": [
+       "sessionID",
+       "todos"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "properties"
+    ],
+    "additionalProperties": false
+   },
+   "EventSessionDiff": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^evt_"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "session.diff"
+      ]
+     },
+     "properties": {
+      "type": "object",
+      "properties": {
+       "sessionID": {
+        "type": "string",
+        "pattern": "^ses"
+       },
+       "diff": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/SnapshotFileDiff"
+        }
+       }
+      },
+      "required": [
+       "sessionID",
+       "diff"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "id",
+     "type",
+     "properties"
+    ],
+    "additionalProperties": false
+   },
+   "Event": {
+    "anyOf": [
+     {
+      "$ref": "#/components/schemas/EventModels-devRefreshed"
+     },
+     {
+      "$ref": "#/components/schemas/EventIntegrationUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventIntegrationConnectionUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventCatalogUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionCreated"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionDeleted"
+     },
+     {
+      "$ref": "#/components/schemas/EventMessageUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventMessageRemoved"
+     },
+     {
+      "$ref": "#/components/schemas/EventMessagePartUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventMessagePartRemoved"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextAgentSwitched"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextModelSwitched"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextMoved"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextPrompted"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextPromptAdmitted"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextContextUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextSynthetic"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextShellStarted"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextShellEnded"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextStepStarted"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextStepEnded"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextStepFailed"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextTextStarted"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextTextDelta"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextTextEnded"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextReasoningStarted"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextReasoningDelta"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextReasoningEnded"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextToolInputStarted"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextToolInputDelta"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextToolInputEnded"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextToolCalled"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextToolProgress"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextToolSuccess"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextToolFailed"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextRetried"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextCompactionStarted"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextCompactionDelta"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextCompactionEnded"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextRevertStaged"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextRevertCleared"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionNextRevertCommitted"
+     },
+     {
+      "$ref": "#/components/schemas/EventMessagePartDelta"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionDiff"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionError"
+     },
+     {
+      "$ref": "#/components/schemas/EventInstallationUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventInstallationUpdate-available"
+     },
+     {
+      "$ref": "#/components/schemas/EventFileEdited"
+     },
+     {
+      "$ref": "#/components/schemas/EventReferenceUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventPermissionV2Asked"
+     },
+     {
+      "$ref": "#/components/schemas/EventPermissionV2Replied"
+     },
+     {
+      "$ref": "#/components/schemas/EventPluginAdded"
+     },
+     {
+      "$ref": "#/components/schemas/EventProjectDirectoriesUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventFileWatcherUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventPtyCreated"
+     },
+     {
+      "$ref": "#/components/schemas/EventPtyUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventPtyExited"
+     },
+     {
+      "$ref": "#/components/schemas/EventPtyDeleted"
+     },
+     {
+      "$ref": "#/components/schemas/EventQuestionV2Asked"
+     },
+     {
+      "$ref": "#/components/schemas/EventQuestionV2Replied"
+     },
+     {
+      "$ref": "#/components/schemas/EventQuestionV2Rejected"
+     },
+     {
+      "$ref": "#/components/schemas/EventTodoUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventLspUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventPermissionAsked"
+     },
+     {
+      "$ref": "#/components/schemas/EventPermissionReplied"
+     },
+     {
+      "$ref": "#/components/schemas/Event.tui.prompt.append"
+     },
+     {
+      "$ref": "#/components/schemas/Event.tui.command.execute"
+     },
+     {
+      "$ref": "#/components/schemas/Event.tui.toast.show"
+     },
+     {
+      "$ref": "#/components/schemas/Event.tui.session.select"
+     },
+     {
+      "$ref": "#/components/schemas/EventMcpToolsChanged"
+     },
+     {
+      "$ref": "#/components/schemas/EventMcpBrowserOpenFailed"
+     },
+     {
+      "$ref": "#/components/schemas/EventCommandExecuted"
+     },
+     {
+      "$ref": "#/components/schemas/EventProjectUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionStatus"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionIdle"
+     },
+     {
+      "$ref": "#/components/schemas/EventQuestionAsked"
+     },
+     {
+      "$ref": "#/components/schemas/EventQuestionReplied"
+     },
+     {
+      "$ref": "#/components/schemas/EventQuestionRejected"
+     },
+     {
+      "$ref": "#/components/schemas/EventSessionCompacted"
+     },
+     {
+      "$ref": "#/components/schemas/EventVcsBranchUpdated"
+     },
+     {
+      "$ref": "#/components/schemas/EventWorkspaceReady"
+     },
+     {
+      "$ref": "#/components/schemas/EventWorkspaceFailed"
+     },
+     {
+      "$ref": "#/components/schemas/EventWorkspaceStatus"
+     },
+     {
+      "$ref": "#/components/schemas/EventWorktreeReady"
+     },
+     {
+      "$ref": "#/components/schemas/EventWorktreeFailed"
+     },
+     {
+      "$ref": "#/components/schemas/EventServerConnected"
+     },
+     {
+      "$ref": "#/components/schemas/EventGlobalDisposed"
+     },
+     {
+      "$ref": "#/components/schemas/EventServerInstanceDisposed"
+     }
+    ]
+   },
+   "Part": {
+    "anyOf": [
+     {
+      "$ref": "#/components/schemas/TextPart"
+     },
+     {
+      "$ref": "#/components/schemas/SubtaskPart"
+     },
+     {
+      "$ref": "#/components/schemas/ReasoningPart"
+     },
+     {
+      "$ref": "#/components/schemas/FilePart"
+     },
+     {
+      "$ref": "#/components/schemas/ToolPart"
+     },
+     {
+      "$ref": "#/components/schemas/StepStartPart"
+     },
+     {
+      "$ref": "#/components/schemas/StepFinishPart"
+     },
+     {
+      "$ref": "#/components/schemas/SnapshotPart"
+     },
+     {
+      "$ref": "#/components/schemas/PatchPart"
+     },
+     {
+      "$ref": "#/components/schemas/AgentPart"
+     },
+     {
+      "$ref": "#/components/schemas/RetryPart"
+     },
+     {
+      "$ref": "#/components/schemas/CompactionPart"
+     }
+    ]
+   },
+   "TextPart": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^prt"
+     },
+     "sessionID": {
+      "type": "string",
+      "pattern": "^ses"
+     },
+     "messageID": {
+      "type": "string",
+      "pattern": "^msg"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "text"
+      ]
+     },
+     "text": {
+      "type": "string"
+     },
+     "synthetic": {
+      "type": "boolean"
+     },
+     "ignored": {
+      "type": "boolean"
+     },
+     "time": {
+      "type": "object",
+      "properties": {
+       "start": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "end": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "start"
+      ],
+      "additionalProperties": false
+     },
+     "metadata": {
+      "type": "object"
+     }
+    },
+    "required": [
+     "id",
+     "sessionID",
+     "messageID",
+     "type",
+     "text"
+    ],
+    "additionalProperties": false
+   },
+   "ToolPart": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^prt"
+     },
+     "sessionID": {
+      "type": "string",
+      "pattern": "^ses"
+     },
+     "messageID": {
+      "type": "string",
+      "pattern": "^msg"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "tool"
+      ]
+     },
+     "callID": {
+      "type": "string"
+     },
+     "tool": {
+      "type": "string"
+     },
+     "state": {
+      "$ref": "#/components/schemas/ToolState"
+     },
+     "metadata": {
+      "type": "object"
+     }
+    },
+    "required": [
+     "id",
+     "sessionID",
+     "messageID",
+     "type",
+     "callID",
+     "tool",
+     "state"
+    ],
+    "additionalProperties": false
+   },
+   "StepStartPart": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^prt"
+     },
+     "sessionID": {
+      "type": "string",
+      "pattern": "^ses"
+     },
+     "messageID": {
+      "type": "string",
+      "pattern": "^msg"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "step-start"
+      ]
+     },
+     "snapshot": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "sessionID",
+     "messageID",
+     "type"
+    ],
+    "additionalProperties": false
+   },
+   "StepFinishPart": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^prt"
+     },
+     "sessionID": {
+      "type": "string",
+      "pattern": "^ses"
+     },
+     "messageID": {
+      "type": "string",
+      "pattern": "^msg"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "step-finish"
+      ]
+     },
+     "reason": {
+      "type": "string"
+     },
+     "snapshot": {
+      "type": "string"
+     },
+     "cost": {
+      "type": "number"
+     },
+     "tokens": {
+      "type": "object",
+      "properties": {
+       "total": {
+        "type": "number"
+       },
+       "input": {
+        "type": "number"
+       },
+       "output": {
+        "type": "number"
+       },
+       "reasoning": {
+        "type": "number"
+       },
+       "cache": {
+        "type": "object",
+        "properties": {
+         "read": {
+          "type": "number"
+         },
+         "write": {
+          "type": "number"
+         }
+        },
+        "required": [
+         "read",
+         "write"
+        ],
+        "additionalProperties": false
+       }
+      },
+      "required": [
+       "input",
+       "output",
+       "reasoning",
+       "cache"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "id",
+     "sessionID",
+     "messageID",
+     "type",
+     "reason",
+     "cost",
+     "tokens"
+    ],
+    "additionalProperties": false
+   },
+   "ReasoningPart": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^prt"
+     },
+     "sessionID": {
+      "type": "string",
+      "pattern": "^ses"
+     },
+     "messageID": {
+      "type": "string",
+      "pattern": "^msg"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "reasoning"
+      ]
+     },
+     "text": {
+      "type": "string"
+     },
+     "metadata": {
+      "type": "object"
+     },
+     "time": {
+      "type": "object",
+      "properties": {
+       "start": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "end": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "start"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "id",
+     "sessionID",
+     "messageID",
+     "type",
+     "text",
+     "time"
+    ],
+    "additionalProperties": false
+   },
+   "ToolState": {
+    "anyOf": [
+     {
+      "$ref": "#/components/schemas/ToolStatePending"
+     },
+     {
+      "$ref": "#/components/schemas/ToolStateRunning"
+     },
+     {
+      "$ref": "#/components/schemas/ToolStateCompleted"
+     },
+     {
+      "$ref": "#/components/schemas/ToolStateError"
+     }
+    ]
+   },
+   "ToolStatePending": {
+    "type": "object",
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "pending"
+      ]
+     },
+     "input": {
+      "type": "object"
+     },
+     "raw": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "status",
+     "input",
+     "raw"
+    ],
+    "additionalProperties": false
+   },
+   "ToolStateRunning": {
+    "type": "object",
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "running"
+      ]
+     },
+     "input": {
+      "type": "object"
+     },
+     "title": {
+      "type": "string"
+     },
+     "metadata": {
+      "type": "object"
+     },
+     "time": {
+      "type": "object",
+      "properties": {
+       "start": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "start"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "status",
+     "input",
+     "time"
+    ],
+    "additionalProperties": false
+   },
+   "ToolStateCompleted": {
+    "type": "object",
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "completed"
+      ]
+     },
+     "input": {
+      "type": "object"
+     },
+     "output": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "metadata": {
+      "type": "object"
+     },
+     "time": {
+      "type": "object",
+      "properties": {
+       "start": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "end": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "compacted": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "start",
+       "end"
+      ],
+      "additionalProperties": false
+     },
+     "attachments": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/FilePart"
+      }
+     }
+    },
+    "required": [
+     "status",
+     "input",
+     "output",
+     "title",
+     "metadata",
+     "time"
+    ],
+    "additionalProperties": false
+   },
+   "ToolStateError": {
+    "type": "object",
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "error"
+      ]
+     },
+     "input": {
+      "type": "object"
+     },
+     "error": {
+      "type": "string"
+     },
+     "metadata": {
+      "type": "object"
+     },
+     "time": {
+      "type": "object",
+      "properties": {
+       "start": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "end": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "start",
+       "end"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "status",
+     "input",
+     "error",
+     "time"
+    ],
+    "additionalProperties": false
+   },
+   "Todo": {
+    "type": "object",
+    "properties": {
+     "content": {
+      "type": "string",
+      "description": "Brief description of the task"
+     },
+     "status": {
+      "type": "string",
+      "description": "Current status of the task: pending, in_progress, completed, cancelled"
+     },
+     "priority": {
+      "type": "string",
+      "description": "Priority level of the task: high, medium, low"
+     }
+    },
+    "required": [
+     "content",
+     "status",
+     "priority"
+    ],
+    "additionalProperties": false
+   },
+   "Message": {
+    "anyOf": [
+     {
+      "$ref": "#/components/schemas/UserMessage"
+     },
+     {
+      "$ref": "#/components/schemas/AssistantMessage"
+     }
+    ]
+   },
+   "UserMessage": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^msg"
+     },
+     "sessionID": {
+      "type": "string",
+      "pattern": "^ses"
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "user"
+      ]
+     },
+     "time": {
+      "type": "object",
+      "properties": {
+       "created": {
+        "type": "number",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "created"
+      ],
+      "additionalProperties": false
+     },
+     "format": {
+      "$ref": "#/components/schemas/OutputFormat"
+     },
+     "summary": {
+      "type": "object",
+      "properties": {
+       "title": {
+        "type": "string"
+       },
+       "body": {
+        "type": "string"
+       },
+       "diffs": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/SnapshotFileDiff"
+        }
+       }
+      },
+      "required": [
+       "diffs"
+      ],
+      "additionalProperties": false
+     },
+     "agent": {
+      "type": "string"
+     },
+     "model": {
+      "type": "object",
+      "properties": {
+       "providerID": {
+        "type": "string"
+       },
+       "modelID": {
+        "type": "string"
+       },
+       "variant": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "providerID",
+       "modelID"
+      ],
+      "additionalProperties": false
+     },
+     "system": {
+      "type": "string"
+     },
+     "tools": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "boolean"
+      }
+     }
+    },
+    "required": [
+     "id",
+     "sessionID",
+     "role",
+     "time",
+     "agent",
+     "model"
+    ],
+    "additionalProperties": false
+   },
+   "AssistantMessage": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^msg"
+     },
+     "sessionID": {
+      "type": "string",
+      "pattern": "^ses"
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "assistant"
+      ]
+     },
+     "time": {
+      "type": "object",
+      "properties": {
+       "created": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "completed": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "created"
+      ],
+      "additionalProperties": false
+     },
+     "error": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ProviderAuthError"
+       },
+       {
+        "$ref": "#/components/schemas/UnknownError"
+       },
+       {
+        "$ref": "#/components/schemas/MessageOutputLengthError"
+       },
+       {
+        "$ref": "#/components/schemas/MessageAbortedError"
+       },
+       {
+        "$ref": "#/components/schemas/StructuredOutputError"
+       },
+       {
+        "$ref": "#/components/schemas/ContextOverflowError"
+       },
+       {
+        "$ref": "#/components/schemas/ContentFilterError"
+       },
+       {
+        "$ref": "#/components/schemas/APIError"
+       }
+      ]
+     },
+     "parentID": {
+      "type": "string",
+      "pattern": "^msg"
+     },
+     "modelID": {
+      "type": "string"
+     },
+     "providerID": {
+      "type": "string"
+     },
+     "mode": {
+      "type": "string"
+     },
+     "agent": {
+      "type": "string"
+     },
+     "path": {
+      "type": "object",
+      "properties": {
+       "cwd": {
+        "type": "string"
+       },
+       "root": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "cwd",
+       "root"
+      ],
+      "additionalProperties": false
+     },
+     "summary": {
+      "type": "boolean"
+     },
+     "cost": {
+      "type": "number"
+     },
+     "tokens": {
+      "type": "object",
+      "properties": {
+       "total": {
+        "type": "number"
+       },
+       "input": {
+        "type": "number"
+       },
+       "output": {
+        "type": "number"
+       },
+       "reasoning": {
+        "type": "number"
+       },
+       "cache": {
+        "type": "object",
+        "properties": {
+         "read": {
+          "type": "number"
+         },
+         "write": {
+          "type": "number"
+         }
+        },
+        "required": [
+         "read",
+         "write"
+        ],
+        "additionalProperties": false
+       }
+      },
+      "required": [
+       "input",
+       "output",
+       "reasoning",
+       "cache"
+      ],
+      "additionalProperties": false
+     },
+     "structured": {},
+     "variant": {
+      "type": "string"
+     },
+     "finish": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "id",
+     "sessionID",
+     "role",
+     "time",
+     "parentID",
+     "modelID",
+     "providerID",
+     "mode",
+     "agent",
+     "path",
+     "cost",
+     "tokens"
+    ],
+    "additionalProperties": false
+   },
+   "Session": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^ses"
+     },
+     "slug": {
+      "type": "string"
+     },
+     "projectID": {
+      "type": "string"
+     },
+     "workspaceID": {
+      "type": "string",
+      "pattern": "^wrk"
+     },
+     "directory": {
+      "type": "string"
+     },
+     "path": {
+      "type": "string"
+     },
+     "parentID": {
+      "type": "string",
+      "pattern": "^ses"
+     },
+     "summary": {
+      "type": "object",
+      "properties": {
+       "additions": {
+        "type": "number"
+       },
+       "deletions": {
+        "type": "number"
+       },
+       "files": {
+        "type": "number"
+       },
+       "diffs": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/SnapshotFileDiff"
+        }
+       }
+      },
+      "required": [
+       "additions",
+       "deletions",
+       "files"
+      ],
+      "additionalProperties": false
+     },
+     "cost": {
+      "type": "number"
+     },
+     "tokens": {
+      "type": "object",
+      "properties": {
+       "input": {
+        "type": "number"
+       },
+       "output": {
+        "type": "number"
+       },
+       "reasoning": {
+        "type": "number"
+       },
+       "cache": {
+        "type": "object",
+        "properties": {
+         "read": {
+          "type": "number"
+         },
+         "write": {
+          "type": "number"
+         }
+        },
+        "required": [
+         "read",
+         "write"
+        ],
+        "additionalProperties": false
+       }
+      },
+      "required": [
+       "input",
+       "output",
+       "reasoning",
+       "cache"
+      ],
+      "additionalProperties": false
+     },
+     "share": {
+      "type": "object",
+      "properties": {
+       "url": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "url"
+      ],
+      "additionalProperties": false
+     },
+     "title": {
+      "type": "string"
+     },
+     "agent": {
+      "type": "string"
+     },
+     "model": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "providerID": {
+        "type": "string"
+       },
+       "variant": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "providerID"
+      ],
+      "additionalProperties": false
+     },
+     "version": {
+      "type": "string"
+     },
+     "metadata": {
+      "type": "object"
+     },
+     "time": {
+      "type": "object",
+      "properties": {
+       "created": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "updated": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "compacting": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "archived": {
+        "type": "number"
+       }
+      },
+      "required": [
+       "created",
+       "updated"
+      ],
+      "additionalProperties": false
+     },
+     "permission": {
+      "$ref": "#/components/schemas/PermissionRuleset"
+     },
+     "revert": {
+      "type": "object",
+      "properties": {
+       "messageID": {
+        "type": "string",
+        "pattern": "^msg"
+       },
+       "partID": {
+        "type": "string",
+        "pattern": "^prt"
+       },
+       "snapshot": {
+        "type": "string"
+       },
+       "diff": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "messageID"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "id",
+     "slug",
+     "projectID",
+     "directory",
+     "title",
+     "version",
+     "time"
+    ],
+    "additionalProperties": false
+   },
+   "TextPartInput": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^prt"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "text"
+      ]
+     },
+     "text": {
+      "type": "string"
+     },
+     "synthetic": {
+      "type": "boolean"
+     },
+     "ignored": {
+      "type": "boolean"
+     },
+     "time": {
+      "type": "object",
+      "properties": {
+       "start": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "end": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "start"
+      ],
+      "additionalProperties": false
+     },
+     "metadata": {
+      "type": "object"
+     }
+    },
+    "required": [
+     "type",
+     "text"
+    ],
+    "additionalProperties": false
+   },
+   "ProviderAuthError": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "enum": [
+       "ProviderAuthError"
+      ]
+     },
+     "data": {
+      "type": "object",
+      "properties": {
+       "providerID": {
+        "type": "string"
+       },
+       "message": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "providerID",
+       "message"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "name",
+     "data"
+    ],
+    "additionalProperties": false
+   },
+   "UnknownError": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "enum": [
+       "UnknownError"
+      ]
+     },
+     "data": {
+      "type": "object",
+      "properties": {
+       "message": {
+        "type": "string"
+       },
+       "ref": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "message"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "name",
+     "data"
+    ],
+    "additionalProperties": false
+   },
+   "MessageAbortedError": {
+    "type": "object",
+    "properties": {
+     "name": {
+      "type": "string",
+      "enum": [
+       "MessageAbortedError"
+      ]
+     },
+     "data": {
+      "type": "object",
+      "properties": {
+       "message": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "message"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "required": [
+     "name",
+     "data"
+    ],
+    "additionalProperties": false
+   }
+  }
+ }
+}

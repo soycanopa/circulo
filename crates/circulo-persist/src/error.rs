@@ -9,6 +9,7 @@ pub enum PersistError {
     Io(std::io::Error),
     NotFound,
     InvalidHome,
+    AgentBindingLocked,
 }
 
 impl std::fmt::Display for PersistError {
@@ -21,6 +22,7 @@ impl std::fmt::Display for PersistError {
             Self::Io(err) => write!(f, "io: {err}"),
             Self::NotFound => write!(f, "not found"),
             Self::InvalidHome => write!(f, "HOME is not set"),
+            Self::AgentBindingLocked => write!(f, "agent session binding already set"),
         }
     }
 }

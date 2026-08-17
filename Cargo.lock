@@ -911,7 +911,16 @@ dependencies = [
 name = "circulo-adapter-opencode"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "circulo-adapter",
+ "circulo-adapter-opencode",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "ureq",
 ]
 
 [[package]]
@@ -947,7 +956,9 @@ dependencies = [
  "axum",
  "circulo-adapter",
  "circulo-adapter-fake",
+ "circulo-adapter-opencode",
  "circulo-core",
+ "circulo-i18n",
  "circulo-persist",
  "circulo-protocol",
  "futures-util",

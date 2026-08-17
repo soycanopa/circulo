@@ -1,8 +1,8 @@
 //! Fake `AgentAdapter` for tests and UI development without OpenCode.
 
 use circulo_adapter::{
-    AdapterError, AdapterEvent, AdapterHealth, AgentAdapter, GenerateRequest, Task, TaskStatus,
-    ToolCall, ToolCallStatus, ToolOutput,
+    AdapterError, AdapterEvent, AdapterHealth, AgentAdapter, ErrorReason, GenerateRequest, Task,
+    TaskStatus, ToolCall, ToolCallStatus, ToolOutput,
 };
 
 #[derive(Debug, Clone)]
@@ -41,9 +41,10 @@ impl AgentAdapter for FakeAdapter {
         emit: &mut dyn FnMut(AdapterEvent),
     ) -> Result<(), AdapterError> {
         if self.fail {
-            let error = AdapterError::Failed {
-                message: "The fake agent was asked to fail.".into(),
-            };
+            let error = AdapterError::failed(
+                ErrorReason::Internal,
+                "The fake agent was asked to fail.",
+            );
             emit(AdapterEvent::Failed {
                 error: error.clone(),
             });
@@ -113,6 +114,7 @@ mod tests {
         GenerateRequest {
             session_id: Uuid::nil(),
             user_text: "Write a note".into(),
+            agent_session_id: None,
         }
     }
 

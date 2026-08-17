@@ -175,4 +175,36 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].title, "Landing copy");
     }
+
+    #[test]
+    fn agent_binding_roundtrip_and_default_null() {
+        let store = Store::open_in_memory().unwrap();
+        let s = session(60, None, "Chat");
+        store.create_session(&s).unwrap();
+        assert_eq!(store.opencode_session_id(s.id).unwrap(), None);
+        store
+            .bind_opencode_session(s.id, "ses_from_opencode")
+            .unwrap();
+        assert_eq!(
+            store.opencode_session_id(s.id).unwrap().as_deref(),
+            Some("ses_from_opencode")
+        );
+    }
+
+    #[test]
+    fn agent_binding_is_write_once() {
+        let store = Store::open_in_memory().unwrap();
+        let s = session(61, None, "Chat");
+        store.create_session(&s).unwrap();
+        store.bind_opencode_session(s.id, "ses_first").unwrap();
+        store.bind_opencode_session(s.id, "ses_first").unwrap();
+        let err = store
+            .bind_opencode_session(s.id, "ses_other")
+            .unwrap_err();
+        assert!(matches!(err, PersistError::AgentBindingLocked));
+        assert_eq!(
+            store.opencode_session_id(s.id).unwrap().as_deref(),
+            Some("ses_first")
+        );
+    }
 }

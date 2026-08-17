@@ -17,7 +17,7 @@ time = { version = "0.3", features = ["serde", "serde-well-known", "formatting",
 rusqlite = { version = "0.40", features = ["bundled"] }
 tempfile = "3"
 axum = { version = "0.8", features = ["json", "macros"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }

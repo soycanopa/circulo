@@ -11,7 +11,9 @@ description = "Local Circulo daemon process."
 axum.workspace = true
 circulo-adapter.workspace = true
 circulo-adapter-fake.workspace = true
+circulo-adapter-opencode.workspace = true
 circulo-core.workspace = true
+circulo-i18n.workspace = true
 circulo-persist.workspace = true
 circulo-protocol.workspace = true
 futures-util.workspace = true
@@ -23,5 +25,6 @@ tokio-stream.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+circulo-adapter-opencode = { workspace = true, features = ["test-support"] }
 reqwest.workspace = true
 tempfile.workspace = true

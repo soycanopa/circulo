@@ -31,5 +31,13 @@
   "sidebar.new_project": "New project",
   "sidebar.empty_sessions": "No sessions yet",
   "sidebar.empty_groups": "No projects yet",
-  "sidebar.daemon_down": "Couldn’t connect to Circulo. Is the daemon running?"
+  "sidebar.daemon_down": "Couldn’t connect to Circulo. Is the daemon running?",
+  "opencode.error.binary_missing": "OpenCode isn’t installed on this Mac. Install it to start chatting.",
+  "opencode.error.start_failed": "OpenCode couldn’t start. Try again in a moment.",
+  "opencode.error.port_occupied": "Another app is using OpenCode’s port. Close it and try again.",
+  "opencode.error.unauthorized": "OpenCode rejected Circulo’s access. Check your OpenCode account.",
+  "opencode.error.stream_failed": "The connection to OpenCode dropped. Try sending again.",
+  "opencode.error.timeout": "OpenCode took too long to reply. Try again.",
+  "opencode.error.provider_failed": "The agent couldn’t finish the reply. Try again.",
+  "opencode.error.internal": "Something went wrong talking to the agent."
 }
