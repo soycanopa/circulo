@@ -41,10 +41,8 @@ impl AgentAdapter for FakeAdapter {
         emit: &mut dyn FnMut(AdapterEvent),
     ) -> Result<(), AdapterError> {
         if self.fail {
-            let error = AdapterError::failed(
-                ErrorReason::Internal,
-                "The fake agent was asked to fail.",
-            );
+            let error =
+                AdapterError::failed(ErrorReason::Internal, "The fake agent was asked to fail.");
             emit(AdapterEvent::Failed {
                 error: error.clone(),
             });
@@ -118,7 +116,9 @@ mod tests {
         }
     }
 
-    fn collect(adapter: &FakeAdapter) -> (Result<(), circulo_adapter::AdapterError>, Vec<AdapterEvent>) {
+    fn collect(
+        adapter: &FakeAdapter,
+    ) -> (Result<(), circulo_adapter::AdapterError>, Vec<AdapterEvent>) {
         let mut events = Vec::new();
         let result = adapter.generate(request(), &mut |event| events.push(event));
         (result, events)
@@ -133,8 +133,12 @@ mod tests {
     fn successful_turn_emits_expected_sequence() {
         let (result, events) = collect(&FakeAdapter::new());
         assert!(result.is_ok());
-        assert!(events.iter().any(|e| matches!(e, AdapterEvent::TextDelta { .. })));
-        assert!(events.iter().any(|e| matches!(e, AdapterEvent::TaskList { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, AdapterEvent::TextDelta { .. })));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, AdapterEvent::TaskList { .. })));
         assert!(events.iter().any(|e| {
             matches!(
                 e,
@@ -145,7 +149,9 @@ mod tests {
             )
         }));
         assert!(events.iter().any(|e| matches!(e, AdapterEvent::Completed)));
-        assert!(!events.iter().any(|e| matches!(e, AdapterEvent::Failed { .. })));
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, AdapterEvent::Failed { .. })));
     }
 
     #[test]

@@ -15,7 +15,9 @@ use circulo_adapter_opencode::{OpenCodeAdapter, ServerConfig};
 use serde_json::Value;
 
 fn fixture_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
 }
 
 fn load_script(name: &str) -> (Vec<ScriptStep>, String) {
@@ -89,7 +91,9 @@ fn captured_text_tool_turn_maps_end_to_end() {
     assert!(events.iter().any(|e| matches!(e, AdapterEvent::Completed)));
     let text = text_of(&events);
     assert!(
-        text.contains("I see 11 entries in /private/tmp, mostly logs, build folders, and session files."),
+        text.contains(
+            "I see 11 entries in /private/tmp, mostly logs, build folders, and session files."
+        ),
         "assistant text must match the capture, got: {text:?}"
     );
     assert!(

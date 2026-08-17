@@ -68,10 +68,8 @@ impl AgentAdapter for OpenCodeAdapter {
     ) -> Result<(), AdapterError> {
         self.servers.ensure_running()?;
         let read_timeout = client::MAX_STREAM_READ_TIMEOUT.min(self.turn_timeout);
-        let client = client::OpenCodeClient::with_read_timeout(
-            self.servers.config().port,
-            read_timeout,
-        );
+        let client =
+            client::OpenCodeClient::with_read_timeout(self.servers.config().port, read_timeout);
 
         let agent_session_id = match request.agent_session_id {
             Some(id) => id,

@@ -102,10 +102,7 @@ impl EventStream {
         let mut line = String::new();
         loop {
             line.clear();
-            let read = self
-                .reader
-                .read_line(&mut line)
-                .map_err(map_stream_error)?;
+            let read = self.reader.read_line(&mut line).map_err(map_stream_error)?;
             if read == 0 {
                 return Err(AdapterError::failed(
                     ErrorReason::StreamFailed,

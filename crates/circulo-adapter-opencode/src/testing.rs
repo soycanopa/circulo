@@ -106,11 +106,7 @@ impl FakeOpenCodeServer {
     }
 
     pub fn last_prompt(&self) -> Option<(String, String)> {
-        self.shared
-            .last_prompt
-            .lock()
-            .expect("prompt lock")
-            .clone()
+        self.shared.last_prompt.lock().expect("prompt lock").clone()
     }
 
     pub fn sessions_created(&self) -> usize {
@@ -135,16 +131,10 @@ async fn create_session(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<(StatusCode, Json<Value>), StatusCode> {
-    if state.shared.require_auth.load(Ordering::SeqCst)
-        && !headers.contains_key("authorization")
-    {
+    if state.shared.require_auth.load(Ordering::SeqCst) && !headers.contains_key("authorization") {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    let index = state
-        .shared
-        .sessions_created
-        .fetch_add(1, Ordering::SeqCst)
-        + 1;
+    let index = state.shared.sessions_created.fetch_add(1, Ordering::SeqCst) + 1;
     Ok((
         StatusCode::OK,
         Json(json!({ "id": format!("ses_fake_{index}") })),
@@ -157,9 +147,7 @@ async fn prompt_async(
     headers: HeaderMap,
     body: Option<Json<Value>>,
 ) -> StatusCode {
-    if state.shared.require_auth.load(Ordering::SeqCst)
-        && !headers.contains_key("authorization")
-    {
+    if state.shared.require_auth.load(Ordering::SeqCst) && !headers.contains_key("authorization") {
         return StatusCode::UNAUTHORIZED;
     }
     let user_text = body
@@ -174,12 +162,7 @@ async fn prompt_async(
         .unwrap_or_default();
     *state.shared.last_prompt.lock().expect("prompt lock") = Some((session_id.clone(), user_text));
 
-    let sender = state
-        .shared
-        .event_tx
-        .lock()
-        .expect("event lock")
-        .clone();
+    let sender = state.shared.event_tx.lock().expect("event lock").clone();
     let Some(sender) = sender else {
         return StatusCode::NO_CONTENT;
     };
@@ -255,10 +238,20 @@ fn part_snapshot(part_id: &str, part_type: &str, text: &str) -> ScriptStep {
     }))
 }
 
-pub fn tool_state(part_id: &str, call_id: &str, tool: &str, status: &str, output: Option<&str>) -> ScriptStep {
+pub fn tool_state(
+    part_id: &str,
+    call_id: &str,
+    tool: &str,
+    status: &str,
+    output: Option<&str>,
+) -> ScriptStep {
     let state = match (status, output) {
-        ("completed", Some(output)) => json!({ "status": status, "input": {"path": "notes.md"}, "output": output, "time": {"start": 1786918540000_i64, "end": 1786918541000_i64 } }),
-        ("error", Some(message)) => json!({ "status": status, "input": {"path": "notes.md"}, "error": message, "time": {"start": 1786918540000_i64, "end": 1786918541000_i64 } }),
+        ("completed", Some(output)) => {
+            json!({ "status": status, "input": {"path": "notes.md"}, "output": output, "time": {"start": 1786918540000_i64, "end": 1786918541000_i64 } })
+        }
+        ("error", Some(message)) => {
+            json!({ "status": status, "input": {"path": "notes.md"}, "error": message, "time": {"start": 1786918540000_i64, "end": 1786918541000_i64 } })
+        }
         _ => json!({ "status": status, "input": {"path": "notes.md"} }),
     };
     ScriptStep::Event(json!({

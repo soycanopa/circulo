@@ -29,7 +29,9 @@ fn healthy_server_is_reused_without_spawning() {
     let server = FakeOpenCodeServer::spawn();
     let manager = ServerManager::new(config_for(server.port, None, Duration::from_secs(1)));
     manager.ensure_running().expect("reuse healthy server");
-    manager.ensure_running().expect("still healthy on second check");
+    manager
+        .ensure_running()
+        .expect("still healthy on second check");
 }
 
 #[test]

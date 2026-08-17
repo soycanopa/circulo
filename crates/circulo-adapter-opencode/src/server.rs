@@ -72,10 +72,7 @@ impl ServerManager {
 
     /// Test seam: controls how the `opencode` binary is located when no
     /// explicit command is configured.
-    pub fn with_binary_resolver(
-        config: ServerConfig,
-        resolver: fn() -> Option<PathBuf>,
-    ) -> Self {
+    pub fn with_binary_resolver(config: ServerConfig, resolver: fn() -> Option<PathBuf>) -> Self {
         Self {
             config,
             child: Mutex::new(None),
@@ -197,13 +194,12 @@ fn probe(port: u16) -> Probe {
         Ok(stream) => stream,
         // Only a clean refusal proves the port is vacant; a timeout means the
         // port is wedged or busy, and we must not spawn over it.
-        Err(err) if err.kind() == std::io::ErrorKind::ConnectionRefused => {
-            return Probe::Vacant
-        }
+        Err(err) if err.kind() == std::io::ErrorKind::ConnectionRefused => return Probe::Vacant,
         Err(_) => return Probe::Occupied,
     };
     let _ = stream.set_read_timeout(Some(PROBE_TIMEOUT));
-    let request = format!("GET {PROBE_PATH} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+    let request =
+        format!("GET {PROBE_PATH} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
     if stream.write_all(request.as_bytes()).is_err() {
         return Probe::Occupied;
     }

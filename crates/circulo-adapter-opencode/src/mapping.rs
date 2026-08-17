@@ -5,8 +5,7 @@
 use std::collections::{HashMap, HashSet};
 
 use circulo_adapter::{
-    AdapterError, AdapterEvent, ErrorReason, Task, TaskStatus, ToolCall, ToolCallStatus,
-    ToolOutput,
+    AdapterError, AdapterEvent, ErrorReason, Task, TaskStatus, ToolCall, ToolCallStatus, ToolOutput,
 };
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -50,7 +49,10 @@ pub fn apply(
             if properties.get("field").and_then(Value::as_str) != Some("text") {
                 return TurnOutcome::Continue;
             }
-            let message_id = properties.get("messageID").and_then(Value::as_str).unwrap_or("");
+            let message_id = properties
+                .get("messageID")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             if !message_id.is_empty() && state.user_message_ids.contains(message_id) {
                 return TurnOutcome::Continue;
             }
@@ -93,7 +95,9 @@ pub fn apply(
                         emit(AdapterEvent::TextDelta { content: suffix });
                     } else if snapshot.len() < offset {
                         // Shrunken snapshot means our offsets are stale; resync.
-                        state.part_offsets.insert(part_id.to_owned(), snapshot.len());
+                        state
+                            .part_offsets
+                            .insert(part_id.to_owned(), snapshot.len());
                     }
                     TurnOutcome::Continue
                 }
@@ -125,7 +129,10 @@ pub fn apply(
         }
         "session.error" => {
             let error = properties.get("error").cloned().unwrap_or(Value::Null);
-            let name = error.get("name").and_then(Value::as_str).unwrap_or("UnknownError");
+            let name = error
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("UnknownError");
             let auth = name.contains("Auth");
             let message = human_provider_error(&error);
             TurnOutcome::Failed { message, auth }
@@ -138,7 +145,10 @@ pub fn apply(
                 }
             }
             if let Some(error) = info.get("error") {
-                let name = error.get("name").and_then(Value::as_str).unwrap_or("UnknownError");
+                let name = error
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("UnknownError");
                 let auth = name.contains("Auth");
                 let message = human_provider_error(error);
                 return TurnOutcome::Failed { message, auth };
@@ -152,10 +162,7 @@ pub fn apply(
 
 pub fn failure_to_error(message: String, auth: bool) -> AdapterError {
     if auth {
-        AdapterError::failed(
-            ErrorReason::Unauthorized,
-            message,
-        )
+        AdapterError::failed(ErrorReason::Unauthorized, message)
     } else {
         AdapterError::failed(ErrorReason::ProviderFailed, message)
     }
@@ -174,7 +181,10 @@ fn map_tool_part(part: &Value) -> ToolCall {
         .unwrap_or("call_unknown")
         .to_owned();
     let tool_state = part.get("state").cloned().unwrap_or(Value::Null);
-    let status_name = tool_state.get("status").and_then(Value::as_str).unwrap_or("");
+    let status_name = tool_state
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let (status, output) = match status_name {
         "pending" => (ToolCallStatus::Pending, None),
         "running" => (ToolCallStatus::Running, None),
@@ -252,7 +262,10 @@ fn timestamp_ms(parent: &Value, time_field: &str, bound: &str) -> Option<OffsetD
 }
 
 fn human_provider_error(error: &Value) -> String {
-    let name = error.get("name").and_then(Value::as_str).unwrap_or("UnknownError");
+    let name = error
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("UnknownError");
     match error.get("message").and_then(Value::as_str) {
         Some(detail) if !detail.trim().is_empty() => format!("{name}: {detail}"),
         _ => name.to_owned(),

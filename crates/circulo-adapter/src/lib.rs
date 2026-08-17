@@ -76,13 +76,25 @@ impl AdapterError {
 pub enum AdapterEvent {
     /// Emitted once when the adapter created the provider-side session for a
     /// Circulo session. Always the first event of a turn that binds.
-    SessionBound { agent_session_id: String },
-    TextDelta { content: String },
-    TaskList { tasks: Vec<Task> },
-    ToolCallStarted { tool_call: ToolCall },
-    ToolCallUpdated { tool_call: ToolCall },
+    SessionBound {
+        agent_session_id: String,
+    },
+    TextDelta {
+        content: String,
+    },
+    TaskList {
+        tasks: Vec<Task>,
+    },
+    ToolCallStarted {
+        tool_call: ToolCall,
+    },
+    ToolCallUpdated {
+        tool_call: ToolCall,
+    },
     Completed,
-    Failed { error: AdapterError },
+    Failed {
+        error: AdapterError,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

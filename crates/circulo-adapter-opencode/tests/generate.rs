@@ -8,8 +8,8 @@ use circulo_adapter::{
     ToolCallStatus, ToolOutput, Uuid,
 };
 use circulo_adapter_opencode::testing::{
-    drop_stream, idle, message_with_error, reasoning_snapshot, session_error, sleep_ms,
-    text_delta, text_snapshot, todo_list, tool_state, unknown_event, FakeOpenCodeServer,
+    drop_stream, idle, message_with_error, reasoning_snapshot, session_error, sleep_ms, text_delta,
+    text_snapshot, todo_list, tool_state, unknown_event, FakeOpenCodeServer,
 };
 use circulo_adapter_opencode::{OpenCodeAdapter, ServerConfig};
 
@@ -85,10 +85,7 @@ fn bound_session_is_reused_without_new_binding() {
     server.set_script(vec![text_delta("prt_1", "Hi"), idle()]);
     let adapter = adapter_for(&server, Duration::from_secs(5));
 
-    let (result, events) = collect(
-        &adapter,
-        request(Some("ses_fake_existing".into())),
-    );
+    let (result, events) = collect(&adapter, request(Some("ses_fake_existing".into())));
 
     assert!(result.is_ok());
     assert_eq!(server.sessions_created(), 0);
@@ -104,7 +101,13 @@ fn tool_and_task_turn_maps_statuses() {
     server.set_script(vec![
         tool_state("prt_t1", "call_1", "read", "pending", None),
         tool_state("prt_t1", "call_1", "read", "running", None),
-        tool_state("prt_t1", "call_1", "read", "completed", Some("<entries>notes.md</entries>")),
+        tool_state(
+            "prt_t1",
+            "call_1",
+            "read",
+            "completed",
+            Some("<entries>notes.md</entries>"),
+        ),
         todo_list(&[
             ("Sort notes", "pending"),
             ("Archive duplicates", "in_progress"),
@@ -176,7 +179,9 @@ fn dropped_stream_fails_the_turn() {
 
     let err = result.expect_err("stream drop must fail");
     assert_eq!(err.reason(), ErrorReason::StreamFailed);
-    assert!(events.iter().any(|e| matches!(e, AdapterEvent::Failed { .. })));
+    assert!(events
+        .iter()
+        .any(|e| matches!(e, AdapterEvent::Failed { .. })));
 }
 
 #[test]
@@ -245,7 +250,10 @@ fn reasoning_deltas_do_not_leak_into_the_reply() {
         reasoning_snapshot("prt_reason", ""),
         text_delta("prt_reason", "The user asks a question. "),
         text_delta("prt_reason", "I should answer concisely."),
-        reasoning_snapshot("prt_reason", "The user asks a question. I should answer concisely."),
+        reasoning_snapshot(
+            "prt_reason",
+            "The user asks a question. I should answer concisely.",
+        ),
         text_snapshot("prt_answer", ""),
         text_delta("prt_answer", "A cortado is espresso cut"),
         text_delta("prt_answer", " with steamed milk."),
