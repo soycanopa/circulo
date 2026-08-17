@@ -50,3 +50,6 @@ CREATE TABLE IF NOT EXISTS preferences (
     value TEXT NOT NULL
 );
 ";
+
+/// V2: agent-side session binding for OpenCode (see change adapter-opencode).
+pub const MIGRATION_V2: &str = "ALTER TABLE sessions ADD COLUMN opencode_session_id TEXT;";

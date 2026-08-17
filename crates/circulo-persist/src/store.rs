@@ -10,7 +10,7 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::error::PersistError;
-use crate::schema::MIGRATION_V1;
+use crate::schema::{MIGRATION_V1, MIGRATION_V2};
 
 const PREF_SIDEBAR_VIEW: &str = "sidebar.view";
 
@@ -47,6 +47,18 @@ impl Store {
         conn.execute_batch(MIGRATION_V1)?;
         conn.execute(
             "INSERT OR IGNORE INTO schema_migrations (version) VALUES (1)",
+            [],
+        )?;
+        if conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'opencode_session_id'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )? == 0
+        {
+            conn.execute_batch(MIGRATION_V2)?;
+        }
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version) VALUES (2)",
             [],
         )?;
         Ok(Self { conn })
@@ -248,6 +260,39 @@ impl Store {
             ],
         )?;
         Ok(())
+    }
+
+    pub fn opencode_session_id(&self, id: Uuid) -> Result<Option<String>, PersistError> {
+        let value = self
+            .conn
+            .query_row(
+                "SELECT opencode_session_id FROM sessions WHERE id = ?1",
+                [id.to_string()],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?;
+        Ok(value.flatten())
+    }
+
+    /// Binds a session to its OpenCode session. Write-once: storing the same id
+    /// again is a no-op; storing a different id over an existing binding fails.
+    pub fn bind_opencode_session(
+        &self,
+        id: Uuid,
+        agent_session_id: &str,
+    ) -> Result<(), PersistError> {
+        let updated = self.conn.execute(
+            "UPDATE sessions SET opencode_session_id = ?1 WHERE id = ?2 AND opencode_session_id IS NULL",
+            params![agent_session_id, id.to_string()],
+        )?;
+        if updated > 0 {
+            return Ok(());
+        }
+        match self.opencode_session_id(id)? {
+            Some(existing) if existing == agent_session_id => Ok(()),
+            Some(_) => Err(PersistError::AgentBindingLocked),
+            None => Err(PersistError::NotFound),
+        }
     }
 
     pub fn save_message(&self, message: &Message) -> Result<(), PersistError> {
