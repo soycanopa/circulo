@@ -10,7 +10,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use circulo_adapter::{AdapterHealth, AgentAdapter};
 use circulo_core::{
-    AgentType, OffsetDateTime, Project, ProjectStatus, Session, SessionStatus, SidebarView, Uuid,
+    AgentType, OffsetDateTime, Project, ProjectStatus, Session, SessionStatus, Uuid,
 };
 use circulo_persist::{PersistError, Store};
 use circulo_protocol::{
@@ -90,7 +90,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/projects/{id}/restore", post(restore_project))
         .route("/v1/projects/{id}/sessions", get(list_project_sessions))
         .route("/v1/sessions", get(list_sessions).post(create_session))
-        .route("/v1/sessions/{id}", get(get_session).patch(patch_session))
+        .route("/v1/sessions/{id}", get(get_session).patch(patch_session).delete(delete_session))
         .route(
             "/v1/sessions/{id}/messages",
             get(list_messages).post(post_message),
@@ -305,6 +305,14 @@ async fn patch_session(
     Ok(Json(session))
 }
 
+async fn delete_session(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, HttpError> {
+    state.store()?.delete_session(id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn list_messages(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -377,21 +385,10 @@ async fn session_events(
     Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
-async fn get_preferences(
-    State(state): State<AppState>,
-) -> Result<Json<PreferencesBody>, HttpError> {
-    Ok(Json(PreferencesBody {
-        sidebar_view: state.store()?.sidebar_view()?,
-    }))
+async fn get_preferences() -> Json<PreferencesBody> {
+    Json(PreferencesBody::default())
 }
 
-async fn put_preferences(
-    State(state): State<AppState>,
-    Json(body): Json<PreferencesBody>,
-) -> Result<Json<PreferencesBody>, HttpError> {
-    let view = match body.sidebar_view {
-        SidebarView::Sessions | SidebarView::Groups => body.sidebar_view,
-    };
-    state.store()?.set_sidebar_view(view)?;
-    Ok(Json(PreferencesBody { sidebar_view: view }))
+async fn put_preferences() -> Json<PreferencesBody> {
+    Json(PreferencesBody::default())
 }

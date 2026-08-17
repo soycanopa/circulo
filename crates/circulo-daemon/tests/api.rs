@@ -92,6 +92,62 @@ async fn create_unassigned_session() {
 }
 
 #[tokio::test]
+async fn delete_single_session() {
+    let (addr, client) = spawn_server().await;
+    let keep: Session = client
+        .post(format!("http://{addr}/v1/sessions"))
+        .json(&CreateSessionRequest {
+            project_id: None,
+            title: Some("Keep".into()),
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let gone: Session = client
+        .post(format!("http://{addr}/v1/sessions"))
+        .json(&CreateSessionRequest {
+            project_id: None,
+            title: Some("Gone".into()),
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    client
+        .delete(format!("http://{addr}/v1/sessions/{}", gone.id))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let sessions: Vec<Session> = client
+        .get(format!("http://{addr}/v1/sessions"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].id, keep.id);
+    let missing = client
+        .get(format!("http://{addr}/v1/sessions/{}", gone.id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), 404);
+}
+
+#[tokio::test]
 async fn post_message_runs_fake_turn() {
     let (addr, client) = spawn_server().await;
     let session: Session = client
