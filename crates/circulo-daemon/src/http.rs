@@ -101,15 +101,25 @@ pub fn router(state: AppState) -> Router {
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
-    let (adapter, adapter_message) = match state.adapter.probe() {
-        AdapterHealth::Available => ("available".into(), None),
-        AdapterHealth::Missing => ("missing".into(), None),
-        AdapterHealth::Error { message } => ("error".into(), Some(message)),
-    };
+    // probe() may spawn an OpenCode server; keep it off the async runtime.
+    let adapter = Arc::clone(&state.adapter);
+    let (adapter_state, adapter_message) = tokio::task::spawn_blocking(move || match adapter.probe()
+    {
+        AdapterHealth::Available => ("available".to_string(), None),
+        AdapterHealth::Missing => ("missing".to_string(), None),
+        AdapterHealth::Error { message } => ("error".to_string(), Some(message)),
+    })
+    .await
+    .unwrap_or_else(|_| {
+        (
+            "error".to_string(),
+            Some("The agent check did not answer.".into()),
+        )
+    });
     Json(HealthResponse {
         api_version: API_VERSION,
         daemon: "ok".into(),
-        adapter,
+        adapter: adapter_state,
         adapter_message,
     })
 }
@@ -310,15 +320,21 @@ async fn post_message(
     if body.content.trim().is_empty() {
         return Err(ApiError::invalid_request("Message content is required.").into());
     }
-    let store = state.store()?;
-    store
-        .get_session(id)?
-        .ok_or_else(|| ApiError::not_found("Session not found."))?;
+    state.store()?.get_session(id)?.ok_or_else(|| {
+        HttpError::from(ApiError::not_found("Session not found."))
+    })?;
+    // A real adapter blocks on network IO and SSE reads for the whole turn.
+    let store = Arc::clone(&state.store);
     let adapter = Arc::clone(&state.adapter);
     let events = state.events.clone();
-    let assistant = run_turn(&store, adapter.as_ref(), id, &body.content, &mut |event| {
-        let _ = events.send(event);
-    })?;
+    let assistant = tokio::task::spawn_blocking(move || {
+        let store = store.lock().map_err(|_| ApiError::internal())?;
+        run_turn(&store, adapter.as_ref(), id, &body.content, &mut |event| {
+            let _ = events.send(event);
+        })
+    })
+    .await
+    .map_err(|_| HttpError::from(ApiError::internal()))??;
     Ok(Json(assistant))
 }
 

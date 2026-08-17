@@ -1,8 +1,14 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use circulo_adapter::AgentAdapter;
 use circulo_adapter_fake::FakeAdapter;
+use circulo_adapter_opencode::testing::{
+    idle, text_delta, text_snapshot, tool_state, todo_list, FakeOpenCodeServer,
+};
+use circulo_adapter_opencode::{OpenCodeAdapter, ServerConfig};
 use circulo_core::{Message, MessagePart, MessageStatus, Project, Session, ToolCallStatus};
 use circulo_daemon::{listen_addr, router, AppState};
 use circulo_persist::Store;
@@ -15,15 +21,21 @@ use serde_json::json;
 use tokio::net::TcpListener;
 
 async fn spawn_server() -> (SocketAddr, reqwest::Client) {
+    spawn_server_with(Arc::new(FakeAdapter::new())).await
+}
+
+async fn spawn_server_with(
+    adapter: Arc<dyn AgentAdapter>,
+) -> (SocketAddr, reqwest::Client) {
     let store = Store::open_in_memory().expect("memory store");
-    let state = AppState::new(store, Arc::new(FakeAdapter::new()));
+    let state = AppState::new(store, adapter);
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("addr");
     tokio::spawn(async move {
         axum::serve(listener, router(state)).await.expect("serve");
     });
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(10))
         .build()
         .expect("client");
     (addr, client)
@@ -230,4 +242,91 @@ async fn project_patch_after_first_send_is_locked() {
         project_id: Some(Some(project.id)),
         archive: None,
     };
+}
+
+#[tokio::test]
+async fn opencode_adapter_turn_binds_and_reuses_across_requests() {
+    let opencode = FakeOpenCodeServer::spawn();
+    opencode.set_script(vec![
+        tool_state("prt_t1", "call_1", "read", "pending", None),
+        tool_state("prt_t1", "call_1", "read", "completed", Some("notes found")),
+        todo_list(&[("Draft reply", "completed")]),
+        text_snapshot("prt_1", ""),
+        text_delta("prt_1", "Here is your answer."),
+        idle(),
+    ]);
+    let adapter = OpenCodeAdapter::new(
+        ServerConfig {
+            port: opencode.port,
+            // Hermetic: if the fake server were ever misprobed, spawning must
+            // fail instead of launching the machine's real OpenCode.
+            command: Some(PathBuf::from("/nonexistent/opencode-for-tests")),
+            cwd: PathBuf::from("."),
+            startup_timeout: Duration::from_secs(1),
+        },
+        Duration::from_secs(10),
+    );
+    let (addr, client) = spawn_server_with(Arc::new(adapter)).await;
+
+    let session: Session = client
+        .post(format!("http://{addr}/v1/sessions"))
+        .json(&CreateSessionRequest {
+            project_id: None,
+            title: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    for expected_text in ["Here is your answer.", "Here is your answer."] {
+        client
+            .post(format!(
+                "http://{addr}/v1/sessions/{}/messages",
+                session.id
+            ))
+            .json(&CreateMessageRequest {
+                content: "What is in the notes?".into(),
+            })
+            .send()
+            .await
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+        let messages: Vec<Message> = client
+            .get(format!(
+                "http://{addr}/v1/sessions/{}/messages",
+                session.id
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let assistant = messages
+            .iter()
+            .find(|m| m.role == circulo_core::MessageRole::Assistant)
+            .expect("assistant message");
+        assert_eq!(assistant.status, MessageStatus::Complete);
+        assert!(assistant.parts.iter().any(|p| matches!(
+            p,
+            MessagePart::Text { content } if content == expected_text
+        )));
+        assert!(assistant.parts.iter().any(|p| matches!(
+            p,
+            MessagePart::ToolCall { tool_call }
+                if tool_call.status == ToolCallStatus::Success
+        )));
+    }
+
+    // One OpenCode session created on the first send and reused afterwards:
+    // the daemon is stateless between requests, so reuse proves the persisted
+    // binding round-tripped through SQLite.
+    assert_eq!(opencode.sessions_created(), 1);
+    let (prompted_session, prompted_text) = opencode.last_prompt().expect("prompt recorded");
+    assert!(prompted_session.starts_with("ses_fake_"));
+    assert_eq!(prompted_text, "What is in the notes?");
 }
