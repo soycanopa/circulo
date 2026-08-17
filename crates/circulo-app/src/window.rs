@@ -34,7 +34,7 @@ mod tests {
     use gpui::{point, px, size, Bounds};
 
     use super::*;
-    use crate::theme::{sidebar_width_px, SIDEBAR_EXPANDED_PX, SIDEBAR_RAIL_PX};
+    use crate::theme::{sidebar_width_px, SIDEBAR_EXPANDED_PX};
 
     #[test]
     fn window_uses_transparent_titlebar_and_traffic_lights() {
@@ -50,12 +50,10 @@ mod tests {
     }
 
     #[test]
-    fn collapsed_sidebar_is_a_smaller_rail() {
-        let expanded = sidebar_width_px(false);
-        let rail = sidebar_width_px(true);
+    fn collapsed_sidebar_is_fully_hidden() {
+        let expanded = sidebar_width_px(false, SIDEBAR_EXPANDED_PX);
+        let collapsed = sidebar_width_px(true, SIDEBAR_EXPANDED_PX);
         assert_eq!(expanded, SIDEBAR_EXPANDED_PX);
-        assert_eq!(rail, SIDEBAR_RAIL_PX);
-        assert!(rail > 0.0);
-        assert!(rail < expanded);
+        assert_eq!(collapsed, 0.0);
     }
 }

@@ -13,6 +13,7 @@ use crate::client::session_project_label;
 use crate::composer::events::{ComposerEvent, ComposerInputEvent};
 use crate::composer::helpers::{can_send, project_picker_locked};
 use crate::composer::input::ComposerInput;
+use crate::icons::{icon, path as icon_path};
 use crate::theme::{ACCENT, BG_MAIN, BG_SIDEBAR, BORDER, CONTENT_MAX_WIDTH_PX, TEXT, TEXT_MUTED};
 
 const SEND_BUTTON_PX: f32 = 26.0;
@@ -184,7 +185,7 @@ impl Render for Composer {
         let project_label = session_project_label(
             self.draft_project,
             &self.projects,
-            self.catalog.get("session.no_project"),
+            self.catalog.get("session.without_folder"),
         );
 
         let mut card = div()
@@ -215,7 +216,7 @@ impl Render for Composer {
             let none_selected = self.draft_project.is_none();
             menu = menu.child(picker_item(
                 "picker-none",
-                self.catalog.get("session.no_project"),
+                self.catalog.get("session.without_folder"),
                 none_selected,
                 cx.listener(|this, _, _, cx| this.pick_project(None, cx)),
             ));
@@ -284,8 +285,7 @@ impl Render for Composer {
                             .justify_center()
                             .bg(BG_MAIN)
                             .text_color(TEXT_MUTED)
-                            .text_xs()
-                            .child("…")
+                            .child(icon(icon_path::ELLIPSIS, px(14.), TEXT_MUTED))
                     } else {
                         div()
                             .id("send")
@@ -306,7 +306,11 @@ impl Render for Composer {
                                 el.bg(BG_MAIN).text_color(TEXT_MUTED).cursor_default()
                             })
                             .on_click(cx.listener(|this, _, _, cx| this.submit(cx)))
-                            .child("↑")
+                            .child(icon(
+                                icon_path::ARROW_UP,
+                                px(14.),
+                                if sendable { TEXT } else { TEXT_MUTED },
+                            ))
                     }),
             )
     }
