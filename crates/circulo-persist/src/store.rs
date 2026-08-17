@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use circulo_core::{
-    Message, MessagePart, MessageRole, Project, ProjectStatus, Session, SidebarView, Uuid,
+    Message, MessagePart, MessageRole, Project, ProjectStatus, Session, Uuid,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::de::{DeserializeOwned, Error as _};
@@ -11,8 +11,6 @@ use time::OffsetDateTime;
 
 use crate::error::PersistError;
 use crate::schema::{MIGRATION_V1, MIGRATION_V2};
-
-const PREF_SIDEBAR_VIEW: &str = "sidebar.view";
 
 pub fn default_db_path() -> Result<PathBuf, PersistError> {
     let home = std::env::var_os("HOME").ok_or(PersistError::InvalidHome)?;
@@ -100,6 +98,16 @@ impl Store {
         let n = self
             .conn
             .execute("DELETE FROM projects WHERE id = ?1", [id.to_string()])?;
+        if n == 0 {
+            return Err(PersistError::NotFound);
+        }
+        Ok(())
+    }
+
+    pub fn delete_session(&self, id: Uuid) -> Result<(), PersistError> {
+        let n = self
+            .conn
+            .execute("DELETE FROM sessions WHERE id = ?1", [id.to_string()])?;
         if n == 0 {
             return Err(PersistError::NotFound);
         }
@@ -408,34 +416,10 @@ impl Store {
         Ok(messages)
     }
 
-    pub fn sidebar_view(&self) -> Result<SidebarView, PersistError> {
-        let value: Option<String> = self
-            .conn
-            .query_row(
-                "SELECT value FROM preferences WHERE key = ?1",
-                [PREF_SIDEBAR_VIEW],
-                |row| row.get(0),
-            )
-            .optional()?;
-        Ok(match value.as_deref() {
-            Some("sessions") => SidebarView::Sessions,
-            Some("groups") => SidebarView::Groups,
-            _ => SidebarView::Sessions,
-        })
-    }
-
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn conn_for_test(&self) -> &Connection {
         &self.conn
-    }
-
-    pub fn set_sidebar_view(&self, view: SidebarView) -> Result<(), PersistError> {
-        self.conn.execute(
-            "INSERT INTO preferences (key, value) VALUES (?1, ?2)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            params![PREF_SIDEBAR_VIEW, enum_to_db(&view)?],
-        )?;
-        Ok(())
     }
 
     fn set_project_status(&self, id: Uuid, status: ProjectStatus) -> Result<(), PersistError> {

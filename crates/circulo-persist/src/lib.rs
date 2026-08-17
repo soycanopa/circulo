@@ -11,7 +11,7 @@ pub use store::{default_db_path, Store};
 mod tests {
     use circulo_core::{
         AgentType, DomainError, Message, MessagePart, MessageRole, MessageStatus, Project,
-        ProjectStatus, Session, SessionStatus, SidebarView, Uuid,
+        ProjectStatus, Session, SessionStatus, Uuid,
     };
     use time::OffsetDateTime;
 
@@ -100,6 +100,17 @@ mod tests {
     }
 
     #[test]
+    fn delete_session_cascades_messages() {
+        let store = Store::open_in_memory().unwrap();
+        let s = session(50, None, "Gone");
+        store.create_session(&s).unwrap();
+        store.save_message(&user_message(51, 50, "bye")).unwrap();
+        store.delete_session(s.id).unwrap();
+        assert!(store.get_session(s.id).unwrap().is_none());
+        assert!(store.list_messages(s.id).unwrap().is_empty());
+    }
+
+    #[test]
     fn archive_hides_and_restore_shows() {
         let store = Store::open_in_memory().unwrap();
         let p = project("Launch", 30);
@@ -137,23 +148,6 @@ mod tests {
             .unwrap()
             .project_id
             .is_none());
-    }
-
-    #[test]
-    fn sidebar_view_defaults_and_recovers_from_corrupt() {
-        let store = Store::open_in_memory().unwrap();
-        assert_eq!(store.sidebar_view().unwrap(), SidebarView::Sessions);
-        store.set_sidebar_view(SidebarView::Groups).unwrap();
-        assert_eq!(store.sidebar_view().unwrap(), SidebarView::Groups);
-        store.set_sidebar_view(SidebarView::Sessions).unwrap();
-        store
-            .conn_for_test()
-            .execute(
-                "UPDATE preferences SET value = 'nope' WHERE key = 'sidebar.view'",
-                [],
-            )
-            .unwrap();
-        assert_eq!(store.sidebar_view().unwrap(), SidebarView::Sessions);
     }
 
     #[test]

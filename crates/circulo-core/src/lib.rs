@@ -2,7 +2,6 @@
 
 mod error;
 mod message;
-mod prefs;
 mod project;
 mod session;
 
@@ -11,7 +10,6 @@ pub use message::{
     Message, MessagePart, MessageRole, MessageStatus, Question, QuestionStatus, QuestionType, Task,
     TaskStatus, ToolCall, ToolCallStatus, ToolOutput,
 };
-pub use prefs::SidebarView;
 pub use project::{Project, ProjectStatus};
 pub use session::{AgentType, Session, SessionStatus};
 
@@ -85,13 +83,6 @@ mod tests {
         assert_eq!(json["name"], "Launch");
         let back: Project = serde_json::from_value(json).unwrap();
         assert_eq!(back, project);
-    }
-
-    #[test]
-    fn sidebar_view_defaults_to_sessions() {
-        assert_eq!(SidebarView::default(), SidebarView::Sessions);
-        let parsed: SidebarView = serde_json::from_value(json!("sessions")).unwrap();
-        assert_eq!(parsed, SidebarView::Sessions);
     }
 
     #[test]
