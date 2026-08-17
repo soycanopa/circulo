@@ -123,7 +123,8 @@ fn apply_event(assistant: &mut Message, event: AdapterEvent, failed: &mut Option
                 _ => assistant.parts.push(MessagePart::TaskList { tasks }),
             }
         }
-        AdapterEvent::ToolCallStarted { tool_call } | AdapterEvent::ToolCallUpdated { tool_call } => {
+        AdapterEvent::ToolCallStarted { tool_call }
+        | AdapterEvent::ToolCallUpdated { tool_call } => {
             upsert_tool_call(assistant, tool_call);
         }
         AdapterEvent::Completed => {}
@@ -135,9 +136,9 @@ fn apply_event(assistant: &mut Message, event: AdapterEvent, failed: &mut Option
 
 fn upsert_tool_call(assistant: &mut Message, tool_call: ToolCall) {
     if let Some(part) = assistant.parts.iter_mut().find_map(|part| match part {
-        MessagePart::ToolCall { tool_call: existing } if existing.id == tool_call.id => {
-            Some(existing)
-        }
+        MessagePart::ToolCall {
+            tool_call: existing,
+        } if existing.id == tool_call.id => Some(existing),
         _ => None,
     }) {
         *part = tool_call;

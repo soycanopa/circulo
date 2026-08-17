@@ -82,22 +82,21 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let p = project("Launch", 10);
         store.create_project(&p).unwrap();
-        store
-            .create_session(&session(11, Some(10), "A"))
-            .unwrap();
-        store
-            .create_session(&session(12, Some(10), "B"))
-            .unwrap();
-        store
-            .create_session(&session(13, None, "Loose"))
-            .unwrap();
-        store
-            .save_message(&user_message(21, 11, "hi"))
-            .unwrap();
+        store.create_session(&session(11, Some(10), "A")).unwrap();
+        store.create_session(&session(12, Some(10), "B")).unwrap();
+        store.create_session(&session(13, None, "Loose")).unwrap();
+        store.save_message(&user_message(21, 11, "hi")).unwrap();
         store.delete_project(p.id).unwrap();
         assert!(store.get_session(Uuid::from_u128(11)).unwrap().is_none());
         assert!(store.list_messages(Uuid::from_u128(11)).unwrap().is_empty());
-        assert_eq!(store.get_session(Uuid::from_u128(13)).unwrap().unwrap().title, "Loose");
+        assert_eq!(
+            store
+                .get_session(Uuid::from_u128(13))
+                .unwrap()
+                .unwrap()
+                .title,
+            "Loose"
+        );
     }
 
     #[test]
@@ -126,15 +125,18 @@ mod tests {
         store.create_session(&s).unwrap();
         store.assign_session_project(s.id, Some(p.id)).unwrap();
         store.assign_session_project(s.id, None).unwrap();
-        store
-            .save_message(&user_message(42, 41, "hello"))
-            .unwrap();
+        store.save_message(&user_message(42, 41, "hello")).unwrap();
         let err = store.assign_session_project(s.id, Some(p.id)).unwrap_err();
         match err {
             PersistError::Domain(DomainError::ProjectAssignmentLocked) => {}
             other => panic!("unexpected error: {other}"),
         }
-        assert!(store.get_session(s.id).unwrap().unwrap().project_id.is_none());
+        assert!(store
+            .get_session(s.id)
+            .unwrap()
+            .unwrap()
+            .project_id
+            .is_none());
     }
 
     #[test]
@@ -143,9 +145,7 @@ mod tests {
         assert_eq!(store.sidebar_view().unwrap(), SidebarView::Sessions);
         store.set_sidebar_view(SidebarView::Groups).unwrap();
         assert_eq!(store.sidebar_view().unwrap(), SidebarView::Groups);
-        store
-            .set_sidebar_view(SidebarView::Sessions)
-            .unwrap();
+        store.set_sidebar_view(SidebarView::Sessions).unwrap();
         store
             .conn_for_test()
             .execute(
@@ -198,9 +198,7 @@ mod tests {
         store.create_session(&s).unwrap();
         store.bind_opencode_session(s.id, "ses_first").unwrap();
         store.bind_opencode_session(s.id, "ses_first").unwrap();
-        let err = store
-            .bind_opencode_session(s.id, "ses_other")
-            .unwrap_err();
+        let err = store.bind_opencode_session(s.id, "ses_other").unwrap_err();
         assert!(matches!(err, PersistError::AgentBindingLocked));
         assert_eq!(
             store.opencode_session_id(s.id).unwrap().as_deref(),

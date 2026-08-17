@@ -8,8 +8,8 @@ mod session;
 
 pub use error::DomainError;
 pub use message::{
-    Message, MessagePart, MessageRole, MessageStatus, Question, QuestionStatus, QuestionType,
-    Task, TaskStatus, ToolCall, ToolCallStatus, ToolOutput,
+    Message, MessagePart, MessageRole, MessageStatus, Question, QuestionStatus, QuestionType, Task,
+    TaskStatus, ToolCall, ToolCallStatus, ToolOutput,
 };
 pub use prefs::SidebarView;
 pub use project::{Project, ProjectStatus};

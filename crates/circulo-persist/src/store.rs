@@ -16,8 +16,7 @@ const PREF_SIDEBAR_VIEW: &str = "sidebar.view";
 
 pub fn default_db_path() -> Result<PathBuf, PersistError> {
     let home = std::env::var_os("HOME").ok_or(PersistError::InvalidHome)?;
-    Ok(PathBuf::from(home)
-        .join("Library/Application Support/Circulo/circulo.sqlite"))
+    Ok(PathBuf::from(home).join("Library/Application Support/Circulo/circulo.sqlite"))
 }
 
 pub struct Store {
@@ -193,7 +192,10 @@ impl Store {
         )
     }
 
-    pub fn list_sessions_for_project(&self, project_id: Uuid) -> Result<Vec<Session>, PersistError> {
+    pub fn list_sessions_for_project(
+        &self,
+        project_id: Uuid,
+    ) -> Result<Vec<Session>, PersistError> {
         self.query_sessions(
             "SELECT s.id, s.project_id, s.title, s.agent, s.status, s.created_at, s.updated_at, s.last_message_at, s.first_send_at
              FROM sessions s
@@ -454,8 +456,7 @@ impl Store {
     fn query_projects(&self, sql: &str) -> Result<Vec<Project>, PersistError> {
         let mut stmt = self.conn.prepare(sql)?;
         let rows = stmt.query_map([], map_project)?;
-        rows.map(|row| row.map_err(PersistError::from))
-            .collect()
+        rows.map(|row| row.map_err(PersistError::from)).collect()
     }
 
     fn query_sessions<P: rusqlite::Params>(
@@ -465,8 +466,7 @@ impl Store {
     ) -> Result<Vec<Session>, PersistError> {
         let mut stmt = self.conn.prepare(sql)?;
         let rows = stmt.query_map(params, map_session)?;
-        rows.map(|row| row.map_err(PersistError::from))
-            .collect()
+        rows.map(|row| row.map_err(PersistError::from)).collect()
     }
 }
 
@@ -507,13 +507,15 @@ fn map_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
 
 fn enum_to_db<T: Serialize>(value: &T) -> Result<String, PersistError> {
     let json = serde_json::to_value(value)?;
-    json.as_str()
-        .map(str::to_owned)
-        .ok_or_else(|| PersistError::Serde(serde_json::Error::custom("enum must serialize as string")))
+    json.as_str().map(str::to_owned).ok_or_else(|| {
+        PersistError::Serde(serde_json::Error::custom("enum must serialize as string"))
+    })
 }
 
 fn enum_from_db<T: DeserializeOwned>(value: &str) -> Result<T, PersistError> {
-    Ok(serde_json::from_value(serde_json::Value::String(value.to_owned()))?)
+    Ok(serde_json::from_value(serde_json::Value::String(
+        value.to_owned(),
+    ))?)
 }
 
 fn enum_from_db_sql<T: DeserializeOwned>(value: &str) -> rusqlite::Result<T> {
@@ -539,9 +541,8 @@ fn parse_time_sql(value: &str) -> rusqlite::Result<OffsetDateTime> {
 }
 
 fn parse_uuid(value: &str) -> Result<Uuid, PersistError> {
-    Uuid::parse_str(value).map_err(|err| {
-        PersistError::Serde(serde_json::Error::custom(err.to_string()))
-    })
+    Uuid::parse_str(value)
+        .map_err(|err| PersistError::Serde(serde_json::Error::custom(err.to_string())))
 }
 
 fn parse_uuid_sql(value: &str) -> rusqlite::Result<Uuid> {

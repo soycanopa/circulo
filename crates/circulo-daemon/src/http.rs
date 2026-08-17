@@ -90,11 +90,11 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/projects/{id}/restore", post(restore_project))
         .route("/v1/projects/{id}/sessions", get(list_project_sessions))
         .route("/v1/sessions", get(list_sessions).post(create_session))
+        .route("/v1/sessions/{id}", get(get_session).patch(patch_session))
         .route(
-            "/v1/sessions/{id}",
-            get(get_session).patch(patch_session),
+            "/v1/sessions/{id}/messages",
+            get(list_messages).post(post_message),
         )
-        .route("/v1/sessions/{id}/messages", get(list_messages).post(post_message))
         .route("/v1/sessions/{id}/events", get(session_events))
         .route("/v1/preferences", get(get_preferences).put(put_preferences))
         .with_state(state)
@@ -103,19 +103,19 @@ pub fn router(state: AppState) -> Router {
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     // probe() may spawn an OpenCode server; keep it off the async runtime.
     let adapter = Arc::clone(&state.adapter);
-    let (adapter_state, adapter_message) = tokio::task::spawn_blocking(move || match adapter.probe()
-    {
-        AdapterHealth::Available => ("available".to_string(), None),
-        AdapterHealth::Missing => ("missing".to_string(), None),
-        AdapterHealth::Error { message } => ("error".to_string(), Some(message)),
-    })
-    .await
-    .unwrap_or_else(|_| {
-        (
-            "error".to_string(),
-            Some("The agent check did not answer.".into()),
-        )
-    });
+    let (adapter_state, adapter_message) =
+        tokio::task::spawn_blocking(move || match adapter.probe() {
+            AdapterHealth::Available => ("available".to_string(), None),
+            AdapterHealth::Missing => ("missing".to_string(), None),
+            AdapterHealth::Error { message } => ("error".to_string(), Some(message)),
+        })
+        .await
+        .unwrap_or_else(|_| {
+            (
+                "error".to_string(),
+                Some("The agent check did not answer.".into()),
+            )
+        });
     Json(HealthResponse {
         api_version: API_VERSION,
         daemon: "ok".into(),
@@ -320,9 +320,10 @@ async fn post_message(
     if body.content.trim().is_empty() {
         return Err(ApiError::invalid_request("Message content is required.").into());
     }
-    state.store()?.get_session(id)?.ok_or_else(|| {
-        HttpError::from(ApiError::not_found("Session not found."))
-    })?;
+    state
+        .store()?
+        .get_session(id)?
+        .ok_or_else(|| HttpError::from(ApiError::not_found("Session not found.")))?;
     // A real adapter blocks on network IO and SSE reads for the whole turn.
     let store = Arc::clone(&state.store);
     let adapter = Arc::clone(&state.adapter);
@@ -376,7 +377,9 @@ async fn session_events(
     Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
 
-async fn get_preferences(State(state): State<AppState>) -> Result<Json<PreferencesBody>, HttpError> {
+async fn get_preferences(
+    State(state): State<AppState>,
+) -> Result<Json<PreferencesBody>, HttpError> {
     Ok(Json(PreferencesBody {
         sidebar_view: state.store()?.sidebar_view()?,
     }))

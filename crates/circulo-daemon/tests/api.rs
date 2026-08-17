@@ -6,7 +6,7 @@ use std::time::Duration;
 use circulo_adapter::AgentAdapter;
 use circulo_adapter_fake::FakeAdapter;
 use circulo_adapter_opencode::testing::{
-    idle, text_delta, text_snapshot, tool_state, todo_list, FakeOpenCodeServer,
+    idle, text_delta, text_snapshot, todo_list, tool_state, FakeOpenCodeServer,
 };
 use circulo_adapter_opencode::{OpenCodeAdapter, ServerConfig};
 use circulo_core::{Message, MessagePart, MessageStatus, Project, Session, ToolCallStatus};
@@ -24,9 +24,7 @@ async fn spawn_server() -> (SocketAddr, reqwest::Client) {
     spawn_server_with(Arc::new(FakeAdapter::new())).await
 }
 
-async fn spawn_server_with(
-    adapter: Arc<dyn AgentAdapter>,
-) -> (SocketAddr, reqwest::Client) {
+async fn spawn_server_with(adapter: Arc<dyn AgentAdapter>) -> (SocketAddr, reqwest::Client) {
     let store = Store::open_in_memory().expect("memory store");
     let state = AppState::new(store, adapter);
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
@@ -109,10 +107,7 @@ async fn post_message_runs_fake_turn() {
         .await
         .unwrap();
     client
-        .post(format!(
-            "http://{addr}/v1/sessions/{}/messages",
-            session.id
-        ))
+        .post(format!("http://{addr}/v1/sessions/{}/messages", session.id))
         .json(&CreateMessageRequest {
             content: "Hello".into(),
         })
@@ -122,10 +117,7 @@ async fn post_message_runs_fake_turn() {
         .error_for_status()
         .unwrap();
     let messages: Vec<Message> = client
-        .get(format!(
-            "http://{addr}/v1/sessions/{}/messages",
-            session.id
-        ))
+        .get(format!("http://{addr}/v1/sessions/{}/messages", session.id))
         .send()
         .await
         .unwrap()
@@ -216,10 +208,7 @@ async fn project_patch_after_first_send_is_locked() {
         .await
         .unwrap();
     client
-        .post(format!(
-            "http://{addr}/v1/sessions/{}/messages",
-            session.id
-        ))
+        .post(format!("http://{addr}/v1/sessions/{}/messages", session.id))
         .json(&CreateMessageRequest {
             content: "Hello".into(),
         })
@@ -283,10 +272,7 @@ async fn opencode_adapter_turn_binds_and_reuses_across_requests() {
 
     for expected_text in ["Here is your answer.", "Here is your answer."] {
         client
-            .post(format!(
-                "http://{addr}/v1/sessions/{}/messages",
-                session.id
-            ))
+            .post(format!("http://{addr}/v1/sessions/{}/messages", session.id))
             .json(&CreateMessageRequest {
                 content: "What is in the notes?".into(),
             })
@@ -296,10 +282,7 @@ async fn opencode_adapter_turn_binds_and_reuses_across_requests() {
             .error_for_status()
             .unwrap();
         let messages: Vec<Message> = client
-            .get(format!(
-                "http://{addr}/v1/sessions/{}/messages",
-                session.id
-            ))
+            .get(format!("http://{addr}/v1/sessions/{}/messages", session.id))
             .send()
             .await
             .unwrap()

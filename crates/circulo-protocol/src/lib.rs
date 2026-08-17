@@ -202,9 +202,7 @@ pub struct HealthResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use circulo_core::{
-        Message, MessagePart, MessageRole, MessageStatus,
-    };
+    use circulo_core::{Message, MessagePart, MessageRole, MessageStatus};
     use time::OffsetDateTime;
     use uuid::Uuid;
 
