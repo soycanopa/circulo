@@ -21,8 +21,8 @@
 ## 5. Turn orchestration and mapping
 
 - [x] 5.1 Implement the ureq HTTP client module: create session (`POST /session`), `prompt_async` expecting 204, and a buffered `GET /event` stream reader with read timeouts; every call maps to the D6 typed reasons.
-- [ ] 5.2 Implement `OpenCodeAdapter::probe()` as ensure-server-then-report; tests for the three health outcomes against the fake server and a missing binary.
-- [ ] 5.3 Implement `OpenCodeAdapter::generate()` per design D3–D4: resolve or create the binding (emitting `SessionBound` first), subscribe before prompting, filter SSE events by agent session, map text snapshots to `TextDelta` via prefix-diff, tool parts to tool-call events, todos to `TaskList`, terminal completion/failure, and a bounded turn timeout; fixture-driven tests covering text turn, tool+task turn, unknown event skipped, mid-stream drop → `Failed`, timeout, unauthorized → `Failed`.
+- [x] 5.2 Implement `OpenCodeAdapter::probe()` as ensure-server-then-report; tests for the three health outcomes against the fake server and a missing binary.
+- [x] 5.3 Implement `OpenCodeAdapter::generate()` per design D3–D4: resolve or create the binding (emitting `SessionBound` first), subscribe before prompting, filter SSE events by agent session, map text snapshots to `TextDelta` via prefix-diff, tool parts to tool-call events, todos to `TaskList`, terminal completion/failure, and a bounded turn timeout; fixture-driven tests covering text turn, tool+task turn, unknown event skipped, mid-stream drop → `Failed`, timeout, unauthorized → `Failed`.
 
 ## 6. Daemon wiring
 
