@@ -6,7 +6,8 @@ use std::time::Duration;
 use circulo_adapter::AgentAdapter;
 use circulo_adapter_fake::FakeAdapter;
 use circulo_adapter_opencode::testing::{
-    idle, text_delta, text_snapshot, todo_list, tool_state, FakeOpenCodeServer,
+    idle, session_title_updated, text_delta, text_snapshot, todo_list, tool_state,
+    FakeOpenCodeServer,
 };
 use circulo_adapter_opencode::{OpenCodeAdapter, ServerConfig};
 use circulo_core::{Message, MessagePart, MessageStatus, Project, Session, ToolCallStatus};
@@ -60,6 +61,7 @@ async fn health_on_localhost() {
     assert_eq!(health.api_version, 1);
     assert_eq!(health.daemon, "ok");
     assert_eq!(health.adapter, "available");
+    assert!(health.opencode.is_none());
 }
 
 #[tokio::test]
@@ -244,6 +246,7 @@ async fn project_patch_after_first_send_is_locked() {
             name: "Launch".into(),
             description: None,
             color: None,
+            folder_path: None,
         })
         .send()
         .await
@@ -369,7 +372,208 @@ async fn opencode_adapter_turn_binds_and_reuses_across_requests() {
     // the daemon is stateless between requests, so reuse proves the persisted
     // binding round-tripped through SQLite.
     assert_eq!(opencode.sessions_created(), 1);
-    let (prompted_session, prompted_text) = opencode.last_prompt().expect("prompt recorded");
+    let (prompted_session, prompted_text, _) = opencode.last_prompt().expect("prompt recorded");
     assert!(prompted_session.starts_with("ses_fake_"));
     assert_eq!(prompted_text, "What is in the notes?");
+}
+
+#[tokio::test]
+async fn delete_session_calls_opencode_and_removes_local_binding() {
+    let opencode = FakeOpenCodeServer::spawn();
+    opencode.set_script(vec![text_snapshot("prt_1", "Bound."), idle()]);
+    let adapter = OpenCodeAdapter::new(
+        ServerConfig {
+            port: opencode.port,
+            command: Some(PathBuf::from("/nonexistent/opencode-for-tests")),
+            cwd: PathBuf::from("."),
+            startup_timeout: Duration::from_secs(1),
+        },
+        Duration::from_secs(10),
+    );
+    let (addr, client) = spawn_server_with(Arc::new(adapter)).await;
+
+    let session: Session = client
+        .post(format!("http://{addr}/v1/sessions"))
+        .json(&CreateSessionRequest {
+            project_id: None,
+            title: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    client
+        .post(format!("http://{addr}/v1/sessions/{}/messages", session.id))
+        .json(&CreateMessageRequest {
+            content: "Bind me.".into(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    assert_eq!(opencode.sessions_created(), 1);
+    let agent_session_id = opencode
+        .last_prompt()
+        .expect("prompt recorded")
+        .0
+        .clone();
+
+    client
+        .delete(format!("http://{addr}/v1/sessions/{}", session.id))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    assert_eq!(opencode.deleted_sessions(), vec![agent_session_id]);
+    let missing = client
+        .get(format!("http://{addr}/v1/sessions/{}", session.id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), 404);
+}
+
+#[tokio::test]
+async fn auto_title_updates_default_session_title_and_emits_event() {
+    let opencode = FakeOpenCodeServer::spawn();
+    opencode.set_script(vec![
+        session_title_updated("Launch checklist"),
+        text_snapshot("prt_1", "Done."),
+        idle(),
+    ]);
+    let adapter = OpenCodeAdapter::new(
+        ServerConfig {
+            port: opencode.port,
+            command: Some(PathBuf::from("/nonexistent/opencode-for-tests")),
+            cwd: PathBuf::from("."),
+            startup_timeout: Duration::from_secs(1),
+        },
+        Duration::from_secs(10),
+    );
+    let (addr, client) = spawn_server_with(Arc::new(adapter)).await;
+
+    let session: Session = client
+        .post(format!("http://{addr}/v1/sessions"))
+        .json(&CreateSessionRequest {
+            project_id: None,
+            title: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(session.title, "New session");
+
+    client
+        .post(format!("http://{addr}/v1/sessions/{}/messages", session.id))
+        .json(&CreateMessageRequest {
+            content: "Summarize the launch plan.".into(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    let fetched: Session = client
+        .get(format!("http://{addr}/v1/sessions/{}", session.id))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(fetched.title, "Launch checklist");
+}
+
+#[tokio::test]
+async fn auto_title_does_not_overwrite_manual_rename() {
+    let opencode = FakeOpenCodeServer::spawn();
+    opencode.set_script(vec![
+        session_title_updated("OpenCode title"),
+        text_snapshot("prt_1", "Done."),
+        idle(),
+    ]);
+    let adapter = OpenCodeAdapter::new(
+        ServerConfig {
+            port: opencode.port,
+            command: Some(PathBuf::from("/nonexistent/opencode-for-tests")),
+            cwd: PathBuf::from("."),
+            startup_timeout: Duration::from_secs(1),
+        },
+        Duration::from_secs(10),
+    );
+    let (addr, client) = spawn_server_with(Arc::new(adapter)).await;
+
+    let session: Session = client
+        .post(format!("http://{addr}/v1/sessions"))
+        .json(&CreateSessionRequest {
+            project_id: None,
+            title: Some("My custom title".into()),
+        })
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    client
+        .post(format!("http://{addr}/v1/sessions/{}/messages", session.id))
+        .json(&CreateMessageRequest {
+            content: "Hello.".into(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+
+    let fetched: Session = client
+        .get(format!("http://{addr}/v1/sessions/{}", session.id))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(fetched.title, "My custom title");
+}
+
+#[tokio::test]
+async fn health_includes_opencode_version_with_opencode_adapter() {
+    let opencode = FakeOpenCodeServer::spawn();
+    let adapter = OpenCodeAdapter::new(
+        ServerConfig {
+            port: opencode.port,
+            command: Some(PathBuf::from("/nonexistent/opencode-for-tests")),
+            cwd: PathBuf::from("."),
+            startup_timeout: Duration::from_secs(1),
+        },
+        Duration::from_secs(10),
+    );
+    let (addr, client) = spawn_server_with(Arc::new(adapter)).await;
+    let health: HealthResponse = client
+        .get(format!("http://{addr}/v1/health"))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(health.adapter, "available");
+    let opencode_health = health.opencode.expect("opencode health block");
+    assert!(opencode_health.available);
+    assert_eq!(opencode_health.version.as_deref(), Some("0.0.0-test"));
 }

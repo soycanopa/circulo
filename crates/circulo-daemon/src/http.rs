@@ -18,21 +18,25 @@ use circulo_core::{
 use circulo_persist::{PersistError, Store};
 use circulo_protocol::{
     ApiError, CreateMessageRequest, CreateProjectRequest, CreateSessionRequest, ErrorCode,
-    HealthResponse, PatchProjectRequest, PatchSessionRequest, PreferencesBody, ProtocolEvent,
-    API_VERSION,
+    HealthResponse, OpenCodeHealthBody, PatchProjectRequest, PatchSessionRequest,
+    PermissionReplyRequest, PreferencesBody, ProtocolEvent, API_VERSION,
 };
 use futures_util::stream::{self, StreamExt};
 use serde::Deserialize;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 
-use crate::generate::run_turn;
+use crate::generate::{resolve_working_directory, run_turn};
+use crate::permission_waiter::PermissionWaiter;
+use crate::turn_registry::TurnRegistry;
 
 #[derive(Clone)]
 pub struct AppState {
     pub store: Arc<Mutex<Store>>,
     pub adapter: Arc<dyn AgentAdapter>,
     pub events: broadcast::Sender<ProtocolEvent>,
+    pub turns: Arc<TurnRegistry>,
+    pub permissions: Arc<PermissionWaiter>,
     model_catalog_cache: Arc<Mutex<ModelCatalogCache>>,
 }
 
@@ -43,6 +47,8 @@ impl AppState {
             store: Arc::new(Mutex::new(store)),
             adapter,
             events,
+            turns: Arc::new(TurnRegistry::new()),
+            permissions: Arc::new(PermissionWaiter::new()),
             model_catalog_cache: Arc::new(Mutex::new(
                 ModelCatalogCache::new(DEFAULT_MODEL_CATALOG_TTL),
             )),
@@ -102,6 +108,11 @@ pub fn router(state: AppState) -> Router {
             "/v1/sessions/{id}/messages",
             get(list_messages).post(post_message),
         )
+        .route("/v1/sessions/{id}/abort", post(abort_session))
+        .route(
+            "/v1/sessions/{id}/permissions/{permission_id}/reply",
+            post(reply_permission),
+        )
         .route("/v1/sessions/{id}/events", get(session_events))
         .route("/v1/models", get(list_models))
         .route("/v1/preferences", get(get_preferences).put(put_preferences))
@@ -111,17 +122,25 @@ pub fn router(state: AppState) -> Router {
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     // probe() may spawn an OpenCode server; keep it off the async runtime.
     let adapter = Arc::clone(&state.adapter);
-    let (adapter_state, adapter_message) =
-        tokio::task::spawn_blocking(move || match adapter.probe() {
-            AdapterHealth::Available => ("available".to_string(), None),
-            AdapterHealth::Missing => ("missing".to_string(), None),
-            AdapterHealth::Error { message } => ("error".to_string(), Some(message)),
+    let (adapter_state, adapter_message, opencode) =
+        tokio::task::spawn_blocking(move || {
+            let (adapter_state, adapter_message) = match adapter.probe() {
+                AdapterHealth::Available => ("available".to_string(), None),
+                AdapterHealth::Missing => ("missing".to_string(), None),
+                AdapterHealth::Error { message } => ("error".to_string(), Some(message)),
+            };
+            let opencode = adapter.opencode_health().map(|health| OpenCodeHealthBody {
+                available: health.available,
+                version: health.version,
+            });
+            (adapter_state, adapter_message, opencode)
         })
         .await
         .unwrap_or_else(|_| {
             (
                 "error".to_string(),
                 Some("The agent check did not answer.".into()),
+                None,
             )
         });
     Json(HealthResponse {
@@ -129,6 +148,7 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
         daemon: "ok".into(),
         adapter: adapter_state,
         adapter_message,
+        opencode,
     })
 }
 
@@ -162,6 +182,7 @@ async fn create_project(
         name: body.name,
         description: body.description,
         color: body.color,
+        folder_path: body.folder_path,
         status: ProjectStatus::Active,
         created_at: now,
         updated_at: now,
@@ -198,6 +219,9 @@ async fn patch_project(
     }
     if let Some(color) = body.color {
         project.color = Some(color);
+    }
+    if let Some(folder_path) = body.folder_path {
+        project.folder_path = Some(folder_path);
     }
     project.updated_at = OffsetDateTime::now_utc();
     store.update_project(&project)?;
@@ -357,6 +381,31 @@ async fn delete_session(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, HttpError> {
+    let (agent_session_id, working_directory) = {
+        let store = state.store()?;
+        let session = store
+            .get_session(id)?
+            .ok_or_else(|| HttpError::from(ApiError::not_found("Session not found.")))?;
+        let agent_session_id = store.opencode_session_id(id)?;
+        let working_directory = resolve_working_directory(&store, &session);
+        (agent_session_id, Some(working_directory))
+    };
+
+    if let Some(agent_session_id) = agent_session_id {
+        let adapter = Arc::clone(&state.adapter);
+        let delete_result = tokio::task::spawn_blocking(move || {
+            adapter.delete_agent_session(&agent_session_id, working_directory.as_deref())
+        })
+        .await
+        .map_err(|_| HttpError::from(ApiError::internal()))?;
+        if let Err(err) = delete_result {
+            eprintln!(
+                "circulo-daemon: opencode session delete failed: {}",
+                err.message()
+            );
+        }
+    }
+
     state.store()?.delete_session(id)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -376,23 +425,75 @@ async fn post_message(
     if body.content.trim().is_empty() {
         return Err(ApiError::invalid_request("Message content is required.").into());
     }
-    state
-        .store()?
-        .get_session(id)?
-        .ok_or_else(|| HttpError::from(ApiError::not_found("Session not found.")))?;
-    // A real adapter blocks on network IO and SSE reads for the whole turn.
+    let working_directory = {
+        let store_guard = state.store()?;
+        let session = store_guard
+            .get_session(id)?
+            .ok_or_else(|| HttpError::from(ApiError::not_found("Session not found.")))?;
+        resolve_working_directory(&store_guard, &session)
+    };
+
+    let content = body.content;
     let store = Arc::clone(&state.store);
     let adapter = Arc::clone(&state.adapter);
     let events = state.events.clone();
+    let turns = Arc::clone(&state.turns);
+    let permissions = Arc::clone(&state.permissions);
+    let cancel = turns.begin(id, Some(working_directory));
     let assistant = tokio::task::spawn_blocking(move || {
         let store = store.lock().map_err(|_| ApiError::internal())?;
-        run_turn(&store, adapter.as_ref(), id, &body.content, &mut |event| {
-            let _ = events.send(event);
-        })
+        let turns_ref = turns.as_ref();
+        let result = run_turn(
+            &store,
+            adapter.as_ref(),
+            id,
+            &content,
+            Some(cancel),
+            Some((turns_ref, id)),
+            Some(permissions.as_ref()),
+            Some(&events),
+            &mut |event| {
+                let _ = events.send(event);
+            },
+        );
+        turns.finish(id);
+        result
     })
     .await
     .map_err(|_| HttpError::from(ApiError::internal()))??;
     Ok(Json(assistant))
+}
+
+async fn abort_session(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, HttpError> {
+    state
+        .store()?
+        .get_session(id)?
+        .ok_or_else(|| HttpError::from(ApiError::not_found("Session not found.")))?;
+    let adapter = Arc::clone(&state.adapter);
+    let turns = Arc::clone(&state.turns);
+    tokio::task::spawn_blocking(move || turns.abort(id, adapter.as_ref()))
+        .await
+        .map_err(|_| HttpError::from(ApiError::internal()))??;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn reply_permission(
+    State(state): State<AppState>,
+    Path((session_id, permission_id)): Path<(Uuid, String)>,
+    Json(body): Json<PermissionReplyRequest>,
+) -> Result<StatusCode, HttpError> {
+    state
+        .store()?
+        .get_session(session_id)?
+        .ok_or_else(|| HttpError::from(ApiError::not_found("Session not found.")))?;
+    state
+        .permissions
+        .reply(session_id, &permission_id, body.allow)
+        .map_err(HttpError::from)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn session_events(
@@ -423,6 +524,10 @@ async fn session_events(
                 ProtocolEvent::SessionToolCallUpdated { .. } => "session.tool_call.updated",
                 ProtocolEvent::SessionMessageCompleted { .. } => "session.message.completed",
                 ProtocolEvent::SessionMessageFailed { .. } => "session.message.failed",
+                ProtocolEvent::SessionPermissionRequested { .. } => {
+                    "session.permission.requested"
+                }
+                ProtocolEvent::SessionTitleUpdated { .. } => "session.title.updated",
             };
             let data = serde_json::to_string(&event).ok()?;
             Some(Ok(Event::default().event(name).data(data)))
