@@ -3020,7 +3020,6 @@ fn message_column(
         .flex()
         .flex_col()
         .gap_1()
-        .overflow_hidden()
         .when(is_user, |el| el.items_end());
 
     if is_user {

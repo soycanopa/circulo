@@ -315,8 +315,7 @@ fn render_activity_items(
         .flex_col()
         .gap(px(8.))
         .w_full()
-        .min_w_0()
-        .overflow_hidden();
+        .min_w_0();
     for part_index in part_indices {
         let element = match &parts[*part_index] {
             MessagePart::Reasoning {
@@ -368,7 +367,6 @@ fn render_activity_items(
             div()
                 .w_full()
                 .min_w_0()
-                .overflow_hidden()
                 .child(element),
         );
     }

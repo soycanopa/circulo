@@ -63,9 +63,7 @@ pub fn disclosure_rail(content: impl IntoElement) -> impl IntoElement {
     div()
         .w_full()
         .min_w_0()
-        .overflow_hidden()
-        .ml(px(6.))
-        .pl(px(12.))
+        .pl(px(18.))
         .pb(px(2.))
         .border_l_1()
         .border_color(BORDER)
@@ -85,7 +83,6 @@ pub fn activity_card(
         .id(id)
         .w_full()
         .min_w_0()
-        .overflow_hidden()
         .rounded(px(ACTIVITY_RADIUS_PX))
         .border_1()
         .border_color(BORDER_STRONG)
@@ -123,6 +120,7 @@ pub fn activity_card_header(
         .min_w_0()
         .h(px(ACTIVITY_HEADER_H_PX))
         .px(px(8.))
+        .overflow_hidden()
         .flex()
         .items_center()
         .gap(px(8.))
@@ -139,6 +137,7 @@ pub fn activity_card_header(
             let mut middle = div()
                 .flex_1()
                 .min_w_0()
+                .overflow_hidden()
                 .flex()
                 .items_center()
                 .gap(px(4.));
@@ -164,13 +163,19 @@ pub fn activity_card_header(
             }
             middle
         })
-        .when_some(trailing, |row, trailing| row.child(trailing))
+        .when_some(trailing, |row, trailing| {
+            row.child(div().flex_none().child(trailing))
+        })
         .when(expandable, |row| {
-            row.child(icon(
-                chevron_icon(open),
-                px(DISCLOSURE_CHEVRON_PX),
-                TEXT_TERTIARY,
-            ))
+            row.child(
+                div()
+                    .flex_none()
+                    .child(icon(
+                        chevron_icon(open),
+                        px(DISCLOSURE_CHEVRON_PX),
+                        TEXT_TERTIARY,
+                    )),
+            )
         })
 }
 
