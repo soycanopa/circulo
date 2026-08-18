@@ -63,6 +63,10 @@ impl AgentAdapter for FakeAdapter {
             return Err(error);
         }
 
+        emit(AdapterEvent::ReasoningDelta {
+            part_id: "fake_reasoning".into(),
+            content: "Considering the request and planning a concise reply.".into(),
+        });
         emit(AdapterEvent::TextDelta {
             content: "Working on it.".into(),
         });
@@ -131,6 +135,9 @@ mod tests {
             composer_model_variant: None,
             composer_permission_mode: None,
             composer_interaction_mode: None,
+            working_directory: None,
+            cancel: None,
+            permission_responder: None,
         }
     }
 

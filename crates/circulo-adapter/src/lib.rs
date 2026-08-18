@@ -3,6 +3,8 @@
 //! Implementations live in sibling crates. This crate must not depend on GPUI
 //! or on a specific agent CLI.
 
+use std::path::PathBuf;
+
 pub use circulo_core::{
     ComposerInteractionMode, ComposerPermissionMode, ModelCatalogEntry, Task, TaskStatus,
     ToolCall, ToolCallStatus, ToolOutput, Uuid,
@@ -15,6 +17,13 @@ pub enum AdapterHealth {
     Error { message: String },
 }
 
+/// OpenCode-specific health from `GET /global/health`. Other adapters omit this.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenCodeHealth {
+    pub available: bool,
+    pub version: Option<String>,
+}
+
 /// Stable machine cause of an adapter failure. The daemon maps each variant to
 /// locale-catalog copy; adapters never render user-facing text themselves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +34,7 @@ pub enum ErrorReason {
     Unauthorized,
     StreamFailed,
     Timeout,
+    Cancelled,
     ProviderFailed,
     Internal,
 }
@@ -85,6 +95,14 @@ pub enum AdapterEvent {
     TextDelta {
         content: String,
     },
+    ReasoningDelta {
+        part_id: String,
+        content: String,
+    },
+    /// Reasoning part finished with no readable text (provider-encrypted or hidden).
+    ReasoningOpaque {
+        part_id: String,
+    },
     TaskList {
         tasks: Vec<Task>,
     },
@@ -98,9 +116,59 @@ pub enum AdapterEvent {
     Failed {
         error: AdapterError,
     },
+    SessionTitleUpdated {
+        title: String,
+    },
 }
 
+/// Mid-turn permission prompt surfaced by the provider during supervised turns.
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PermissionRequest {
+    pub id: String,
+    pub permission: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionDecision {
+    AllowOnce,
+    Deny,
+}
+
+impl PermissionDecision {
+    pub fn is_allow(self) -> bool {
+        matches!(self, Self::AllowOnce)
+    }
+}
+
+/// Blocking callback invoked by the adapter while the turn waits for user input.
+#[derive(Clone)]
+pub struct PermissionResponder {
+    inner: std::sync::Arc<dyn Fn(PermissionRequest) -> PermissionDecision + Send + Sync>,
+}
+
+impl PermissionResponder {
+    pub fn new<F>(respond: F) -> Self
+    where
+        F: Fn(PermissionRequest) -> PermissionDecision + Send + Sync + 'static,
+    {
+        Self {
+            inner: std::sync::Arc::new(respond),
+        }
+    }
+
+    pub fn respond(&self, request: PermissionRequest) -> PermissionDecision {
+        (self.inner)(request)
+    }
+}
+
+impl std::fmt::Debug for PermissionResponder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PermissionResponder").finish_non_exhaustive()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct GenerateRequest {
     pub session_id: Uuid,
     pub user_text: String,
@@ -110,6 +178,12 @@ pub struct GenerateRequest {
     pub composer_model_variant: Option<String>,
     pub composer_permission_mode: Option<ComposerPermissionMode>,
     pub composer_interaction_mode: Option<ComposerInteractionMode>,
+    /// OpenCode `directory` query param for this turn (project folder or default cwd).
+    pub working_directory: Option<PathBuf>,
+    /// When set, a true value requests the turn to stop (user abort).
+    pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    /// When set, mid-turn permission prompts block until the callback returns.
+    pub permission_responder: Option<PermissionResponder>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,6 +195,12 @@ pub trait AgentAdapter: Send + Sync {
     fn name(&self) -> &'static str;
 
     fn probe(&self) -> AdapterHealth;
+
+    /// When implemented, surfaces OpenCode `{ healthy, version }` from
+    /// `GET /global/health` after the managed server is reachable.
+    fn opencode_health(&self) -> Option<OpenCodeHealth> {
+        None
+    }
 
     fn generate(
         &self,
@@ -138,6 +218,24 @@ pub trait AgentAdapter: Send + Sync {
         settings: &AgentSessionSettings,
     ) -> Result<(), AdapterError> {
         let _ = (agent_session_id, settings);
+        Ok(())
+    }
+
+    fn abort_turn(
+        &self,
+        agent_session_id: &str,
+        working_directory: Option<&std::path::Path>,
+    ) -> Result<(), AdapterError> {
+        let _ = (agent_session_id, working_directory);
+        Ok(())
+    }
+
+    fn delete_agent_session(
+        &self,
+        agent_session_id: &str,
+        working_directory: Option<&std::path::Path>,
+    ) -> Result<(), AdapterError> {
+        let _ = (agent_session_id, working_directory);
         Ok(())
     }
 }
