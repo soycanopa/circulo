@@ -328,15 +328,18 @@ fn workspace_debug_dir() -> Option<PathBuf> {
 }
 
 fn sibling_daemon() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let sibling = exe.parent()?.join("circulo-daemon");
+    if sibling.exists() {
+        return Some(sibling);
+    }
     if let Some(dir) = workspace_debug_dir() {
         let path = dir.join("circulo-daemon");
         if path.exists() {
             return Some(path);
         }
     }
-    let exe = std::env::current_exe().ok()?;
-    let path = exe.parent()?.join("circulo-daemon");
-    path.exists().then_some(path)
+    None
 }
 
 pub fn session_activity_at(session: &Session) -> OffsetDateTime {
@@ -431,6 +434,7 @@ mod tests {
             name: "Launch".into(),
             description: None,
             color: None,
+            folder_path: None,
             status: ProjectStatus::Active,
             created_at: ts(1_700_000_000),
             updated_at: ts(1_700_000_000),
