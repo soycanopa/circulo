@@ -401,6 +401,8 @@ Cerradas el 16 ago 2026: SQLite; dos procesos Circulo; `project_id` nullable; ap
 
 Cerradas: restore de proyecto; `project_id` inmutable tras el primer send; sidebar Today/Earlier; worktree no se implementa.
 
+Cerradas el 18 ago 2026: auto-título vía OpenCode (solo defaults); cancel/stop de generación; Settings con health + proyectos archivados; spawn bundled daemon desde `.app`.
+
 Hasta investigar y pedir permiso, las abiertas no se “resuelven” en un commit.
 
 ---

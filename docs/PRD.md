@@ -269,18 +269,20 @@ El roadmap no autoriza implementación. Cada incremento es un change de OpenSpec
 
 ## 12. Decisiones abiertas (no asumir)
 
-Estas preguntas bloquean o condicionan diseño/implementación. Hay que preguntar antes de construir:
+Preguntas que aún condicionan trabajo futuro:
 
-1. **Título automático:** ¿se genera tras el primer mensaje? ¿quién lo genera (app vs agente)?
-2. **Cancelar stream:** ¿P1 confirmado o se sube a P0?
-3. **Settings más allá de OpenCode + archived/restore:** ¿también modelo / extras? (worktree no).
-4. **Nombre visible / branding:** ¿wordmark en Sidebar o solo icono?
-5. **Orden de la lista plana:** ¿por `last_message_at` descendente?
-6. **Confirmación al restaurar:** ¿inmediato o diálogo?
+3. **Settings más allá de OpenCode + archived/restore:** ¿también modelo / extras? (worktree no). *Parcialmente resuelto: panel Models ya existe; falta decidir alcance final.*
 
-Hasta que se respondan, no se implementa el comportamiento correspondiente.
+5. **Orden de la lista plana:** ¿por `last_message_at` descendente? *Implementado así en sidebar; pendiente confirmación formal en spec.*
 
 Cerradas el 16 ago 2026: restore desde Settings; selector locked tras el primer send; sin worktree; sidebar Today/Earlier.
+
+Cerradas el 18 ago 2026:
+
+1. **Título automático:** OpenCode reemplaza solo títulos por defecto (`New session`); renombres manuales no se pisan.
+2. **Cancelar stream:** implementado (botón Stop en composer).
+4. **Branding en sidebar:** solo icono/rail en MVP; sin wordmark.
+6. **Confirmación al restaurar:** restore inmediato en Settings → Archived; delete sigue pidiendo confirmación.
 
 ---
 
