@@ -18,6 +18,13 @@ pub const BG_MAIN: Rgba = Rgba {
     b: 0.14,
     a: 1.0,
 };
+/// Item hover / selected surface (`--color-bg-hover` in Paper).
+pub const BG_HOVER: Rgba = Rgba {
+    r: 0.169,
+    g: 0.169,
+    b: 0.188,
+    a: 1.0,
+};
 pub const TEXT: Rgba = Rgba {
     r: 0.92,
     g: 0.92,
@@ -54,6 +61,13 @@ pub const BORDER: Rgba = Rgba {
     g: 0.22,
     b: 0.24,
     a: 1.0,
+};
+/// Hairline divider under session header — softer than `BORDER`.
+pub const BORDER_SUBTLE: Rgba = Rgba {
+    r: 1.0,
+    g: 1.0,
+    b: 1.0,
+    a: 0.07,
 };
 /// Waku `border_strong` — activity cards and nested dividers.
 pub const BORDER_STRONG: Rgba = Rgba {
@@ -180,8 +194,16 @@ pub const SIDEBAR_RESIZE_HANDLE_CENTER_ACTIVE: Rgba = Rgba {
 };
 /// Shared chrome row height (session header + sidebar titlebar spacer).
 pub const APP_BAR_HEIGHT_PX: f32 = 40.0;
-/// Left offset for the sidebar toggle (aligned with expanded sidebar layout).
-pub const SIDEBAR_TOGGLE_LEFT_PX: f32 = 82.0;
+/// Sidebar titlebar inset (`px_4`) before the traffic-light spacer.
+pub const SIDEBAR_TITLEBAR_PADDING_X_PX: f32 = 16.0;
+/// Reserved width for native traffic lights in the sidebar titlebar.
+pub const SIDEBAR_TRAFFIC_LIGHTS_SPACER_PX: f32 = 52.0;
+/// Gap between the traffic-light spacer and the sidebar toggle.
+pub const SIDEBAR_TITLEBAR_TOGGLE_GAP_PX: f32 = 6.0;
+/// Left offset for the sidebar toggle — same whether the sidebar is open or closed.
+pub const SIDEBAR_TOGGLE_LEFT_PX: f32 = SIDEBAR_TITLEBAR_PADDING_X_PX
+    + SIDEBAR_TRAFFIC_LIGHTS_SPACER_PX
+    + SIDEBAR_TITLEBAR_TOGGLE_GAP_PX;
 pub const SIDEBAR_TOGGLE_SIZE_PX: f32 = 28.0;
 /// Gap between the sidebar toggle and the session title when the sidebar is hidden.
 pub const MAIN_HEADER_TITLE_GAP_PX: f32 = 12.0;
