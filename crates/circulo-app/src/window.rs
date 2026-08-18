@@ -50,7 +50,7 @@ mod tests {
     }
 
     #[test]
-    fn collapsed_sidebar_is_fully_hidden() {
+    fn collapsed_sidebar_has_zero_width() {
         let expanded = sidebar_width_px(false, SIDEBAR_EXPANDED_PX);
         let collapsed = sidebar_width_px(true, SIDEBAR_EXPANDED_PX);
         assert_eq!(expanded, SIDEBAR_EXPANDED_PX);

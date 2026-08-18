@@ -1,6 +1,8 @@
 # OpenCode server contract — observed on opencode 1.18.18 (2026-08-16)
 
-Pinned from a live `opencode serve --hostname 127.0.0.1 --port 7480`. Schemas in
+Pinned from a live `opencode serve --hostname 127.0.0.1 --port 7480`. Last contract
+check: 2026-08-18 against `GET /doc` on :7433 (OpenAPI info version 1.0.0); abort,
+permissions, todo, health, and event endpoints unchanged. Schemas in
 `openapi-excerpt.json` (trimmed from `GET /doc`); wire captures in `turn-text-tool.sse`
 and `turn-todo.sse`. Regenerate by running a server, capturing `GET /event`, and
 re-curating.
