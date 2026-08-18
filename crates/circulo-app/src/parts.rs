@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Mutex, OnceLock};
 
 use circulo_core::{Task, TaskStatus, ToolCall, ToolCallStatus, ToolOutput};
 use circulo_i18n::Catalog;
@@ -53,7 +54,93 @@ pub fn task_status_key(status: TaskStatus) -> &'static str {
 }
 
 pub fn render_text(content: &str) -> impl IntoElement {
-    markdown_blocks(&parse(content))
+    if content.is_empty() {
+        return div().into_any_element();
+    }
+
+    let blocks = cached_parse(content);
+    if let Some(text) = plain_paragraph_text(&blocks) {
+        return div()
+            .text_sm()
+            .line_height(px(20.))
+            .w_full()
+            .min_w_0()
+            .child(text)
+            .into_any_element();
+    }
+
+    markdown_blocks(&blocks).into_any_element()
+}
+
+const PARSE_CACHE_CAP: usize = 128;
+
+fn parse_cache() -> &'static Mutex<ParseCache> {
+    static CACHE: OnceLock<Mutex<ParseCache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(ParseCache::default()))
+}
+
+#[derive(Default)]
+struct ParseCache {
+    entries: HashMap<String, Vec<Block>>,
+    order: Vec<String>,
+}
+
+impl ParseCache {
+    fn get(&self, content: &str) -> Option<Vec<Block>> {
+        self.entries.get(content).cloned()
+    }
+
+    fn insert(&mut self, content: String, blocks: Vec<Block>) {
+        if self.entries.contains_key(&content) {
+            return;
+        }
+        if self.entries.len() >= PARSE_CACHE_CAP {
+            let evict = self.order.len() / 2;
+            for key in self.order.drain(..evict) {
+                self.entries.remove(&key);
+            }
+        }
+        self.order.push(content.clone());
+        self.entries.insert(content, blocks);
+    }
+}
+
+fn cached_parse(content: &str) -> Vec<Block> {
+    if let Ok(cache) = parse_cache().lock() {
+        if let Some(blocks) = cache.get(content) {
+            return blocks;
+        }
+    }
+
+    let blocks = parse(content);
+    if let Ok(mut cache) = parse_cache().lock() {
+        cache.insert(content.to_string(), blocks.clone());
+    }
+    blocks
+}
+
+fn plain_paragraph_text(blocks: &[Block]) -> Option<String> {
+    if blocks.len() != 1 {
+        return None;
+    }
+    let Block::Paragraph { inlines } = &blocks[0] else {
+        return None;
+    };
+    if !inlines.iter().all(|inline| matches!(
+        inline,
+        Inline::Text(_) | Inline::SoftBreak | Inline::HardBreak
+    )) {
+        return None;
+    }
+    let mut text = String::new();
+    for inline in inlines {
+        match inline {
+            Inline::Text(value) => text.push_str(value),
+            Inline::SoftBreak | Inline::HardBreak => text.push(' '),
+            _ => return None,
+        }
+    }
+    Some(text)
 }
 
 pub fn unsupported(catalog: &Catalog, message_index: usize, part_index: usize) -> gpui::AnyElement {
@@ -188,6 +275,15 @@ fn table_row(cells: &[Vec<Inline>], header: bool) -> impl IntoElement {
 }
 
 fn render_inlines(inlines: &[Inline]) -> impl IntoElement {
+    let flat = flatten_inlines(inlines, InlineStyle::default());
+    if flat.len() == 1 && flat[0].1 == InlineStyle::default() {
+        return div()
+            .text_sm()
+            .w_full()
+            .min_w_0()
+            .child(flat[0].0.clone());
+    }
+
     let mut row = div()
         .flex()
         .flex_row()
@@ -226,7 +322,7 @@ fn wrap_tokens(text: &str) -> Vec<String> {
     tokens
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq)]
 struct InlineStyle {
     emphasis: bool,
     strong: bool,
