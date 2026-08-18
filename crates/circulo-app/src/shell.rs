@@ -23,8 +23,8 @@ use crate::client::{
     ensure_daemon, partition_sessions_by_day, session_project_label, DaemonClient,
 };
 use crate::composer::{
-    can_send, placeholder_models, project_picker_locked, Composer, ComposerEvent, ComposerModel,
-    InteractionMode, PermissionMode, WorkMode,
+    can_send, context_usage_fraction, placeholder_models, project_picker_locked, Composer,
+    ComposerEvent, ComposerModel, InteractionMode, PermissionMode, WorkMode,
 };
 use crate::home::home_panel;
 use crate::icons::{icon, path as icon_path};
@@ -56,12 +56,27 @@ const DRAIN_INTERVAL: Duration = Duration::from_millis(50);
 const ANCHOR_THRESHOLD: f32 = 80.0;
 /// Meta line on session cards (folder + duration).
 const SESSION_META_TEXT_PX: f32 = 10.5;
+/// Minimum visible session title characters before ellipsis in the sidebar.
+const SESSION_TITLE_MIN_VISIBLE_CHARS: usize = 24;
+/// Approximate `text_sm` character width for sidebar session titles.
+const SESSION_TITLE_CHAR_WIDTH_PX: f32 = 7.25;
+const SESSION_TITLE_MIN_WIDTH_PX: f32 =
+    SESSION_TITLE_MIN_VISIBLE_CHARS as f32 * SESSION_TITLE_CHAR_WIDTH_PX;
+/// Horizontal padding on the sidebar session scroll area (`px_3`).
+const SIDEBAR_SESSION_SCROLL_PADDING_X_PX: f32 = 24.0;
+/// Horizontal padding on each session row (`px_2`).
+const SESSION_ROW_PADDING_X_PX: f32 = 16.0;
 const PALETTE_BACKDROP: gpui::Rgba = gpui::Rgba {
     r: 0.0,
     g: 0.0,
     b: 0.0,
     a: 0.45,
 };
+
+enum EitherProjectPick {
+    Attach(Project),
+    NewSession(Project, Session),
+}
 
 pub struct AppShell {
     pub sidebar_collapsed: bool,
@@ -83,17 +98,22 @@ pub struct AppShell {
     project_picker_query: String,
     project_picker_selected: usize,
     project_picker_pending_focus: bool,
+    folder_picker_open: bool,
     composer_pending_focus: bool,
     composer: Entity<Composer>,
     generating: bool,
     work_mode: WorkMode,
     selected_model: String,
+    selected_model_variant: String,
     permission_mode: PermissionMode,
     interaction_mode: InteractionMode,
     composer_models: Vec<ModelCatalogEntry>,
     enabled_model_ids: Vec<String>,
     settings_open: bool,
-    settings_section: SettingsSection,
+    pub(crate) settings_section: SettingsSection,
+    pub(crate) settings_models_query: String,
+    pub(crate) settings_models_expanded: bool,
+    pub(crate) settings_models_focus: gpui::FocusHandle,
     pub expanded_tools: HashSet<String>,
     error: Option<String>,
     loaded: bool,
@@ -148,17 +168,22 @@ impl AppShell {
             project_picker_query: String::new(),
             project_picker_selected: 0,
             project_picker_pending_focus: false,
+            folder_picker_open: false,
             composer_pending_focus: false,
             composer,
             generating: false,
             work_mode: WorkMode::Local,
             selected_model: String::new(),
+            selected_model_variant: String::new(),
             permission_mode: PermissionMode::default(),
             interaction_mode: InteractionMode::default(),
             composer_models: Vec::new(),
             enabled_model_ids: Vec::new(),
             settings_open: false,
             settings_section: SettingsSection::Models,
+            settings_models_query: String::new(),
+            settings_models_expanded: false,
+            settings_models_focus: cx.focus_handle(),
             expanded_tools: HashSet::new(),
             error: None,
             loaded: false,
@@ -198,7 +223,7 @@ impl AppShell {
             .first()
             .cloned()
             .unwrap_or_default();
-        if let Some(session) = self.selected_session() {
+        if let Some(session) = self.selected_session().cloned() {
             let model_id = session
                 .composer_model_id
                 .clone()
@@ -210,14 +235,58 @@ impl AppShell {
             let interaction_mode = session
                 .composer_interaction_mode
                 .unwrap_or(ComposerInteractionMode::Build);
-            self.selected_model = model_id;
+            let session_variant = session.composer_model_variant.clone();
+            self.selected_model = model_id.clone();
+            self.selected_model_variant =
+                self.resolve_model_variant(&model_id, session_variant);
             self.permission_mode = permission_mode;
             self.interaction_mode = interaction_mode;
         } else {
             self.selected_model = default_model_id;
+            self.selected_model_variant =
+                self.resolve_model_variant(&self.selected_model, None);
             self.permission_mode = ComposerPermissionMode::default();
             self.interaction_mode = ComposerInteractionMode::default();
         }
+    }
+
+    /// Keep the in-memory session row aligned with toolbar edits so re-renders
+    /// do not snap the composer back to stale SQLite values before PATCH returns.
+    fn sync_local_session_composer_fields(&mut self) {
+        let Some(session_id) = self.selected else {
+            return;
+        };
+        if let Some(index) = self.sessions.iter().position(|entry| entry.id == session_id) {
+            let session = &mut self.sessions[index];
+            session.composer_model_id = Some(self.selected_model.clone());
+            session.composer_model_variant = if self.selected_model_variant.is_empty() {
+                None
+            } else {
+                Some(self.selected_model_variant.clone())
+            };
+            session.composer_permission_mode = Some(self.permission_mode);
+            session.composer_interaction_mode = Some(self.interaction_mode);
+        }
+    }
+
+    fn resolve_model_variant(
+        &self,
+        model_id: &str,
+        session_variant: Option<String>,
+    ) -> String {
+        let variants = self
+            .composer_models
+            .iter()
+            .find(|model| model.id == model_id)
+            .map(|model| model.reasoning_variants.clone())
+            .unwrap_or_default();
+        if variants.is_empty() {
+            return String::new();
+        }
+        session_variant
+            .filter(|variant| variants.iter().any(|entry| entry == variant))
+            .or_else(|| variants.first().cloned())
+            .unwrap_or_default()
     }
 
     fn filtered_composer_models(&self) -> Vec<ComposerModel> {
@@ -250,9 +319,33 @@ impl AppShell {
         self.save_preferences(cx);
     }
 
+    pub(crate) fn handle_settings_models_key(
+        &mut self,
+        event: &KeyDownEvent,
+        cx: &mut Context<Self>,
+    ) {
+        let key = event.keystroke.key.as_str();
+        if key == "escape" {
+            self.settings_models_query.clear();
+            cx.stop_propagation();
+            return;
+        }
+        if key == "backspace" {
+            self.settings_models_query.pop();
+        } else if let Some(ch) = typed_char(event) {
+            self.settings_models_query.push_str(&ch);
+        } else {
+            return;
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+
     pub(crate) fn open_settings(&mut self, cx: &mut Context<Self>) {
         self.settings_open = true;
         self.settings_section = SettingsSection::Models;
+        self.settings_models_query.clear();
+        self.settings_models_expanded = false;
         self.close_palette(cx);
         self.close_project_picker(cx);
         cx.notify();
@@ -260,6 +353,8 @@ impl AppShell {
 
     pub(crate) fn close_settings(&mut self, cx: &mut Context<Self>) {
         self.settings_open = false;
+        self.settings_models_expanded = false;
+        self.settings_models_query.clear();
         cx.notify();
     }
 
@@ -300,11 +395,16 @@ impl AppShell {
     }
 
     fn sync_composer(&mut self, cx: &mut Context<Self>) {
-        self.apply_session_composer_state();
         let session = self.selected_session().cloned();
         let projects = self.projects.clone();
         let catalog = self.catalog.clone();
         let models: Vec<ComposerModel> = self.filtered_composer_models();
+        let context_window = models
+            .iter()
+            .find(|model| model.id == self.selected_model)
+            .and_then(|model| model.context_window.as_deref());
+        let usage_fraction = context_usage_fraction(&self.messages, context_window);
+        let model_variant = self.selected_model_variant.clone();
         self.composer.update(cx, |composer, cx| {
             composer.set_render_context(
                 projects,
@@ -315,6 +415,8 @@ impl AppShell {
                 self.permission_mode,
                 self.interaction_mode,
                 catalog,
+                usage_fraction,
+                model_variant,
                 cx,
             );
             composer.set_generating(self.generating, cx);
@@ -345,14 +447,26 @@ impl AppShell {
             }
             ComposerEvent::ModelChanged(model_id) => {
                 self.selected_model = model_id.clone();
+                self.sync_local_session_composer_fields();
+                self.sync_composer(cx);
+                self.patch_session_composer(cx);
+            }
+            ComposerEvent::ModelVariantChanged(variant) => {
+                self.selected_model_variant = variant.clone();
+                self.sync_local_session_composer_fields();
+                self.sync_composer(cx);
                 self.patch_session_composer(cx);
             }
             ComposerEvent::PermissionModeChanged(mode) => {
                 self.permission_mode = *mode;
+                self.sync_local_session_composer_fields();
+                self.sync_composer(cx);
                 self.patch_session_composer(cx);
             }
             ComposerEvent::InteractionModeChanged(mode) => {
                 self.interaction_mode = *mode;
+                self.sync_local_session_composer_fields();
+                self.sync_composer(cx);
                 self.patch_session_composer(cx);
             }
         }
@@ -417,42 +531,63 @@ impl AppShell {
         if project_picker_locked(self.selected_session()) {
             return;
         }
+        self.folder_picker_open = true;
         let dialog_title = self
             .catalog
             .get("composer.open_project_dialog_title")
             .to_string();
         let client = self.client.clone();
-        let shell = cx.entity();
-        cx.defer(move |cx| {
-            let picked = crate::platform::pick_project_folder(&dialog_title);
+        let attach_to_current = self.selected.is_some();
+        cx.spawn(async move |this, cx| {
+            let picked = cx
+                .background_executor()
+                .spawn(async move {
+                    std::thread::spawn(move || {
+                        crate::platform::pick_project_folder(&dialog_title)
+                    })
+                    .join()
+                    .ok()
+                    .flatten()
+                })
+                .await;
             if picked.is_none() {
+                let _ = this.update(cx, |this, _| {
+                    this.folder_picker_open = false;
+                });
                 return;
             }
-            let path = picked.unwrap();
-            let name = path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("Project")
-                .to_string();
-            let client = client.clone();
-            let _ = shell.update(cx, |_, cx| {
-                cx.spawn(async move |this, cx| {
-                    let result = cx
-                        .background_executor()
-                        .spawn(async move { client.create_project(&name) })
-                        .await;
-                    let _ = this.update(cx, |this, cx| {
-                        match result {
-                            Ok(project) => this.patch_session_project(Some(project.id), cx),
-                            Err(err) => this.error = Some(err),
-                        }
-                        cx.notify();
-                    });
+            let name = project_name_from_picked_path(&picked.unwrap());
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let project = client.create_project(&name)?;
+                    if attach_to_current {
+                        Ok(EitherProjectPick::Attach(project))
+                    } else {
+                        let session = client.create_session_with_project(Some(project.id))?;
+                        Ok(EitherProjectPick::NewSession(project, session))
+                    }
                 })
-                .detach();
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.folder_picker_open = false;
+                match result {
+                    Ok(EitherProjectPick::Attach(project)) => {
+                        this.patch_session_project(Some(project.id), cx);
+                    }
+                    Ok(EitherProjectPick::NewSession(project, session)) => {
+                        this.projects.push(project);
+                        this.sessions.push(session.clone());
+                        this.activate_session(session.id, cx);
+                        this.schedule_refresh(cx);
+                        this.error = None;
+                    }
+                    Err(err) => this.error = Some(err),
+                }
+                cx.notify();
             });
-        });
+        })
+        .detach();
     }
 
     fn patch_session_project(&mut self, project_id: Option<Uuid>, cx: &mut Context<Self>) {
@@ -490,6 +625,11 @@ impl AppShell {
         }
         let client = self.client.clone();
         let model_id = self.selected_model.clone();
+        let model_variant = if self.selected_model_variant.is_empty() {
+            None
+        } else {
+            Some(self.selected_model_variant.clone())
+        };
         let permission_mode = self.permission_mode;
         let interaction_mode = self.interaction_mode;
         cx.spawn(async move |this, cx| {
@@ -499,6 +639,7 @@ impl AppShell {
                     client.patch_session_composer(
                         session_id,
                         model_id,
+                        model_variant,
                         permission_mode,
                         interaction_mode,
                     )
@@ -527,62 +668,106 @@ impl AppShell {
 impl AppShell {
     pub fn schedule_refresh(&mut self, cx: &mut Context<Self>) {
         let client = self.client.clone();
+        let client_catalog = self.client.clone();
         let daemon_down = self.catalog.get("sidebar.daemon_down").to_string();
         let selected = self.selected;
         let snapshot_gen = self.stream_gen;
         cx.spawn(async move |this, cx| {
-            let snapshot = cx
+            let phase1 = cx
                 .background_executor()
                 .spawn(async move {
                     let connect = ensure_daemon(&client);
                     match connect {
                         Ok(()) => {
-                            let sessions = client.list_sessions().unwrap_or_default();
-                            let projects = client.list_projects().unwrap_or_default();
-                            let models = client.list_models().unwrap_or_default();
-                            let prefs = client.get_preferences().unwrap_or_default();
+                            let client_sessions = client.clone();
+                            let client_projects = client.clone();
+                            let (sessions, projects) = std::thread::scope(|scope| {
+                                let sessions_handle = scope.spawn(|| {
+                                    client_sessions.list_sessions().unwrap_or_default()
+                                });
+                                let projects_handle = scope.spawn(|| {
+                                    client_projects.list_projects().unwrap_or_default()
+                                });
+                                (
+                                    sessions_handle.join().unwrap_or_default(),
+                                    projects_handle.join().unwrap_or_default(),
+                                )
+                            });
                             let messages = selected
                                 .and_then(|id| client.list_messages(id).ok())
                                 .unwrap_or_default();
-                            Ok((sessions, projects, messages, models, prefs))
+                            Ok((sessions, projects, messages))
                         }
                         Err(err) => Err(format!("{daemon_down} ({err})")),
                     }
                 })
                 .await;
-            this.update(cx, |this, cx| {
-                this.loaded = true;
-                match snapshot {
-                    Ok((sessions, projects, messages, models, prefs)) => {
-                        this.sessions = sessions;
-                        this.projects = projects;
-                        this.composer_models = models;
-                        this.enabled_model_ids = prefs.enabled_model_ids;
-                        this.bootstrap_enabled_models_if_needed(cx);
-                        if should_apply_refresh_transcript(
-                            this.selected == selected,
-                            snapshot_gen,
-                            this.stream_gen,
-                        ) {
-                            this.messages = messages;
+
+            let phase1_ok = this
+                .update(cx, |this, cx| {
+                    this.loaded = true;
+                    match phase1 {
+                        Ok((sessions, projects, messages)) => {
+                            this.sessions = sessions;
+                            this.projects = projects;
+                            if should_apply_refresh_transcript(
+                                this.selected == selected,
+                                snapshot_gen,
+                                this.stream_gen,
+                            ) {
+                                this.messages = messages;
+                            }
+                            if this.stream_session.is_some() || this.selected.is_none() {
+                                this.error = None;
+                            }
+                            true
                         }
-                        // Keep `messages.stream_dropped` if this session gave up
-                        // on live updates; a late refetch must not hide it.
-                        if this.stream_session.is_some() || this.selected.is_none() {
-                            this.error = None;
+                        Err(message) => {
+                            this.error = Some(message);
+                            false
                         }
                     }
-                    Err(message) => this.error = Some(message),
-                }
-                if let Some(id) = this.selected {
-                    if this.stream_session != Some(id) {
-                        this.subscribe_stream(cx);
+                })
+                .ok()
+                .unwrap_or(false);
+
+            if phase1_ok {
+                let _ = this.update(cx, |this, cx| {
+                    if let Some(id) = this.selected {
+                        if this.stream_session != Some(id) {
+                            this.subscribe_stream(cx);
+                        }
                     }
-                }
-                this.sync_composer(cx);
-                cx.notify();
-            })
-            .ok();
+                    this.sync_composer(cx);
+                    cx.notify();
+                });
+            } else {
+                let _ = this.update(cx, |_, cx| cx.notify());
+                return;
+            }
+
+            let phase2 = cx
+                .background_executor()
+                .spawn(async move {
+                    if ensure_daemon(&client_catalog).is_err() {
+                        return None;
+                    }
+                    let models = client_catalog.list_models().unwrap_or_default();
+                    let prefs = client_catalog.get_preferences().unwrap_or_default();
+                    Some((models, prefs))
+                })
+                .await;
+
+            if let Some((models, prefs)) = phase2 {
+                let _ = this.update(cx, |this, cx| {
+                    this.composer_models = models;
+                    this.enabled_model_ids = prefs.enabled_model_ids;
+                    this.bootstrap_enabled_models_if_needed(cx);
+                    this.apply_session_composer_state();
+                    this.sync_composer(cx);
+                    cx.notify();
+                });
+            }
         })
         .detach();
     }
@@ -640,7 +825,7 @@ impl AppShell {
                                 | ProtocolEvent::SessionMessageFailed { .. }
                         );
                         let _ = this.update(cx, |this, cx| {
-                            if this.stream_gen != gen {
+                            if this.folder_picker_open || this.stream_gen != gen {
                                 return;
                             }
                             this.stream_attempts =
@@ -667,13 +852,16 @@ impl AppShell {
                             if changed && this.anchored() {
                                 this.scroll.scroll_to_bottom();
                             }
+                            if changed {
+                                this.sync_composer(cx);
+                            }
                             cx.notify();
                         });
                     }
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => {
                         let _ = this.update(cx, |this, cx| {
-                            if this.stream_gen != gen {
+                            if this.folder_picker_open || this.stream_gen != gen {
                                 return;
                             }
                             this.recover_stream(session_id, gen, cx);
@@ -683,7 +871,7 @@ impl AppShell {
                 }
             }
             let stale = this
-                .update(cx, |this, _| this.stream_gen != gen)
+                .update(cx, |this, _| this.stream_gen != gen || this.folder_picker_open)
                 .unwrap_or(true);
             if stale {
                 return;
@@ -729,6 +917,7 @@ impl AppShell {
         self.messages = self.client.list_messages(id).unwrap_or_default();
         self.stream_attempts = 0;
         self.error = None;
+        self.apply_session_composer_state();
         self.sync_composer(cx);
         self.subscribe_stream(cx);
         self.composer_pending_focus = true;
@@ -744,53 +933,55 @@ impl AppShell {
     }
 
     pub(crate) fn open_project_from_home(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.folder_picker_open = true;
         let dialog_title = self
             .catalog
             .get("composer.open_project_dialog_title")
             .to_string();
         let client = self.client.clone();
-        let shell = cx.entity();
-        cx.defer(move |cx| {
-            let picked = crate::platform::pick_project_folder(&dialog_title);
+        cx.spawn(async move |this, cx| {
+            let picked = cx
+                .background_executor()
+                .spawn(async move {
+                    std::thread::spawn(move || {
+                        crate::platform::pick_project_folder(&dialog_title)
+                    })
+                    .join()
+                    .ok()
+                    .flatten()
+                })
+                .await;
             if picked.is_none() {
+                let _ = this.update(cx, |this, _| {
+                    this.folder_picker_open = false;
+                });
                 return;
             }
-            let path = picked.unwrap();
-            let name = path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .filter(|s| !s.is_empty())
-                .unwrap_or("Project")
-                .to_string();
-            let _ = shell.update(cx, |_, cx| {
-                let client = client.clone();
-                cx.spawn(async move |this, cx| {
-                    let result = cx
-                        .background_executor()
-                        .spawn(async move {
-                            let project = client.create_project(&name)?;
-                            let session =
-                                client.create_session_with_project(Some(project.id))?;
-                            Ok((project, session))
-                        })
-                        .await;
-                    let _ = this.update(cx, |this, cx| {
-                        match result {
-                            Ok((project, session)) => {
-                                this.projects.push(project);
-                                this.sessions.push(session.clone());
-                                this.activate_session(session.id, cx);
-                                this.refresh();
-                                this.error = None;
-                            }
-                            Err(err) => this.error = Some(err),
-                        }
-                        cx.notify();
-                    });
+            let name = project_name_from_picked_path(&picked.unwrap());
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let project = client.create_project(&name)?;
+                    let session = client.create_session_with_project(Some(project.id))?;
+                    Ok((project, session))
                 })
-                .detach();
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.folder_picker_open = false;
+                match result {
+                    Ok((project, session)) => {
+                        this.projects.push(project);
+                        this.sessions.push(session.clone());
+                        this.activate_session(session.id, cx);
+                        this.schedule_refresh(cx);
+                        this.error = None;
+                    }
+                    Err(err) => this.error = Some(err),
+                }
+                cx.notify();
             });
-        });
+        })
+        .detach();
     }
 
     pub(crate) fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1657,6 +1848,7 @@ fn sidebar_expanded(
         .flex()
         .flex_col()
         .w(px(width))
+        .min_w_0()
         .h_full()
         .bg(BG_SIDEBAR)
         .border_r_1()
@@ -1826,7 +2018,13 @@ fn sidebar_body(state: &AppShell, catalog: &Catalog, cx: &mut Context<AppShell>)
                 .child(catalog.get("sidebar.search").to_string()),
         );
 
-    let mut scroll_content = div().flex().flex_col().gap_1().pb_2();
+    let mut scroll_content = div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .pb_2()
+        .min_w_0()
+        .w_full();
 
     if let Some(error) = &state.error {
         scroll_content = scroll_content.child(
@@ -1852,6 +2050,8 @@ fn sidebar_body(state: &AppShell, catalog: &Catalog, cx: &mut Context<AppShell>)
                 .id("sidebar-sessions")
                 .flex_1()
                 .min_h_0()
+                .min_w_0()
+                .w_full()
                 .overflow_y_scroll()
                 .track_scroll(&state.sidebar_scroll)
                 .px_3()
@@ -1865,17 +2065,19 @@ fn sidebar_body(state: &AppShell, catalog: &Catalog, cx: &mut Context<AppShell>)
                 .child(
                     div()
                         .id("open-settings")
-                        .px_2()
-                        .py_1()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .w(px(28.))
+                        .h(px(28.))
                         .rounded_md()
-                        .text_sm()
                         .text_color(TEXT_MUTED)
                         .hover(|style| style.bg(BG_MAIN).text_color(TEXT))
                         .cursor_pointer()
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.open_settings(cx);
                         }))
-                        .child(catalog.get("sidebar.settings").to_string()),
+                        .child(icon(icon_path::SETTINGS, px(16.), TEXT_MUTED)),
                 ),
         )
 }
@@ -1913,9 +2115,10 @@ fn settings_sidebar_body(
                 .rounded_md()
                 .text_sm()
                 .cursor_pointer()
-                .when(active, |el| el.bg(ACCENT).text_color(TEXT))
+                .when(active, |el| el.bg(BG_MAIN).text_color(TEXT))
                 .when(!active, |el| {
-                    el.text_color(TEXT_MUTED).hover(|style| style.bg(BG_MAIN).text_color(TEXT))
+                    el.text_color(TEXT_MUTED)
+                        .hover(|style| style.bg(BG_MAIN).text_color(TEXT))
                 })
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.settings_section = SettingsSection::Models;
@@ -1941,13 +2144,6 @@ fn settings_sidebar_body(
                 .pb_2()
                 .child(nav),
         )
-        .child(
-            div()
-                .flex_none()
-                .px_3()
-                .pb_2()
-                .child(label(catalog.get("sidebar.settings"), true)),
-        )
 }
 
 fn sidebar_session_sections(
@@ -1964,17 +2160,23 @@ fn sidebar_session_sections(
     let offset = local_offset_or_utc();
     let (today, earlier) = partition_sessions_by_day(&visible, now, offset);
     let without_folder = catalog.get("session.without_folder").to_string();
-    let mut col = div().flex().flex_col().gap_1();
+    let session_row_width_px = state.sidebar_width_expanded
+        - SIDEBAR_SESSION_SCROLL_PADDING_X_PX
+        - SESSION_ROW_PADDING_X_PX;
+    let mut col = div().flex().flex_col().gap_1().min_w_0().w_full();
 
     if !today.is_empty() {
         col = col.child(
-            collapsible_section_header(
+            collapsible_section_header_with_open_project(
                 "section-today",
                 catalog.get("sidebar.today"),
                 state.today_expanded,
                 cx.listener(|this, _, _, cx| {
                     this.today_expanded = !this.today_expanded;
                     cx.notify();
+                }),
+                cx.listener(|this, _, _, cx| {
+                    this.open_project_picker(cx);
                 }),
             ),
         );
@@ -1994,6 +2196,7 @@ fn sidebar_session_sections(
                     &format_relative(now, activity),
                     &folder,
                     selected,
+                    session_row_width_px,
                     cx.listener(move |this, _, window, cx| {
                         this.select_session(id, window, cx);
                         cx.notify();
@@ -2035,6 +2238,7 @@ fn sidebar_session_sections(
                     &format_relative(now, activity),
                     &folder,
                     selected,
+                    session_row_width_px,
                     cx.listener(move |this, _, window, cx| {
                         this.select_session(id, window, cx);
                         cx.notify();
@@ -2055,31 +2259,85 @@ fn collapsible_section_header(
     id: &'static str,
     text: &str,
     expanded: bool,
+    on_toggle: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    section_header_layout(id, text, expanded, on_toggle, false, |_, _, _| {})
+}
+
+fn collapsible_section_header_with_open_project(
+    id: &'static str,
+    text: &str,
+    expanded: bool,
+    on_toggle: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+    on_open_project: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    section_header_layout(id, text, expanded, on_toggle, true, on_open_project)
+}
+
+fn section_open_project_button(
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id("section-today-open-project")
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .w(px(22.))
+        .h(px(22.))
+        .rounded(px(4.))
+        .text_color(TEXT_MUTED)
+        .hover(|style| style.bg(BG_MAIN).text_color(TEXT))
+        .cursor_pointer()
+        .on_click(on_click)
+        .child(icon(icon_path::FOLDER_PLUS, px(14.), TEXT_MUTED))
+}
+
+fn section_header_layout(
+    id: &'static str,
+    text: &str,
+    expanded: bool,
+    on_toggle: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+    show_open_project: bool,
+    on_open_project: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
     let chevron_path = if expanded {
         icon_path::CHEVRON_DOWN
     } else {
         icon_path::CHEVRON_RIGHT
     };
-    div()
-        .id(id)
+    let mut row = div()
         .flex()
         .items_center()
-        .gap_1()
+        .w_full()
         .px_2()
         .pt_2()
         .pb_1()
-        .cursor_pointer()
-        .on_click(on_click)
-        .child(icon(chevron_path, px(12.), TEXT_MUTED))
         .child(
             div()
-                .text_xs()
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(TEXT_MUTED)
-                .child(text.to_string()),
-        )
+                .id(id)
+                .flex()
+                .items_center()
+                .gap_1()
+                .cursor_pointer()
+                .on_click(on_toggle)
+                .child(icon(chevron_path, px(12.), TEXT_MUTED))
+                .child(
+                    div()
+                        .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(TEXT_MUTED)
+                        .child(text.to_string()),
+                ),
+        );
+
+    if show_open_project {
+        row = row
+            .child(div().flex_1())
+            .child(section_open_project_button(on_open_project));
+    }
+
+    row
 }
 
 fn action_row(
@@ -2106,13 +2364,17 @@ fn session_row(
     time: &str,
     project: &str,
     selected: bool,
+    width_px: f32,
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
     on_context_menu: impl Fn(&MouseDownEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
+    let row_width = width_px.max(SESSION_TITLE_MIN_WIDTH_PX);
     div()
         .id(id)
         .flex()
         .flex_col()
+        .w(px(row_width))
+        .flex_shrink_0()
         .px_2()
         .py_1()
         .rounded_md()
@@ -2120,16 +2382,39 @@ fn session_row(
         .when(selected, |el| el.bg(BG_MAIN))
         .on_click(on_click)
         .on_mouse_down(MouseButton::Right, on_context_menu)
-        .child(div().text_sm().child(title.to_string()))
+        .child(session_title_line(title))
         .child(
             div()
                 .flex()
-                .justify_between()
+                .items_center()
+                .gap_1()
+                .w_full()
                 .text_size(px(SESSION_META_TEXT_PX))
+                .line_height(px(14.))
                 .text_color(TEXT_MUTED)
-                .child(project.to_string())
-                .child(time.to_string()),
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .child(project.to_string()),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .flex_shrink_0()
+                        .child(time.to_string()),
+                ),
         )
+}
+
+fn session_title_line(title: &str) -> impl IntoElement {
+    div()
+        .w_full()
+        .min_w(px(SESSION_TITLE_MIN_WIDTH_PX))
+        .truncate()
+        .text_sm()
+        .child(title.to_string())
 }
 
 fn main_column(
@@ -2166,10 +2451,14 @@ fn main_column(
                 .child(
                     div()
                         .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(px(MAIN_HEADER_TITLE_TEXT_PX))
-                        .child(state.selected_title()),
+                        .overflow_hidden()
+                        .child(
+                            div()
+                                .truncate()
+                                .min_w(px(SESSION_TITLE_MIN_WIDTH_PX))
+                                .text_size(px(MAIN_HEADER_TITLE_TEXT_PX))
+                                .child(state.selected_title()),
+                        ),
                 ),
         );
 
@@ -2196,14 +2485,14 @@ fn settings_main_column(
     cx: &mut Context<AppShell>,
 ) -> gpui::Div {
     let collapsed = state.sidebar_collapsed;
-    let shell = cx.entity();
     let panel = models_settings_panel(
         &state.composer_models,
         &state.enabled_model_ids,
+        &state.settings_models_query,
+        state.settings_models_expanded,
+        &state.settings_models_focus,
         catalog,
-        move |model_id: &str, cx: &mut gpui::App| {
-            shell.update(cx, |this, cx| this.toggle_model_enabled(model_id, cx));
-        },
+        cx,
     );
 
     div()
@@ -2444,6 +2733,14 @@ fn avatar_initial(name: &str) -> String {
         .next()
         .map(|ch| ch.to_uppercase().to_string())
         .unwrap_or_else(|| "?".into())
+}
+
+fn project_name_from_picked_path(path: &std::path::Path) -> String {
+    path.file_name()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Project")
+        .to_string()
 }
 
 fn label(text: &str, active: bool) -> impl IntoElement {
