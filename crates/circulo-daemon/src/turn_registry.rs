@@ -24,9 +24,19 @@ impl TurnRegistry {
         }
     }
 
-    pub fn begin(&self, session_id: Uuid, working_directory: Option<PathBuf>) -> Arc<AtomicBool> {
+    pub fn begin(
+        &self,
+        session_id: Uuid,
+        working_directory: Option<PathBuf>,
+    ) -> Result<Arc<AtomicBool>, ApiError> {
+        let mut active = self.active.lock().map_err(|_| ApiError::internal())?;
+        if active.contains_key(&session_id) {
+            return Err(ApiError::invalid_request(
+                "A reply is already in progress for this session.",
+            ));
+        }
         let cancel = Arc::new(AtomicBool::new(false));
-        self.active.lock().expect("turn registry lock").insert(
+        active.insert(
             session_id,
             ActiveTurn {
                 cancel: Arc::clone(&cancel),
@@ -34,7 +44,7 @@ impl TurnRegistry {
                 working_directory: Mutex::new(working_directory),
             },
         );
-        cancel
+        Ok(cancel)
     }
 
     pub fn note_agent_session(&self, session_id: Uuid, agent_session_id: String) {

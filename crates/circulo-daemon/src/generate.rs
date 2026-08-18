@@ -3,15 +3,17 @@ use std::sync::Arc;
 
 use circulo_adapter::{
     AdapterError, AdapterEvent, AgentAdapter, ErrorReason, GenerateRequest, PermissionDecision,
-    PermissionRequest, PermissionResponder,
+    PermissionRequest, PermissionResponder, QuestionAnswer, QuestionRequest, QuestionResponder,
+    QuestionResponse, UserQuestion,
 };
 use circulo_core::{
     ComposerInteractionMode, ComposerPermissionMode, Message, MessagePart, MessageRole,
     MessageStatus, OffsetDateTime, ToolCall, Uuid, is_default_session_title,
 };
 use circulo_i18n::Catalog;
-use circulo_persist::Store;
-use circulo_protocol::{ApiError, ProtocolEvent, API_VERSION};
+use circulo_persist::{PersistError, Store};
+use circulo_protocol::{ApiError, ProtocolEvent, QuestionOptionBody, UserQuestionBody, API_VERSION};
+use tokio::sync::Mutex;
 
 fn default_working_directory() -> PathBuf {
     std::env::var_os("CIRCULO_OPENCODE_CWD")
@@ -41,15 +43,18 @@ pub(crate) fn resolve_working_directory(store: &Store, session: &circulo_core::S
     }
 }
 
-pub fn run_turn(
-    store: &Store,
-    adapter: &dyn AgentAdapter,
+fn with_store<R>(
+    store: &Arc<Mutex<Store>>,
+    f: impl FnOnce(&Store) -> Result<R, ApiError>,
+) -> Result<R, ApiError> {
+    let guard = store.blocking_lock();
+    f(&guard)
+}
+
+pub fn persist_user_message(
+    store: &Arc<Mutex<Store>>,
     session_id: Uuid,
     user_text: &str,
-    cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
-    turn_registry: Option<(&crate::turn_registry::TurnRegistry, Uuid)>,
-    permission_waiter: Option<&crate::permission_waiter::PermissionWaiter>,
-    protocol_events: Option<&tokio::sync::broadcast::Sender<ProtocolEvent>>,
     emit: &mut dyn FnMut(ProtocolEvent),
 ) -> Result<Message, ApiError> {
     let now = OffsetDateTime::now_utc();
@@ -64,15 +69,57 @@ pub fn run_turn(
         created_at: now,
         is_streaming: false,
     };
-    store
-        .save_message(&user)
-        .map_err(|_| ApiError::internal())?;
+    with_store(store, |store| {
+        store.save_message(&user).map_err(|_| ApiError::internal())
+    })?;
     emit(ProtocolEvent::SessionMessageCreated {
         api_version: API_VERSION,
         session_id,
         message: user.clone(),
     });
+    Ok(user)
+}
 
+pub fn run_turn(
+    store: Arc<Mutex<Store>>,
+    adapter: &dyn AgentAdapter,
+    session_id: Uuid,
+    user_text: &str,
+    cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
+    turn_registry: Option<(&crate::turn_registry::TurnRegistry, Uuid)>,
+    permission_waiter: Option<&crate::permission_waiter::PermissionWaiter>,
+    question_waiter: Option<&crate::question_waiter::QuestionWaiter>,
+    protocol_events: Option<&tokio::sync::broadcast::Sender<ProtocolEvent>>,
+    emit: &mut dyn FnMut(ProtocolEvent),
+) -> Result<Message, ApiError> {
+    let _user = persist_user_message(&store, session_id, user_text, emit)?;
+    run_assistant_turn(
+        store,
+        adapter,
+        session_id,
+        user_text,
+        cancel,
+        turn_registry,
+        permission_waiter,
+        question_waiter,
+        protocol_events,
+        emit,
+    )
+}
+
+pub fn run_assistant_turn(
+    store: Arc<Mutex<Store>>,
+    adapter: &dyn AgentAdapter,
+    session_id: Uuid,
+    user_text: &str,
+    cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
+    turn_registry: Option<(&crate::turn_registry::TurnRegistry, Uuid)>,
+    permission_waiter: Option<&crate::permission_waiter::PermissionWaiter>,
+    question_waiter: Option<&crate::question_waiter::QuestionWaiter>,
+    protocol_events: Option<&tokio::sync::broadcast::Sender<ProtocolEvent>>,
+    emit: &mut dyn FnMut(ProtocolEvent),
+) -> Result<Message, ApiError> {
+    let now = OffsetDateTime::now_utc();
     let assistant_id = Uuid::new_v4();
     let mut assistant = Message {
         id: assistant_id,
@@ -83,20 +130,36 @@ pub fn run_turn(
         created_at: now,
         is_streaming: true,
     };
+    with_store(&store, |store| {
+        store
+            .save_message(&assistant)
+            .map_err(|_| ApiError::internal())
+    })?;
+    emit(ProtocolEvent::SessionMessageCreated {
+        api_version: API_VERSION,
+        session_id,
+        message: assistant.clone(),
+    });
 
-    let session = store
-        .get_session(session_id)
-        .map_err(|_| ApiError::internal())?
-        .ok_or_else(|| ApiError::not_found("Session not found."))?;
-
-    let agent_session_id = store
-        .opencode_session_id(session_id)
-        .map_err(|_| ApiError::internal())?;
+    let (session, agent_session_id) = with_store(&store, |store| {
+        let session = store
+            .get_session(session_id)
+            .map_err(|_| ApiError::internal())?
+            .ok_or_else(|| ApiError::not_found("Session not found."))?;
+        let agent_session_id = store
+            .opencode_session_id(session_id)
+            .map_err(|_| ApiError::internal())?;
+        Ok((session, agent_session_id))
+    })?;
 
     let mut failed: Option<ApiError> = None;
-    let working_directory = Some(resolve_working_directory(store, &session));
+    let working_directory = with_store(&store, |store| {
+        Ok(Some(resolve_working_directory(store, &session)))
+    })?;
     let permission_responder =
         permission_responder_for(&session, session_id, permission_waiter, protocol_events);
+    let question_responder =
+        question_responder_for(session_id, question_waiter, protocol_events);
     let gen_result = adapter.generate(
         GenerateRequest {
             session_id,
@@ -111,6 +174,7 @@ pub fn run_turn(
             working_directory,
             cancel,
             permission_responder,
+            question_responder,
         },
         &mut |event| {
             if let AdapterEvent::SessionBound {
@@ -123,18 +187,29 @@ pub fn run_turn(
                 // Persist before any text streams so a crash mid-turn still
                 // leaves the binding durable. Write-once; the same id is a
                 // no-op, a different id is a real problem.
-                if let Err(err) = store.bind_opencode_session(session_id, bound) {
-                    eprintln!("circulo-daemon: session binding failed: {err}");
-                    failed = Some(ApiError::internal());
+                if let Err(err) = with_store(&store, |store| {
+                    store
+                        .bind_opencode_session(session_id, bound)
+                        .map_err(|_| ApiError::internal())
+                }) {
+                    eprintln!("circulo-daemon: session binding failed: {}", err.message);
+                    failed = Some(err);
                 }
                 return;
             }
             if let AdapterEvent::SessionTitleUpdated { title } = event {
-                try_apply_auto_title(store, session_id, title, emit);
+                let _ = with_store(&store, |store| {
+                    try_apply_auto_title(store, session_id, title, emit);
+                    Ok(())
+                });
                 return;
             }
             apply_event(&mut assistant, event, &mut failed);
-            let _ = store.save_message(&assistant);
+            let _ = with_store(&store, |store| {
+                store
+                    .save_message(&assistant)
+                    .map_err(|_| ApiError::internal())
+            });
             emit_for_assistant(session_id, &assistant, emit);
         },
     );
@@ -146,9 +221,11 @@ pub fn run_turn(
     if let Some(error) = failed {
         assistant.status = MessageStatus::Error;
         assistant.is_streaming = false;
-        store
-            .save_message(&assistant)
-            .map_err(|_| ApiError::internal())?;
+        with_store(&store, |store| {
+            store
+                .save_message(&assistant)
+                .map_err(|_| ApiError::internal())
+        })?;
         emit(ProtocolEvent::SessionMessageFailed {
             api_version: API_VERSION,
             session_id,
@@ -160,9 +237,11 @@ pub fn run_turn(
 
     assistant.status = MessageStatus::Complete;
     assistant.is_streaming = false;
-    store
-        .save_message(&assistant)
-        .map_err(|_| ApiError::internal())?;
+    with_store(&store, |store| {
+        store
+            .save_message(&assistant)
+            .map_err(|_| ApiError::internal())
+    })?;
     emit(ProtocolEvent::SessionMessageCompleted {
         api_version: API_VERSION,
         session_id,
@@ -333,13 +412,52 @@ fn permission_responder_for(
     }))
 }
 
+fn question_responder_for(
+    session_id: Uuid,
+    question_waiter: Option<&crate::question_waiter::QuestionWaiter>,
+    protocol_events: Option<&tokio::sync::broadcast::Sender<ProtocolEvent>>,
+) -> Option<QuestionResponder> {
+    let question_waiter = question_waiter?.clone();
+    let protocol_events = protocol_events?.clone();
+    Some(QuestionResponder::new(move |request: QuestionRequest| {
+        let _ = protocol_events.send(ProtocolEvent::SessionQuestionRequested {
+            api_version: API_VERSION,
+            session_id,
+            request_id: request.id.clone(),
+            questions: request
+                .questions
+                .into_iter()
+                .map(user_question_to_body)
+                .collect(),
+        });
+        question_waiter.wait(session_id, request.id)
+    }))
+}
+
+fn user_question_to_body(question: UserQuestion) -> UserQuestionBody {
+    UserQuestionBody {
+        id: question.id,
+        header: question.header,
+        question: question.question,
+        options: question
+            .options
+            .into_iter()
+            .map(|option| QuestionOptionBody {
+                label: option.label,
+                description: option.description,
+            })
+            .collect(),
+        multi_select: question.multi_select,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use circulo_adapter::{
         AdapterError, AdapterEvent, AdapterHealth, AgentAdapter, ErrorReason, GenerateRequest,
     };
-    use circulo_persist::Store;
+    use circulo_persist::{PersistError, Store};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct BindingFakeAdapter {
@@ -393,16 +511,18 @@ mod tests {
             composer_interaction_mode: None,
         };
         store.create_session(&session).unwrap();
+        let store = Arc::new(Mutex::new(store));
         let adapter = BindingFakeAdapter {
             turns: AtomicUsize::new(0),
         };
 
         let mut events = Vec::new();
         let assistant = run_turn(
-            &store,
+            Arc::clone(&store),
             &adapter,
             session.id,
             "hi",
+            None,
             None,
             None,
             None,
@@ -413,7 +533,13 @@ mod tests {
 
         assert_eq!(assistant.status, MessageStatus::Complete);
         assert_eq!(
-            store.opencode_session_id(session.id).unwrap().as_deref(),
+            with_store(&store, |store| {
+                store
+                    .opencode_session_id(session.id)
+                    .map_err(|_| ApiError::internal())
+            })
+                .unwrap()
+                .as_deref(),
             Some("ses_bound_1")
         );
         assert!(events
@@ -421,10 +547,11 @@ mod tests {
             .any(|event| matches!(event, ProtocolEvent::SessionMessageCompleted { .. })));
 
         let second = run_turn(
-            &store,
+            Arc::clone(&store),
             &adapter,
             session.id,
             "again",
+            None,
             None,
             None,
             None,
@@ -434,7 +561,13 @@ mod tests {
         .unwrap();
         assert_eq!(second.status, MessageStatus::Complete);
         assert_eq!(
-            store.opencode_session_id(session.id).unwrap().as_deref(),
+            with_store(&store, |store| {
+                store
+                    .opencode_session_id(session.id)
+                    .map_err(|_| ApiError::internal())
+            })
+                .unwrap()
+                .as_deref(),
             Some("ses_bound_1")
         );
     }
@@ -488,7 +621,7 @@ mod tests {
 
     #[test]
     fn auto_title_overwrites_only_default_titles() {
-        let store = Store::open_in_memory().unwrap();
+        let store = Arc::new(Mutex::new(Store::open_in_memory().unwrap()));
         let default_session = circulo_core::Session {
             id: Uuid::new_v4(),
             project_id: None,
@@ -504,17 +637,24 @@ mod tests {
             composer_permission_mode: None,
             composer_interaction_mode: None,
         };
-        store.create_session(&default_session).unwrap();
-        store
-            .bind_opencode_session(default_session.id, "ses_bound_1")
-            .unwrap();
+        with_store(&store, |store| {
+            store
+                .create_session(&default_session)
+                .map_err(|_| ApiError::internal())?;
+            store
+                .bind_opencode_session(default_session.id, "ses_bound_1")
+                .map_err(|_| ApiError::internal())?;
+            Ok(())
+        })
+        .unwrap();
 
         let mut events = Vec::new();
         run_turn(
-            &store,
+            Arc::clone(&store),
             &TitleFakeAdapter,
             default_session.id,
             "hi",
+            None,
             None,
             None,
             None,
@@ -523,7 +663,13 @@ mod tests {
         )
         .unwrap();
 
-        let updated = store.get_session(default_session.id).unwrap().unwrap();
+        let updated = with_store(&store, |store| {
+            store
+                .get_session(default_session.id)
+                .map_err(|_| ApiError::internal())?
+                .ok_or_else(|| ApiError::not_found("missing session"))
+        })
+        .unwrap();
         assert_eq!(updated.title, "Launch checklist");
         assert!(events.iter().any(|event| matches!(
             event,
@@ -548,16 +694,23 @@ mod tests {
             composer_permission_mode: None,
             composer_interaction_mode: None,
         };
-        store.create_session(&renamed).unwrap();
-        store
-            .bind_opencode_session(renamed.id, "ses_bound_2")
-            .unwrap();
+        with_store(&store, |store| {
+            store
+                .create_session(&renamed)
+                .map_err(|_| ApiError::internal())?;
+            store
+                .bind_opencode_session(renamed.id, "ses_bound_2")
+                .map_err(|_| ApiError::internal())?;
+            Ok(())
+        })
+        .unwrap();
 
         run_turn(
-            &store,
+            Arc::clone(&store),
             &TitleFakeAdapter,
             renamed.id,
             "hi",
+            None,
             None,
             None,
             None,
@@ -566,7 +719,13 @@ mod tests {
         )
         .unwrap();
 
-        let unchanged = store.get_session(renamed.id).unwrap().unwrap();
+        let unchanged = with_store(&store, |store| {
+            store
+                .get_session(renamed.id)
+                .map_err(|_| ApiError::internal())?
+                .ok_or_else(|| ApiError::not_found("missing session"))
+        })
+        .unwrap();
         assert_eq!(unchanged.title, "My custom title");
     }
 }

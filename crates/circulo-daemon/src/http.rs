@@ -10,7 +10,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use circulo_adapter::{AdapterError, AdapterHealth, AgentAdapter, AgentSessionSettings, ErrorReason};
+use circulo_adapter::{AdapterError, AdapterHealth, AgentAdapter, AgentSessionSettings, ErrorReason, QuestionAnswer};
 use circulo_core::{
     AgentType, ModelCatalogEntry, OffsetDateTime, Project, ProjectStatus, Session, SessionStatus,
     Uuid,
@@ -19,24 +19,26 @@ use circulo_persist::{PersistError, Store};
 use circulo_protocol::{
     ApiError, CreateMessageRequest, CreateProjectRequest, CreateSessionRequest, ErrorCode,
     HealthResponse, OpenCodeHealthBody, PatchProjectRequest, PatchSessionRequest,
-    PermissionReplyRequest, PreferencesBody, ProtocolEvent, API_VERSION,
+    PermissionReplyRequest, PreferencesBody, ProtocolEvent, QuestionReplyRequest, API_VERSION,
 };
 use futures_util::stream::{self, StreamExt};
 use serde::Deserialize;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex as AsyncMutex};
 use tokio_stream::wrappers::BroadcastStream;
 
-use crate::generate::{resolve_working_directory, run_turn};
+use crate::generate::{persist_user_message, resolve_working_directory, run_assistant_turn};
 use crate::permission_waiter::PermissionWaiter;
+use crate::question_waiter::QuestionWaiter;
 use crate::turn_registry::TurnRegistry;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub store: Arc<Mutex<Store>>,
+    pub store: Arc<AsyncMutex<Store>>,
     pub adapter: Arc<dyn AgentAdapter>,
     pub events: broadcast::Sender<ProtocolEvent>,
     pub turns: Arc<TurnRegistry>,
     pub permissions: Arc<PermissionWaiter>,
+    pub questions: Arc<QuestionWaiter>,
     model_catalog_cache: Arc<Mutex<ModelCatalogCache>>,
 }
 
@@ -44,19 +46,24 @@ impl AppState {
     pub fn new(store: Store, adapter: Arc<dyn AgentAdapter>) -> Self {
         let (events, _) = broadcast::channel(256);
         Self {
-            store: Arc::new(Mutex::new(store)),
+            store: Arc::new(AsyncMutex::new(store)),
             adapter,
             events,
             turns: Arc::new(TurnRegistry::new()),
             permissions: Arc::new(PermissionWaiter::new()),
+            questions: Arc::new(QuestionWaiter::new()),
             model_catalog_cache: Arc::new(Mutex::new(
                 ModelCatalogCache::new(DEFAULT_MODEL_CATALOG_TTL),
             )),
         }
     }
 
-    fn store(&self) -> Result<std::sync::MutexGuard<'_, Store>, ApiError> {
-        self.store.lock().map_err(|_| ApiError::internal())
+    async fn with_store<R>(
+        &self,
+        f: impl FnOnce(&Store) -> Result<R, PersistError>,
+    ) -> Result<R, HttpError> {
+        let guard = self.store.lock().await;
+        f(&guard).map_err(HttpError::from)
     }
 }
 
@@ -113,6 +120,10 @@ pub fn router(state: AppState) -> Router {
             "/v1/sessions/{id}/permissions/{permission_id}/reply",
             post(reply_permission),
         )
+        .route(
+            "/v1/sessions/{id}/questions/{request_id}/reply",
+            post(reply_question),
+        )
         .route("/v1/sessions/{id}/events", get(session_events))
         .route("/v1/models", get(list_models))
         .route("/v1/preferences", get(get_preferences).put(put_preferences))
@@ -120,9 +131,12 @@ pub fn router(state: AppState) -> Router {
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
-    // probe() may spawn an OpenCode server; keep it off the async runtime.
+    // Liveness must stay fast even when turns saturate the blocking pool or OpenCode
+    // is slow to probe; adapter details are best-effort under a short timeout.
+    const PROBE_TIMEOUT: Duration = Duration::from_millis(500);
     let adapter = Arc::clone(&state.adapter);
-    let (adapter_state, adapter_message, opencode) =
+    let probe = tokio::time::timeout(
+        PROBE_TIMEOUT,
         tokio::task::spawn_blocking(move || {
             let (adapter_state, adapter_message) = match adapter.probe() {
                 AdapterHealth::Available => ("available".to_string(), None),
@@ -134,15 +148,18 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
                 version: health.version,
             });
             (adapter_state, adapter_message, opencode)
-        })
-        .await
-        .unwrap_or_else(|_| {
-            (
-                "error".to_string(),
-                Some("The agent check did not answer.".into()),
-                None,
-            )
-        });
+        }),
+    )
+    .await;
+
+    let (adapter_state, adapter_message, opencode) = match probe {
+        Ok(Ok(values)) => values,
+        _ => (
+            "unknown".to_string(),
+            Some("Agent status check timed out.".into()),
+            None,
+        ),
+    };
     Json(HealthResponse {
         api_version: API_VERSION,
         daemon: "ok".into(),
@@ -161,11 +178,12 @@ async fn list_projects(
     State(state): State<AppState>,
     Query(query): Query<ProjectQuery>,
 ) -> Result<Json<Vec<Project>>, HttpError> {
-    let store = state.store()?;
-    let list = match query.status.as_deref() {
-        Some("archived") => store.list_archived_projects()?,
-        _ => store.list_active_projects()?,
-    };
+    let list = state
+        .with_store(|store| match query.status.as_deref() {
+            Some("archived") => store.list_archived_projects(),
+            _ => store.list_active_projects(),
+        })
+        .await?;
     Ok(Json(list))
 }
 
@@ -187,7 +205,7 @@ async fn create_project(
         created_at: now,
         updated_at: now,
     };
-    state.store()?.create_project(&project)?;
+    state.with_store(|store| store.create_project(&project)).await?;
     Ok((StatusCode::CREATED, Json(project)))
 }
 
@@ -196,8 +214,8 @@ async fn get_project(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Project>, HttpError> {
     state
-        .store()?
-        .get_project(id)?
+        .with_store(|store| store.get_project(id))
+        .await?
         .map(Json)
         .ok_or_else(|| HttpError::from(ApiError::not_found("Project not found.")))
 }
@@ -207,7 +225,7 @@ async fn patch_project(
     Path(id): Path<Uuid>,
     Json(body): Json<PatchProjectRequest>,
 ) -> Result<Json<Project>, HttpError> {
-    let store = state.store()?;
+    let store = state.store.lock().await;
     let mut project = store
         .get_project(id)?
         .ok_or_else(|| ApiError::not_found("Project not found."))?;
@@ -225,6 +243,7 @@ async fn patch_project(
     }
     project.updated_at = OffsetDateTime::now_utc();
     store.update_project(&project)?;
+    drop(store);
     Ok(Json(project))
 }
 
@@ -232,7 +251,7 @@ async fn delete_project(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, HttpError> {
-    state.store()?.delete_project(id)?;
+    state.with_store(|store| store.delete_project(id)).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -240,7 +259,7 @@ async fn archive_project(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, HttpError> {
-    state.store()?.archive_project(id)?;
+    state.with_store(|store| store.archive_project(id)).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -248,7 +267,7 @@ async fn restore_project(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, HttpError> {
-    state.store()?.restore_project(id)?;
+    state.with_store(|store| store.restore_project(id)).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -262,14 +281,17 @@ async fn list_sessions(
     State(state): State<AppState>,
     Query(query): Query<SessionQuery>,
 ) -> Result<Json<Vec<Session>>, HttpError> {
-    let store = state.store()?;
-    let list = if query.unassigned.unwrap_or(false) {
-        store.list_unassigned_sessions()?
-    } else if let Some(q) = query.q.as_deref() {
-        store.search_sessions(q)?
-    } else {
-        store.list_visible_sessions()?
-    };
+    let list = state
+        .with_store(|store| {
+            if query.unassigned.unwrap_or(false) {
+                store.list_unassigned_sessions()
+            } else if let Some(q) = query.q.as_deref() {
+                store.search_sessions(q)
+            } else {
+                store.list_visible_sessions()
+            }
+        })
+        .await?;
     Ok(Json(list))
 }
 
@@ -277,7 +299,11 @@ async fn list_project_sessions(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<Session>>, HttpError> {
-    Ok(Json(state.store()?.list_sessions_for_project(id)?))
+    Ok(Json(
+        state
+            .with_store(|store| store.list_sessions_for_project(id))
+            .await?,
+    ))
 }
 
 async fn create_session(
@@ -303,7 +329,7 @@ async fn create_session(
         composer_permission_mode: None,
         composer_interaction_mode: None,
     };
-    state.store()?.create_session(&session)?;
+    state.with_store(|store| store.create_session(&session)).await?;
     Ok((StatusCode::CREATED, Json(session)))
 }
 
@@ -312,8 +338,8 @@ async fn get_session(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Session>, HttpError> {
     state
-        .store()?
-        .get_session(id)?
+        .with_store(|store| store.get_session(id))
+        .await?
         .map(Json)
         .ok_or_else(|| HttpError::from(ApiError::not_found("Session not found.")))
 }
@@ -324,7 +350,7 @@ async fn patch_session(
     Json(body): Json<PatchSessionRequest>,
 ) -> Result<Json<Session>, HttpError> {
     let (session, agent_session_id) = {
-        let store = state.store()?;
+        let store = state.store.lock().await;
         if let Some(project_id) = body.project_id {
             store.assign_session_project(id, project_id)?;
         }
@@ -382,7 +408,7 @@ async fn delete_session(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, HttpError> {
     let (agent_session_id, working_directory) = {
-        let store = state.store()?;
+        let store = state.store.lock().await;
         let session = store
             .get_session(id)?
             .ok_or_else(|| HttpError::from(ApiError::not_found("Session not found.")))?;
@@ -406,7 +432,7 @@ async fn delete_session(
         }
     }
 
-    state.store()?.delete_session(id)?;
+    state.with_store(|store| store.delete_session(id)).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -414,7 +440,7 @@ async fn list_messages(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<circulo_core::Message>>, HttpError> {
-    Ok(Json(state.store()?.list_messages(id)?))
+    Ok(Json(state.with_store(|store| store.list_messages(id)).await?))
 }
 
 async fn post_message(
@@ -426,42 +452,69 @@ async fn post_message(
         return Err(ApiError::invalid_request("Message content is required.").into());
     }
     let working_directory = {
-        let store_guard = state.store()?;
+        let store_guard = state.store.lock().await;
         let session = store_guard
             .get_session(id)?
             .ok_or_else(|| HttpError::from(ApiError::not_found("Session not found.")))?;
+        if session
+            .composer_model_id
+            .as_deref()
+            .is_none_or(str::is_empty)
+        {
+            return Err(
+                ApiError::invalid_request("Choose a model before sending a message.").into(),
+            );
+        }
         resolve_working_directory(&store_guard, &session)
     };
 
-    let content = body.content;
+    let content = body.content.trim().to_owned();
     let store = Arc::clone(&state.store);
     let adapter = Arc::clone(&state.adapter);
     let events = state.events.clone();
     let turns = Arc::clone(&state.turns);
     let permissions = Arc::clone(&state.permissions);
-    let cancel = turns.begin(id, Some(working_directory));
-    let assistant = tokio::task::spawn_blocking(move || {
-        let store = store.lock().map_err(|_| ApiError::internal())?;
-        let turns_ref = turns.as_ref();
-        let result = run_turn(
-            &store,
+    let questions = Arc::clone(&state.questions);
+    let cancel = turns
+        .begin(id, Some(working_directory))
+        .map_err(HttpError::from)?;
+
+    let store_for_user = Arc::clone(&store);
+    let events_for_user = events.clone();
+    let content_for_user = content.clone();
+    let user = tokio::task::spawn_blocking(move || {
+        let mut emit = |event: ProtocolEvent| {
+            let _ = events_for_user.send(event);
+        };
+        persist_user_message(&store_for_user, id, &content_for_user, &mut emit)
+    })
+    .await
+    .map_err(|_| HttpError::from(ApiError::internal()))??;
+
+    tokio::task::spawn_blocking(move || {
+        let events_for_turn = events.clone();
+        let mut emit = |event: ProtocolEvent| {
+            let _ = events.send(event);
+        };
+        let result = run_assistant_turn(
+            store,
             adapter.as_ref(),
             id,
             &content,
             Some(cancel),
-            Some((turns_ref, id)),
+            Some((turns.as_ref(), id)),
             Some(permissions.as_ref()),
-            Some(&events),
-            &mut |event| {
-                let _ = events.send(event);
-            },
+            Some(questions.as_ref()),
+            Some(&events_for_turn),
+            &mut emit,
         );
         turns.finish(id);
-        result
-    })
-    .await
-    .map_err(|_| HttpError::from(ApiError::internal()))??;
-    Ok(Json(assistant))
+        if let Err(err) = result {
+            eprintln!("circulo-daemon: turn failed for {id}: {}", err.message);
+        }
+    });
+
+    Ok(Json(user))
 }
 
 async fn abort_session(
@@ -469,8 +522,8 @@ async fn abort_session(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, HttpError> {
     state
-        .store()?
-        .get_session(id)?
+        .with_store(|store| store.get_session(id))
+        .await?
         .ok_or_else(|| HttpError::from(ApiError::not_found("Session not found.")))?;
     let adapter = Arc::clone(&state.adapter);
     let turns = Arc::clone(&state.turns);
@@ -486,12 +539,36 @@ async fn reply_permission(
     Json(body): Json<PermissionReplyRequest>,
 ) -> Result<StatusCode, HttpError> {
     state
-        .store()?
-        .get_session(session_id)?
+        .with_store(|store| store.get_session(session_id))
+        .await?
         .ok_or_else(|| HttpError::from(ApiError::not_found("Session not found.")))?;
     state
         .permissions
         .reply(session_id, &permission_id, body.allow)
+        .map_err(HttpError::from)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn reply_question(
+    State(state): State<AppState>,
+    Path((session_id, request_id)): Path<(Uuid, String)>,
+    Json(body): Json<QuestionReplyRequest>,
+) -> Result<StatusCode, HttpError> {
+    state
+        .with_store(|store| store.get_session(session_id))
+        .await?
+        .ok_or_else(|| HttpError::from(ApiError::not_found("Session not found.")))?;
+    let answers = body
+        .answers
+        .into_iter()
+        .map(|answer| QuestionAnswer {
+            question_id: answer.question_id,
+            answers: answer.answers,
+        })
+        .collect();
+    state
+        .questions
+        .reply(session_id, &request_id, answers)
         .map_err(HttpError::from)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -501,8 +578,8 @@ async fn session_events(
     Path(id): Path<Uuid>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, HttpError> {
     state
-        .store()?
-        .get_session(id)?
+        .with_store(|store| store.get_session(id))
+        .await?
         .ok_or_else(|| ApiError::not_found("Session not found."))?;
     let rx = state.events.subscribe();
     let connected = ProtocolEvent::server_connected();
@@ -527,6 +604,7 @@ async fn session_events(
                 ProtocolEvent::SessionPermissionRequested { .. } => {
                     "session.permission.requested"
                 }
+                ProtocolEvent::SessionQuestionRequested { .. } => "session.question.requested",
                 ProtocolEvent::SessionTitleUpdated { .. } => "session.title.updated",
             };
             let data = serde_json::to_string(&event).ok()?;
@@ -539,7 +617,10 @@ async fn session_events(
 }
 
 async fn get_preferences(State(state): State<AppState>) -> Result<Json<PreferencesBody>, HttpError> {
-    let prefs = state.store()?.get_preferences().map_err(HttpError::from)?;
+    let prefs = state
+        .with_store(|store| store.get_preferences())
+        .await
+        .map_err(HttpError::from)?;
     Ok(Json(PreferencesBody::from(prefs)))
 }
 
@@ -573,6 +654,9 @@ async fn put_preferences(
     Json(body): Json<PreferencesBody>,
 ) -> Result<Json<PreferencesBody>, HttpError> {
     let prefs = circulo_core::UserPreferences::from(body);
-    state.store()?.set_preferences(&prefs).map_err(HttpError::from)?;
+    state
+        .with_store(|store| store.set_preferences(&prefs))
+        .await
+        .map_err(HttpError::from)?;
     Ok(Json(PreferencesBody::from(prefs)))
 }

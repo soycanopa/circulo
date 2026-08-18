@@ -40,6 +40,57 @@ async fn spawn_server_with(adapter: Arc<dyn AgentAdapter>) -> (SocketAddr, reqwe
     (addr, client)
 }
 
+async fn select_composer_model(
+    client: &reqwest::Client,
+    addr: SocketAddr,
+    session_id: circulo_core::Uuid,
+) {
+    client
+        .patch(format!("http://{addr}/v1/sessions/{session_id}"))
+        .json(&PatchSessionRequest {
+            title: None,
+            project_id: None,
+            archive: None,
+            composer_model_id: Some("test-model".into()),
+            composer_model_variant: None,
+            composer_permission_mode: None,
+            composer_interaction_mode: None,
+        })
+        .send()
+        .await
+        .expect("patch session model")
+        .error_for_status()
+        .expect("patch session model status");
+}
+
+async fn wait_for_messages(
+    client: &reqwest::Client,
+    addr: SocketAddr,
+    session_id: circulo_core::Uuid,
+) -> Vec<Message> {
+    for _ in 0..100 {
+        let messages: Vec<Message> = client
+            .get(format!("http://{addr}/v1/sessions/{session_id}/messages"))
+            .send()
+            .await
+            .expect("list messages")
+            .json()
+            .await
+            .expect("messages json");
+        if messages.iter().any(|message| {
+            message.role == circulo_core::MessageRole::Assistant
+                && matches!(
+                    message.status,
+                    MessageStatus::Complete | MessageStatus::Error
+                )
+        }) {
+            return messages;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    panic!("assistant reply did not finish in time");
+}
+
 #[test]
 fn rejects_non_loopback_listen_addr() {
     assert!(listen_addr(Some("0.0.0.0:9")).is_err());
@@ -164,6 +215,7 @@ async fn post_message_runs_fake_turn() {
         .json()
         .await
         .unwrap();
+    select_composer_model(&client, addr, session.id).await;
     client
         .post(format!("http://{addr}/v1/sessions/{}/messages", session.id))
         .json(&CreateMessageRequest {
@@ -174,14 +226,7 @@ async fn post_message_runs_fake_turn() {
         .unwrap()
         .error_for_status()
         .unwrap();
-    let messages: Vec<Message> = client
-        .get(format!("http://{addr}/v1/sessions/{}/messages", session.id))
-        .send()
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+    let messages = wait_for_messages(&client, addr, session.id).await;
     assert_eq!(messages.len(), 2);
     assert!(messages
         .iter()
@@ -266,6 +311,7 @@ async fn project_patch_after_first_send_is_locked() {
         .json()
         .await
         .unwrap();
+    select_composer_model(&client, addr, session.id).await;
     client
         .post(format!("http://{addr}/v1/sessions/{}/messages", session.id))
         .json(&CreateMessageRequest {
@@ -333,6 +379,8 @@ async fn opencode_adapter_turn_binds_and_reuses_across_requests() {
         .await
         .unwrap();
 
+    select_composer_model(&client, addr, session.id).await;
+
     for expected_text in ["Here is your answer.", "Here is your answer."] {
         client
             .post(format!("http://{addr}/v1/sessions/{}/messages", session.id))
@@ -344,14 +392,7 @@ async fn opencode_adapter_turn_binds_and_reuses_across_requests() {
             .unwrap()
             .error_for_status()
             .unwrap();
-        let messages: Vec<Message> = client
-            .get(format!("http://{addr}/v1/sessions/{}/messages", session.id))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
+        let messages = wait_for_messages(&client, addr, session.id).await;
         let assistant = messages
             .iter()
             .find(|m| m.role == circulo_core::MessageRole::Assistant)
@@ -405,6 +446,8 @@ async fn delete_session_calls_opencode_and_removes_local_binding() {
         .await
         .unwrap();
 
+    select_composer_model(&client, addr, session.id).await;
+
     client
         .post(format!("http://{addr}/v1/sessions/{}/messages", session.id))
         .json(&CreateMessageRequest {
@@ -416,6 +459,7 @@ async fn delete_session_calls_opencode_and_removes_local_binding() {
         .error_for_status()
         .unwrap();
 
+    let _ = wait_for_messages(&client, addr, session.id).await;
     assert_eq!(opencode.sessions_created(), 1);
     let agent_session_id = opencode
         .last_prompt()
@@ -473,6 +517,8 @@ async fn auto_title_updates_default_session_title_and_emits_event() {
         .unwrap();
     assert_eq!(session.title, "New session");
 
+    select_composer_model(&client, addr, session.id).await;
+
     client
         .post(format!("http://{addr}/v1/sessions/{}/messages", session.id))
         .json(&CreateMessageRequest {
@@ -484,6 +530,7 @@ async fn auto_title_updates_default_session_title_and_emits_event() {
         .error_for_status()
         .unwrap();
 
+    let _ = wait_for_messages(&client, addr, session.id).await;
     let fetched: Session = client
         .get(format!("http://{addr}/v1/sessions/{}", session.id))
         .send()
@@ -527,6 +574,8 @@ async fn auto_title_does_not_overwrite_manual_rename() {
         .await
         .unwrap();
 
+    select_composer_model(&client, addr, session.id).await;
+
     client
         .post(format!("http://{addr}/v1/sessions/{}/messages", session.id))
         .json(&CreateMessageRequest {
@@ -538,6 +587,7 @@ async fn auto_title_does_not_overwrite_manual_rename() {
         .error_for_status()
         .unwrap();
 
+    let _ = wait_for_messages(&client, addr, session.id).await;
     let fetched: Session = client
         .get(format!("http://{addr}/v1/sessions/{}", session.id))
         .send()
