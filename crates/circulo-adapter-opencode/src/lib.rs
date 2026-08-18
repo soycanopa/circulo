@@ -18,14 +18,18 @@ pub mod testing;
 pub use server::{ServerConfig, ServerManager, DEFAULT_OPENCODE_PORT};
 
 use std::time::{Duration, Instant};
+use std::sync::atomic::Ordering;
 
 use circulo_adapter::{
     AdapterError, AdapterEvent, AdapterHealth, AgentAdapter, AgentSessionSettings,
-    ErrorReason, GenerateRequest, ModelCatalogEntry,
+    ErrorReason, GenerateRequest, ModelCatalogEntry, OpenCodeHealth,
 };
 use circulo_core::{split_model_catalog_id, ComposerInteractionMode};
 
-const DEFAULT_TURN_TIMEOUT: Duration = Duration::from_secs(120);
+/// Inactivity budget for a single turn (no SSE frames, including heartbeats).
+/// Waku keeps the OpenCode stream unbounded and relies on `session.idle`; we
+/// use a generous inactivity window instead of a hard 90 s read cap.
+const DEFAULT_TURN_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub struct OpenCodeAdapter {
     servers: ServerManager,
@@ -65,6 +69,29 @@ impl AgentAdapter for OpenCodeAdapter {
         }
     }
 
+    fn opencode_health(&self) -> Option<OpenCodeHealth> {
+        if self.servers.ensure_running().is_err() {
+            return Some(OpenCodeHealth {
+                available: false,
+                version: None,
+            });
+        }
+        let client = client::OpenCodeClient::with_read_timeout(
+            self.servers.config().port,
+            client::REQUEST_TIMEOUT,
+        );
+        match client.global_health() {
+            Ok(health) => Some(OpenCodeHealth {
+                available: health.healthy,
+                version: (!health.version.is_empty()).then_some(health.version),
+            }),
+            Err(_) => Some(OpenCodeHealth {
+                available: false,
+                version: None,
+            }),
+        }
+    }
+
     fn list_models(&self) -> Result<Vec<ModelCatalogEntry>, AdapterError> {
         self.servers.ensure_running()?;
         let client = client::OpenCodeClient::with_read_timeout(
@@ -89,6 +116,7 @@ impl AgentAdapter for OpenCodeAdapter {
             client.update_session_permission(
                 agent_session_id,
                 permission::ruleset_for(mode),
+                None,
             )?;
         }
         Ok(())
@@ -100,14 +128,18 @@ impl AgentAdapter for OpenCodeAdapter {
         emit: &mut dyn FnMut(AdapterEvent),
     ) -> Result<(), AdapterError> {
         self.servers.ensure_running()?;
-        let read_timeout = client::MAX_STREAM_READ_TIMEOUT.min(self.turn_timeout);
-        let client =
-            client::OpenCodeClient::with_read_timeout(self.servers.config().port, read_timeout);
+        let inactivity_timeout = self.turn_timeout;
+        let client = client::OpenCodeClient::with_read_timeout(
+            self.servers.config().port,
+            inactivity_timeout,
+        );
+
+        let directory = request.working_directory.as_deref();
 
         let agent_session_id = match request.agent_session_id {
             Some(id) => id,
             None => {
-                let id = client.create_session()?;
+                let id = client.create_session(directory)?;
                 emit(AdapterEvent::SessionBound {
                     agent_session_id: id.clone(),
                 });
@@ -119,6 +151,7 @@ impl AgentAdapter for OpenCodeAdapter {
             client.update_session_permission(
                 &agent_session_id,
                 permission::ruleset_for(mode),
+                directory,
             )?;
         }
 
@@ -132,18 +165,32 @@ impl AgentAdapter for OpenCodeAdapter {
         let agent = interaction.agent_name();
 
         // Subscribe before prompting so early turn events are not missed.
-        let mut stream = client.open_event_stream()?;
+        let mut stream = client.open_event_stream(directory)?;
         client.prompt_async(
             &agent_session_id,
             &request.user_text,
             model,
             request.composer_model_variant.as_deref(),
             Some(agent),
+            directory,
         )?;
 
-        let deadline = Instant::now() + self.turn_timeout;
+        let mut deadline = Instant::now() + inactivity_timeout;
         let mut state = mapping::TurnState::default();
+        let mut stream_reconnects = 0u8;
         loop {
+            if request
+                .cancel
+                .as_ref()
+                .is_some_and(|flag| flag.load(Ordering::SeqCst))
+            {
+                let _ = client.abort_session(&agent_session_id, directory);
+                let error = user_cancelled();
+                emit(AdapterEvent::Failed {
+                    error: error.clone(),
+                });
+                return Err(error);
+            }
             if Instant::now() >= deadline {
                 let error = AdapterError::failed(
                     ErrorReason::Timeout,
@@ -154,9 +201,33 @@ impl AgentAdapter for OpenCodeAdapter {
                 });
                 return Err(error);
             }
-            let envelope = match stream.next_event() {
+            let envelope = match stream.next_event_with_activity(|| {
+                deadline = Instant::now() + inactivity_timeout;
+            }) {
                 Ok(envelope) => envelope,
                 Err(error) => {
+                    if state.needs_todo_reconciliation() {
+                        if let Ok(tasks) =
+                            client.list_session_todos(&agent_session_id, directory)
+                        {
+                            if !tasks.is_empty() {
+                                emit(AdapterEvent::TaskList {
+                                    tasks: tasks.clone(),
+                                });
+                            }
+                        }
+                        state.mark_todo_reconciled();
+                        if stream_reconnects == 0 {
+                            stream_reconnects += 1;
+                            match client.open_event_stream(directory) {
+                                Ok(replacement) => {
+                                    stream = replacement;
+                                    continue;
+                                }
+                                Err(_) => {}
+                            }
+                        }
+                    }
                     emit(AdapterEvent::Failed {
                         error: error.clone(),
                     });
@@ -165,7 +236,44 @@ impl AgentAdapter for OpenCodeAdapter {
             };
             match mapping::apply(&envelope, &agent_session_id, &mut state, emit) {
                 mapping::TurnOutcome::Continue => {}
+                mapping::TurnOutcome::PermissionRequired(permission) => {
+                    let allow = request
+                        .permission_responder
+                        .as_ref()
+                        .map(|responder| responder.respond(permission.clone()).is_allow())
+                        .unwrap_or(false);
+                    client.reply_permission(
+                        &agent_session_id,
+                        &permission.id,
+                        allow,
+                        directory,
+                    )?;
+                }
+                mapping::TurnOutcome::QuestionRequired(question) => {
+                    let response = request
+                        .question_responder
+                        .as_ref()
+                        .map(|responder| responder.respond(question.clone()))
+                        .unwrap_or_default();
+                    let answers = response
+                        .answers
+                        .into_iter()
+                        .map(|answer| answer.answers)
+                        .collect();
+                    client.reply_question(&question.id, answers, directory)?;
+                }
                 mapping::TurnOutcome::Completed => {
+                    if request
+                        .cancel
+                        .as_ref()
+                        .is_some_and(|flag| flag.load(Ordering::SeqCst))
+                    {
+                        let error = user_cancelled();
+                        emit(AdapterEvent::Failed {
+                            error: error.clone(),
+                        });
+                        return Err(error);
+                    }
                     emit(AdapterEvent::Completed);
                     return Ok(());
                 }
@@ -179,4 +287,34 @@ impl AgentAdapter for OpenCodeAdapter {
             }
         }
     }
+
+    fn abort_turn(
+        &self,
+        agent_session_id: &str,
+        working_directory: Option<&std::path::Path>,
+    ) -> Result<(), AdapterError> {
+        self.servers.ensure_running()?;
+        let client = client::OpenCodeClient::with_read_timeout(
+            self.servers.config().port,
+            client::REQUEST_TIMEOUT,
+        );
+        client.abort_session(agent_session_id, working_directory)
+    }
+
+    fn delete_agent_session(
+        &self,
+        agent_session_id: &str,
+        working_directory: Option<&std::path::Path>,
+    ) -> Result<(), AdapterError> {
+        self.servers.ensure_running()?;
+        let client = client::OpenCodeClient::with_read_timeout(
+            self.servers.config().port,
+            client::REQUEST_TIMEOUT,
+        );
+        client.delete_session(agent_session_id, working_directory)
+    }
+}
+
+fn user_cancelled() -> AdapterError {
+    AdapterError::failed(ErrorReason::Cancelled, "The reply was stopped.")
 }

@@ -63,3 +63,6 @@ ALTER TABLE sessions ADD COLUMN composer_interaction_mode TEXT;
 
 /// V4: per-session model variant (OpenCode reasoning effort).
 pub const MIGRATION_V4: &str = "ALTER TABLE sessions ADD COLUMN composer_model_variant TEXT;";
+
+/// V5: project folder path for OpenCode working directory (see change opencode-provider-hardening).
+pub const MIGRATION_V5: &str = "ALTER TABLE projects ADD COLUMN folder_path TEXT;";

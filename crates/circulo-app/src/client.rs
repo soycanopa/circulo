@@ -56,13 +56,14 @@ impl DaemonClient {
         )
     }
 
-    pub fn create_project(&self, name: &str) -> Result<Project, String> {
+    pub fn create_project(&self, name: &str, folder_path: Option<String>) -> Result<Project, String> {
         self.post(
             "/v1/projects",
             &CreateProjectRequest {
                 name: name.into(),
                 description: None,
                 color: None,
+                folder_path,
             },
         )
     }
@@ -77,8 +78,48 @@ impl DaemonClient {
             &CreateMessageRequest {
                 content: content.into(),
             },
-            Duration::from_secs(30),
+            Duration::from_secs(10),
         )
+    }
+
+    pub fn abort_session(&self, session_id: Uuid) -> Result<(), String> {
+        ureq::post(&format!("{}/v1/sessions/{session_id}/abort", self.base))
+            .timeout(Duration::from_secs(5))
+            .call()
+            .map(|_| ())
+            .map_err(|err| err.to_string())
+    }
+
+    pub fn reply_permission(
+        &self,
+        session_id: Uuid,
+        permission_id: &str,
+        allow: bool,
+    ) -> Result<(), String> {
+        ureq::post(&format!(
+            "{}/v1/sessions/{session_id}/permissions/{permission_id}/reply",
+            self.base
+        ))
+        .timeout(Duration::from_secs(5))
+        .send_json(&circulo_protocol::PermissionReplyRequest { allow })
+        .map(|_| ())
+        .map_err(|err| err.to_string())
+    }
+
+    pub fn reply_question(
+        &self,
+        session_id: Uuid,
+        request_id: &str,
+        answers: Vec<circulo_protocol::QuestionAnswerBody>,
+    ) -> Result<(), String> {
+        ureq::post(&format!(
+            "{}/v1/sessions/{session_id}/questions/{request_id}/reply",
+            self.base
+        ))
+        .timeout(Duration::from_secs(5))
+        .send_json(&circulo_protocol::QuestionReplyRequest { answers })
+        .map(|_| ())
+        .map_err(|err| err.to_string())
     }
 
     /// Opens the session's SSE stream. Blocking reads on the returned iterator
@@ -212,7 +253,7 @@ impl DaemonClient {
         path: &str,
         body: &B,
     ) -> Result<T, String> {
-        self.post_timed(path, body, Duration::from_secs(2))
+        self.post_timed(path, body, Duration::from_secs(10))
     }
 
     fn post_timed<B: serde::Serialize, T: serde::de::DeserializeOwned>(
@@ -247,12 +288,56 @@ pub fn ensure_daemon(client: &DaemonClient) -> Result<(), String> {
     if client.health().is_ok() {
         return Ok(());
     }
+    spawn_sibling_daemon();
+    if wait_for_health(client, 6, Duration::from_millis(250)).is_ok() {
+        return Ok(());
+    }
+    kill_daemon_on_port(7432);
+    spawn_sibling_daemon();
+    wait_for_health(client, 8, Duration::from_millis(250))
+}
+
+fn spawn_sibling_daemon() {
     if let Some(path) = sibling_daemon() {
-        build_sibling_daemon()?;
-        let _ = std::process::Command::new(path).spawn();
-        std::thread::sleep(Duration::from_millis(400));
+        let _ = build_sibling_daemon().and_then(|()| {
+            std::process::Command::new(path)
+                .spawn()
+                .map(|_| ())
+                .map_err(|err| err.to_string())
+        });
+    }
+}
+
+fn wait_for_health(
+    client: &DaemonClient,
+    attempts: u32,
+    delay: Duration,
+) -> Result<(), String> {
+    for attempt in 0..attempts {
+        if client.health().is_ok() {
+            return Ok(());
+        }
+        if attempt + 1 < attempts {
+            std::thread::sleep(delay);
+        }
     }
     client.health().map(|_| ())
+}
+
+fn kill_daemon_on_port(port: u16) {
+    #[cfg(unix)]
+    {
+        let Ok(output) = std::process::Command::new("lsof")
+            .args(["-ti", &format!("tcp:{port}")])
+            .output()
+        else {
+            return;
+        };
+        let pids = String::from_utf8_lossy(&output.stdout);
+        for pid in pids.lines().map(str::trim).filter(|pid| !pid.is_empty()) {
+            let _ = std::process::Command::new("kill").arg(pid).status();
+        }
+    }
 }
 
 fn format_http_delete_error(err: ureq::Error) -> String {
@@ -272,6 +357,9 @@ fn format_http_delete_error(err: ureq::Error) -> String {
 /// Dev builds ship `circulo-app` and `circulo-daemon` as sibling binaries; rebuild
 /// the daemon when spawning so new HTTP routes (e.g. session delete) are available.
 fn build_sibling_daemon() -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Ok(());
+    }
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace = manifest_dir
         .parent()
@@ -300,15 +388,18 @@ fn workspace_debug_dir() -> Option<PathBuf> {
 }
 
 fn sibling_daemon() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let sibling = exe.parent()?.join("circulo-daemon");
+    if sibling.exists() {
+        return Some(sibling);
+    }
     if let Some(dir) = workspace_debug_dir() {
         let path = dir.join("circulo-daemon");
         if path.exists() {
             return Some(path);
         }
     }
-    let exe = std::env::current_exe().ok()?;
-    let path = exe.parent()?.join("circulo-daemon");
-    path.exists().then_some(path)
+    None
 }
 
 pub fn session_activity_at(session: &Session) -> OffsetDateTime {
@@ -403,6 +494,7 @@ mod tests {
             name: "Launch".into(),
             description: None,
             color: None,
+            folder_path: None,
             status: ProjectStatus::Active,
             created_at: ts(1_700_000_000),
             updated_at: ts(1_700_000_000),

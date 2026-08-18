@@ -17,6 +17,9 @@ pub struct Project {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// Absolute path to the folder the user picked for this project.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folder_path: Option<String>,
     pub status: ProjectStatus,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,

@@ -16,7 +16,7 @@ pub use message::{
     TaskStatus, ToolCall, ToolCallStatus, ToolOutput,
 };
 pub use project::{Project, ProjectStatus};
-pub use session::{AgentType, Session, SessionStatus};
+pub use session::{is_default_session_title, AgentType, Session, SessionStatus, DEFAULT_SESSION_TITLE};
 
 pub use time::OffsetDateTime;
 pub use uuid::Uuid;
@@ -83,6 +83,7 @@ mod tests {
             name: "Launch".into(),
             description: None,
             color: None,
+            folder_path: None,
             status: ProjectStatus::Archived,
             created_at: now(),
             updated_at: now(),
@@ -154,5 +155,23 @@ mod tests {
             let back: ToolCallStatus = serde_json::from_value(json).unwrap();
             assert_eq!(back, status);
         }
+    }
+
+    #[test]
+    fn reasoning_visible_defaults_to_true_on_deserialize() {
+        let json = json!({
+            "type": "reasoning",
+            "id": "prt_1",
+            "content": "hidden chain"
+        });
+        let part: MessagePart = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            part,
+            MessagePart::Reasoning {
+                id: "prt_1".into(),
+                content: "hidden chain".into(),
+                visible: true,
+            }
+        );
     }
 }

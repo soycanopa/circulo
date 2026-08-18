@@ -11,7 +11,7 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::error::PersistError;
-use crate::schema::{MIGRATION_V1, MIGRATION_V2, MIGRATION_V3, MIGRATION_V4};
+use crate::schema::{MIGRATION_V1, MIGRATION_V2, MIGRATION_V3, MIGRATION_V4, MIGRATION_V5};
 
 const SESSION_COLUMNS: &str =
     "id, project_id, title, agent, status, created_at, updated_at, last_message_at, first_send_at, composer_model_id, composer_model_variant, composer_permission_mode, composer_interaction_mode";
@@ -88,18 +88,31 @@ impl Store {
             "INSERT OR IGNORE INTO schema_migrations (version) VALUES (4)",
             [],
         )?;
+        if conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('projects') WHERE name = 'folder_path'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )? == 0
+        {
+            conn.execute_batch(MIGRATION_V5)?;
+        }
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version) VALUES (5)",
+            [],
+        )?;
         Ok(Self { conn })
     }
 
     pub fn create_project(&self, project: &Project) -> Result<(), PersistError> {
         self.conn.execute(
-            "INSERT INTO projects (id, name, description, color, status, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO projects (id, name, description, color, folder_path, status, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 project.id.to_string(),
                 project.name,
                 project.description,
                 project.color,
+                project.folder_path,
                 enum_to_db(&project.status)?,
                 format_time(project.created_at)?,
                 format_time(project.updated_at)?,
@@ -109,11 +122,11 @@ impl Store {
     }
 
     pub fn list_active_projects(&self) -> Result<Vec<Project>, PersistError> {
-        self.query_projects("SELECT id, name, description, color, status, created_at, updated_at FROM projects WHERE status = 'active' ORDER BY name")
+        self.query_projects("SELECT id, name, description, color, folder_path, status, created_at, updated_at FROM projects WHERE status = 'active' ORDER BY name")
     }
 
     pub fn list_archived_projects(&self) -> Result<Vec<Project>, PersistError> {
-        self.query_projects("SELECT id, name, description, color, status, created_at, updated_at FROM projects WHERE status = 'archived' ORDER BY name")
+        self.query_projects("SELECT id, name, description, color, folder_path, status, created_at, updated_at FROM projects WHERE status = 'archived' ORDER BY name")
     }
 
     pub fn archive_project(&self, id: Uuid) -> Result<(), PersistError> {
@@ -147,7 +160,7 @@ impl Store {
     pub fn get_project(&self, id: Uuid) -> Result<Option<Project>, PersistError> {
         self.conn
             .query_row(
-                "SELECT id, name, description, color, status, created_at, updated_at
+                "SELECT id, name, description, color, folder_path, status, created_at, updated_at
                  FROM projects WHERE id = ?1",
                 [id.to_string()],
                 map_project,
@@ -159,12 +172,13 @@ impl Store {
     pub fn update_project(&self, project: &Project) -> Result<(), PersistError> {
         let n = self.conn.execute(
             "UPDATE projects
-             SET name = ?1, description = ?2, color = ?3, status = ?4, updated_at = ?5
-             WHERE id = ?6",
+             SET name = ?1, description = ?2, color = ?3, folder_path = ?4, status = ?5, updated_at = ?6
+             WHERE id = ?7",
             params![
                 project.name,
                 project.description,
                 project.color,
+                project.folder_path,
                 enum_to_db(&project.status)?,
                 format_time(project.updated_at)?,
                 project.id.to_string(),
@@ -545,9 +559,10 @@ fn map_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
         name: row.get(1)?,
         description: row.get(2)?,
         color: row.get(3)?,
-        status: enum_from_db_sql(&row.get::<_, String>(4)?)?,
-        created_at: parse_time_sql(&row.get::<_, String>(5)?)?,
-        updated_at: parse_time_sql(&row.get::<_, String>(6)?)?,
+        folder_path: row.get(4)?,
+        status: enum_from_db_sql(&row.get::<_, String>(5)?)?,
+        created_at: parse_time_sql(&row.get::<_, String>(6)?)?,
+        updated_at: parse_time_sql(&row.get::<_, String>(7)?)?,
     })
 }
 

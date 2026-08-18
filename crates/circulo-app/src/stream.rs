@@ -4,7 +4,7 @@
 use std::io::{BufRead, BufReader};
 use std::time::Duration;
 
-use circulo_core::{Message, MessageStatus};
+use circulo_core::{Message, MessageRole, MessageStatus};
 use circulo_protocol::ProtocolEvent;
 
 /// Blocking SSE reader over `GET /v1/sessions/{id}/events`.
@@ -98,7 +98,27 @@ pub fn should_apply_post_transcript(
         || server.len() != local.len()
 }
 
-/// Folds one protocol event into the transcript. The daemon emits full message
+/// True when the shell should drop `generating` even if no terminal SSE event arrived
+/// (e.g. the transcript already shows a finished assistant message).
+pub fn should_unlock_composer(generating: bool, messages: &[Message]) -> bool {
+    if !generating {
+        return false;
+    }
+    if messages.iter().any(|message| message.is_streaming) {
+        return false;
+    }
+    let Some(last) = messages.last() else {
+        return true;
+    };
+    match last.role {
+        MessageRole::User => false,
+        MessageRole::Assistant | MessageRole::System => {
+            matches!(last.status, MessageStatus::Complete | MessageStatus::Error)
+                || !last.is_streaming
+        }
+    }
+}
+
 /// snapshots, so updates replace by id. Returns whether anything changed.
 pub fn apply_protocol_event(messages: &mut Vec<Message>, event: &ProtocolEvent) -> bool {
     match event {
@@ -133,6 +153,9 @@ pub fn apply_protocol_event(messages: &mut Vec<Message>, event: &ProtocolEvent) 
         ProtocolEvent::SessionPartAppended { .. }
         | ProtocolEvent::SessionPartUpdated { .. }
         | ProtocolEvent::SessionToolCallUpdated { .. }
+        | ProtocolEvent::SessionPermissionRequested { .. }
+        | ProtocolEvent::SessionQuestionRequested { .. }
+        | ProtocolEvent::SessionTitleUpdated { .. }
         | ProtocolEvent::ServerConnected { .. } => false,
     }
 }
@@ -159,8 +182,8 @@ mod tests {
 
     use super::{
         apply_protocol_event, parse_event, resubscribe_delay, should_apply_post_transcript,
-        should_apply_refresh_transcript, stream_attempts_after_event, SessionEventStream,
-        MAX_RESUBSCRIBE_ATTEMPTS,
+        should_apply_refresh_transcript, should_unlock_composer, stream_attempts_after_event,
+        SessionEventStream, MAX_RESUBSCRIBE_ATTEMPTS,
     };
     use circulo_core::{Message, MessagePart, MessageRole, MessageStatus, Uuid};
     use circulo_protocol::{ApiError, ProtocolEvent};
@@ -385,5 +408,35 @@ mod tests {
         done.status = MessageStatus::Complete;
         done.is_streaming = false;
         assert!(!should_apply_post_transcript(true, &[done.clone()], &[done]));
+    }
+
+    fn user_message(id: u128, text: &str) -> Message {
+        Message {
+            id: Uuid::from_u128(id),
+            session_id: Uuid::nil(),
+            role: MessageRole::User,
+            parts: vec![MessagePart::Text {
+                content: text.into(),
+            }],
+            status: MessageStatus::Complete,
+            created_at: now(),
+            is_streaming: false,
+        }
+    }
+
+    #[test]
+    fn unlock_composer_when_assistant_finished_without_terminal_event() {
+        let mut assistant = message(1, "Done.");
+        assistant.status = MessageStatus::Complete;
+        assistant.is_streaming = false;
+        assert!(should_unlock_composer(
+            true,
+            &[user_message(2, "Question?"), assistant.clone()]
+        ));
+        assert!(!should_unlock_composer(true, &[user_message(2, "Question?")]));
+        assert!(!should_unlock_composer(
+            true,
+            &[user_message(2, "Question?"), message(1, "Still going")]
+        ));
     }
 }

@@ -12,6 +12,7 @@ pub enum ComposerInputEvent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ComposerEvent {
     Submit(String),
+    Stop,
     ProjectPicked(Uuid),
     ProjectCleared,
     OpenProject,

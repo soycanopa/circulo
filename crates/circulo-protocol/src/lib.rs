@@ -123,6 +123,27 @@ pub enum ProtocolEvent {
         message_id: Uuid,
         error: ApiError,
     },
+    #[serde(rename = "session.permission.requested")]
+    SessionPermissionRequested {
+        api_version: u32,
+        session_id: Uuid,
+        permission_id: String,
+        permission: String,
+        summary: String,
+    },
+    #[serde(rename = "session.question.requested")]
+    SessionQuestionRequested {
+        api_version: u32,
+        session_id: Uuid,
+        request_id: String,
+        questions: Vec<UserQuestionBody>,
+    },
+    #[serde(rename = "session.title.updated")]
+    SessionTitleUpdated {
+        api_version: u32,
+        session_id: Uuid,
+        title: String,
+    },
 }
 
 impl ProtocolEvent {
@@ -141,7 +162,10 @@ impl ProtocolEvent {
             | Self::SessionPartUpdated { session_id, .. }
             | Self::SessionToolCallUpdated { session_id, .. }
             | Self::SessionMessageCompleted { session_id, .. }
-            | Self::SessionMessageFailed { session_id, .. } => Some(*session_id),
+            | Self::SessionMessageFailed { session_id, .. }
+            | Self::SessionPermissionRequested { session_id, .. }
+            | Self::SessionQuestionRequested { session_id, .. }
+            | Self::SessionTitleUpdated { session_id, .. } => Some(*session_id),
         }
     }
 }
@@ -153,6 +177,8 @@ pub struct CreateProjectRequest {
     pub description: Option<String>,
     #[serde(default)]
     pub color: Option<String>,
+    #[serde(default)]
+    pub folder_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -163,6 +189,8 @@ pub struct PatchProjectRequest {
     pub description: Option<String>,
     #[serde(default)]
     pub color: Option<String>,
+    #[serde(default)]
+    pub folder_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -196,6 +224,40 @@ pub struct CreateMessageRequest {
     pub content: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuestionOptionBody {
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UserQuestionBody {
+    pub id: String,
+    pub header: String,
+    pub question: String,
+    #[serde(default)]
+    pub options: Vec<QuestionOptionBody>,
+    #[serde(default)]
+    pub multi_select: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuestionAnswerBody {
+    pub question_id: String,
+    pub answers: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionReplyRequest {
+    pub allow: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuestionReplyRequest {
+    pub answers: Vec<QuestionAnswerBody>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct PreferencesBody {
     #[serde(default)]
@@ -219,12 +281,21 @@ impl From<PreferencesBody> for UserPreferences {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpenCodeHealthBody {
+    pub available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HealthResponse {
     pub api_version: u32,
     pub daemon: String,
     pub adapter: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adapter_message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opencode: Option<OpenCodeHealthBody>,
 }
 
 #[cfg(test)]
@@ -290,5 +361,39 @@ mod tests {
         assert_eq!(json["code"], "project_assignment_locked");
         let back: ApiError = serde_json::from_value(json).unwrap();
         assert_eq!(back, err);
+    }
+
+    #[test]
+    fn session_title_updated_roundtrip() {
+        let session_id = Uuid::from_u128(12);
+        let event = ProtocolEvent::SessionTitleUpdated {
+            api_version: API_VERSION,
+            session_id,
+            title: "Launch checklist".into(),
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "session.title.updated");
+        assert_eq!(json["title"], "Launch checklist");
+        let back: ProtocolEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(back, event);
+    }
+
+    #[test]
+    fn health_response_includes_opencode_block() {
+        let health = HealthResponse {
+            api_version: API_VERSION,
+            daemon: "ok".into(),
+            adapter: "available".into(),
+            adapter_message: None,
+            opencode: Some(OpenCodeHealthBody {
+                available: true,
+                version: Some("1.18.18".into()),
+            }),
+        };
+        let json = serde_json::to_value(&health).unwrap();
+        assert_eq!(json["opencode"]["available"], true);
+        assert_eq!(json["opencode"]["version"], "1.18.18");
+        let back: HealthResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(back, health);
     }
 }

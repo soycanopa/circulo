@@ -55,6 +55,21 @@ pub const BORDER: Rgba = Rgba {
     b: 0.24,
     a: 1.0,
 };
+/// Waku `border_strong` — activity cards and nested dividers.
+pub const BORDER_STRONG: Rgba = Rgba {
+    r: 0.28,
+    g: 0.28,
+    b: 0.30,
+    a: 1.0,
+};
+pub const TEXT_TERTIARY: Rgba = Rgba {
+    r: 0.50,
+    g: 0.50,
+    b: 0.53,
+    a: 1.0,
+};
+/// Waku activity card surface (`surface` + subtle overlay).
+pub const ACTIVITY_SURFACE: Rgba = BG_MAIN;
 pub const ACCENT: Rgba = Rgba {
     r: 0.45,
     g: 0.47,
@@ -125,6 +140,8 @@ pub const ACCENT_SURFACE: Rgba = Rgba {
     b: 0.19,
     a: 1.0,
 };
+/// Waku activity row hover/focus surface.
+pub const ACTIVITY_HOVER: Rgba = ACCENT_SURFACE;
 /// Destructive item focus/hover (shadcn `focus:bg-destructive/10`).
 pub const DANGER_SURFACE: Rgba = Rgba {
     r: 0.28,

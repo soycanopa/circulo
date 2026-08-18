@@ -32,7 +32,7 @@ use crate::ui::menu_chip::{
     model_context_indicator, model_menu_chip,
 };
 use crate::theme::{
-    ACCENT, BG_MAIN, BG_SIDEBAR, BORDER, CONTENT_MAX_WIDTH_PX, TEXT, TEXT_MUTED,
+    ACCENT, BG_MAIN, BG_SIDEBAR, BORDER, TEXT, TEXT_MUTED,
 };
 
 const SEND_BUTTON_PX: f32 = 26.0;
@@ -221,6 +221,12 @@ impl Composer {
         let text = self.content(cx);
         if can_send(self.active_session.is_some(), &text, self.generating) {
             cx.emit(ComposerEvent::Submit(text));
+        }
+    }
+
+    fn stop(&mut self, cx: &mut Context<Self>) {
+        if self.generating {
+            cx.emit(ComposerEvent::Stop);
         }
     }
 
@@ -592,7 +598,7 @@ impl Render for Composer {
 
         let send_control = if self.generating {
             div()
-                .id("generating")
+                .id("stop")
                 .flex_none()
                 .w(px(SEND_BUTTON_PX))
                 .h(px(SEND_BUTTON_PX))
@@ -600,9 +606,18 @@ impl Render for Composer {
                 .flex()
                 .items_center()
                 .justify_center()
-                .bg(BG_MAIN)
-                .text_color(TEXT_MUTED)
-                .child(icon(icon_path::ELLIPSIS, px(14.), TEXT_MUTED))
+                .bg(ACCENT)
+                .text_color(TEXT)
+                .cursor_pointer()
+                .hover(|style| style.opacity(0.85))
+                .on_click(cx.listener(|this, _, _, cx| this.stop(cx)))
+                .child(
+                    div()
+                        .w(px(10.))
+                        .h(px(10.))
+                        .rounded(px(2.))
+                        .bg(TEXT),
+                )
         } else {
             div()
                 .id("send")
@@ -758,8 +773,7 @@ impl Render for Composer {
 
         div()
             .w_full()
-            .max_w(px(CONTENT_MAX_WIDTH_PX))
-            .mx_auto()
+            .min_w_0()
             .flex()
             .flex_col()
             .gap(px(FOOTER_ROW_GAP_PX))

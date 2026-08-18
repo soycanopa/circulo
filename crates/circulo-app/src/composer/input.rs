@@ -541,7 +541,7 @@ impl Element for ComposerInputElement {
         let cursor_pos = layout.cursor_position(cursor.min(input.content.len()), line_height);
         let scroll_y = input.scroll.offset().y;
 
-        let cursor_quad = if input.focus_handle.is_focused(window) && input.enabled {
+        let cursor_quad = if input.focus_handle.is_focused(window) && input.accepts_input() {
             Some(fill(
                 Bounds::new(
                     point(bounds.left() + cursor_pos.x, bounds.top() + cursor_pos.y + scroll_y),

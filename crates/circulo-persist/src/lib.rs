@@ -27,6 +27,7 @@ mod tests {
             name: name.into(),
             description: None,
             color: None,
+            folder_path: None,
             status: ProjectStatus::Active,
             created_at: now(),
             updated_at: now(),
@@ -129,6 +130,16 @@ mod tests {
         store.restore_project(p.id).unwrap();
         assert_eq!(store.list_active_projects().unwrap().len(), 1);
         assert_eq!(store.list_visible_sessions().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn project_folder_path_roundtrips() {
+        let store = Store::open_in_memory().unwrap();
+        let mut p = project("Docs", 50);
+        p.folder_path = Some("/Users/me/Projects/Docs".into());
+        store.create_project(&p).unwrap();
+        let loaded = store.get_project(p.id).unwrap().expect("project");
+        assert_eq!(loaded.folder_path.as_deref(), Some("/Users/me/Projects/Docs"));
     }
 
     #[test]
