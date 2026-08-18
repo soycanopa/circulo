@@ -44,6 +44,7 @@ impl AgentAdapter for FakeAdapter {
                 provider_name: "Fake".into(),
                 model_id: "default".into(),
                 context_window: Some("128K".into()),
+                reasoning_variants: vec!["low".into(), "medium".into(), "high".into()],
             },
         ])
     }
@@ -127,6 +128,7 @@ mod tests {
             user_text: "Write a note".into(),
             agent_session_id: None,
             composer_model_id: None,
+            composer_model_variant: None,
             composer_permission_mode: None,
             composer_interaction_mode: None,
         }

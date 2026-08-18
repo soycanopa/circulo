@@ -137,6 +137,7 @@ impl AgentAdapter for OpenCodeAdapter {
             &agent_session_id,
             &request.user_text,
             model,
+            request.composer_model_variant.as_deref(),
             Some(agent),
         )?;
 

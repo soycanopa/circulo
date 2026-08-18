@@ -51,6 +51,9 @@ pub struct ModelCatalogEntry {
     pub model_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_window: Option<String>,
+    /// OpenCode variant ids for reasoning effort (`low`, `medium`, `high`, …).
+    #[serde(default)]
+    pub reasoning_variants: Vec<String>,
 }
 
 pub fn model_catalog_id(provider_id: &str, model_id: &str) -> String {
@@ -59,6 +62,41 @@ pub fn model_catalog_id(provider_id: &str, model_id: &str) -> String {
 
 pub fn split_model_catalog_id(id: &str) -> Option<(String, String)> {
     id.split_once('/').map(|(provider, model)| (provider.to_string(), model.to_string()))
+}
+
+/// Short provider label for settings model tags (e.g. Zen, MiniMax, Grok).
+pub fn model_provider_tag(provider_id: &str, provider_name: &str) -> String {
+    let id = provider_id.to_ascii_lowercase();
+    let name = provider_name.to_ascii_lowercase();
+    if id.contains("zen") || name.contains("zen") {
+        return "Zen".into();
+    }
+    if id.contains("minimax") || name.contains("minimax") {
+        return "MiniMax".into();
+    }
+    if id.contains("grok") || id.contains("xai") || name.contains("grok") {
+        return "Grok".into();
+    }
+    if id.contains("glm") || id.contains("zhipu") || name.contains("glm") {
+        return "GLM".into();
+    }
+    if id.contains("anthropic") || name.contains("anthropic") || name.contains("claude") {
+        return "Claude".into();
+    }
+    if id.contains("openai") || name.contains("openai") || name.contains("gpt") {
+        return "OpenAI".into();
+    }
+    if id.contains("google") || name.contains("google") || name.contains("gemini") {
+        return "Google".into();
+    }
+    if provider_name.is_empty() {
+        return provider_id.to_string();
+    }
+    provider_name
+        .trim()
+        .strip_prefix("OpenCode ")
+        .unwrap_or(provider_name.trim())
+        .to_string()
 }
 
 /// User preferences persisted locally (composer model visibility, etc.).

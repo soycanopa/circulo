@@ -60,3 +60,6 @@ ALTER TABLE sessions ADD COLUMN composer_model_id TEXT;
 ALTER TABLE sessions ADD COLUMN composer_permission_mode TEXT;
 ALTER TABLE sessions ADD COLUMN composer_interaction_mode TEXT;
 ";
+
+/// V4: per-session model variant (OpenCode reasoning effort).
+pub const MIGRATION_V4: &str = "ALTER TABLE sessions ADD COLUMN composer_model_variant TEXT;";

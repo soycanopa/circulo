@@ -58,6 +58,7 @@ impl OpenCodeClient {
         session_id: &str,
         user_text: &str,
         model: Option<(String, String)>,
+        variant: Option<&str>,
         agent: Option<&str>,
     ) -> Result<(), AdapterError> {
         let mut body = serde_json::json!({
@@ -68,6 +69,9 @@ impl OpenCodeClient {
                 "providerID": provider_id,
                 "modelID": model_id,
             });
+        }
+        if let Some(variant) = variant {
+            body["variant"] = serde_json::Value::String(variant.to_string());
         }
         if let Some(agent) = agent {
             body["agent"] = serde_json::Value::String(agent.to_string());

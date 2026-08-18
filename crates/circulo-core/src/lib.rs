@@ -8,7 +8,7 @@ mod session;
 
 pub use composer::{
     ComposerInteractionMode, ComposerPermissionMode, ModelCatalogEntry, UserPreferences,
-    model_catalog_id, split_model_catalog_id,
+    model_catalog_id, model_provider_tag, split_model_catalog_id,
 };
 pub use error::DomainError;
 pub use message::{
@@ -44,6 +44,7 @@ mod tests {
             last_message_at: None,
             first_send_at: None,
             composer_model_id: None,
+            composer_model_variant: None,
             composer_permission_mode: None,
             composer_interaction_mode: None,
         }

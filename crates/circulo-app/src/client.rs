@@ -121,6 +121,7 @@ impl DaemonClient {
         &self,
         session_id: Uuid,
         composer_model_id: String,
+        composer_model_variant: Option<String>,
         permission_mode: ComposerPermissionMode,
         interaction_mode: ComposerInteractionMode,
     ) -> Result<Session, String> {
@@ -131,6 +132,7 @@ impl DaemonClient {
                 project_id: None,
                 archive: None,
                 composer_model_id: Some(composer_model_id),
+                composer_model_variant: composer_model_variant,
                 composer_permission_mode: Some(permission_mode),
                 composer_interaction_mode: Some(interaction_mode),
             },
@@ -149,6 +151,7 @@ impl DaemonClient {
                 project_id: Some(project_id),
                 archive: None,
                 composer_model_id: None,
+                composer_model_variant: None,
                 composer_permission_mode: None,
                 composer_interaction_mode: None,
             },
@@ -163,6 +166,7 @@ impl DaemonClient {
                 project_id: None,
                 archive: None,
                 composer_model_id: None,
+                composer_model_variant: None,
                 composer_permission_mode: None,
                 composer_interaction_mode: None,
             },
@@ -378,6 +382,7 @@ mod tests {
             last_message_at: Some(activity),
             first_send_at: None,
             composer_model_id: None,
+            composer_model_variant: None,
             composer_permission_mode: None,
             composer_interaction_mode: None,
         }
@@ -444,6 +449,7 @@ mod tests {
             last_message_at: None,
             first_send_at: None,
             composer_model_id: None,
+            composer_model_variant: None,
             composer_permission_mode: None,
             composer_interaction_mode: None,
         };

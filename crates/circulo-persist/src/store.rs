@@ -11,12 +11,12 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::error::PersistError;
-use crate::schema::{MIGRATION_V1, MIGRATION_V2, MIGRATION_V3};
+use crate::schema::{MIGRATION_V1, MIGRATION_V2, MIGRATION_V3, MIGRATION_V4};
 
 const SESSION_COLUMNS: &str =
-    "id, project_id, title, agent, status, created_at, updated_at, last_message_at, first_send_at, composer_model_id, composer_permission_mode, composer_interaction_mode";
+    "id, project_id, title, agent, status, created_at, updated_at, last_message_at, first_send_at, composer_model_id, composer_model_variant, composer_permission_mode, composer_interaction_mode";
 const SESSION_COLUMNS_ALIASED: &str =
-    "s.id, s.project_id, s.title, s.agent, s.status, s.created_at, s.updated_at, s.last_message_at, s.first_send_at, s.composer_model_id, s.composer_permission_mode, s.composer_interaction_mode";
+    "s.id, s.project_id, s.title, s.agent, s.status, s.created_at, s.updated_at, s.last_message_at, s.first_send_at, s.composer_model_id, s.composer_model_variant, s.composer_permission_mode, s.composer_interaction_mode";
 
 pub fn default_db_path() -> Result<PathBuf, PersistError> {
     let home = std::env::var_os("HOME").ok_or(PersistError::InvalidHome)?;
@@ -74,6 +74,18 @@ impl Store {
         }
         conn.execute(
             "INSERT OR IGNORE INTO schema_migrations (version) VALUES (3)",
+            [],
+        )?;
+        if conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'composer_model_variant'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )? == 0
+        {
+            conn.execute_batch(MIGRATION_V4)?;
+        }
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version) VALUES (4)",
             [],
         )?;
         Ok(Self { conn })
@@ -168,8 +180,8 @@ impl Store {
         self.conn.execute(
             "INSERT INTO sessions
                 (id, project_id, title, agent, status, created_at, updated_at, last_message_at, first_send_at,
-                 composer_model_id, composer_permission_mode, composer_interaction_mode)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 composer_model_id, composer_model_variant, composer_permission_mode, composer_interaction_mode)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 session.id.to_string(),
                 session.project_id.map(|id| id.to_string()),
@@ -181,6 +193,7 @@ impl Store {
                 session.last_message_at.map(format_time).transpose()?,
                 session.first_send_at.map(format_time).transpose()?,
                 session.composer_model_id,
+                session.composer_model_variant,
                 session
                     .composer_permission_mode
                     .map(|mode| enum_to_db(&mode))
@@ -268,8 +281,9 @@ impl Store {
             "UPDATE sessions
              SET project_id = ?1, title = ?2, status = ?3, updated_at = ?4,
                  last_message_at = ?5, first_send_at = ?6, composer_model_id = ?7,
-                 composer_permission_mode = ?8, composer_interaction_mode = ?9
-             WHERE id = ?10",
+                 composer_model_variant = ?8, composer_permission_mode = ?9,
+                 composer_interaction_mode = ?10
+             WHERE id = ?11",
             params![
                 session.project_id.map(|id| id.to_string()),
                 session.title,
@@ -278,6 +292,7 @@ impl Store {
                 session.last_message_at.map(format_time).transpose()?,
                 session.first_send_at.map(format_time).transpose()?,
                 session.composer_model_id,
+                session.composer_model_variant,
                 session
                     .composer_permission_mode
                     .map(|mode| enum_to_db(&mode))
@@ -557,12 +572,13 @@ fn map_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<Session> {
             .map(|ts| parse_time_sql(&ts))
             .transpose()?,
         composer_model_id: row.get(9)?,
+        composer_model_variant: row.get(10)?,
         composer_permission_mode: row
-            .get::<_, Option<String>>(10)?
+            .get::<_, Option<String>>(11)?
             .map(|value| enum_from_db_sql(&value))
             .transpose()?,
         composer_interaction_mode: row
-            .get::<_, Option<String>>(11)?
+            .get::<_, Option<String>>(12)?
             .map(|value| enum_from_db_sql(&value))
             .transpose()?,
     })

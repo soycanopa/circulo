@@ -38,6 +38,9 @@ pub struct Session {
     /// Selected model catalog id (`providerID/modelID`).
     #[serde(default)]
     pub composer_model_id: Option<String>,
+    /// OpenCode model variant (reasoning effort overlay), when the model supports variants.
+    #[serde(default)]
+    pub composer_model_variant: Option<String>,
     #[serde(default)]
     pub composer_permission_mode: Option<ComposerPermissionMode>,
     #[serde(default)]

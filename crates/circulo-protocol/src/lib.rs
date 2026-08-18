@@ -184,6 +184,8 @@ pub struct PatchSessionRequest {
     #[serde(default)]
     pub composer_model_id: Option<String>,
     #[serde(default)]
+    pub composer_model_variant: Option<String>,
+    #[serde(default)]
     pub composer_permission_mode: Option<ComposerPermissionMode>,
     #[serde(default)]
     pub composer_interaction_mode: Option<ComposerInteractionMode>,

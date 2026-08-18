@@ -31,6 +31,7 @@ fn request(agent_session_id: Option<String>) -> GenerateRequest {
         user_text: "List the files".into(),
         agent_session_id,
         composer_model_id: None,
+        composer_model_variant: None,
         composer_permission_mode: None,
         composer_interaction_mode: None,
     }

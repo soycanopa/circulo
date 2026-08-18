@@ -55,6 +55,7 @@ pub fn parse_provider_catalog(body: &serde_json::Value) -> Vec<ModelCatalogEntry
                 provider_name: provider_name.clone(),
                 model_id: model_id.clone(),
                 context_window: format_context_window(&model),
+                reasoning_variants: parse_reasoning_variants(&model),
             });
         }
     }
@@ -69,6 +70,30 @@ pub fn parse_provider_catalog(body: &serde_json::Value) -> Vec<ModelCatalogEntry
 fn format_context_window(model: &serde_json::Value) -> Option<String> {
     let limit = model.get("limit").and_then(|value| value.as_u64());
     limit.map(format_token_limit)
+}
+
+fn parse_reasoning_variants(model: &serde_json::Value) -> Vec<String> {
+    let variants = model.get("variants");
+    if let Some(array) = variants.and_then(|value| value.as_array()) {
+        let mut ids: Vec<String> = array
+            .iter()
+            .filter_map(|entry| {
+                entry
+                    .as_str()
+                    .map(str::to_string)
+                    .or_else(|| entry.get("id").and_then(|id| id.as_str()).map(str::to_string))
+            })
+            .collect();
+        ids.sort();
+        ids.dedup();
+        return ids;
+    }
+    if let Some(map) = variants.and_then(|value| value.as_object()) {
+        let mut ids: Vec<String> = map.keys().cloned().collect();
+        ids.sort();
+        return ids;
+    }
+    Vec::new()
 }
 
 fn format_token_limit(tokens: u64) -> String {
@@ -115,5 +140,29 @@ mod tests {
         assert_eq!(models[0].name, "Spark");
         assert_eq!(models[0].provider_name, "Meta");
         assert_eq!(models[0].context_window.as_deref(), Some("128K"));
+    }
+
+    #[test]
+    fn parses_reasoning_variants_from_array_and_object() {
+        let array_body = serde_json::json!({
+            "variants": [
+                { "id": "high" },
+                { "id": "low" }
+            ]
+        });
+        let object_body = serde_json::json!({
+            "variants": {
+                "medium": { "reasoningEffort": "medium" },
+                "max": { "reasoningEffort": "max" }
+            }
+        });
+        assert_eq!(
+            parse_reasoning_variants(&array_body),
+            ["high", "low"]
+        );
+        assert_eq!(
+            parse_reasoning_variants(&object_body),
+            ["max", "medium"]
+        );
     }
 }

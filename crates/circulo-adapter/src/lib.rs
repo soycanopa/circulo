@@ -107,6 +107,7 @@ pub struct GenerateRequest {
     /// Provider-side session binding persisted by the daemon, when one exists.
     pub agent_session_id: Option<String>,
     pub composer_model_id: Option<String>,
+    pub composer_model_variant: Option<String>,
     pub composer_permission_mode: Option<ComposerPermissionMode>,
     pub composer_interaction_mode: Option<ComposerInteractionMode>,
 }
