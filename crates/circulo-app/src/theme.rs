@@ -30,6 +30,25 @@ pub const TEXT_MUTED: Rgba = Rgba {
     b: 0.65,
     a: 1.0,
 };
+/// OpenCode provider mark (Waku `provider_color` for dark theme).
+pub const PROVIDER_OPENCODE: Rgba = Rgba {
+    r: 0.953,
+    g: 0.953,
+    b: 0.953,
+    a: 1.0,
+};
+pub const PROVIDER_OPENCODE_CHIP_ICON: Rgba = Rgba {
+    r: 0.953,
+    g: 0.953,
+    b: 0.953,
+    a: 0.9,
+};
+pub const PROVIDER_OPENCODE_LIST_ICON: Rgba = Rgba {
+    r: 0.953,
+    g: 0.953,
+    b: 0.953,
+    a: 0.85,
+};
 pub const BORDER: Rgba = Rgba {
     r: 0.22,
     g: 0.22,
@@ -52,6 +71,13 @@ pub const SUCCESS: Rgba = Rgba {
     r: 0.45,
     g: 0.78,
     b: 0.55,
+    a: 1.0,
+};
+/// iOS-style toggle track when off (settings model list).
+pub const TOGGLE_TRACK_OFF: Rgba = Rgba {
+    r: 0.28,
+    g: 0.28,
+    b: 0.30,
     a: 1.0,
 };
 pub const DANGER: Rgba = Rgba {
