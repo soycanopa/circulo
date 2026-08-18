@@ -4,7 +4,7 @@ use circulo_core::{Task, TaskStatus, ToolCall, ToolCallStatus, ToolOutput};
 use circulo_i18n::Catalog;
 use circulo_markdown::{diff_lines, parse, Block, DiffKind, Inline};
 use gpui::{
-    div, prelude::FluentBuilder, px, FontWeight, InteractiveElement, IntoElement, ParentElement,
+    div, prelude::*, px, FontWeight, InteractiveElement, IntoElement, ParentElement,
     StatefulInteractiveElement, Styled, Window,
 };
 use serde_json::Value;
@@ -85,6 +85,8 @@ fn markdown_block(block: &Block, index: usize) -> gpui::AnyElement {
             .child(render_inlines(inlines))
             .into_any_element(),
         Block::Paragraph { inlines } => div()
+            .w_full()
+            .min_w_0()
             .text_sm()
             .text_color(TEXT)
             .child(render_inlines(inlines))
@@ -134,6 +136,8 @@ fn markdown_block(block: &Block, index: usize) -> gpui::AnyElement {
         Block::Code { language: _, text } => {
             let mut body = div()
                 .id(("code", index))
+                .w_full()
+                .min_w_0()
                 .flex()
                 .flex_col()
                 .p_2()
@@ -148,7 +152,15 @@ fn markdown_block(block: &Block, index: usize) -> gpui::AnyElement {
             body.into_any_element()
         }
         Block::Table { headers, rows } => {
-            let mut table = div().flex().flex_col().border_1().border_color(BORDER);
+            let mut table = div()
+                .id(("table", index))
+                .w_full()
+                .min_w_0()
+                .overflow_x_scroll()
+                .flex()
+                .flex_col()
+                .border_1()
+                .border_color(BORDER);
             table = table.child(table_row(headers, true));
             for row in rows {
                 table = table.child(table_row(row, false));
@@ -176,11 +188,42 @@ fn table_row(cells: &[Vec<Inline>], header: bool) -> impl IntoElement {
 }
 
 fn render_inlines(inlines: &[Inline]) -> impl IntoElement {
-    let mut row = div().flex().flex_row().flex_wrap().w_full().min_w_0();
+    let mut row = div()
+        .flex()
+        .flex_row()
+        .flex_wrap()
+        .w_full()
+        .min_w_0()
+        .overflow_hidden();
     for (text, style) in flatten_inlines(inlines, InlineStyle::default()) {
-        row = row.child(styled_span(&text, style));
+        for token in wrap_tokens(&text) {
+            row = row.child(styled_span(&token, style));
+        }
     }
     row
+}
+
+/// Split text into flex items so `flex_wrap` can break lines at word boundaries.
+fn wrap_tokens(text: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut word = String::new();
+    for ch in text.chars() {
+        if ch.is_whitespace() {
+            if !word.is_empty() {
+                tokens.push(std::mem::take(&mut word));
+            }
+            tokens.push(ch.to_string());
+        } else {
+            word.push(ch);
+            if word.len() >= 32 {
+                tokens.push(std::mem::take(&mut word));
+            }
+        }
+    }
+    if !word.is_empty() {
+        tokens.push(word);
+    }
+    tokens
 }
 
 #[derive(Clone, Copy, Default)]
@@ -240,7 +283,11 @@ fn flatten_inlines(inlines: &[Inline], style: InlineStyle) -> Vec<(String, Inlin
 }
 
 fn styled_span(text: &str, style: InlineStyle) -> impl IntoElement {
-    let mut el = div().text_sm().text_color(TEXT).child(text.to_string());
+    let mut el = div()
+        .flex_none()
+        .text_sm()
+        .text_color(TEXT)
+        .child(text.to_string());
     if style.strong {
         el = el.font_weight(FontWeight::BOLD);
     }
@@ -267,6 +314,11 @@ pub fn tool_card(
     expanded: &HashSet<String>,
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
+    use crate::icons::path;
+    use crate::ui::disclosure::{
+        activity_card, activity_card_body, activity_card_header, activity_detail_section,
+    };
+
     let open = expanded.contains(&tool.id);
     let status = catalog.get(tool_status_key(tool.status)).to_string();
     let status_color = match tool.status {
@@ -276,51 +328,47 @@ pub fn tool_card(
         ToolCallStatus::Pending => TEXT_MUTED,
     };
     let context = tool_context_line(&tool.input).unwrap_or_default();
-    let mut card = div()
-        .id(("tool", hash_id(&tool.id)))
-        .flex()
-        .flex_col()
-        .gap_1()
-        .p_2()
-        .rounded_md()
-        .border_1()
-        .border_color(BORDER)
-        .bg(BG_SIDEBAR)
-        .cursor_pointer()
-        .on_click(on_click)
-        .child(
+
+    let header = activity_card_header(
+        ("tool-toggle", hash_id(&tool.id)),
+        path::WRENCH,
+        human_tool_name(&tool.name),
+        if context.is_empty() { None } else { Some(context) },
+        open,
+        true,
+        Some(
+            div()
+                .flex_none()
+                .text_xs()
+                .text_color(status_color)
+                .child(status)
+                .into_any_element(),
+        ),
+        on_click,
+    );
+
+    let body = open.then(|| {
+        activity_card_body(
             div()
                 .flex()
-                .justify_between()
-                .child(div().text_sm().child(human_tool_name(&tool.name)))
-                .child(div().text_xs().text_color(status_color).child(status)),
-        );
-    if !context.is_empty() {
-        card = card.child(div().text_xs().text_color(TEXT_MUTED).child(context));
-    }
-    if open {
-        card = card
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(TEXT_MUTED)
-                    .child(catalog.get("tool.input").to_string()),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .font_family("Menlo")
-                    .child(tool.input.to_string()),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(TEXT_MUTED)
-                    .child(catalog.get("tool.output").to_string()),
-            )
-            .child(tool_output(tool.output.as_ref()));
-    }
-    card
+                .flex_col()
+                .gap_2()
+                .child(activity_detail_section(
+                    catalog.get("tool.input"),
+                    div()
+                        .text_xs()
+                        .font_family("Menlo")
+                        .text_color(TEXT_MUTED)
+                        .child(tool.input.to_string()),
+                ))
+                .child(activity_detail_section(
+                    catalog.get("tool.output"),
+                    tool_output(tool.output.as_ref()),
+                )),
+        )
+    });
+
+    activity_card(("tool", hash_id(&tool.id)), header, body)
 }
 
 fn tool_output(output: Option<&ToolOutput>) -> impl IntoElement {

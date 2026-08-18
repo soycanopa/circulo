@@ -32,7 +32,7 @@ use crate::ui::menu_chip::{
     model_context_indicator, model_menu_chip,
 };
 use crate::theme::{
-    ACCENT, BG_MAIN, BG_SIDEBAR, BORDER, CONTENT_MAX_WIDTH_PX, TEXT, TEXT_MUTED,
+    ACCENT, BG_MAIN, BG_SIDEBAR, BORDER, TEXT, TEXT_MUTED,
 };
 
 const SEND_BUTTON_PX: f32 = 26.0;
@@ -773,8 +773,7 @@ impl Render for Composer {
 
         div()
             .w_full()
-            .max_w(px(CONTENT_MAX_WIDTH_PX))
-            .mx_auto()
+            .min_w_0()
             .flex()
             .flex_col()
             .gap(px(FOOTER_ROW_GAP_PX))

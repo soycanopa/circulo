@@ -6,9 +6,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use circulo_i18n::Catalog;
 use gpui::{div, FontWeight, ParentElement, Styled};
 
-use crate::theme::{TEXT, TEXT_MUTED};
+use crate::ui::shimmer_text::shimmer_text;
 
-const SHIMMER_PERIOD_MS: f64 = 1800.0;
+const PHRASE_ROTATE_MS: u64 = 2500;
 
 const THINKING_KEYS: [&str; 15] = [
     "messages.thinking.0",
@@ -28,22 +28,11 @@ const THINKING_KEYS: [&str; 15] = [
     "messages.thinking.14",
 ];
 
-fn shimmer_phase() -> f32 {
-    let millis = SystemTime::now()
+fn now_ms() -> u64 {
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis() as f64)
-        .unwrap_or(0.0);
-    ((millis % SHIMMER_PERIOD_MS) / SHIMMER_PERIOD_MS) as f32
-}
-
-fn shimmer_color(phase: f32) -> gpui::Rgba {
-    let wave = ((phase * std::f32::consts::TAU * 2.0).sin() + 1.0) * 0.5;
-    gpui::Rgba {
-        r: TEXT_MUTED.r + (TEXT.r - TEXT_MUTED.r) * wave,
-        g: TEXT_MUTED.g + (TEXT.g - TEXT_MUTED.g) * wave,
-        b: TEXT_MUTED.b + (TEXT.b - TEXT_MUTED.b) * wave,
-        a: 1.0,
-    }
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 pub fn thinking_phrase(catalog: &Catalog, seed: impl Hash) -> String {
@@ -53,12 +42,20 @@ pub fn thinking_phrase(catalog: &Catalog, seed: impl Hash) -> String {
     catalog.get(THINKING_KEYS[index]).to_string()
 }
 
+pub fn thinking_phrase_rotating(catalog: &Catalog, seed: impl Hash) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    seed.hash(&mut hasher);
+    let base = hasher.finish() as usize;
+    let slot = (now_ms() / PHRASE_ROTATE_MS) as usize;
+    let index = (base + slot) % THINKING_KEYS.len();
+    catalog.get(THINKING_KEYS[index]).to_string()
+}
+
 pub fn thinking_label(catalog: &Catalog, seed: impl Hash) -> impl gpui::IntoElement {
     div()
         .text_sm()
         .font_weight(FontWeight::MEDIUM)
-        .text_color(shimmer_color(shimmer_phase()))
-        .child(thinking_phrase(catalog, seed))
+        .child(shimmer_text(thinking_phrase_rotating(catalog, seed)))
 }
 
 pub fn assistant_is_thinking(message: &circulo_core::Message) -> bool {
@@ -82,7 +79,7 @@ pub fn assistant_is_thinking(message: &circulo_core::Message) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{assistant_is_thinking, thinking_phrase};
+    use super::{assistant_is_thinking, thinking_phrase, thinking_phrase_rotating};
     use circulo_core::{Message, MessagePart, MessageRole, MessageStatus};
     use circulo_i18n::Catalog;
     use time::OffsetDateTime;
@@ -96,6 +93,14 @@ mod tests {
         assert!(!a.is_empty());
         assert!(!a.starts_with("messages.thinking"));
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn rotating_phrase_changes_over_time_slots() {
+        let catalog = Catalog::english();
+        let seed = Uuid::from_u128(7);
+        let first = thinking_phrase_rotating(&catalog, seed);
+        assert!(!first.is_empty());
     }
 
     #[test]
