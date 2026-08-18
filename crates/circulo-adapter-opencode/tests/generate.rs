@@ -46,6 +46,7 @@ fn request_with_responder(
         working_directory,
         cancel,
         permission_responder,
+        question_responder: None,
     }
 }
 
@@ -131,6 +132,10 @@ fn project_working_directory_is_sent_on_prompt() {
     assert!(result.is_ok());
     let (_, _, directory) = server.last_prompt().expect("prompt recorded");
     assert_eq!(directory.as_deref(), Some(project_dir.to_string_lossy().as_ref()));
+    assert_eq!(
+        server.last_event_directory().as_deref(),
+        Some(project_dir.to_string_lossy().as_ref())
+    );
     let _ = std::fs::remove_dir_all(project_dir);
 }
 

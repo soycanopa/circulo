@@ -37,6 +37,7 @@ struct Shared {
     require_auth: AtomicBool,
     sessions_created: AtomicUsize,
     last_prompt: Mutex<Option<(String, String, Option<String>)>>,
+    last_event_directory: Mutex<Option<String>>,
     last_permission_reply: Mutex<Option<(String, String, bool)>>,
     deleted_sessions: Mutex<Vec<String>>,
     event_tx: Mutex<Option<mpsc::Sender<String>>>,
@@ -62,6 +63,7 @@ impl FakeOpenCodeServer {
             require_auth: AtomicBool::new(false),
             sessions_created: AtomicUsize::new(0),
             last_prompt: Mutex::new(None),
+            last_event_directory: Mutex::new(None),
             last_permission_reply: Mutex::new(None),
             deleted_sessions: Mutex::new(Vec::new()),
             event_tx: Mutex::new(None),
@@ -138,6 +140,14 @@ impl FakeOpenCodeServer {
 
     pub fn last_prompt(&self) -> Option<(String, String, Option<String>)> {
         self.shared.last_prompt.lock().expect("prompt lock").clone()
+    }
+
+    pub fn last_event_directory(&self) -> Option<String> {
+        self.shared
+            .last_event_directory
+            .lock()
+            .expect("event directory lock")
+            .clone()
     }
 
     pub fn last_permission_reply(&self) -> Option<(String, String, bool)> {
@@ -348,7 +358,13 @@ async fn delete_session(
 
 async fn event_stream(
     State(state): State<AppState>,
+    Query(query): Query<DirectoryQuery>,
 ) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
+    *state
+        .shared
+        .last_event_directory
+        .lock()
+        .expect("event directory lock") = query.directory.clone();
     let (tx, rx) = mpsc::channel::<String>(64);
     *state.shared.event_tx.lock().expect("event lock") = Some(tx);
     let first = futures_util::stream::once(async {

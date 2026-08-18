@@ -121,6 +121,39 @@ pub enum AdapterEvent {
     },
 }
 
+/// Structured option for an interactive agent question (OpenCode `question.asked`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuestionOption {
+    pub label: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserQuestion {
+    pub id: String,
+    pub header: String,
+    pub question: String,
+    pub options: Vec<QuestionOption>,
+    pub multi_select: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuestionAnswer {
+    pub question_id: String,
+    pub answers: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuestionRequest {
+    pub id: String,
+    pub questions: Vec<UserQuestion>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct QuestionResponse {
+    pub answers: Vec<QuestionAnswer>,
+}
+
 /// Mid-turn permission prompt surfaced by the provider during supervised turns.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PermissionRequest {
@@ -168,6 +201,33 @@ impl std::fmt::Debug for PermissionResponder {
     }
 }
 
+/// Blocking callback invoked while the provider waits for structured question answers.
+#[derive(Clone)]
+pub struct QuestionResponder {
+    inner: std::sync::Arc<dyn Fn(QuestionRequest) -> QuestionResponse + Send + Sync>,
+}
+
+impl QuestionResponder {
+    pub fn new<F>(respond: F) -> Self
+    where
+        F: Fn(QuestionRequest) -> QuestionResponse + Send + Sync + 'static,
+    {
+        Self {
+            inner: std::sync::Arc::new(respond),
+        }
+    }
+
+    pub fn respond(&self, request: QuestionRequest) -> QuestionResponse {
+        (self.inner)(request)
+    }
+}
+
+impl std::fmt::Debug for QuestionResponder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("QuestionResponder").finish_non_exhaustive()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct GenerateRequest {
     pub session_id: Uuid,
@@ -184,6 +244,8 @@ pub struct GenerateRequest {
     pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     /// When set, mid-turn permission prompts block until the callback returns.
     pub permission_responder: Option<PermissionResponder>,
+    /// When set, interactive question prompts block until the callback returns.
+    pub question_responder: Option<QuestionResponder>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

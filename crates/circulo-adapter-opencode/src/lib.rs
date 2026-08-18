@@ -26,7 +26,10 @@ use circulo_adapter::{
 };
 use circulo_core::{split_model_catalog_id, ComposerInteractionMode};
 
-const DEFAULT_TURN_TIMEOUT: Duration = Duration::from_secs(120);
+/// Inactivity budget for a single turn (no SSE frames, including heartbeats).
+/// Waku keeps the OpenCode stream unbounded and relies on `session.idle`; we
+/// use a generous inactivity window instead of a hard 90 s read cap.
+const DEFAULT_TURN_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub struct OpenCodeAdapter {
     servers: ServerManager,
@@ -125,9 +128,11 @@ impl AgentAdapter for OpenCodeAdapter {
         emit: &mut dyn FnMut(AdapterEvent),
     ) -> Result<(), AdapterError> {
         self.servers.ensure_running()?;
-        let read_timeout = client::MAX_STREAM_READ_TIMEOUT.min(self.turn_timeout);
-        let client =
-            client::OpenCodeClient::with_read_timeout(self.servers.config().port, read_timeout);
+        let inactivity_timeout = self.turn_timeout;
+        let client = client::OpenCodeClient::with_read_timeout(
+            self.servers.config().port,
+            inactivity_timeout,
+        );
 
         let directory = request.working_directory.as_deref();
 
@@ -160,7 +165,7 @@ impl AgentAdapter for OpenCodeAdapter {
         let agent = interaction.agent_name();
 
         // Subscribe before prompting so early turn events are not missed.
-        let mut stream = client.open_event_stream()?;
+        let mut stream = client.open_event_stream(directory)?;
         client.prompt_async(
             &agent_session_id,
             &request.user_text,
@@ -170,7 +175,7 @@ impl AgentAdapter for OpenCodeAdapter {
             directory,
         )?;
 
-        let deadline = Instant::now() + self.turn_timeout;
+        let mut deadline = Instant::now() + inactivity_timeout;
         let mut state = mapping::TurnState::default();
         let mut stream_reconnects = 0u8;
         loop {
@@ -196,7 +201,9 @@ impl AgentAdapter for OpenCodeAdapter {
                 });
                 return Err(error);
             }
-            let envelope = match stream.next_event() {
+            let envelope = match stream.next_event_with_activity(|| {
+                deadline = Instant::now() + inactivity_timeout;
+            }) {
                 Ok(envelope) => envelope,
                 Err(error) => {
                     if state.needs_todo_reconciliation() {
@@ -212,7 +219,7 @@ impl AgentAdapter for OpenCodeAdapter {
                         state.mark_todo_reconciled();
                         if stream_reconnects == 0 {
                             stream_reconnects += 1;
-                            match client.open_event_stream() {
+                            match client.open_event_stream(directory) {
                                 Ok(replacement) => {
                                     stream = replacement;
                                     continue;
@@ -241,6 +248,19 @@ impl AgentAdapter for OpenCodeAdapter {
                         allow,
                         directory,
                     )?;
+                }
+                mapping::TurnOutcome::QuestionRequired(question) => {
+                    let response = request
+                        .question_responder
+                        .as_ref()
+                        .map(|responder| responder.respond(question.clone()))
+                        .unwrap_or_default();
+                    let answers = response
+                        .answers
+                        .into_iter()
+                        .map(|answer| answer.answers)
+                        .collect();
+                    client.reply_question(&question.id, answers, directory)?;
                 }
                 mapping::TurnOutcome::Completed => {
                     if request

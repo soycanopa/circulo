@@ -138,6 +138,7 @@ mod tests {
             working_directory: None,
             cancel: None,
             permission_responder: None,
+            question_responder: None,
         }
     }
 

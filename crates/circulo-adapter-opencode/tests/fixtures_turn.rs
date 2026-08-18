@@ -74,6 +74,7 @@ fn replay(name: &str) -> Vec<AdapterEvent> {
                 working_directory: None,
                 cancel: None,
                 permission_responder: None,
+                question_responder: None,
             },
             &mut |event| events.push(event),
         )

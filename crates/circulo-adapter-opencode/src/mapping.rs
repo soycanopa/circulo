@@ -5,8 +5,8 @@
 use std::collections::{HashMap, HashSet};
 
 use circulo_adapter::{
-    AdapterError, AdapterEvent, ErrorReason, PermissionRequest, Task, TaskStatus, ToolCall,
-    ToolCallStatus, ToolOutput,
+    AdapterError, AdapterEvent, ErrorReason, PermissionRequest, QuestionOption, QuestionRequest,
+    Task, TaskStatus, ToolCall, ToolCallStatus, ToolOutput, UserQuestion,
 };
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -28,6 +28,7 @@ pub struct TurnState {
     user_message_ids: HashSet<String>,
     /// Permission ids already forwarded to the responder this turn.
     handled_permissions: HashSet<String>,
+    handled_questions: HashSet<String>,
     /// Reasoning parts already marked opaque this turn.
     opaque_reasoning: HashSet<String>,
     /// Todo list already reconciled from `GET /session/:id/todo` this turn.
@@ -39,6 +40,7 @@ pub enum TurnOutcome {
     Continue,
     Completed,
     PermissionRequired(PermissionRequest),
+    QuestionRequired(QuestionRequest),
     Failed { message: String, auth: bool },
 }
 
@@ -211,6 +213,10 @@ pub fn apply(
             parse_permission_asked(properties, state)
         }
         "permission.updated" => parse_permission_updated(properties, state),
+        "question.asked" | "question.v2.asked" => parse_question_asked(properties, state),
+        "question.replied" | "question.rejected" | "question.v2.replied" | "question.v2.rejected" => {
+            TurnOutcome::Continue
+        }
         "session.updated" => {
             let info = properties.get("info").unwrap_or(&Value::Null);
             if let Some(title) = info.get("title").and_then(Value::as_str) {
@@ -235,6 +241,91 @@ fn parse_permission_asked(properties: &Value, state: &mut TurnState) -> TurnOutc
         return TurnOutcome::Continue;
     }
     TurnOutcome::PermissionRequired(request)
+}
+
+fn parse_question_asked(properties: &Value, state: &mut TurnState) -> TurnOutcome {
+    let Some(request_id) = properties.get("id").and_then(Value::as_str) else {
+        return TurnOutcome::Continue;
+    };
+    if !state.handled_questions.insert(request_id.to_owned()) {
+        return TurnOutcome::Continue;
+    }
+    let questions = properties
+        .get("questions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .filter_map(|(index, question)| parse_user_question(index, question))
+        .collect::<Vec<_>>();
+    if questions.is_empty() {
+        return TurnOutcome::Continue;
+    }
+    TurnOutcome::QuestionRequired(QuestionRequest {
+        id: request_id.to_owned(),
+        questions,
+    })
+}
+
+fn parse_user_question(index: usize, question: &Value) -> Option<UserQuestion> {
+    let text = question.get("question").and_then(Value::as_str)?.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let header = question
+        .get("header")
+        .and_then(Value::as_str)
+        .filter(|header| !header.trim().is_empty())
+        .unwrap_or("Question");
+    let slug = header
+        .trim()
+        .to_ascii_lowercase()
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '_' || character == '-' {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    let slug = slug.trim_matches('-');
+    let id = if slug.is_empty() {
+        format!("question-{index}")
+    } else {
+        format!("question-{index}-{slug}")
+    };
+    let options = question
+        .get("options")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|option| {
+            let label = option.get("label").and_then(Value::as_str)?.trim();
+            if label.is_empty() {
+                return None;
+            }
+            Some(QuestionOption {
+                label: label.to_owned(),
+                description: option
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|description| !description.is_empty())
+                    .map(str::to_owned),
+            })
+        })
+        .collect();
+    Some(UserQuestion {
+        id,
+        header: header.to_owned(),
+        question: text.to_owned(),
+        options,
+        multi_select: question
+            .get("multiple")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    })
 }
 
 fn parse_permission_updated(properties: &Value, state: &mut TurnState) -> TurnOutcome {
@@ -611,5 +702,37 @@ mod tests {
         assert!(state.needs_todo_reconciliation());
         state.mark_todo_reconciled();
         assert!(!state.needs_todo_reconciliation());
+    }
+
+    #[test]
+    fn question_asked_maps_to_required_outcome() {
+        let envelope = json!({
+            "id": "evt_q",
+            "type": "question.asked",
+            "properties": {
+                "sessionID": "ses_1",
+                "id": "question-request",
+                "questions": [{
+                    "header": "Files",
+                    "question": "Which files should change?",
+                    "multiple": true,
+                    "options": [{
+                        "label": "Source",
+                        "description": "Core app files"
+                    }]
+                }]
+            }
+        });
+        let mut state = TurnState::default();
+        let outcome = apply(&envelope, "ses_1", &mut state, &mut |_| {});
+        match outcome {
+            TurnOutcome::QuestionRequired(request) => {
+                assert_eq!(request.id, "question-request");
+                assert_eq!(request.questions[0].id, "question-0-files");
+                assert!(request.questions[0].multi_select);
+                assert_eq!(request.questions[0].options[0].label, "Source");
+            }
+            other => panic!("expected question required, got {other:?}"),
+        }
     }
 }

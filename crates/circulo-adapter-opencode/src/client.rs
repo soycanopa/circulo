@@ -11,8 +11,7 @@ use crate::mapping;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-/// Upper bound for per-read inactivity on the SSE stream; `generate` tightens
-/// it to the remaining turn deadline.
+/// Default read timeout for non-turn HTTP calls that may block briefly.
 pub const MAX_STREAM_READ_TIMEOUT: Duration = Duration::from_secs(90);
 
 pub struct OpenCodeClient {
@@ -284,12 +283,44 @@ impl OpenCodeClient {
         }
     }
 
-    /// Opens the global SSE stream. Must be called before `prompt_async` so the
-    /// first turn events are not missed.
-    pub fn open_event_stream(&self) -> Result<EventStream, AdapterError> {
+    pub fn reply_question(
+        &self,
+        request_id: &str,
+        answers: Vec<Vec<String>>,
+        directory: Option<&Path>,
+    ) -> Result<(), AdapterError> {
+        let url = session_url(
+            &self.base,
+            &format!("/question/{request_id}/reply"),
+            directory,
+        );
         let response = self
             .http
-            .get(format!("{}/event", self.base).as_str())
+            .post(url.as_str())
+            .timeout(REQUEST_TIMEOUT)
+            .send_json(serde_json::json!({ "answers": answers }))
+            .map_err(map_call_error)?;
+        if response.status() == 200 {
+            Ok(())
+        } else {
+            Err(AdapterError::failed(
+                ErrorReason::StreamFailed,
+                format!(
+                    "OpenCode rejected the question reply with status {}.",
+                    response.status()
+                ),
+            ))
+        }
+    }
+
+    /// Opens the SSE stream for turn events. Must be called before `prompt_async`
+    /// so early frames are not missed. Project-scoped sessions require the same
+    /// `directory` query param as prompts (OpenCode 1.18.18+).
+    pub fn open_event_stream(&self, directory: Option<&Path>) -> Result<EventStream, AdapterError> {
+        let url = session_url(&self.base, "/event", directory);
+        let response = self
+            .http
+            .get(url.as_str())
             .call()
             .map_err(map_call_error)?;
         Ok(EventStream {
@@ -331,8 +362,16 @@ pub struct EventStream {
 impl EventStream {
     /// Blocks until the next substantive `data:` frame. Liveness frames
     /// (`server.connected`, `server.heartbeat`) are consumed without being
-    /// returned so they reset the transport read idle timer only.
+    /// returned; `on_activity` runs for every frame so callers can extend an
+    /// inactivity deadline while OpenCode is still alive.
     pub fn next_event(&mut self) -> Result<serde_json::Value, AdapterError> {
+        self.next_event_with_activity(|| {})
+    }
+
+    pub fn next_event_with_activity(
+        &mut self,
+        mut on_activity: impl FnMut(),
+    ) -> Result<serde_json::Value, AdapterError> {
         let mut line = String::new();
         loop {
             line.clear();
@@ -348,8 +387,14 @@ impl EventStream {
                 None => continue,
             };
             match serde_json::from_str(payload) {
-                Ok(envelope) if is_liveness_event(&envelope) => continue,
-                Ok(envelope) => return Ok(envelope),
+                Ok(envelope) if is_liveness_event(&envelope) => {
+                    on_activity();
+                    continue;
+                }
+                Ok(envelope) => {
+                    on_activity();
+                    return Ok(envelope);
+                }
                 Err(_) => continue,
             }
         }

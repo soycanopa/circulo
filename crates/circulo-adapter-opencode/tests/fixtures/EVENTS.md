@@ -23,8 +23,12 @@ re-curating.
   `{"parts": [{"type": "text", "text": "..."}]}` → **204 No Content**. Pass the
   same `directory` query param on each prompt so tools run in the Circulo project
   folder.
-- `GET /event` → global SSE stream; every interesting event carries
-  `properties.sessionID`, so we filter by our session id.
+- `GET /event` → SSE stream for turn events. Sessions created or prompted
+  **without** a `directory` query param publish on the global stream. Sessions
+  scoped to a project folder must subscribe with the same `directory=<path>`
+  query param as prompts; otherwise no turn events arrive and the adapter hangs
+  until timeout. Every interesting event carries `properties.sessionID`, so we
+  filter by our OpenCode session id.
 - `POST /session/{sessionID}/abort` → **200** `boolean`. Pass the same
   `directory` query param as prompts. Stops the in-flight turn without deleting
   the session.
