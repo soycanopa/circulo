@@ -39,6 +39,22 @@ impl DaemonClient {
         self.get("/v1/projects")
     }
 
+    pub fn list_archived_projects(&self) -> Result<Vec<Project>, String> {
+        self.get("/v1/projects?status=archived")
+    }
+
+    pub fn archive_project(&self, project_id: Uuid) -> Result<(), String> {
+        self.post_no_content(&format!("/v1/projects/{project_id}/archive"))
+    }
+
+    pub fn restore_project(&self, project_id: Uuid) -> Result<(), String> {
+        self.post_no_content(&format!("/v1/projects/{project_id}/restore"))
+    }
+
+    pub fn delete_project(&self, project_id: Uuid) -> Result<(), String> {
+        self.delete_once(&format!("/v1/projects/{project_id}"))
+    }
+
     pub fn create_session(&self) -> Result<Session, String> {
         self.create_session_with_project(None)
     }
@@ -228,7 +244,7 @@ impl DaemonClient {
             return Ok(());
         }
         if status == 404 {
-            return Err("Session not found.".into());
+            return Err("Resource not found.".into());
         }
         if status == 405 {
             return Err(
@@ -281,6 +297,19 @@ impl DaemonClient {
             .map_err(|err| err.to_string())?
             .into_json()
             .map_err(|err| err.to_string())
+    }
+
+    fn post_no_content(&self, path: &str) -> Result<(), String> {
+        let response = ureq::post(&format!("{}{path}", self.base))
+            .timeout(Duration::from_secs(2))
+            .call()
+            .map_err(|err| err.to_string())?;
+        let status = response.status();
+        if status == 204 || status == 200 {
+            Ok(())
+        } else {
+            Err(format!("POST failed with status {status}."))
+        }
     }
 }
 
