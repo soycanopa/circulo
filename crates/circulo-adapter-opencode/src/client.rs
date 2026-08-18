@@ -2,9 +2,12 @@
 //! `tests/fixtures/EVENTS.md`).
 
 use std::io::{BufRead, BufReader};
+use std::path::Path;
 use std::time::Duration;
 
-use circulo_adapter::{AdapterError, ErrorReason};
+use circulo_adapter::{AdapterError, ErrorReason, Task};
+
+use crate::mapping;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -15,6 +18,12 @@ pub const MAX_STREAM_READ_TIMEOUT: Duration = Duration::from_secs(90);
 pub struct OpenCodeClient {
     base: String,
     http: ureq::Agent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlobalHealth {
+    pub healthy: bool,
+    pub version: String,
 }
 
 impl OpenCodeClient {
@@ -29,10 +38,11 @@ impl OpenCodeClient {
         }
     }
 
-    pub fn create_session(&self) -> Result<String, AdapterError> {
+    pub fn create_session(&self, directory: Option<&Path>) -> Result<String, AdapterError> {
+        let url = session_url(&self.base, "/session", directory);
         let response = self
             .http
-            .post(format!("{}/session", self.base).as_str())
+            .post(url.as_str())
             .timeout(REQUEST_TIMEOUT)
             .send_json(serde_json::json!({}))
             .map_err(map_call_error)?;
@@ -53,6 +63,47 @@ impl OpenCodeClient {
             })
     }
 
+    pub fn global_health(&self) -> Result<GlobalHealth, AdapterError> {
+        let response = self
+            .http
+            .get(format!("{}/global/health", self.base).as_str())
+            .timeout(REQUEST_TIMEOUT)
+            .call()
+            .map_err(map_call_error)?;
+        let body: serde_json::Value = response.into_json().map_err(|err| {
+            AdapterError::failed(
+                ErrorReason::StreamFailed,
+                format!("Unexpected health response from OpenCode: {err}"),
+            )
+        })?;
+        parse_global_health(&body)
+    }
+
+    pub fn list_session_todos(
+        &self,
+        session_id: &str,
+        directory: Option<&Path>,
+    ) -> Result<Vec<Task>, AdapterError> {
+        let url = session_url(
+            &self.base,
+            &format!("/session/{session_id}/todo"),
+            directory,
+        );
+        let response = self
+            .http
+            .get(url.as_str())
+            .timeout(REQUEST_TIMEOUT)
+            .call()
+            .map_err(map_call_error)?;
+        let body: serde_json::Value = response.into_json().map_err(|err| {
+            AdapterError::failed(
+                ErrorReason::StreamFailed,
+                format!("Unexpected todo response from OpenCode: {err}"),
+            )
+        })?;
+        Ok(mapping::todos_from_value(&body))
+    }
+
     pub fn prompt_async(
         &self,
         session_id: &str,
@@ -60,6 +111,7 @@ impl OpenCodeClient {
         model: Option<(String, String)>,
         variant: Option<&str>,
         agent: Option<&str>,
+        directory: Option<&Path>,
     ) -> Result<(), AdapterError> {
         let mut body = serde_json::json!({
             "parts": [{ "type": "text", "text": user_text }],
@@ -76,9 +128,14 @@ impl OpenCodeClient {
         if let Some(agent) = agent {
             body["agent"] = serde_json::Value::String(agent.to_string());
         }
+        let url = session_url(
+            &self.base,
+            &format!("/session/{session_id}/prompt_async"),
+            directory,
+        );
         let response = self
             .http
-            .post(format!("{}/session/{session_id}/prompt_async", self.base).as_str())
+            .post(url.as_str())
             .timeout(REQUEST_TIMEOUT)
             .send_json(body)
             .map_err(map_call_error)?;
@@ -89,6 +146,60 @@ impl OpenCodeClient {
                 ErrorReason::StreamFailed,
                 format!(
                     "OpenCode rejected the prompt with status {}.",
+                    response.status()
+                ),
+            ))
+        }
+    }
+
+    pub fn abort_session(
+        &self,
+        session_id: &str,
+        directory: Option<&Path>,
+    ) -> Result<(), AdapterError> {
+        let url = session_url(
+            &self.base,
+            &format!("/session/{session_id}/abort"),
+            directory,
+        );
+        let response = self
+            .http
+            .post(url.as_str())
+            .timeout(REQUEST_TIMEOUT)
+            .call()
+            .map_err(map_call_error)?;
+        if response.status() == 200 {
+            Ok(())
+        } else {
+            Err(AdapterError::failed(
+                ErrorReason::StreamFailed,
+                format!(
+                    "OpenCode rejected abort with status {}.",
+                    response.status()
+                ),
+            ))
+        }
+    }
+
+    pub fn delete_session(
+        &self,
+        session_id: &str,
+        directory: Option<&Path>,
+    ) -> Result<(), AdapterError> {
+        let url = session_url(&self.base, &format!("/session/{session_id}"), directory);
+        let response = self
+            .http
+            .request("DELETE", url.as_str())
+            .timeout(REQUEST_TIMEOUT)
+            .call()
+            .map_err(map_call_error)?;
+        if response.status() == 200 {
+            Ok(())
+        } else {
+            Err(AdapterError::failed(
+                ErrorReason::StreamFailed,
+                format!(
+                    "OpenCode rejected session delete with status {}.",
                     response.status()
                 ),
             ))
@@ -114,10 +225,16 @@ impl OpenCodeClient {
         &self,
         session_id: &str,
         permission: Vec<serde_json::Value>,
+        directory: Option<&Path>,
     ) -> Result<(), AdapterError> {
+        let url = session_url(
+            &self.base,
+            &format!("/session/{session_id}"),
+            directory,
+        );
         let response = self
             .http
-            .request("PATCH", format!("{}/session/{session_id}", self.base).as_str())
+            .request("PATCH", url.as_str())
             .timeout(REQUEST_TIMEOUT)
             .send_json(serde_json::json!({ "permission": permission }))
             .map_err(map_call_error)?;
@@ -128,6 +245,39 @@ impl OpenCodeClient {
                 ErrorReason::StreamFailed,
                 format!(
                     "OpenCode rejected the session update with status {}.",
+                    response.status()
+                ),
+            ))
+        }
+    }
+
+    pub fn reply_permission(
+        &self,
+        session_id: &str,
+        permission_id: &str,
+        allow: bool,
+        directory: Option<&Path>,
+    ) -> Result<(), AdapterError> {
+        let url = session_url(
+            &self.base,
+            &format!("/session/{session_id}/permissions/{permission_id}"),
+            directory,
+        );
+        let response = self
+            .http
+            .post(url.as_str())
+            .timeout(REQUEST_TIMEOUT)
+            .send_json(serde_json::json!({
+                "response": if allow { "once" } else { "reject" },
+            }))
+            .map_err(map_call_error)?;
+        if response.status() == 200 {
+            Ok(())
+        } else {
+            Err(AdapterError::failed(
+                ErrorReason::StreamFailed,
+                format!(
+                    "OpenCode rejected the permission reply with status {}.",
                     response.status()
                 ),
             ))
@@ -148,14 +298,40 @@ impl OpenCodeClient {
     }
 }
 
+fn session_url(base: &str, path: &str, directory: Option<&Path>) -> String {
+    let mut url = format!("{base}{path}");
+    if let Some(directory) = directory {
+        url.push('?');
+        url.push_str("directory=");
+        append_query_encoded(&mut url, &directory.to_string_lossy());
+    }
+    url
+}
+
+fn append_query_encoded(out: &mut String, value: &str) {
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(char::from(byte));
+            }
+            _ => {
+                out.push('%');
+                out.push(char::from(b"0123456789ABCDEF"[(byte >> 4) as usize]));
+                out.push(char::from(b"0123456789ABCDEF"[(byte & 0x0f) as usize]));
+            }
+        }
+    }
+}
+
 /// Yields the JSON envelope (`{"id", "type", "properties"}`) of each SSE frame.
 pub struct EventStream {
     reader: BufReader<Box<dyn std::io::Read + Send + Sync + 'static>>,
 }
 
 impl EventStream {
-    /// Blocks until the next `data:` frame. A closed stream is an error: clean
-    /// turns end at the `session.idle` event, before the server closes.
+    /// Blocks until the next substantive `data:` frame. Liveness frames
+    /// (`server.connected`, `server.heartbeat`) are consumed without being
+    /// returned so they reset the transport read idle timer only.
     pub fn next_event(&mut self) -> Result<serde_json::Value, AdapterError> {
         let mut line = String::new();
         loop {
@@ -172,11 +348,19 @@ impl EventStream {
                 None => continue,
             };
             match serde_json::from_str(payload) {
+                Ok(envelope) if is_liveness_event(&envelope) => continue,
                 Ok(envelope) => return Ok(envelope),
                 Err(_) => continue,
             }
         }
     }
+}
+
+fn is_liveness_event(envelope: &serde_json::Value) -> bool {
+    matches!(
+        envelope.get("type").and_then(serde_json::Value::as_str),
+        Some("server.connected" | "server.heartbeat")
+    )
 }
 
 fn map_call_error(err: ureq::Error) -> AdapterError {
@@ -217,5 +401,63 @@ fn map_stream_error(err: std::io::Error) -> AdapterError {
             ErrorReason::StreamFailed,
             "The OpenCode event stream failed mid-reply.",
         ),
+    }
+}
+
+fn parse_global_health(body: &serde_json::Value) -> Result<GlobalHealth, AdapterError> {
+    let healthy = body
+        .get("healthy")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let version = body
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    Ok(GlobalHealth { healthy, version })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_liveness_event, parse_global_health, GlobalHealth};
+    use serde_json::json;
+
+    #[test]
+    fn parse_global_health_reads_healthy_and_version() {
+        let health = parse_global_health(&json!({
+            "healthy": true,
+            "version": "1.18.18"
+        }))
+        .unwrap();
+        assert_eq!(
+            health,
+            GlobalHealth {
+                healthy: true,
+                version: "1.18.18".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_global_health_defaults_missing_fields() {
+        let health = parse_global_health(&json!({})).unwrap();
+        assert!(!health.healthy);
+        assert!(health.version.is_empty());
+    }
+
+    #[test]
+    fn liveness_events_are_recognized() {
+        assert!(is_liveness_event(&json!({
+            "type": "server.heartbeat",
+            "properties": {}
+        })));
+        assert!(is_liveness_event(&json!({
+            "type": "server.connected",
+            "properties": {}
+        })));
+        assert!(!is_liveness_event(&json!({
+            "type": "session.idle",
+            "properties": {}
+        })));
     }
 }

@@ -1,21 +1,22 @@
 //! Scripted OpenCode server for integration tests (feature `test-support`).
 //!
 //! Serves the subset of the real API Circulo talks to (see
-//! `tests/fixtures/EVENTS.md`): `GET /doc`, `POST /session`,
-//! `POST /session/{id}/prompt_async`, and `GET /event`. Each prompt replays the
-//! configured script on the SSE stream.
+//! `tests/fixtures/EVENTS.md`): `GET /doc`, `GET /global/health`, `POST /session`,
+//! `POST /session/{id}/prompt_async`, `GET /session/{id}/todo`, `DELETE /session/{id}`, and `GET /event`.
+//! Each prompt replays the configured script on the SSE stream.
 
 use std::convert::Infallible;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, Sse};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use futures_util::StreamExt;
+use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, watch};
 
@@ -27,14 +28,19 @@ pub enum ScriptStep {
     /// Closes the SSE stream mid-turn.
     Drop,
     SleepMs(u64),
+    /// Like `SleepMs`, but emits `server.heartbeat` frames during the wait.
+    SleepWithHeartbeatsMs(u64),
 }
 
 struct Shared {
     script: Mutex<Vec<ScriptStep>>,
     require_auth: AtomicBool,
     sessions_created: AtomicUsize,
-    last_prompt: Mutex<Option<(String, String)>>,
+    last_prompt: Mutex<Option<(String, String, Option<String>)>>,
+    last_permission_reply: Mutex<Option<(String, String, bool)>>,
+    deleted_sessions: Mutex<Vec<String>>,
     event_tx: Mutex<Option<mpsc::Sender<String>>>,
+    todo_snapshot: Mutex<Vec<Value>>,
 }
 
 #[derive(Clone)]
@@ -56,7 +62,10 @@ impl FakeOpenCodeServer {
             require_auth: AtomicBool::new(false),
             sessions_created: AtomicUsize::new(0),
             last_prompt: Mutex::new(None),
+            last_permission_reply: Mutex::new(None),
+            deleted_sessions: Mutex::new(Vec::new()),
             event_tx: Mutex::new(None),
+            todo_snapshot: Mutex::new(Vec::new()),
         });
         let (shutdown, mut shutdown_rx) = watch::channel(false);
         let (port_tx, port_rx) = std::sync::mpsc::channel();
@@ -76,8 +85,16 @@ impl FakeOpenCodeServer {
                 port_tx.send(port).expect("report fake server port");
                 let app = Router::new()
                     .route("/doc", get(doc))
+                    .route("/global/health", get(global_health))
                     .route("/session", post(create_session))
+                    .route("/session/{id}", delete(delete_session))
                     .route("/session/{id}/prompt_async", post(prompt_async))
+                    .route("/session/{id}/todo", get(list_session_todos))
+                    .route("/session/{id}/abort", post(abort_session))
+                    .route(
+                        "/session/{id}/permissions/{permission_id}",
+                        post(reply_permission),
+                    )
                     .route("/event", get(event_stream))
                     .with_state(state);
                 let server = axum::serve(listener, app).with_graceful_shutdown(async move {
@@ -101,12 +118,42 @@ impl FakeOpenCodeServer {
         *self.shared.script.lock().expect("script lock") = steps;
     }
 
+    pub fn set_todo_snapshot(&self, todos: &[(&str, &str)]) {
+        let items: Vec<Value> = todos
+            .iter()
+            .map(|(content, status)| {
+                json!({ "content": content, "status": status, "priority": "medium" })
+            })
+            .collect();
+        *self
+            .shared
+            .todo_snapshot
+            .lock()
+            .expect("todo snapshot lock") = items;
+    }
+
     pub fn require_auth(&self, required: bool) {
         self.shared.require_auth.store(required, Ordering::SeqCst);
     }
 
-    pub fn last_prompt(&self) -> Option<(String, String)> {
+    pub fn last_prompt(&self) -> Option<(String, String, Option<String>)> {
         self.shared.last_prompt.lock().expect("prompt lock").clone()
+    }
+
+    pub fn last_permission_reply(&self) -> Option<(String, String, bool)> {
+        self.shared
+            .last_permission_reply
+            .lock()
+            .expect("permission reply lock")
+            .clone()
+    }
+
+    pub fn deleted_sessions(&self) -> Vec<String> {
+        self.shared
+            .deleted_sessions
+            .lock()
+            .expect("deleted sessions lock")
+            .clone()
     }
 
     pub fn sessions_created(&self) -> usize {
@@ -127,24 +174,53 @@ async fn doc() -> Json<Value> {
     Json(json!({ "openapi": "3.1.0", "info": { "title": "fake opencode" } }))
 }
 
+async fn global_health() -> Json<Value> {
+    Json(json!({ "healthy": true, "version": "0.0.0-test" }))
+}
+
+async fn list_session_todos(
+    State(state): State<AppState>,
+    Path(_session_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, StatusCode> {
+    if state.shared.require_auth.load(Ordering::SeqCst) && !headers.contains_key("authorization") {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    let todos = state
+        .shared
+        .todo_snapshot
+        .lock()
+        .expect("todo snapshot lock")
+        .clone();
+    Ok(Json(Value::Array(todos)))
+}
+
 async fn create_session(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<DirectoryQuery>,
 ) -> Result<(StatusCode, Json<Value>), StatusCode> {
     if state.shared.require_auth.load(Ordering::SeqCst) && !headers.contains_key("authorization") {
         return Err(StatusCode::UNAUTHORIZED);
     }
     let index = state.shared.sessions_created.fetch_add(1, Ordering::SeqCst) + 1;
+    let _ = query.directory;
     Ok((
         StatusCode::OK,
         Json(json!({ "id": format!("ses_fake_{index}") })),
     ))
 }
 
+#[derive(Debug, Deserialize)]
+struct DirectoryQuery {
+    directory: Option<String>,
+}
+
 async fn prompt_async(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
     headers: HeaderMap,
+    Query(query): Query<DirectoryQuery>,
     body: Option<Json<Value>>,
 ) -> StatusCode {
     if state.shared.require_auth.load(Ordering::SeqCst) && !headers.contains_key("authorization") {
@@ -160,7 +236,8 @@ async fn prompt_async(
                 .map(str::to_owned)
         })
         .unwrap_or_default();
-    *state.shared.last_prompt.lock().expect("prompt lock") = Some((session_id.clone(), user_text));
+    *state.shared.last_prompt.lock().expect("prompt lock") =
+        Some((session_id.clone(), user_text, query.directory));
 
     let sender = state.shared.event_tx.lock().expect("event lock").clone();
     let Some(sender) = sender else {
@@ -183,6 +260,21 @@ async fn prompt_async(
                 ScriptStep::SleepMs(ms) => {
                     tokio::time::sleep(Duration::from_millis(ms)).await;
                 }
+                ScriptStep::SleepWithHeartbeatsMs(ms) => {
+                    let sender = sender.clone();
+                    let started = std::time::Instant::now();
+                    while started.elapsed() < Duration::from_millis(ms) {
+                        tokio::time::sleep(Duration::from_millis(150)).await;
+                        let heartbeat = json!({
+                            "id": "evt_hb",
+                            "type": "server.heartbeat",
+                            "properties": {}
+                        });
+                        if sender.send(heartbeat.to_string()).await.is_err() {
+                            return;
+                        }
+                    }
+                }
             }
         }
     });
@@ -195,6 +287,63 @@ fn inject_session(envelope: &mut Value, session_id: &str) {
             properties["sessionID"] = json!(session_id);
         }
     }
+}
+
+async fn abort_session(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, StatusCode> {
+    if state.shared.require_auth.load(Ordering::SeqCst) && !headers.contains_key("authorization") {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    let sender = state.shared.event_tx.lock().expect("event lock").clone();
+    if let Some(sender) = sender {
+        let mut envelope = json!({ "id": "evt_idle_abort", "type": "session.idle", "properties": {} });
+        inject_session(&mut envelope, &session_id);
+        let _ = sender.try_send(envelope.to_string());
+    }
+    Ok(Json(json!(true)))
+}
+
+async fn reply_permission(
+    State(state): State<AppState>,
+    Path((session_id, permission_id)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, StatusCode> {
+    if state.shared.require_auth.load(Ordering::SeqCst) && !headers.contains_key("authorization") {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    let allow = body
+        .get("response")
+        .and_then(Value::as_str)
+        .is_some_and(|response| response == "once" || response == "always");
+    *state
+        .shared
+        .last_permission_reply
+        .lock()
+        .expect("permission reply lock") = Some((session_id, permission_id, allow));
+    Ok(Json(json!(true)))
+}
+
+async fn delete_session(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+    Query(query): Query<DirectoryQuery>,
+) -> Result<Json<Value>, StatusCode> {
+    if state.shared.require_auth.load(Ordering::SeqCst) && !headers.contains_key("authorization") {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    let _ = query.directory;
+    state
+        .shared
+        .deleted_sessions
+        .lock()
+        .expect("deleted sessions lock")
+        .push(session_id);
+    Ok(Json(json!(true)))
 }
 
 async fn event_stream(
@@ -227,6 +376,24 @@ pub fn text_snapshot(part_id: &str, text: &str) -> ScriptStep {
 
 pub fn reasoning_snapshot(part_id: &str, text: &str) -> ScriptStep {
     part_snapshot(part_id, "reasoning", text)
+}
+
+pub fn reasoning_opaque_snapshot(part_id: &str) -> ScriptStep {
+    ScriptStep::Event(json!({
+        "id": "evt_reason_opaque",
+        "type": "message.part.updated",
+        "properties": {
+            "part": {
+                "id": part_id,
+                "type": "reasoning",
+                "text": "",
+                "metadata": { "anthropic": { "signature": "sig_test" } },
+                "messageID": "msg_a",
+                "sessionID": "__fill__",
+                "time": { "start": 1786918535912_i64, "end": 1786918536912_i64 }
+            }
+        }
+    }))
 }
 
 fn part_snapshot(part_id: &str, part_type: &str, text: &str) -> ScriptStep {
@@ -278,6 +445,30 @@ pub fn idle() -> ScriptStep {
     ScriptStep::Event(json!({ "id": "evt_idle", "type": "session.idle", "properties": {} }))
 }
 
+pub fn session_title_updated(title: &str) -> ScriptStep {
+    ScriptStep::Event(json!({
+        "id": "evt_title",
+        "type": "session.updated",
+        "properties": {
+            "info": { "title": title }
+        }
+    }))
+}
+
+pub fn permission_asked(id: &str, permission: &str, pattern: &str) -> ScriptStep {
+    ScriptStep::Event(json!({
+        "id": "evt_perm",
+        "type": "permission.asked",
+        "properties": {
+            "id": id,
+            "permission": permission,
+            "patterns": [pattern],
+            "metadata": {},
+            "always": []
+        }
+    }))
+}
+
 pub fn session_error(name: &str, message: &str) -> ScriptStep {
     ScriptStep::Event(json!({
         "id": "evt_err", "type": "session.error",
@@ -305,4 +496,16 @@ pub fn drop_stream() -> ScriptStep {
 
 pub fn sleep_ms(ms: u64) -> ScriptStep {
     ScriptStep::SleepMs(ms)
+}
+
+pub fn sleep_with_heartbeats(ms: u64) -> ScriptStep {
+    ScriptStep::SleepWithHeartbeatsMs(ms)
+}
+
+pub fn heartbeat() -> ScriptStep {
+    ScriptStep::Event(json!({
+        "id": "evt_hb",
+        "type": "server.heartbeat",
+        "properties": {}
+    }))
 }
