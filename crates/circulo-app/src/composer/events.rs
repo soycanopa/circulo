@@ -17,6 +17,7 @@ pub enum ComposerEvent {
     OpenProject,
     WorkModeChanged(WorkMode),
     ModelChanged(String),
+    ModelVariantChanged(String),
     PermissionModeChanged(ComposerPermissionMode),
     InteractionModeChanged(ComposerInteractionMode),
 }

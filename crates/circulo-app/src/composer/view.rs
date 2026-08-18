@@ -15,7 +15,7 @@ use crate::composer::events::{
 };
 use crate::composer::labels::{
     interaction_accent, interaction_icon, interaction_label_key, permission_description_key,
-    permission_label_key,
+    permission_label_key, reasoning_display_label,
 };
 use circulo_core::{ComposerInteractionMode, ComposerPermissionMode};
 use crate::composer::models::ComposerModel;
@@ -23,9 +23,14 @@ use crate::composer::helpers::{can_send, project_picker_locked};
 use crate::composer::input::ComposerInput;
 use crate::icons::{icon, path as icon_path};
 use crate::context_menu::{
-    menu_chip_popover, menu_item, menu_item_with_description, menu_separator,
+    menu_chip_model_selector_popover, menu_chip_popover, menu_item, menu_item_model_selector,
+    menu_item_with_description, menu_item_with_edit_model_selector, menu_separator,
+    MODEL_SELECTOR_MENU_WIDTH_PX,
 };
-use crate::ui::menu_chip::{menu_chip, menu_chip_dropdown_above, model_context_indicator};
+use crate::ui::menu_chip::{
+    menu_chip, menu_chip_dropdown_above, menu_chip_subpopover_right_offset,
+    model_context_indicator, model_menu_chip,
+};
 use crate::theme::{
     ACCENT, BG_MAIN, BG_SIDEBAR, BORDER, CONTENT_MAX_WIDTH_PX, TEXT, TEXT_MUTED,
 };
@@ -45,7 +50,9 @@ pub struct Composer {
     model_menu_open: bool,
     permission_menu_open: bool,
     interaction_menu_open: bool,
+    model_reasoning_edit: Option<String>,
     selected_model: String,
+    selected_model_variant: String,
     models: Vec<ComposerModel>,
     permission_mode: PermissionMode,
     interaction_mode: InteractionMode,
@@ -56,6 +63,7 @@ pub struct Composer {
     selected_session: Option<Session>,
     work_mode: WorkMode,
     catalog: Catalog,
+    context_usage_fraction: f32,
     _input_subscription: Subscription,
 }
 
@@ -73,7 +81,9 @@ impl Composer {
             model_menu_open: false,
             permission_menu_open: false,
             interaction_menu_open: false,
+            model_reasoning_edit: None,
             selected_model: String::new(),
+            selected_model_variant: String::new(),
             models: Vec::new(),
             permission_mode: PermissionMode::default(),
             interaction_mode: InteractionMode::default(),
@@ -84,6 +94,7 @@ impl Composer {
             selected_session: None,
             work_mode: WorkMode::Local,
             catalog: Catalog::english(),
+            context_usage_fraction: 0.0,
             _input_subscription: input_subscription,
         }
     }
@@ -110,6 +121,8 @@ impl Composer {
         permission_mode: PermissionMode,
         interaction_mode: InteractionMode,
         catalog: Catalog,
+        context_usage_fraction: f32,
+        selected_model_variant: String,
         cx: &mut Context<Self>,
     ) {
         let session_changed = self
@@ -125,6 +138,8 @@ impl Composer {
         self.permission_mode = permission_mode;
         self.interaction_mode = interaction_mode;
         self.catalog = catalog;
+        self.context_usage_fraction = context_usage_fraction.clamp(0.0, 1.0);
+        self.selected_model_variant = selected_model_variant;
 
         if session_changed {
             if let Some(old) = self.active_session {
@@ -151,8 +166,9 @@ impl Composer {
             self.model_menu_open = false;
             self.permission_menu_open = false;
             self.interaction_menu_open = false;
-            cx.notify();
+            self.model_reasoning_edit = None;
         }
+        cx.notify();
     }
 
     pub fn focus_after_session_select(&self, window: &mut Window, cx: &gpui::App) {
@@ -236,6 +252,7 @@ impl Composer {
         self.model_menu_open = false;
         self.permission_menu_open = false;
         self.interaction_menu_open = false;
+        self.model_reasoning_edit = None;
     }
 
     fn close_all_menus(&mut self) {
@@ -266,9 +283,37 @@ impl Composer {
             self.close_footer_menus();
             self.permission_menu_open = false;
             self.interaction_menu_open = false;
-            self.model_menu_open = !self.model_menu_open;
+            let opening = !self.model_menu_open;
+            self.model_menu_open = opening;
+            if !opening {
+                self.model_reasoning_edit = None;
+            }
             cx.notify();
         }
+    }
+
+    fn toggle_model_reasoning_edit(&mut self, model_id: String, cx: &mut Context<Self>) {
+        if self.model_reasoning_edit.as_ref() == Some(&model_id) {
+            self.model_reasoning_edit = None;
+        } else {
+            self.model_reasoning_edit = Some(model_id);
+        }
+        cx.notify();
+    }
+
+    fn pick_model_variant(
+        &mut self,
+        model_id: String,
+        variant: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.model_reasoning_edit = None;
+        self.model_menu_open = false;
+        self.selected_model = model_id;
+        self.selected_model_variant = variant;
+        cx.emit(ComposerEvent::ModelChanged(self.selected_model.clone()));
+        cx.emit(ComposerEvent::ModelVariantChanged(self.selected_model_variant.clone()));
+        cx.notify();
     }
 
     fn toggle_permission_menu(&mut self, cx: &mut Context<Self>) {
@@ -293,8 +338,21 @@ impl Composer {
 
     fn pick_model(&mut self, model_id: String, cx: &mut Context<Self>) {
         self.model_menu_open = false;
+        self.model_reasoning_edit = None;
         self.selected_model = model_id;
+        if let Some(model) = self.models.iter().find(|entry| entry.id == self.selected_model) {
+            self.selected_model_variant = model
+                .resolve_variant(Some(&self.selected_model_variant))
+                .unwrap_or_default();
+        } else {
+            self.selected_model_variant.clear();
+        }
         cx.emit(ComposerEvent::ModelChanged(self.selected_model.clone()));
+        if !self.selected_model_variant.is_empty() {
+            cx.emit(ComposerEvent::ModelVariantChanged(
+                self.selected_model_variant.clone(),
+            ));
+        }
         cx.notify();
     }
 
@@ -356,43 +414,114 @@ impl Render for Composer {
                 .unwrap_or_else(|| self.catalog.get("composer.model.default").to_string())
         };
 
-        let context_label = if has_session {
-            self.selected_model_entry()
-                .and_then(|model| model.context_label())
-                .map(|label| label.to_string())
-                .unwrap_or_else(|| self.catalog.get("composer.model_context.none").to_string())
-        } else {
-            self.catalog.get("composer.model_context.none").to_string()
-        };
+        let reasoning_tag = self.selected_model_entry().and_then(|model| {
+            if !model.supports_reasoning() {
+                return None;
+            }
+            let variant = model
+                .resolve_variant(Some(&self.selected_model_variant))
+                .unwrap_or_default();
+            if variant.is_empty() {
+                None
+            } else {
+                Some(reasoning_display_label(&self.catalog, &variant))
+            }
+        });
 
-        let model_context = model_context_indicator(context_label);
+        let model_context = model_context_indicator(self.context_usage_fraction);
 
-        let model_chip = menu_chip(
+        let model_chip = model_menu_chip(
             "composer-model",
-            icon_path::BOT,
+            icon_path::OPENCODE,
             model_label,
+            reasoning_tag,
             self.model_menu_open,
             !toolbar_enabled,
-            false,
-            false,
             cx.listener(|this, _, _, cx| this.toggle_model_menu(cx)),
         );
         let mut model_control = div().relative().child(model_chip);
         if toolbar_enabled && self.model_menu_open {
-            let mut menu = menu_chip_popover().min_w(px(200.));
+            let edit_label = self.catalog.get("composer.model.edit").to_string();
+            let reasoning_title = self.catalog.get("composer.reasoning.title").to_string();
+            let mut menu = menu_chip_model_selector_popover();
             for (index, model) in self.models.iter().enumerate() {
                 let id = model.id.clone();
                 let selected = self.selected_model == id;
-                menu = menu.child(
-                    menu_item(
+                let edit_open = self.model_reasoning_edit.as_ref() == Some(&id);
+                let mut row_wrap = div().relative();
+                if model.supports_reasoning() {
+                    let pick_id = id.clone();
+                    let edit_toggle_id = id.clone();
+                    row_wrap = row_wrap.child(menu_item_with_edit_model_selector(
+                        ("composer-model", index),
+                        ("composer-model-select", index),
+                        ("composer-model-edit", index),
+                        SharedString::from(format!("composer-model-row-{index}")),
+                        model.name.clone(),
+                        selected,
+                        edit_open,
+                        Some(icon_path::OPENCODE),
+                        edit_label.clone(),
+                        cx.listener(move |this, _, _, cx| this.pick_model(pick_id.clone(), cx)),
+                        cx.listener(move |this, _, _, cx| {
+                            this.toggle_model_reasoning_edit(edit_toggle_id.clone(), cx);
+                        }),
+                    ));
+                } else {
+                    row_wrap = row_wrap.child(menu_item_model_selector(
                         ("composer-model", index),
                         model.name.clone(),
                         selected,
                         false,
-                        Some(icon_path::BOT),
+                        Some(icon_path::OPENCODE),
                         cx.listener(move |this, _, _, cx| this.pick_model(id.clone(), cx)),
-                    ),
-                );
+                    ));
+                }
+                if edit_open {
+                    let mut sub = menu_chip_model_selector_popover().min_w(px(176.));
+                    sub = sub.child(
+                        div()
+                            .px(px(10.))
+                            .pt(px(4.))
+                            .pb(px(6.))
+                            .text_xs()
+                            .text_color(TEXT_MUTED)
+                            .child(reasoning_title.clone()),
+                    );
+                    for (variant_index, variant) in model.reasoning_variants.iter().enumerate() {
+                        let variant_id = variant.clone();
+                        let pick_model_id = model.id.clone();
+                        let variant_selected = self.selected_model == model.id
+                            && self.selected_model_variant == variant_id;
+                        let variant_label =
+                            reasoning_display_label(&self.catalog, &variant_id);
+                        sub = sub.child(
+                            menu_item_model_selector(
+                                SharedString::from(format!(
+                                    "composer-reasoning-{index}-{variant_index}"
+                                )),
+                                variant_label,
+                                variant_selected,
+                                false,
+                                None,
+                                cx.listener(move |this, _, _, cx| {
+                                    this.pick_model_variant(
+                                        pick_model_id.clone(),
+                                        variant_id.clone(),
+                                        cx,
+                                    );
+                                }),
+                            ),
+                        );
+                    }
+                    row_wrap = row_wrap.child(
+                        menu_chip_subpopover_right_offset(
+                            sub,
+                            MODEL_SELECTOR_MENU_WIDTH_PX + 6.,
+                        ),
+                    );
+                }
+                menu = menu.child(row_wrap);
             }
             model_control = model_control.child(menu_chip_dropdown_above(menu));
         }
@@ -520,7 +649,6 @@ impl Render for Composer {
             .child(permission_control)
             .child(interaction_control)
             .child(div().flex_1())
-            .child(model_context)
             .child(send_control);
 
         let can_configure = has_session && !locked;
@@ -656,7 +784,9 @@ impl Render for Composer {
                     .items_center()
                     .gap(px(FOOTER_CHIP_GAP_PX))
                     .child(project_control)
-                    .child(work_mode_control),
+                    .child(work_mode_control)
+                    .child(div().flex_1())
+                    .child(model_context),
             )
     }
 }

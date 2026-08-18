@@ -9,11 +9,29 @@ pub struct ComposerModel {
     pub name: String,
     /// Human-readable context window from model metadata (e.g. `128K`).
     pub context_window: Option<String>,
+    /// OpenCode variant ids (`low`, `medium`, `high`, …).
+    pub reasoning_variants: Vec<String>,
 }
 
 impl ComposerModel {
     pub fn context_label(&self) -> Option<&str> {
         self.context_window.as_deref()
+    }
+
+    pub fn supports_reasoning(&self) -> bool {
+        !self.reasoning_variants.is_empty()
+    }
+
+    pub fn resolve_variant(&self, selected: Option<&str>) -> Option<String> {
+        if self.reasoning_variants.is_empty() {
+            return None;
+        }
+        if let Some(value) = selected {
+            if self.reasoning_variants.iter().any(|variant| variant == value) {
+                return Some(value.to_string());
+            }
+        }
+        self.reasoning_variants.first().cloned()
     }
 }
 
@@ -23,6 +41,7 @@ impl From<&ModelCatalogEntry> for ComposerModel {
             id: entry.id.clone(),
             name: entry.name.clone(),
             context_window: entry.context_window.clone(),
+            reasoning_variants: entry.reasoning_variants.clone(),
         }
     }
 }
@@ -34,16 +53,24 @@ pub fn placeholder_models(catalog: &Catalog) -> Vec<ComposerModel> {
             id: "placeholder/default".into(),
             name: catalog.get("composer.model.default").to_string(),
             context_window: Some("128K".into()),
+            reasoning_variants: vec!["low".into(), "medium".into(), "high".into()],
         },
         ComposerModel {
             id: "placeholder/sonnet".into(),
             name: catalog.get("composer.model.sonnet").to_string(),
             context_window: Some("200K".into()),
+            reasoning_variants: vec![
+                "low".into(),
+                "medium".into(),
+                "high".into(),
+                "max".into(),
+            ],
         },
         ComposerModel {
             id: "placeholder/gpt4o".into(),
             name: catalog.get("composer.model.gpt4o").to_string(),
             context_window: Some("128K".into()),
+            reasoning_variants: vec!["low".into(), "medium".into(), "high".into()],
         },
     ]
 }

@@ -46,3 +46,25 @@ pub fn interaction_icon(mode: ComposerInteractionMode) -> &'static str {
 pub fn interaction_accent(mode: ComposerInteractionMode) -> bool {
     matches!(mode, ComposerInteractionMode::Plan)
 }
+
+pub fn reasoning_label_key(variant: &str) -> String {
+    format!("composer.reasoning.{}", variant.to_ascii_lowercase())
+}
+
+pub fn reasoning_display_label(catalog: &circulo_i18n::Catalog, variant: &str) -> String {
+    let key = reasoning_label_key(variant);
+    let localized = catalog.get(&key);
+    if localized == key {
+        capitalize_variant(variant)
+    } else {
+        localized.to_string()
+    }
+}
+
+fn capitalize_variant(variant: &str) -> String {
+    let mut chars = variant.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
