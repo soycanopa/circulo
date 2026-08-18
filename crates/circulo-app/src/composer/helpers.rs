@@ -45,6 +45,7 @@ fn estimate_context_chars(messages: &[Message]) -> usize {
                         tasks.iter().map(|task| task.title.len()).sum()
                     }
                     MessagePart::Question { question } => question.prompt.len(),
+                    MessagePart::Reasoning { content, .. } => content.len(),
                 })
                 .sum::<usize>()
         })
@@ -80,6 +81,7 @@ pub fn summarize_message(message: &Message) -> String {
                 }
             }
             MessagePart::Question { question } => lines.push(question.prompt.clone()),
+            MessagePart::Reasoning { .. } => {}
         }
     }
     if lines.is_empty() {

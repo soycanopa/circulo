@@ -29,6 +29,7 @@ use crate::composer::{
 use crate::home::home_panel;
 use crate::icons::{icon, path as icon_path};
 use crate::parts::{render_text, task_list, tool_card, unsupported};
+use crate::ui::{assistant_is_thinking, permission_banner, reasoning_block, thinking_label, PendingPermission};
 use crate::session_overlay::{session_overlay, SessionOverlay};
 use crate::settings::{models_settings_panel, SettingsSection};
 use crate::stream::{
@@ -115,6 +116,7 @@ pub struct AppShell {
     pub(crate) settings_models_expanded: bool,
     pub(crate) settings_models_focus: gpui::FocusHandle,
     pub expanded_tools: HashSet<String>,
+    pub expanded_reasoning: HashSet<String>,
     error: Option<String>,
     loaded: bool,
     scroll: ScrollHandle,
@@ -129,6 +131,7 @@ pub struct AppShell {
     stream_session: Option<Uuid>,
     stream_attempts: u32,
     saw_stream_event: bool,
+    pending_permission: Option<PendingPermission>,
     _composer_subscription: Subscription,
     _rename_input_subscription: Subscription,
 }
@@ -185,6 +188,7 @@ impl AppShell {
             settings_models_expanded: false,
             settings_models_focus: cx.focus_handle(),
             expanded_tools: HashSet::new(),
+            expanded_reasoning: HashSet::new(),
             error: None,
             loaded: false,
             scroll: ScrollHandle::new(),
@@ -199,6 +203,7 @@ impl AppShell {
             stream_attempts: 0,
             stream_session: None,
             saw_stream_event: false,
+            pending_permission: None,
             _composer_subscription: composer_subscription,
             _rename_input_subscription: rename_input_subscription,
         };
@@ -432,6 +437,12 @@ impl AppShell {
                     let _ = shell.update(cx, |shell, cx| shell.try_send(content, cx));
                 });
             }
+            ComposerEvent::Stop => {
+                let shell = cx.entity();
+                cx.defer(move |cx| {
+                    let _ = shell.update(cx, |shell, cx| shell.try_abort(cx));
+                });
+            }
             ComposerEvent::ProjectPicked(project_id) => {
                 self.patch_session_project(Some(*project_id), cx);
             }
@@ -556,11 +567,13 @@ impl AppShell {
                 });
                 return;
             }
-            let name = project_name_from_picked_path(&picked.unwrap());
+            let picked_path = picked.unwrap();
+            let name = project_name_from_picked_path(&picked_path);
+            let folder_path = picked_path.to_string_lossy().into_owned();
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let project = client.create_project(&name)?;
+                    let project = client.create_project(&name, Some(folder_path))?;
                     if attach_to_current {
                         Ok(EitherProjectPick::Attach(project))
                     } else {
@@ -788,6 +801,10 @@ impl AppShell {
         self.messages.iter().any(|message| message.is_streaming)
     }
 
+    fn any_thinking(&self) -> bool {
+        self.messages.iter().any(assistant_is_thinking)
+    }
+
     /// Opens the selected session's event stream. A dedicated thread does the
     /// blocking reads; a spawned task drains the channel on a timer, applies
     /// events through the reducer, and reconnects with backoff when the stream
@@ -842,6 +859,29 @@ impl AppShell {
                             ) {
                                 this.saw_stream_event = true;
                             }
+                            if let ProtocolEvent::SessionPermissionRequested {
+                                permission_id,
+                                summary,
+                                ..
+                            } = &event
+                            {
+                                this.pending_permission = Some(PendingPermission {
+                                    permission_id: permission_id.clone(),
+                                    summary: summary.clone(),
+                                });
+                            }
+                            if let ProtocolEvent::SessionTitleUpdated {
+                                session_id,
+                                title,
+                                ..
+                            } = &event
+                            {
+                                if let Some(entry) =
+                                    this.sessions.iter_mut().find(|session| session.id == *session_id)
+                                {
+                                    entry.title = title.clone();
+                                }
+                            }
                             let changed = apply_protocol_event(&mut this.messages, &event);
                             if terminal {
                                 this.generating = false;
@@ -876,9 +916,39 @@ impl AppShell {
             if stale {
                 return;
             }
+            let _ = this.update(cx, |this, cx| {
+                if this.any_thinking() {
+                    cx.notify();
+                }
+            });
             cx.background_executor().timer(DRAIN_INTERVAL).await;
         })
         .detach();
+    }
+
+    pub(crate) fn reply_permission(&mut self, allow: bool, cx: &mut Context<Self>) {
+        let Some(session_id) = self.selected else {
+            return;
+        };
+        let Some(pending) = self.pending_permission.take() else {
+            return;
+        };
+        let client = self.client.clone();
+        let permission_id = pending.permission_id;
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { client.reply_permission(session_id, &permission_id, allow) })
+                .await;
+            if let Err(message) = result {
+                let _ = this.update(cx, |this, cx| {
+                    this.error = Some(message);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+        cx.notify();
     }
 
     /// Refetches once and resubscribes with 1/2/4 s backoff, giving up after
@@ -914,6 +984,7 @@ impl AppShell {
         self.selected = Some(id);
         self.close_palette(cx);
         self.close_session_overlay(cx);
+        self.pending_permission = None;
         self.messages = self.client.list_messages(id).unwrap_or_default();
         self.stream_attempts = 0;
         self.error = None;
@@ -957,11 +1028,13 @@ impl AppShell {
                 });
                 return;
             }
-            let name = project_name_from_picked_path(&picked.unwrap());
+            let picked_path = picked.unwrap();
+            let name = project_name_from_picked_path(&picked_path);
+            let folder_path = picked_path.to_string_lossy().into_owned();
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let project = client.create_project(&name)?;
+                    let project = client.create_project(&name, Some(folder_path))?;
                     let session = client.create_session_with_project(Some(project.id))?;
                     Ok((project, session))
                 })
@@ -1193,6 +1266,29 @@ impl AppShell {
             }
         }
         cx.notify();
+    }
+
+    pub(crate) fn try_abort(&mut self, cx: &mut Context<Self>) {
+        if !self.generating {
+            return;
+        }
+        let Some(session_id) = self.selected else {
+            return;
+        };
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { client.abort_session(session_id) })
+                .await;
+            if let Err(message) = result {
+                let _ = this.update(cx, |this, cx| {
+                    this.error = Some(message);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
     }
 
     pub(crate) fn try_send(&mut self, content: String, cx: &mut Context<Self>) {
@@ -2467,6 +2563,15 @@ fn main_column(
     } else {
         column = column
             .child(message_list(state, catalog, cx))
+            .when_some(state.pending_permission.as_ref(), |column, pending| {
+                column.child(
+                    div()
+                        .flex_none()
+                        .px(px(COMPOSER_GUTTER_PX))
+                        .pb(px(8.))
+                        .child(permission_banner(pending, catalog, cx)),
+                )
+            })
             .child(
                 div()
                     .flex_none()
@@ -2551,6 +2656,7 @@ fn message_list(
                 index,
                 catalog,
                 &state.expanded_tools,
+                &state.expanded_reasoning,
                 cx,
             ));
         }
@@ -2630,9 +2736,11 @@ fn message_column(
     index: usize,
     catalog: &Catalog,
     expanded: &HashSet<String>,
+    expanded_reasoning: &HashSet<String>,
     cx: &mut Context<AppShell>,
 ) -> impl IntoElement {
     let is_user = message.role == MessageRole::User;
+    let show_thinking = assistant_is_thinking(message);
     let name = match message.role {
         MessageRole::User => catalog.get("message.user"),
         MessageRole::Assistant => catalog.get("message.assistant"),
@@ -2658,6 +2766,28 @@ fn message_column(
 
     for (part_index, part) in message.parts.iter().enumerate() {
         let part_element = match part {
+            MessagePart::Reasoning {
+                id,
+                content,
+                visible,
+            } => {
+                let toggle_id = id.clone();
+                reasoning_block(
+                    id,
+                    content,
+                    *visible,
+                    message.is_streaming,
+                    catalog,
+                    expanded_reasoning,
+                    cx.listener(move |this, _, _, cx| {
+                        if !this.expanded_reasoning.remove(&toggle_id) {
+                            this.expanded_reasoning.insert(toggle_id.clone());
+                        }
+                        cx.notify();
+                    }),
+                )
+                .into_any_element()
+            }
             MessagePart::Text { content } => {
                 if is_user {
                     div()
@@ -2688,6 +2818,10 @@ fn message_column(
             }
         };
         body = body.child(part_element);
+    }
+
+    if show_thinking {
+        body = body.child(thinking_label(catalog, message.id));
     }
 
     div()

@@ -56,13 +56,14 @@ impl DaemonClient {
         )
     }
 
-    pub fn create_project(&self, name: &str) -> Result<Project, String> {
+    pub fn create_project(&self, name: &str, folder_path: Option<String>) -> Result<Project, String> {
         self.post(
             "/v1/projects",
             &CreateProjectRequest {
                 name: name.into(),
                 description: None,
                 color: None,
+                folder_path,
             },
         )
     }
@@ -79,6 +80,30 @@ impl DaemonClient {
             },
             Duration::from_secs(30),
         )
+    }
+
+    pub fn abort_session(&self, session_id: Uuid) -> Result<(), String> {
+        ureq::post(&format!("{}/v1/sessions/{session_id}/abort", self.base))
+            .timeout(Duration::from_secs(5))
+            .call()
+            .map(|_| ())
+            .map_err(|err| err.to_string())
+    }
+
+    pub fn reply_permission(
+        &self,
+        session_id: Uuid,
+        permission_id: &str,
+        allow: bool,
+    ) -> Result<(), String> {
+        ureq::post(&format!(
+            "{}/v1/sessions/{session_id}/permissions/{permission_id}/reply",
+            self.base
+        ))
+        .timeout(Duration::from_secs(5))
+        .send_json(&circulo_protocol::PermissionReplyRequest { allow })
+        .map(|_| ())
+        .map_err(|err| err.to_string())
     }
 
     /// Opens the session's SSE stream. Blocking reads on the returned iterator
@@ -272,6 +297,9 @@ fn format_http_delete_error(err: ureq::Error) -> String {
 /// Dev builds ship `circulo-app` and `circulo-daemon` as sibling binaries; rebuild
 /// the daemon when spawning so new HTTP routes (e.g. session delete) are available.
 fn build_sibling_daemon() -> Result<(), String> {
+    if !cfg!(debug_assertions) {
+        return Ok(());
+    }
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace = manifest_dir
         .parent()

@@ -133,6 +133,8 @@ pub fn apply_protocol_event(messages: &mut Vec<Message>, event: &ProtocolEvent) 
         ProtocolEvent::SessionPartAppended { .. }
         | ProtocolEvent::SessionPartUpdated { .. }
         | ProtocolEvent::SessionToolCallUpdated { .. }
+        | ProtocolEvent::SessionPermissionRequested { .. }
+        | ProtocolEvent::SessionTitleUpdated { .. }
         | ProtocolEvent::ServerConnected { .. } => false,
     }
 }

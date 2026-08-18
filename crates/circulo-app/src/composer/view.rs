@@ -224,6 +224,12 @@ impl Composer {
         }
     }
 
+    fn stop(&mut self, cx: &mut Context<Self>) {
+        if self.generating {
+            cx.emit(ComposerEvent::Stop);
+        }
+    }
+
     fn pick_project(&mut self, project_id: Option<Uuid>, cx: &mut Context<Self>) {
         self.draft_project = project_id;
         self.project_menu_open = false;
@@ -592,7 +598,7 @@ impl Render for Composer {
 
         let send_control = if self.generating {
             div()
-                .id("generating")
+                .id("stop")
                 .flex_none()
                 .w(px(SEND_BUTTON_PX))
                 .h(px(SEND_BUTTON_PX))
@@ -600,9 +606,18 @@ impl Render for Composer {
                 .flex()
                 .items_center()
                 .justify_center()
-                .bg(BG_MAIN)
-                .text_color(TEXT_MUTED)
-                .child(icon(icon_path::ELLIPSIS, px(14.), TEXT_MUTED))
+                .bg(ACCENT)
+                .text_color(TEXT)
+                .cursor_pointer()
+                .hover(|style| style.opacity(0.85))
+                .on_click(cx.listener(|this, _, _, cx| this.stop(cx)))
+                .child(
+                    div()
+                        .w(px(10.))
+                        .h(px(10.))
+                        .rounded(px(2.))
+                        .bg(TEXT),
+                )
         } else {
             div()
                 .id("send")

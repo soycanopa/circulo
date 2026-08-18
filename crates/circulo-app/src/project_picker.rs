@@ -111,6 +111,7 @@ mod tests {
             name: name.into(),
             description: None,
             color: None,
+            folder_path: None,
             status: ProjectStatus::Active,
             created_at: now(),
             updated_at: now(),
