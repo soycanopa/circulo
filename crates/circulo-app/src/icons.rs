@@ -19,16 +19,21 @@ pub mod path {
     pub const MAXIMIZE_2: &str = "icons/maximize-2.svg";
     pub const MINIMIZE_2: &str = "icons/minimize-2.svg";
     pub const BOT: &str = "icons/bot.svg";
+    pub const OPENCODE: &str = "icons/opencode.svg";
     pub const SHIELD: &str = "icons/shield.svg";
     pub const LIST: &str = "icons/list.svg";
     pub const WRENCH: &str = "icons/wrench.svg";
     pub const MESSAGE_CIRCLE: &str = "icons/message-circle.svg";
     pub const LAYERS: &str = "icons/layers.svg";
+    pub const REFRESH_CW: &str = "icons/refresh-cw.svg";
+    pub const SETTINGS: &str = "icons/settings.svg";
 }
 
 pub fn icon(asset_path: &'static str, size: Pixels, color: Rgba) -> impl IntoElement {
     svg()
         .path(asset_path)
-        .size(size)
+        .w(size)
+        .h(size)
+        .flex_none()
         .text_color(color)
 }
