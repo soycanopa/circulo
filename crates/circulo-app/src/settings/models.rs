@@ -249,7 +249,7 @@ fn provider_tag_chip(label: String) -> impl gpui::IntoElement {
         .child(label)
 }
 
-fn toggle_switch(
+pub(crate) fn toggle_switch(
     id: (&'static str, usize),
     enabled: bool,
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
