@@ -5,10 +5,10 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
-use crate::icons::icon;
+use crate::icons::{icon, icon_sized, MODEL_PROVIDER_ICON_HEIGHT_PX, MODEL_PROVIDER_ICON_WIDTH_PX};
 use crate::theme::{
-    ACCENT_SURFACE, BORDER, DANGER, DANGER_SURFACE, BG_MAIN, BG_SIDEBAR, PROVIDER_OPENCODE_LIST_ICON,
-    TEXT, TEXT_MUTED,
+    ACCENT_SURFACE, BORDER, DANGER, DANGER_SURFACE, BG_HOVER, BG_MAIN, BG_SIDEBAR,
+    PROVIDER_OPENCODE_LIST_ICON, TEXT, TEXT_MUTED,
 };
 
 /// `ContextMenuContent` width from the shadcn demo (`w-48`).
@@ -20,8 +20,9 @@ const ITEM_PX: f32 = 6.0;
 const ITEM_PY: f32 = 4.0;
 const ITEM_RADIUS_PX: f32 = 6.0;
 const ICON_SIZE_PX: f32 = 16.0;
-/// OpenCode logo in the model selector list (smaller than default menu icons).
-const MODEL_SELECTOR_ICON_SIZE_PX: f32 = 10.5;
+/// OpenCode logo in the model selector list.
+const MODEL_SELECTOR_ICON_WIDTH_PX: f32 = MODEL_PROVIDER_ICON_WIDTH_PX;
+const MODEL_SELECTOR_ICON_HEIGHT_PX: f32 = MODEL_PROVIDER_ICON_HEIGHT_PX;
 const SEPARATOR_NEGATIVE_MX_PX: f32 = 4.0;
 
 /// `ContextMenuContent` / `ContextMenuSubContent` surface.
@@ -31,11 +32,13 @@ pub fn menu_content() -> gpui::Div {
 
 /// Model selector popover width (wider than default chip menus).
 pub const MODEL_SELECTOR_MENU_WIDTH_PX: f32 = 220.0;
+/// Reasoning-effort sub-popover width.
+pub const MODEL_REASONING_MENU_WIDTH_PX: f32 = 176.0;
 
-const MODEL_MENU_PADDING_PX: f32 = 8.0;
-const MODEL_MENU_ROW_GAP_PX: f32 = 2.0;
-const MODEL_ITEM_PX: f32 = 10.0;
-const MODEL_ITEM_PY: f32 = 7.0;
+const MODEL_MENU_PADDING_PX: f32 = 6.0;
+const MODEL_MENU_ROW_GAP_PX: f32 = 4.0;
+const MODEL_ITEM_PX: f32 = 6.0;
+const MODEL_ITEM_PY: f32 = 4.0;
 const MODEL_ITEM_GAP_PX: f32 = 8.0;
 
 /// Chip dropdown popover: elevated opaque surface, no border.
@@ -62,6 +65,107 @@ pub fn menu_chip_model_selector_popover() -> gpui::Div {
         .text_color(TEXT)
         .shadow_lg()
         .occlude()
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+}
+
+/// Model selector section header: favorites label + settings shortcut.
+pub fn menu_model_selector_header(
+    label: String,
+    on_edit: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .w_full()
+        .px(px(MODEL_ITEM_PX))
+        .py(px(MODEL_ITEM_PY))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_size(px(11.))
+                .line_height(px(14.))
+                .text_color(TEXT_MUTED)
+                .child(label),
+        )
+        .child(
+            div()
+                .id("composer-model-settings")
+                .flex_none()
+                .cursor_pointer()
+                .rounded(px(4.))
+                .hover(|style| style.bg(BG_HOVER))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_click(on_edit)
+                .child(icon("icons/pencil.svg", px(14.), TEXT_MUTED)),
+        )
+}
+
+/// Reasoning-effort sub-popover (176px).
+pub fn menu_chip_reasoning_selector_popover() -> gpui::Div {
+    div()
+        .w(px(MODEL_REASONING_MENU_WIDTH_PX))
+        .min_w(px(MODEL_REASONING_MENU_WIDTH_PX))
+        .flex()
+        .flex_col()
+        .gap(px(MODEL_MENU_ROW_GAP_PX))
+        .p(px(MODEL_MENU_PADDING_PX))
+        .rounded_lg()
+        .bg(BG_MAIN)
+        .text_color(TEXT)
+        .shadow_lg()
+        .occlude()
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+}
+
+/// Reasoning-effort section label inside the sub-popover.
+pub fn menu_model_selector_reasoning_header(label: String) -> impl IntoElement {
+    div()
+        .w_full()
+        .pt(px(4.))
+        .pb(px(6.))
+        .px(px(10.))
+        .text_size(px(11.))
+        .line_height(px(14.))
+        .text_color(TEXT_MUTED)
+        .child(label)
+}
+
+/// Reasoning-effort row with optional trailing check when selected.
+pub fn menu_item_reasoning_selector(
+    id: impl Into<gpui::ElementId>,
+    label: String,
+    selected: bool,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    let mut row = div()
+        .id(id)
+        .flex()
+        .items_center()
+        .justify_between()
+        .px(px(MODEL_ITEM_PX))
+        .py(px(MODEL_ITEM_PY))
+        .rounded(px(ITEM_RADIUS_PX))
+        .text_sm()
+        .line_height(px(16.))
+        .text_color(TEXT)
+        .cursor_default()
+        .when(selected, |el| el.bg(BG_HOVER))
+        .when(!selected, |el| el.hover(|style| style.bg(BG_HOVER)))
+        .on_click(on_click)
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .child(label),
+        );
+
+    if selected {
+        row = row.child(icon("icons/check.svg", px(11.), TEXT_MUTED));
+    }
+
+    row
 }
 
 fn menu_chip_popover_base() -> gpui::Div {
@@ -76,6 +180,7 @@ fn menu_chip_popover_base() -> gpui::Div {
         .text_color(TEXT)
         .shadow_lg()
         .occlude()
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
 }
 
 fn menu_surface_base() -> gpui::Div {
@@ -217,7 +322,7 @@ pub fn menu_item_model_selector(
             if destructive {
                 el.bg(DANGER_SURFACE)
             } else {
-                el.bg(ACCENT_SURFACE)
+                el.bg(BG_HOVER)
             }
         })
         .when(!selected, |el| {
@@ -225,14 +330,19 @@ pub fn menu_item_model_selector(
                 if destructive {
                     style.bg(DANGER_SURFACE)
                 } else {
-                    style.bg(ACCENT_SURFACE)
+                    style.bg(BG_HOVER)
                 }
             })
         })
         .on_click(on_click);
 
     if let Some(asset) = icon_asset {
-        row = row.child(icon(asset, px(MODEL_SELECTOR_ICON_SIZE_PX), PROVIDER_OPENCODE_LIST_ICON));
+        row = row.child(icon_sized(
+            asset,
+            px(MODEL_SELECTOR_ICON_WIDTH_PX),
+            px(MODEL_SELECTOR_ICON_HEIGHT_PX),
+            PROVIDER_OPENCODE_LIST_ICON,
+        ));
     }
 
     row = row.child(
@@ -340,8 +450,8 @@ pub fn menu_item_with_edit_model_selector(
         .text_sm()
         .text_color(TEXT)
         .cursor_default()
-        .when(selected, |el| el.bg(ACCENT_SURFACE))
-        .when(!selected, |el| el.hover(|style| style.bg(ACCENT_SURFACE)));
+        .when(selected || edit_open, |el| el.bg(BG_HOVER))
+        .when(!selected && !edit_open, |el| el.hover(|style| style.bg(BG_HOVER)));
 
     let mut label_hit = div()
         .id(select_id)
@@ -354,7 +464,12 @@ pub fn menu_item_with_edit_model_selector(
         .on_click(on_select);
 
     if let Some(asset) = icon_asset {
-        label_hit = label_hit.child(icon(asset, px(MODEL_SELECTOR_ICON_SIZE_PX), PROVIDER_OPENCODE_LIST_ICON));
+        label_hit = label_hit.child(icon_sized(
+            asset,
+            px(MODEL_SELECTOR_ICON_WIDTH_PX),
+            px(MODEL_SELECTOR_ICON_HEIGHT_PX),
+            PROVIDER_OPENCODE_LIST_ICON,
+        ));
     }
 
     label_hit = label_hit.child(
@@ -377,7 +492,7 @@ pub fn menu_item_with_edit_model_selector(
         .text_xs()
         .text_color(TEXT_MUTED)
         .cursor_pointer()
-        .hover(|style| style.bg(ACCENT_SURFACE))
+        .hover(|style| style.bg(BG_HOVER))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_edit)
         .child(edit_label);

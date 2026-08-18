@@ -2,11 +2,11 @@
 
 use gpui::{
     canvas, deferred, div, point, prelude::FluentBuilder, px, ElementId, InteractiveElement,
-    IntoElement, ParentElement, PathBuilder, Rgba, SharedString, StatefulInteractiveElement,
-    Styled, Window,
+    IntoElement, MouseButton, ParentElement, PathBuilder, Rgba, SharedString,
+    StatefulInteractiveElement, Styled, Window,
 };
 
-use crate::icons::{icon, path as icon_path};
+use crate::icons::{icon, icon_sized, path as icon_path, MODEL_PROVIDER_ICON_HEIGHT_PX, MODEL_PROVIDER_ICON_WIDTH_PX};
 use crate::context_menu::MENU_WIDTH_PX;
 use crate::theme::{ACCENT, ACCENT_SURFACE, PROVIDER_OPENCODE_CHIP_ICON, TEXT_MUTED};
 use crate::ui::reasoning_effort_tag;
@@ -94,7 +94,12 @@ pub fn model_menu_chip(
             el.hover(|style| style.bg(ACCENT_SURFACE)).on_click(on_click)
         })
         .when(disabled, |el| el.opacity(0.7))
-        .child(icon(icon_path, px(CHIP_ICON_PX), PROVIDER_OPENCODE_CHIP_ICON))
+        .child(icon_sized(
+            icon_path,
+            px(MODEL_PROVIDER_ICON_WIDTH_PX),
+            px(MODEL_PROVIDER_ICON_HEIGHT_PX),
+            PROVIDER_OPENCODE_CHIP_ICON,
+        ))
         .child(
             div()
                 .min_w_0()
@@ -115,6 +120,7 @@ pub fn menu_chip_dropdown_above(menu: impl IntoElement) -> impl IntoElement {
         .left(px(0.))
         .bottom(px(MENU_CHIP_HEIGHT_PX + MENU_CHIP_ABOVE_GAP_PX))
         .occlude()
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .child(deferred(menu).with_priority(10))
 }
 
@@ -136,6 +142,7 @@ pub fn menu_chip_subpopover_right_offset(
         .left(px(left_px))
         .top(px(0.))
         .occlude()
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .child(menu)
 }
 

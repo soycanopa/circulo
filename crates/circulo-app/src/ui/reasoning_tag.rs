@@ -1,103 +1,82 @@
 //! Colored reasoning-effort tags for the composer model chip.
 
-use gpui::{div, px, FontWeight, IntoElement, ParentElement, Rgba, Styled};
-
-use crate::theme::{ACCENT, ACCENT_SURFACE, BORDER, DANGER, SUCCESS, TEXT, TEXT_MUTED};
+use gpui::{div, px, FontWeight, ParentElement, Rgba, Styled};
 
 pub fn reasoning_effort_tag(label: impl Into<String>) -> impl gpui::IntoElement {
     let label = label.into();
     let (bg, border, text) = reasoning_effort_colors(&label);
     div()
         .flex_none()
-        .px(px(5.))
-        .py(px(2.))
-        .rounded(px(4.))
+        .px(px(4.))
+        .py(px(1.))
+        .rounded_full()
         .bg(bg)
         .border_1()
         .border_color(border)
-        .text_xs()
+        .text_size(px(11.))
+        .line_height(px(14.))
         .font_weight(FontWeight::MEDIUM)
         .text_color(text)
         .child(label)
 }
 
 pub fn reasoning_effort_colors(variant: &str) -> (Rgba, Rgba, Rgba) {
-    match variant.to_ascii_lowercase() {
-        s if s == "none" || s == "minimal" => (
-            ACCENT_SURFACE,
-            BORDER,
-            TEXT_MUTED,
+    match variant.to_ascii_lowercase().as_str() {
+        "none" | "minimal" => (
+            rgba_hex(0x2B, 0x2B, 0x30),
+            rgba_hex(0x38, 0x38, 0x3D),
+            rgba_hex(0x9E, 0x9E, 0xA6),
         ),
-        s if s == "low" => (
-            Rgba {
-                r: 0.14,
-                g: 0.24,
-                b: 0.18,
-                a: 1.0,
-            },
-            Rgba {
-                r: 0.22,
-                g: 0.42,
-                b: 0.28,
-                a: 1.0,
-            },
-            SUCCESS,
+        "low" => (
+            rgba_hex(0x24, 0x3D, 0x2E),
+            rgba_hex(0x38, 0x6B, 0x47),
+            rgba_hex(0x73, 0xC7, 0x8C),
         ),
-        s if s == "medium" => (
-            Rgba {
-                r: 0.28,
-                g: 0.22,
-                b: 0.10,
-                a: 1.0,
-            },
-            Rgba {
-                r: 0.55,
-                g: 0.40,
-                b: 0.12,
-                a: 1.0,
-            },
-            Rgba {
-                r: 0.92,
-                g: 0.72,
-                b: 0.28,
-                a: 1.0,
-            },
+        "med" | "medium" => (
+            rgba_hex(0x47, 0x38, 0x1A),
+            rgba_hex(0x8C, 0x66, 0x1F),
+            rgba_hex(0xEB, 0xB8, 0x47),
         ),
-        s if s == "high" => (
-            Rgba {
-                r: 0.32,
-                g: 0.18,
-                b: 0.10,
-                a: 1.0,
-            },
-            Rgba {
-                r: 0.62,
-                g: 0.32,
-                b: 0.14,
-                a: 1.0,
-            },
-            Rgba {
-                r: 0.98,
-                g: 0.62,
-                b: 0.28,
-                a: 1.0,
-            },
+        "high" => (
+            rgba_hex(0x52, 0x20, 0x14),
+            rgba_hex(0x9E, 0x52, 0x14),
+            rgba_hex(0xFA, 0x9E, 0x47),
         ),
-        s if s == "xhigh" || s == "max" => (
-            Rgba {
-                r: 0.28,
-                g: 0.14,
-                b: 0.22,
-                a: 1.0,
-            },
-            Rgba {
-                r: 0.45,
-                g: 0.20,
-                b: 0.38,
-                a: 1.0,
-            },
-            DANGER,
+        "max" | "xhigh" => (
+            rgba_hex(0x47, 0x24, 0x38),
+            rgba_hex(0x73, 0x33, 0x66),
+            rgba_hex(0xE6, 0x6B, 0x6B),
         ),
-        _ => (ACCENT_SURFACE, BORDER, ACCENT),
+        _ => (
+            rgba_hex(0x2B, 0x2B, 0x30),
+            rgba_hex(0x38, 0x38, 0x3D),
+            rgba_hex(0x9E, 0x9E, 0xA6),
+        ),
+    }
+}
+
+fn rgba_hex(r: u8, g: u8, b: u8) -> Rgba {
+    Rgba {
+        r: f32::from(r) / 255.0,
+        g: f32::from(g) / 255.0,
+        b: f32::from(b) / 255.0,
+        a: 1.0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reasoning_effort_colors;
+
+    #[test]
+    fn high_tag_matches_design_tokens() {
+        let (bg, border, text) = reasoning_effort_colors("High");
+        assert_eq!(channel(bg.r), 0x52);
+        assert_eq!(channel(border.r), 0x9E);
+        assert_eq!(channel(text.r), 0xFA);
+    }
+
+    fn channel(value: f32) -> u8 {
+        (value * 255.0).round() as u8
     }
 }
