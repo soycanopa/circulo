@@ -16,6 +16,7 @@ pub enum ComposerEvent {
     ProjectPicked(Uuid),
     ProjectCleared,
     OpenProject,
+    OpenModelSettings,
     WorkModeChanged(WorkMode),
     ModelChanged(String),
     ModelVariantChanged(String),
