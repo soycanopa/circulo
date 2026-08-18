@@ -4,7 +4,7 @@ Review order follows proposal items 1–10. Each slice: investigate → implemen
 
 ## 0. Prerequisites
 
-- [ ] 0.1 Refresh OpenAPI from live `GET /doc` (note version); update fixtures if event shapes changed
+- [x] 0.1 Refresh OpenAPI from live `GET /doc` (note version); update fixtures if event shapes changed — verified 2026-08-18 against live server v1.0.0 on :7433; key endpoints unchanged
 - [x] 0.2 Resolve open questions in `design.md` (auto-title rule, item 8 scope, attach auth) with user
   - Auto-title: **yes**, default titles only
   - Item 8: **deferred** to separate change
@@ -109,6 +109,6 @@ Deferred. No tasks in this branch. Circulo keeps daemon-owned spawn on 7433.
 
 ## 12. Verification
 
-- [ ] 12.1 Full workspace `cargo test` + `scripts/check-crate-boundaries.py`
+- [x] 12.1 Full workspace `cargo test` + `scripts/check-crate-boundaries.py`
 - [ ] 12.2 Manual pass per `docs/FLOWS.md` for send, stop, supervised tool, delete session, project folder
-- [ ] 12.3 Update `EVENTS.md` mapping table for new events (permission, title, reasoning opaque)
+- [x] 12.3 Update `EVENTS.md` mapping table for new events (permission, title, reasoning opaque)

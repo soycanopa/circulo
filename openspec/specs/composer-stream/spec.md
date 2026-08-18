@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Lets the user send a message in a session, assign a project only at chat start, and see the resulting turn as a simple message list.
+Lets the user send a message in a session, assign a project only at chat start, see replies stream live, and stop in-flight generations.
 
 ## Requirements
 
@@ -49,3 +49,137 @@ While a send is in flight the composer MUST show a generating state and MUST NOT
 - **WHEN** the composer is shown
 - **THEN** it indicates generating
 - **AND** another send is rejected
+
+### Requirement: Replies stream live into the open transcript
+
+While a turn is generating in the open session, the app MUST apply the daemon's session events to the transcript as they arrive, so assistant text, tool calls, and task lists appear incrementally without manual refresh. The transcript MUST equal the daemon's persisted state once the turn completes or fails.
+
+#### Scenario: Text arrives incrementally
+
+- **GIVEN** an open session with a generating turn
+- **WHEN** the daemon emits `session.message.updated` events for the assistant message
+- **THEN** the assistant content appears in the transcript progressively
+- **AND** no manual refresh is needed
+
+#### Scenario: Optimistic send
+
+- **WHEN** the user sends a message
+- **THEN** the draft clears immediately
+- **AND** the user message appears in the transcript via `session.message.created`
+
+#### Scenario: Failed turn is visible without fake success
+
+- **GIVEN** an open session with a generating turn
+- **WHEN** `session.message.failed` arrives
+- **THEN** the transcript stops growing and reflects the failed state
+- **AND** the composer stops showing the generating state
+
+#### Scenario: Stream drop recovers with real data
+
+- **GIVEN** an open session with an active event stream
+- **WHEN** the stream drops
+- **THEN** the app refetches the transcript and resubscribes
+- **AND** no content is invented while disconnected
+
+### Requirement: Transcript follows new content only when anchored
+
+The transcript MUST keep following new content while the user is anchored at the bottom. When the user has scrolled up, the view MUST NOT jump, and a jump-to-latest affordance MUST be available while new content streams.
+
+#### Scenario: Anchored at the bottom
+
+- **GIVEN** the user is at the bottom of the transcript
+- **WHEN** new content streams in
+- **THEN** the view stays at the bottom
+
+#### Scenario: Scrolled up during generation
+
+- **GIVEN** the user has scrolled up
+- **WHEN** new content streams in
+- **THEN** the view does not move
+- **AND** a jump-to-latest affordance is visible
+
+### Requirement: Composer is a native multiline text field
+
+The composer MUST use a dedicated GPUI input entity with visible focus, caret, and macOS IME support. Printable text MUST NOT rely on manual `KeyDown` character injection.
+
+#### Scenario: Type with session selected
+
+- **GIVEN** a selected session
+- **WHEN** the user clicks the composer and types
+- **THEN** characters appear in the field immediately
+
+### Requirement: Enter and Shift+Enter use actions
+
+Enter MUST submit when the draft is sendable. Shift+Enter MUST insert a newline.
+
+#### Scenario: Newline
+
+- **GIVEN** a selected session and non-empty draft
+- **WHEN** the user presses Shift+Enter
+- **THEN** a newline is inserted
+- **AND** the message is not sent
+
+### Requirement: Draft restores per session
+
+When switching sessions, the composer MUST save the current draft and restore the draft for the selected session.
+
+#### Scenario: Switch away and back
+
+- **GIVEN** session A has draft "hello" and session B is selected with draft "world"
+- **WHEN** the user selects session A again
+- **THEN** the composer shows "hello"
+
+### Requirement: Send error keeps composer text
+
+If POST fails, the composer MUST still contain the message the user tried to send.
+
+#### Scenario: POST error
+
+- **GIVEN** a sendable draft
+- **WHEN** POST returns an error
+- **THEN** the draft text is restored in the composer
+
+### Requirement: Project picker PATCHes on select
+
+Before first send, choosing a project in the picker MUST PATCH the session project immediately.
+
+#### Scenario: Pick project
+
+- **GIVEN** an unlocked picker and a selected session
+- **WHEN** the user picks a project
+- **THEN** the session project is updated on the daemon
+
+### Requirement: Composer grows with wrapped text and scrolls when tall
+
+Long lines MUST wrap inside the input width. The input MUST grow vertically with content up to five visual lines, then scroll internally. When content exceeds five visual lines, an expand control MUST allow raising the visible cap to about ten lines.
+
+#### Scenario: Long line wraps
+
+- **GIVEN** a selected session
+- **WHEN** the user types a long line without newlines
+- **THEN** the text wraps inside the input
+- **AND** the input height grows with wrapped lines up to five visible lines
+
+#### Scenario: Expand tall drafts
+
+- **GIVEN** a draft with more than five visual lines
+- **WHEN** the user clicks the expand control
+- **THEN** the input shows up to about ten visual lines before scrolling again
+
+### Requirement: User can stop an in-flight generation
+
+While a turn is generating, the composer MUST offer a stop control that requests abort through the daemon. After stop, the composer MUST return to an editable state and the transcript MUST reflect the aborted turn without inventing a successful reply.
+
+#### Scenario: Stop during a long reply
+
+- **GIVEN** an open session with a generating assistant turn
+- **WHEN** the user activates stop
+- **THEN** the daemon aborts the OpenCode turn
+- **AND** the composer is no longer read-only
+- **AND** human copy explains that the reply was stopped
+
+#### Scenario: Stop is unavailable when idle
+
+- **GIVEN** no turn is generating
+- **WHEN** the composer renders
+- **THEN** stop is not shown (send remains the primary action)

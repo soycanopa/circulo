@@ -2,29 +2,46 @@
 
 ## Purpose
 
-Lets the user browse and create sessions and projects in the sidebar, switch Sessions/Groups views, and recover when the local daemon is not running.
+Lets the user browse and create sessions in the sidebar with Today/Earlier temporal sections, and recover when the local daemon is not running.
 
 ## Requirements
 
-### Requirement: Sessions view lists name, time, and project
+### Requirement: Today section lists sessions with activity today
 
-In Sessions view the sidebar MUST list visible sessions. Each item MUST show the session title, a relative active time, and either the project name or the localized “No project” string.
+The sidebar MUST show a **Today** section listing sessions whose activity timestamp (`last_message_at`, or `created_at` when no messages) falls on the current local calendar day. Each row MUST show the session title, folder name or localized **Without Folder**, and relative duration on the right.
 
-#### Scenario: Unassigned session row
+#### Scenario: Unassigned session in Today
 
-- **GIVEN** a visible session with no project
-- **WHEN** the Sessions view renders that row
-- **THEN** the project label is the locale value for `session.no_project`
+- **GIVEN** a session with no project and activity today
+- **WHEN** the Today section renders that row
+- **THEN** the folder label is the locale value for `session.without_folder`
+- **AND** relative duration appears on the right of the metadata row
 
-### Requirement: Groups view nests sessions under projects
+#### Scenario: Assigned session in Today
 
-Groups view MUST list active projects and the sessions that belong to them. Sessions with no project MUST NOT appear. If there are no active projects, the view MUST show a New project action.
+- **GIVEN** a session with a project and activity today
+- **WHEN** the Today section renders that row
+- **THEN** the folder label is the project name
 
-#### Scenario: Empty groups
+### Requirement: Earlier section lists older sessions
 
-- **GIVEN** no active projects
-- **WHEN** Groups view is shown
-- **THEN** a New project control is available
+The sidebar MUST show an **Earlier** section below Today for sessions whose activity timestamp is before the current local calendar day. Rows use the same card layout as Today.
+
+#### Scenario: Session from yesterday
+
+- **GIVEN** a session whose activity was yesterday (local)
+- **WHEN** the sidebar renders
+- **THEN** the session appears under Earlier, not Today
+
+### Requirement: Search filters both sections
+
+Search MUST filter session titles in both Today and Earlier. Empty sections after filtering MUST be omitted.
+
+#### Scenario: Search matches only Earlier
+
+- **GIVEN** a search query matching only an Earlier session
+- **WHEN** the sidebar renders
+- **THEN** only the Earlier section is shown with matching rows
 
 ### Requirement: New session is unassigned and selected
 
@@ -37,16 +54,6 @@ Creating a session MUST call the daemon without a project id and select the new 
 - **THEN** a session is created with no project
 - **AND** it becomes the selected session
 
-### Requirement: Sidebar view is remembered with Sessions fallback
-
-The last Sessions/Groups choice MUST be stored on the daemon. If it cannot be read, the UI MUST show Sessions.
-
-#### Scenario: Corrupt or missing preference
-
-- **GIVEN** no usable stored view
-- **WHEN** the sidebar loads
-- **THEN** the active view is Sessions
-
 ### Requirement: Daemon down is honest
 
 If the daemon cannot be reached after a single start attempt, the sidebar MUST show a localized error, not a crash or an empty list that looks like “no work”.
@@ -56,3 +63,13 @@ If the daemon cannot be reached after a single start attempt, the sidebar MUST s
 - **GIVEN** the daemon is not accepting connections
 - **WHEN** the sidebar tries to load
 - **THEN** the user sees the `sidebar.daemon_down` string
+
+### Requirement: Session titles reflect OpenCode auto-titles when synced
+
+When the daemon persists an auto-title from OpenCode for a session, the sidebar MUST show that title on the session card without requiring manual rename.
+
+#### Scenario: Title updates after first message
+
+- **GIVEN** a new session whose title was default
+- **WHEN** OpenCode assigns a title and the daemon persists it
+- **THEN** the sidebar card shows the new title on the next refresh or stream update
