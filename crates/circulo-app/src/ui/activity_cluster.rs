@@ -310,7 +310,13 @@ fn render_activity_items(
         matches!(parts[*index], MessagePart::Reasoning { .. }).then_some(*index)
     });
 
-    let mut col = div().flex().flex_col().gap(px(8.)).w_full().min_w_0();
+    let mut col = div()
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .w_full()
+        .min_w_0()
+        .overflow_hidden();
     for part_index in part_indices {
         let element = match &parts[*part_index] {
             MessagePart::Reasoning {
@@ -358,7 +364,13 @@ fn render_activity_items(
                 unsupported(catalog, message_index, *part_index)
             }
         };
-        col = col.child(element);
+        col = col.child(
+            div()
+                .w_full()
+                .min_w_0()
+                .overflow_hidden()
+                .child(element),
+        );
     }
     col
 }

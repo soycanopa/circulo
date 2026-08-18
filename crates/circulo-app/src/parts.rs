@@ -356,6 +356,8 @@ pub fn tool_card(
                 .child(activity_detail_section(
                     catalog.get("tool.input"),
                     div()
+                        .w_full()
+                        .min_w_0()
                         .text_xs()
                         .font_family("Menlo")
                         .text_color(TEXT_MUTED)
@@ -373,10 +375,15 @@ pub fn tool_card(
 
 fn tool_output(output: Option<&ToolOutput>) -> impl IntoElement {
     match output {
-        Some(ToolOutput::Text { content }) => {
-            div().text_sm().child(content.clone()).into_any_element()
-        }
+        Some(ToolOutput::Text { content }) => div()
+            .w_full()
+            .min_w_0()
+            .text_sm()
+            .child(content.clone())
+            .into_any_element(),
         Some(ToolOutput::Json { data }) => div()
+            .w_full()
+            .min_w_0()
             .text_xs()
             .font_family("Menlo")
             .child(data.to_string())
@@ -429,6 +436,8 @@ fn tool_output(output: Option<&ToolOutput>) -> impl IntoElement {
 
 pub fn task_list(tasks: &[Task], catalog: &Catalog) -> impl IntoElement {
     let mut col = div()
+        .w_full()
+        .min_w_0()
         .flex()
         .flex_col()
         .gap_1()
@@ -446,10 +455,26 @@ pub fn task_list(tasks: &[Task], catalog: &Catalog) -> impl IntoElement {
         };
         col = col.child(
             div()
+                .w_full()
+                .min_w_0()
                 .flex()
-                .justify_between()
-                .child(div().text_sm().child(task.title.clone()))
-                .child(div().text_xs().text_color(color).child(status)),
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_sm()
+                        .child(task.title.clone()),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .text_xs()
+                        .text_color(color)
+                        .child(status),
+                ),
         );
     }
     col

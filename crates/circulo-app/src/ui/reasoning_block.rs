@@ -58,6 +58,8 @@ pub fn reasoning_block(
                 .child(catalog.get("messages.reasoning_unavailable").to_string())
         } else {
             div()
+                .w_full()
+                .min_w_0()
                 .text_color(TEXT_MUTED)
                 .child(render_text(content))
         };

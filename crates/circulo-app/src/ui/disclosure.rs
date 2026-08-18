@@ -63,6 +63,7 @@ pub fn disclosure_rail(content: impl IntoElement) -> impl IntoElement {
     div()
         .w_full()
         .min_w_0()
+        .overflow_hidden()
         .ml(px(6.))
         .pl(px(12.))
         .pb(px(2.))
@@ -134,24 +135,35 @@ pub fn activity_card_header(
                 .on_click(on_click)
         })
         .child(icon(icon_path, px(12.), TEXT_TERTIARY))
-        .child(
-            div()
-                .flex_none()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(TEXT_MUTED)
-                .child(title),
-        )
-        .when(has_preview, |row| {
-            row.child(
+        .child({
+            let mut middle = div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .items_center()
+                .gap(px(4.));
+            middle = middle.child(
                 div()
-                    .flex_1()
                     .min_w_0()
+                    .when(has_preview, |el| el.flex_none())
+                    .when(!has_preview, |el| el.flex_1())
                     .truncate()
+                    .font_weight(FontWeight::SEMIBOLD)
                     .text_color(TEXT_MUTED)
-                    .child(preview.unwrap_or_default()),
-            )
+                    .child(title),
+            );
+            if has_preview {
+                middle = middle.child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_color(TEXT_MUTED)
+                        .child(preview.unwrap_or_default()),
+                );
+            }
+            middle
         })
-        .when(!has_preview, |row| row.child(div().flex_1()))
         .when_some(trailing, |row, trailing| row.child(trailing))
         .when(expandable, |row| {
             row.child(icon(
@@ -174,6 +186,7 @@ pub fn activity_card_body(content: impl IntoElement) -> impl IntoElement {
                 .w_full()
                 .min_w_0()
                 .max_h(px(400.))
+                .overflow_x_scroll()
                 .overflow_y_scroll()
                 .child(content),
         )
@@ -184,6 +197,8 @@ pub fn activity_detail_section(
     content: impl IntoElement,
 ) -> impl IntoElement {
     div()
+        .w_full()
+        .min_w_0()
         .flex()
         .flex_col()
         .gap(px(4.))
@@ -194,5 +209,11 @@ pub fn activity_detail_section(
                 .text_color(TEXT_TERTIARY)
                 .child(label.into()),
         )
-        .child(content)
+        .child(
+            div()
+                .w_full()
+                .min_w_0()
+                .overflow_hidden()
+                .child(content),
+        )
 }
