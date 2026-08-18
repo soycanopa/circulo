@@ -131,6 +131,13 @@ pub enum ProtocolEvent {
         permission: String,
         summary: String,
     },
+    #[serde(rename = "session.question.requested")]
+    SessionQuestionRequested {
+        api_version: u32,
+        session_id: Uuid,
+        request_id: String,
+        questions: Vec<UserQuestionBody>,
+    },
     #[serde(rename = "session.title.updated")]
     SessionTitleUpdated {
         api_version: u32,
@@ -157,6 +164,7 @@ impl ProtocolEvent {
             | Self::SessionMessageCompleted { session_id, .. }
             | Self::SessionMessageFailed { session_id, .. }
             | Self::SessionPermissionRequested { session_id, .. }
+            | Self::SessionQuestionRequested { session_id, .. }
             | Self::SessionTitleUpdated { session_id, .. } => Some(*session_id),
         }
     }
@@ -217,8 +225,37 @@ pub struct CreateMessageRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuestionOptionBody {
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UserQuestionBody {
+    pub id: String,
+    pub header: String,
+    pub question: String,
+    #[serde(default)]
+    pub options: Vec<QuestionOptionBody>,
+    #[serde(default)]
+    pub multi_select: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuestionAnswerBody {
+    pub question_id: String,
+    pub answers: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PermissionReplyRequest {
     pub allow: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuestionReplyRequest {
+    pub answers: Vec<QuestionAnswerBody>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
