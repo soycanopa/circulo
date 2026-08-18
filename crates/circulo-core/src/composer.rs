@@ -24,6 +24,15 @@ pub enum ComposerInteractionMode {
 impl ComposerInteractionMode {
     pub const ALL: [Self; 3] = [Self::Plan, Self::Build, Self::Ask];
 
+    /// Next mode in toolbar cycle order: Plan → Build → Ask → Plan.
+    pub fn next(self) -> Self {
+        match self {
+            Self::Plan => Self::Build,
+            Self::Build => Self::Ask,
+            Self::Ask => Self::Plan,
+        }
+    }
+
     pub fn agent_name(self) -> &'static str {
         match self {
             Self::Plan => "plan",
@@ -104,4 +113,16 @@ pub fn model_provider_tag(provider_id: &str, provider_name: &str) -> String {
 pub struct UserPreferences {
     #[serde(default)]
     pub enabled_model_ids: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ComposerInteractionMode;
+
+    #[test]
+    fn interaction_mode_cycles_plan_build_ask() {
+        assert_eq!(ComposerInteractionMode::Plan.next(), ComposerInteractionMode::Build);
+        assert_eq!(ComposerInteractionMode::Build.next(), ComposerInteractionMode::Ask);
+        assert_eq!(ComposerInteractionMode::Ask.next(), ComposerInteractionMode::Plan);
+    }
 }
