@@ -32,10 +32,22 @@ pub struct Message {
     pub is_streaming: bool,
 }
 
+const fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MessagePart {
     Text { content: String },
+    /// Provider-side chain-of-thought; kept separate from the visible reply.
+    Reasoning {
+        id: String,
+        content: String,
+        /// False when the provider finished the part with no readable text.
+        #[serde(default = "default_true")]
+        visible: bool,
+    },
     ToolCall { tool_call: ToolCall },
     TaskList { tasks: Vec<Task> },
     Question { question: Question },

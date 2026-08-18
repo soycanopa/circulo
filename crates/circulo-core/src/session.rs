@@ -69,3 +69,22 @@ impl Session {
         self.updated_at = at;
     }
 }
+
+/// Title assigned when a session is created without an explicit name.
+pub const DEFAULT_SESSION_TITLE: &str = "New session";
+
+pub fn is_default_session_title(title: &str) -> bool {
+    title.trim() == DEFAULT_SESSION_TITLE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_default_session_title, DEFAULT_SESSION_TITLE};
+
+    #[test]
+    fn default_session_title_matches_new_session_only() {
+        assert!(is_default_session_title(DEFAULT_SESSION_TITLE));
+        assert!(is_default_session_title(" New session "));
+        assert!(!is_default_session_title("Launch checklist"));
+    }
+}
