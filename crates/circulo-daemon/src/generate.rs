@@ -64,6 +64,7 @@ pub fn run_turn(
             user_text: user_text.to_owned(),
             agent_session_id,
             composer_model_id: session.composer_model_id.clone(),
+            composer_model_variant: session.composer_model_variant.clone(),
             composer_permission_mode: session.composer_permission_mode,
             composer_interaction_mode: session
                 .composer_interaction_mode
@@ -244,6 +245,7 @@ mod tests {
             last_message_at: None,
             first_send_at: None,
             composer_model_id: None,
+            composer_model_variant: None,
             composer_permission_mode: None,
             composer_interaction_mode: None,
         };

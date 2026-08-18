@@ -2,13 +2,15 @@ use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::model_catalog_cache::{DEFAULT_MODEL_CATALOG_TTL, ModelCatalogCache};
+
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use circulo_adapter::{AdapterHealth, AgentAdapter, AgentSessionSettings};
+use circulo_adapter::{AdapterError, AdapterHealth, AgentAdapter, AgentSessionSettings, ErrorReason};
 use circulo_core::{
     AgentType, ModelCatalogEntry, OffsetDateTime, Project, ProjectStatus, Session, SessionStatus,
     Uuid,
@@ -31,6 +33,7 @@ pub struct AppState {
     pub store: Arc<Mutex<Store>>,
     pub adapter: Arc<dyn AgentAdapter>,
     pub events: broadcast::Sender<ProtocolEvent>,
+    model_catalog_cache: Arc<Mutex<ModelCatalogCache>>,
 }
 
 impl AppState {
@@ -40,6 +43,9 @@ impl AppState {
             store: Arc::new(Mutex::new(store)),
             adapter,
             events,
+            model_catalog_cache: Arc::new(Mutex::new(
+                ModelCatalogCache::new(DEFAULT_MODEL_CATALOG_TTL),
+            )),
         }
     }
 
@@ -269,6 +275,7 @@ async fn create_session(
         last_message_at: None,
         first_send_at: None,
         composer_model_id: None,
+        composer_model_variant: None,
         composer_permission_mode: None,
         composer_interaction_mode: None,
     };
@@ -305,6 +312,9 @@ async fn patch_session(
         }
         if let Some(model_id) = body.composer_model_id {
             session.composer_model_id = Some(model_id);
+        }
+        if let Some(variant) = body.composer_model_variant {
+            session.composer_model_variant = Some(variant);
         }
         if let Some(mode) = body.composer_permission_mode {
             session.composer_permission_mode = Some(mode);
@@ -430,7 +440,18 @@ async fn get_preferences(State(state): State<AppState>) -> Result<Json<Preferenc
 
 async fn list_models(State(state): State<AppState>) -> Result<Json<Vec<ModelCatalogEntry>>, HttpError> {
     let adapter = Arc::clone(&state.adapter);
-    let models = tokio::task::spawn_blocking(move || adapter.list_models())
+    let cache = Arc::clone(&state.model_catalog_cache);
+    let models = tokio::task::spawn_blocking(move || {
+        let mut cache = cache
+            .lock()
+            .map_err(|_| {
+                AdapterError::failed(
+                    ErrorReason::Internal,
+                    "Model catalog cache lock poisoned.",
+                )
+            })?;
+        cache.get_or_load(adapter.as_ref())
+    })
         .await
         .map_err(|_| HttpError::from(ApiError::internal()))?
         .map_err(|err| {
