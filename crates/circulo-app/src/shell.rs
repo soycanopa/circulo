@@ -9,10 +9,10 @@ use circulo_core::{
 use circulo_i18n::Catalog;
 use circulo_protocol::{PreferencesBody, ProtocolEvent};
 use gpui::{
-    div, linear_color_stop, linear_gradient, prelude::FluentBuilder, px, AppContext, Context,
-    CursorStyle, DragMoveEvent, Entity, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, ParentElement, Render, ScrollHandle, StatefulInteractiveElement,
-    Styled, Subscription, Window,
+    deferred, div, linear_color_stop, linear_gradient, prelude::FluentBuilder, px, AppContext,
+    Context, CursorStyle, DragMoveEvent, Entity, FontWeight, InteractiveElement, IntoElement,
+    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, ScrollHandle,
+    StatefulInteractiveElement, Styled, Subscription, Window,
 };
 
 use crate::command_palette::{palette_catalog, PaletteItemKind, OpenPalette};
@@ -34,42 +34,61 @@ use crate::ui::{
     question_card, thinking_label, PendingPermission, PendingQuestion, MessageSegment,
 };
 use crate::session_overlay::{session_overlay, SessionOverlay};
-use crate::settings::{models_settings_panel, SettingsSection};
+use crate::settings::{
+    active_projects_panel, archived_projects_panel, general_settings_panel, models_settings_panel,
+    SettingsSection,
+};
 use crate::stream::{
     apply_protocol_event, resubscribe_delay, should_apply_post_transcript,
     should_apply_refresh_transcript, should_unlock_composer, stream_attempts_after_event,
 };
 use crate::ui::{TextInput, TextInputEvent};
 use crate::theme::{
-    sidebar_width_px, ACCENT, ACCENT_SURFACE, BG_APP, BG_MAIN, BG_SIDEBAR, BORDER,
+    sidebar_width_px, ACCENT, ACCENT_SURFACE, BG_APP, BG_HOVER, BG_MAIN, BG_SIDEBAR, BORDER,
+    BORDER_SUBTLE,
     COMPOSER_BOTTOM_PADDING_PX, MESSAGE_AVATAR_PX, APP_BAR_HEIGHT_PX,
     MAIN_HEADER_TITLE_INSET_PX, MAIN_HEADER_TITLE_LEFT_PX, MAIN_HEADER_TITLE_TEXT_PX,
     SIDEBAR_EXPANDED_PX, SIDEBAR_MAX_PX, SIDEBAR_MIN_PX, SIDEBAR_RESIZE_HANDLE_CENTER,
     SIDEBAR_RESIZE_HANDLE_CENTER_ACTIVE, SIDEBAR_RESIZE_HANDLE_HIT_PX,
     SIDEBAR_RESIZE_HANDLE_VISUAL_PX, SIDEBAR_TOGGLE_LEFT_PX, SIDEBAR_TOGGLE_SIZE_PX,
-    SIDEBAR_TOGGLE_TOP_PX, TEXT, TEXT_MUTED,
+    SIDEBAR_TOGGLE_TOP_PX,
+    TEXT, TEXT_MUTED, TEXT_TERTIARY,
 };
 use crate::command_palette::PaletteItem;
 use crate::timefmt::{format_relative, local_offset_or_utc};
 
 /// How often the drain loop applies buffered stream events; doubles as render
 /// batching for incoming deltas.
-const DRAIN_INTERVAL: Duration = Duration::from_millis(50);
+const DRAIN_INTERVAL: Duration = Duration::from_millis(32);
 /// Distance from the bottom (px) within which the transcript keeps following
 /// new content.
 const ANCHOR_THRESHOLD: f32 = 80.0;
-/// Meta line on session cards (folder + duration).
-const SESSION_META_TEXT_PX: f32 = 10.5;
-/// Minimum visible session title characters before ellipsis in the sidebar.
-const SESSION_TITLE_MIN_VISIBLE_CHARS: usize = 24;
-/// Approximate `text_sm` character width for sidebar session titles.
-const SESSION_TITLE_CHAR_WIDTH_PX: f32 = 7.25;
-const SESSION_TITLE_MIN_WIDTH_PX: f32 =
-    SESSION_TITLE_MIN_VISIBLE_CHARS as f32 * SESSION_TITLE_CHAR_WIDTH_PX;
+/// Gap between the jump-to-latest control and the composer.
+const JUMP_TO_LATEST_ABOVE_COMPOSER_PX: f32 = 12.0;
+/// Session title (`--text-base` in Paper).
+const SESSION_TITLE_TEXT_PX: f32 = 13.0;
+const SESSION_TITLE_LINE_HEIGHT_PX: f32 = 18.0;
+/// Project label on the meta row (`--text-sm`).
+const SESSION_META_PROJECT_TEXT_PX: f32 = 12.0;
+/// Relative time on the meta row (`--text-xs`).
+const SESSION_META_TIME_TEXT_PX: f32 = 11.0;
+const SESSION_META_TIME_LINE_HEIGHT_PX: f32 = 14.0;
+const SESSION_META_ICON_PX: f32 = 12.0;
+const SESSION_ACTIVITY_SPINNER: gpui::Rgba = gpui::Rgba {
+    r: 0.847,
+    g: 0.847,
+    b: 0.847,
+    a: 1.0,
+};
 /// Horizontal padding on the sidebar session scroll area (`px_3`).
 const SIDEBAR_SESSION_SCROLL_PADDING_X_PX: f32 = 24.0;
 /// Horizontal padding on each session row (`px_2`).
 const SESSION_ROW_PADDING_X_PX: f32 = 16.0;
+/// Approximate character width for session titles at 13px.
+const SESSION_TITLE_CHAR_WIDTH_PX: f32 = 7.25;
+/// Show `...` when the title exceeds this many characters.
+const SESSION_TITLE_ELLIPSIS_AT_CHARS: usize = 40;
+const SESSION_TITLE_ELLIPSIS: &str = "...";
 const PALETTE_BACKDROP: gpui::Rgba = gpui::Rgba {
     r: 0.0,
     g: 0.0,
@@ -115,6 +134,10 @@ pub struct AppShell {
     enabled_model_ids: Vec<String>,
     settings_open: bool,
     pub(crate) settings_section: SettingsSection,
+    settings_health: Option<circulo_protocol::HealthResponse>,
+    settings_health_error: Option<String>,
+    archived_projects: Vec<Project>,
+    pending_delete_project: Option<Uuid>,
     pub(crate) settings_models_query: String,
     pub(crate) settings_models_expanded: bool,
     pub(crate) settings_models_focus: gpui::FocusHandle,
@@ -126,6 +149,7 @@ pub struct AppShell {
     loaded: bool,
     scroll: ScrollHandle,
     sidebar_scroll: ScrollHandle,
+    jump_to_latest_visible: bool,
     palette_focus: gpui::FocusHandle,
     project_picker_focus: gpui::FocusHandle,
     session_overlay: Option<SessionOverlay>,
@@ -200,7 +224,11 @@ impl AppShell {
             composer_models: Vec::new(),
             enabled_model_ids: Vec::new(),
             settings_open: false,
-            settings_section: SettingsSection::Models,
+            settings_section: SettingsSection::General,
+            settings_health: None,
+            settings_health_error: None,
+            archived_projects: Vec::new(),
+            pending_delete_project: None,
             settings_models_query: String::new(),
             settings_models_expanded: false,
             settings_models_focus: cx.focus_handle(),
@@ -212,6 +240,7 @@ impl AppShell {
             loaded: false,
             scroll: ScrollHandle::new(),
             sidebar_scroll: ScrollHandle::new(),
+            jump_to_latest_visible: false,
             palette_focus: cx.focus_handle(),
             project_picker_focus: cx.focus_handle(),
             session_overlay: None,
@@ -237,6 +266,28 @@ impl AppShell {
     fn end_sidebar_resize(&mut self) {
         self.sidebar_resize_origin = None;
         self.sidebar_resize_hovered = false;
+    }
+
+    fn sync_transcript_scroll_state(&mut self, cx: &mut Context<Self>) {
+        let visible = should_show_jump_to_latest(
+            self.selected.is_some(),
+            self.messages.len(),
+            f32::from(self.scroll.max_offset().height),
+            f32::from(self.scroll.offset().y),
+            ANCHOR_THRESHOLD,
+        );
+        if visible != self.jump_to_latest_visible {
+            self.jump_to_latest_visible = visible;
+            cx.notify();
+        }
+    }
+
+    fn scroll_transcript_to_bottom(&mut self, cx: &mut Context<Self>) {
+        self.scroll.scroll_to_bottom();
+        if self.jump_to_latest_visible {
+            self.jump_to_latest_visible = false;
+            cx.notify();
+        }
     }
 
     fn apply_session_composer_state(&mut self) {
@@ -369,12 +420,24 @@ impl AppShell {
     }
 
     pub(crate) fn open_settings(&mut self, cx: &mut Context<Self>) {
+        self.open_settings_section(SettingsSection::General, cx);
+    }
+
+    pub(crate) fn open_settings_section(
+        &mut self,
+        section: SettingsSection,
+        cx: &mut Context<Self>,
+    ) {
         self.settings_open = true;
-        self.settings_section = SettingsSection::Models;
+        self.settings_section = section;
         self.settings_models_query.clear();
         self.settings_models_expanded = false;
+        self.pending_delete_project = None;
         self.close_palette(cx);
         self.close_project_picker(cx);
+        self.close_composer_popovers(cx);
+        self.refresh_settings_health(cx);
+        self.reload_archived_projects(cx);
         cx.notify();
     }
 
@@ -382,7 +445,140 @@ impl AppShell {
         self.settings_open = false;
         self.settings_models_expanded = false;
         self.settings_models_query.clear();
+        self.pending_delete_project = None;
         cx.notify();
+    }
+
+    pub(crate) fn refresh_settings_health(&mut self, cx: &mut Context<Self>) {
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx.background_executor().spawn(async move { client.health() }).await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(health) => {
+                        this.settings_health = Some(health);
+                        this.settings_health_error = None;
+                    }
+                    Err(err) => {
+                        this.settings_health = None;
+                        this.settings_health_error = Some(err);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn reload_archived_projects(&mut self, cx: &mut Context<Self>) {
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { client.list_archived_projects() })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if let Ok(projects) = result {
+                    this.archived_projects = projects;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn archive_project(&mut self, project_id: Uuid, cx: &mut Context<Self>) {
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { client.archive_project(project_id) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if let Err(err) = result {
+                    this.error = Some(err);
+                } else {
+                    this.pending_delete_project = None;
+                    this.refresh();
+                    this.reconcile_selection_after_refresh(cx);
+                    this.reload_archived_projects(cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn restore_project(&mut self, project_id: Uuid, cx: &mut Context<Self>) {
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { client.restore_project(project_id) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if let Err(err) = result {
+                    this.error = Some(err);
+                } else {
+                    this.refresh();
+                    this.reconcile_selection_after_refresh(cx);
+                    this.reload_archived_projects(cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn request_delete_project(&mut self, project_id: Uuid, cx: &mut Context<Self>) {
+        self.pending_delete_project = Some(project_id);
+        cx.notify();
+    }
+
+    pub(crate) fn cancel_delete_project(&mut self, cx: &mut Context<Self>) {
+        self.pending_delete_project = None;
+        cx.notify();
+    }
+
+    pub(crate) fn confirm_delete_project(&mut self, project_id: Uuid, cx: &mut Context<Self>) {
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { client.delete_project(project_id) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if let Err(err) = result {
+                    this.error = Some(err);
+                } else {
+                    this.pending_delete_project = None;
+                    this.refresh();
+                    this.reconcile_selection_after_refresh(cx);
+                    this.reload_archived_projects(cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn clear_selection(&mut self, cx: &mut Context<Self>) {
+        self.selected = None;
+        self.messages.clear();
+        self.jump_to_latest_visible = false;
+        self.stream_session = None;
+        self.stream_gen = self.stream_gen.wrapping_add(1);
+        self.clear_generating(cx);
+    }
+
+    fn reconcile_selection_after_refresh(&mut self, cx: &mut Context<Self>) {
+        let Some(selected) = self.selected else {
+            return;
+        };
+        if self.sessions.iter().any(|session| session.id == selected) {
+            return;
+        }
+        self.clear_selection(cx);
     }
 
     pub(crate) fn toggle_model_enabled(&mut self, model_id: &str, cx: &mut Context<Self>) {
@@ -474,6 +670,9 @@ impl AppShell {
             ComposerEvent::OpenProject => {
                 self.open_project_picker(cx);
             }
+            ComposerEvent::OpenModelSettings => {
+                self.open_settings_section(SettingsSection::Models, cx);
+            }
             ComposerEvent::WorkModeChanged(mode) => {
                 self.work_mode = *mode;
                 cx.notify();
@@ -510,11 +709,22 @@ impl AppShell {
             return;
         }
         self.close_palette(cx);
+        self.close_composer_popovers(cx);
         self.project_picker_open = true;
         self.project_picker_query.clear();
         self.project_picker_selected = 0;
         self.project_picker_pending_focus = true;
         cx.notify();
+    }
+
+    /// Sidebar Today header: assign a folder to the current draft session, or open a new
+    /// project when the composer project selector is locked after the first send.
+    fn open_project_from_sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if project_picker_locked(self.selected_session()) {
+            self.open_project_from_home(window, cx);
+        } else {
+            self.open_project_picker(cx);
+        }
     }
 
     fn close_project_picker(&mut self, cx: &mut Context<Self>) {
@@ -752,6 +962,7 @@ impl AppShell {
                                 this.stream_gen,
                             ) {
                                 this.messages = messages;
+                                this.jump_to_latest_visible = false;
                                 this.maybe_unlock_composer(cx);
                             }
                             if this.stream_session.is_some() || this.selected.is_none() {
@@ -815,10 +1026,28 @@ impl AppShell {
     }
 
     /// True when the transcript is (roughly) at the bottom and should keep
-    /// following new content. Offsets grow negative while scrolling down.
+    /// following new content.
     fn anchored(&self) -> bool {
-        let max = self.scroll.max_offset().height;
-        max <= px(0.) || (max + self.scroll.offset().y) <= px(ANCHOR_THRESHOLD)
+        is_transcript_anchored(
+            f32::from(self.scroll.max_offset().height),
+            f32::from(self.scroll.offset().y),
+            ANCHOR_THRESHOLD,
+        )
+    }
+
+    fn show_jump_to_latest(&self) -> bool {
+        self.jump_to_latest_visible
+    }
+
+    fn composer_popovers_open(&self, cx: &Context<Self>) -> bool {
+        self.composer.read(cx).any_popover_open()
+    }
+
+    fn close_composer_popovers(&mut self, cx: &mut Context<Self>) {
+        self.composer.update(cx, |composer, cx| {
+            composer.close_all_popovers(cx);
+        });
+        cx.notify();
     }
 
     fn any_streaming(&self) -> bool {
@@ -858,96 +1087,106 @@ impl AppShell {
 
         cx.spawn(async move |this, cx| loop {
             loop {
-                match rx.try_recv() {
-                    Ok(event) => {
-                        let terminal = matches!(
+                let mut batch = Vec::new();
+                loop {
+                    match rx.try_recv() {
+                        Ok(event) => batch.push(event),
+                        Err(TryRecvError::Empty) => break,
+                        Err(TryRecvError::Disconnected) => {
+                            let _ = this.update(cx, |this, cx| {
+                                if this.folder_picker_open || this.stream_gen != gen {
+                                    return;
+                                }
+                                this.recover_stream(session_id, gen, cx);
+                            });
+                            return;
+                        }
+                    }
+                }
+                if batch.is_empty() {
+                    break;
+                }
+
+                let _ = this.update(cx, |this, cx| {
+                    if this.folder_picker_open || this.stream_gen != gen {
+                        return;
+                    }
+                    let mut changed = false;
+                    let mut terminal = false;
+                    for event in batch {
+                        terminal |= matches!(
                             event,
                             ProtocolEvent::SessionMessageCompleted { .. }
                                 | ProtocolEvent::SessionMessageFailed { .. }
                         );
-                        let _ = this.update(cx, |this, cx| {
-                            if this.folder_picker_open || this.stream_gen != gen {
-                                return;
-                            }
-                            this.stream_attempts =
-                                stream_attempts_after_event(&event, this.stream_attempts);
-                            if matches!(event, ProtocolEvent::ServerConnected { .. }) {
-                                this.error = None;
-                            }
-                            if matches!(
-                                event,
-                                ProtocolEvent::SessionMessageCreated { .. }
-                                    | ProtocolEvent::SessionMessageUpdated { .. }
-                                    | ProtocolEvent::SessionMessageCompleted { .. }
-                                    | ProtocolEvent::SessionMessageFailed { .. }
-                            ) {
-                                this.saw_stream_event = true;
-                            }
-                            if let ProtocolEvent::SessionQuestionRequested {
-                                request_id,
-                                questions,
-                                ..
-                            } = &event
+                        this.stream_attempts =
+                            stream_attempts_after_event(&event, this.stream_attempts);
+                        if matches!(event, ProtocolEvent::ServerConnected { .. }) {
+                            this.error = None;
+                        }
+                        if matches!(
+                            event,
+                            ProtocolEvent::SessionMessageCreated { .. }
+                                | ProtocolEvent::SessionMessageUpdated { .. }
+                                | ProtocolEvent::SessionMessageCompleted { .. }
+                                | ProtocolEvent::SessionMessageFailed { .. }
+                        ) {
+                            this.saw_stream_event = true;
+                        }
+                        if let ProtocolEvent::SessionQuestionRequested {
+                            request_id,
+                            questions,
+                            ..
+                        } = &event
+                        {
+                            let placeholder =
+                                this.catalog.get("question.custom_placeholder").to_string();
+                            this.pending_question =
+                                Some(PendingQuestion::new(request_id.clone(), questions.clone()));
+                            this.question_answer_input.update(cx, |input, cx| {
+                                input.set_placeholder(placeholder, cx);
+                                input.set_content("", cx);
+                            });
+                        }
+                        if let ProtocolEvent::SessionPermissionRequested {
+                            permission_id,
+                            summary,
+                            ..
+                        } = &event
+                        {
+                            this.pending_permission = Some(PendingPermission {
+                                permission_id: permission_id.clone(),
+                                summary: summary.clone(),
+                            });
+                        }
+                        if let ProtocolEvent::SessionTitleUpdated {
+                            session_id,
+                            title,
+                            ..
+                        } = &event
+                        {
+                            if let Some(entry) =
+                                this.sessions.iter_mut().find(|session| session.id == *session_id)
                             {
-                                let placeholder =
-                                    this.catalog.get("question.custom_placeholder").to_string();
-                                this.pending_question =
-                                    Some(PendingQuestion::new(request_id.clone(), questions.clone()));
-                                this.question_answer_input.update(cx, |input, cx| {
-                                    input.set_placeholder(placeholder, cx);
-                                    input.set_content("", cx);
-                                });
+                                entry.title = title.clone();
                             }
-                            if let ProtocolEvent::SessionPermissionRequested {
-                                permission_id,
-                                summary,
-                                ..
-                            } = &event
-                            {
-                                this.pending_permission = Some(PendingPermission {
-                                    permission_id: permission_id.clone(),
-                                    summary: summary.clone(),
-                                });
-                            }
-                            if let ProtocolEvent::SessionTitleUpdated {
-                                session_id,
-                                title,
-                                ..
-                            } = &event
-                            {
-                                if let Some(entry) =
-                                    this.sessions.iter_mut().find(|session| session.id == *session_id)
-                                {
-                                    entry.title = title.clone();
-                                }
-                            }
-                            let changed = apply_protocol_event(&mut this.messages, &event);
-                            if terminal {
-                                this.clear_generating(cx);
-                                this.pending_question = None;
-                            } else {
-                                this.maybe_unlock_composer(cx);
-                            }
-                            if changed && this.anchored() {
-                                this.scroll.scroll_to_bottom();
-                            }
-                            if changed {
-                                this.sync_composer(cx);
-                            }
-                            cx.notify();
-                        });
+                        }
+                        changed |= apply_protocol_event(&mut this.messages, &event);
                     }
-                    Err(TryRecvError::Empty) => break,
-                    Err(TryRecvError::Disconnected) => {
-                        let _ = this.update(cx, |this, cx| {
-                            if this.folder_picker_open || this.stream_gen != gen {
-                                return;
-                            }
-                            this.recover_stream(session_id, gen, cx);
-                        });
-                        return;
+                    if terminal {
+                        this.clear_generating(cx);
+                        this.pending_question = None;
+                    } else {
+                        this.maybe_unlock_composer(cx);
                     }
-                }
+                    if changed {
+                        this.sync_composer(cx);
+                        if this.anchored() {
+                            this.scroll.scroll_to_bottom();
+                        }
+                    }
+                    cx.notify();
+                });
             }
             let stale = this
                 .update(cx, |this, _| this.stream_gen != gen || this.folder_picker_open)
@@ -1181,6 +1420,7 @@ impl AppShell {
         self.pending_question = None;
         self.clear_generating(cx);
         self.messages = self.client.list_messages(id).unwrap_or_default();
+        self.jump_to_latest_visible = false;
         if self.messages.iter().any(|message| message.is_streaming) {
             self.generating = true;
             self.composer.update(cx, |composer, cx| {
@@ -1281,6 +1521,7 @@ impl AppShell {
     pub(crate) fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.close_session_overlay(cx);
         self.close_project_picker(cx);
+        self.close_composer_popovers(cx);
         self.palette_open = true;
         self.palette_query.clear();
         self.palette_selected = 0;
@@ -1304,6 +1545,7 @@ impl AppShell {
     ) {
         self.close_palette(cx);
         self.close_project_picker(cx);
+        self.close_composer_popovers(cx);
         self.session_overlay = Some(SessionOverlay::ContextMenu {
             session_id,
             position,
@@ -1661,8 +1903,10 @@ impl AppShell {
                 Ok(messages) => self.messages = messages,
                 Err(err) => self.error = Some(err),
             }
+            self.jump_to_latest_visible = false;
         } else {
             self.messages.clear();
+            self.jump_to_latest_visible = false;
         }
     }
 }
@@ -1716,7 +1960,7 @@ impl Render for AppShell {
                     .min_h_0()
                     .child(main_column(self, &catalog, cx)),
             )
-            .child(sidebar_toggle(self.sidebar_collapsed, cx))
+            .child(sidebar_toggle(collapsed, cx))
             .when(!collapsed, |el| {
                 el.child(sidebar_resize_handle(
                     self.sidebar_width_expanded,
@@ -1724,6 +1968,9 @@ impl Render for AppShell {
                     self.sidebar_resize_hovered,
                     cx,
                 ))
+            })
+            .when(self.composer_popovers_open(cx), |el| {
+                el.child(composer_popover_dismiss_layer(cx))
             })
             .when(self.palette_open, |el| {
                 el.child(command_palette_overlay(self, &catalog, cx))
@@ -1838,6 +2085,20 @@ fn handle_project_picker_key(
     this.clamp_project_picker_selection();
     cx.stop_propagation();
     cx.notify();
+}
+
+fn composer_popover_dismiss_layer(cx: &mut Context<AppShell>) -> impl IntoElement {
+    deferred(
+        div()
+            .id("composer-popover-dismiss")
+            .absolute()
+            .size_full()
+            .occlude()
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+                this.close_composer_popovers(cx);
+            })),
+    )
+    .with_priority(5)
 }
 
 fn project_picker_overlay(
@@ -2211,6 +2472,32 @@ fn sidebar_expanded(
         .child(sidebar_body(state, catalog, cx))
 }
 
+fn sidebar_toggle(collapsed: bool, cx: &mut Context<AppShell>) -> impl IntoElement {
+    let icon_path = if collapsed {
+        icon_path::PANEL_LEFT_OPEN
+    } else {
+        icon_path::PANEL_LEFT_CLOSE
+    };
+    div()
+        .absolute()
+        .left(px(SIDEBAR_TOGGLE_LEFT_PX))
+        .top(px(SIDEBAR_TOGGLE_TOP_PX))
+        .id("toggle-sidebar")
+        .flex()
+        .items_center()
+        .justify_center()
+        .w(px(SIDEBAR_TOGGLE_SIZE_PX))
+        .h(px(SIDEBAR_TOGGLE_SIZE_PX))
+        .rounded_md()
+        .hover(|style| style.bg(BG_MAIN))
+        .cursor_pointer()
+        .on_click(cx.listener(|this, _, _, cx| {
+            this.sidebar_collapsed = !this.sidebar_collapsed;
+            cx.notify();
+        }))
+        .child(icon(icon_path, px(16.), TEXT_MUTED))
+}
+
 struct SidebarResizeDrag;
 
 struct SidebarResizeDragPreview;
@@ -2260,8 +2547,10 @@ fn sidebar_resize_handle(
         .w(px(SIDEBAR_RESIZE_HANDLE_HIT_PX))
         .cursor(CursorStyle::ResizeLeftRight)
         .on_hover(cx.listener(|this, active: &bool, _, cx| {
-            this.sidebar_resize_hovered = *active;
-            cx.notify();
+            if this.sidebar_resize_hovered != *active {
+                this.sidebar_resize_hovered = *active;
+                cx.notify();
+            }
         }))
         .on_drag(SidebarResizeDrag, |_, _, _, cx| {
             cx.new(|_| SidebarResizeDragPreview)
@@ -2296,32 +2585,6 @@ fn sidebar_resize_handle(
         })
 }
 
-fn sidebar_toggle(collapsed: bool, cx: &mut Context<AppShell>) -> impl IntoElement {
-    let icon_path = if collapsed {
-        icon_path::PANEL_LEFT_OPEN
-    } else {
-        icon_path::PANEL_LEFT_CLOSE
-    };
-    div()
-        .absolute()
-        .left(px(SIDEBAR_TOGGLE_LEFT_PX))
-        .top(px(SIDEBAR_TOGGLE_TOP_PX))
-        .id("toggle-sidebar")
-        .flex()
-        .items_center()
-        .justify_center()
-        .w(px(SIDEBAR_TOGGLE_SIZE_PX))
-        .h(px(SIDEBAR_TOGGLE_SIZE_PX))
-        .rounded_md()
-        .hover(|style| style.bg(BG_MAIN))
-        .cursor_pointer()
-        .on_click(cx.listener(|this, _, _, cx| {
-            this.sidebar_collapsed = !this.sidebar_collapsed;
-            cx.notify();
-        }))
-        .child(icon(icon_path, px(16.), TEXT_MUTED))
-}
-
 fn sidebar_body(state: &AppShell, catalog: &Catalog, cx: &mut Context<AppShell>) -> gpui::Div {
     if state.settings_open {
         return settings_sidebar_body(state, catalog, cx);
@@ -2338,6 +2601,7 @@ fn sidebar_body(state: &AppShell, catalog: &Catalog, cx: &mut Context<AppShell>)
         .child(action_row(
             "action-new-session",
             catalog.get("sidebar.new_session"),
+            Some(icon_path::MESSAGE_CIRCLE_PLUS),
             cx.listener(|this, _, window, cx| {
                 if let Ok(session) = this.client.create_session() {
                     this.sessions.push(session.clone());
@@ -2357,8 +2621,8 @@ fn sidebar_body(state: &AppShell, catalog: &Catalog, cx: &mut Context<AppShell>)
                 .py_1()
                 .rounded_md()
                 .text_sm()
-                .text_color(TEXT_MUTED)
-                .hover(|style| style.bg(BG_MAIN).text_color(TEXT))
+                .text_color(TEXT)
+                .hover(|style| style.bg(BG_MAIN))
                 .cursor_pointer()
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.open_palette(window, cx);
@@ -2366,8 +2630,7 @@ fn sidebar_body(state: &AppShell, catalog: &Catalog, cx: &mut Context<AppShell>)
                 .child(
                     div()
                         .text_xs()
-                        .text_color(TEXT_MUTED)
-                        .child(icon(icon_path::SEARCH, px(14.), TEXT_MUTED)),
+                        .child(icon(icon_path::SEARCH, px(14.), TEXT)),
                 )
                 .child(catalog.get("sidebar.search").to_string()),
         );
@@ -2375,7 +2638,7 @@ fn sidebar_body(state: &AppShell, catalog: &Catalog, cx: &mut Context<AppShell>)
     let mut scroll_content = div()
         .flex()
         .flex_col()
-        .gap_1()
+        .gap_2()
         .pb_2()
         .min_w_0()
         .w_full();
@@ -2406,6 +2669,7 @@ fn sidebar_body(state: &AppShell, catalog: &Catalog, cx: &mut Context<AppShell>)
                 .min_h_0()
                 .min_w_0()
                 .w_full()
+                .overflow_hidden()
                 .overflow_y_scroll()
                 .track_scroll(&state.sidebar_scroll)
                 .px_3()
@@ -2414,8 +2678,10 @@ fn sidebar_body(state: &AppShell, catalog: &Catalog, cx: &mut Context<AppShell>)
         .child(
             div()
                 .flex_none()
+                .flex()
+                .items_center()
+                .h(px(APP_BAR_HEIGHT_PX))
                 .px_3()
-                .pb_2()
                 .child(
                     div()
                         .id("open-settings")
@@ -2452,6 +2718,7 @@ fn settings_sidebar_body(
         .child(action_row(
             "settings-back",
             catalog.get("settings.back"),
+            None,
             cx.listener(|this, _, _, cx| {
                 this.close_settings(cx);
             }),
@@ -2463,7 +2730,7 @@ fn settings_sidebar_body(
         let label_text = catalog.get(section.label_key()).to_string();
         nav = nav.child(
             div()
-                .id("settings-nav-models")
+                .id(section.nav_id())
                 .px_2()
                 .py_1()
                 .rounded_md()
@@ -2474,8 +2741,14 @@ fn settings_sidebar_body(
                     el.text_color(TEXT_MUTED)
                         .hover(|style| style.bg(BG_MAIN).text_color(TEXT))
                 })
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.settings_section = SettingsSection::Models;
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings_section = section;
+                    if section == SettingsSection::General {
+                        this.refresh_settings_health(cx);
+                    }
+                    if section == SettingsSection::Archived {
+                        this.reload_archived_projects(cx);
+                    }
                     cx.notify();
                 }))
                 .child(label_text),
@@ -2514,10 +2787,17 @@ fn sidebar_session_sections(
     let offset = local_offset_or_utc();
     let (today, earlier) = partition_sessions_by_day(&visible, now, offset);
     let without_folder = catalog.get("session.without_folder").to_string();
-    let session_row_width_px = state.sidebar_width_expanded
+    let session_row_inner_width_px = (state.sidebar_width_expanded
         - SIDEBAR_SESSION_SCROLL_PADDING_X_PX
-        - SESSION_ROW_PADDING_X_PX;
-    let mut col = div().flex().flex_col().gap_1().min_w_0().w_full();
+        - SESSION_ROW_PADDING_X_PX)
+        .max(0.);
+    let mut col = div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .min_w_0()
+        .w_full()
+        .overflow_hidden();
 
     if !today.is_empty() {
         col = col.child(
@@ -2529,8 +2809,8 @@ fn sidebar_session_sections(
                     this.today_expanded = !this.today_expanded;
                     cx.notify();
                 }),
-                cx.listener(|this, _, _, cx| {
-                    this.open_project_picker(cx);
+                cx.listener(|this, _, window, cx| {
+                    this.open_project_from_sidebar(window, cx);
                 }),
             ),
         );
@@ -2544,13 +2824,16 @@ fn sidebar_session_sections(
                     &state.projects,
                     &without_folder,
                 );
+                let generating =
+                    state.generating && state.selected == Some(id);
                 col = col.child(session_row(
                     ("sess", session.id.as_u128() as usize),
                     &session.title,
                     &format_relative(now, activity),
                     &folder,
                     selected,
-                    session_row_width_px,
+                    generating,
+                    session_row_inner_width_px,
                     cx.listener(move |this, _, window, cx| {
                         this.select_session(id, window, cx);
                         cx.notify();
@@ -2586,13 +2869,16 @@ fn sidebar_session_sections(
                     &state.projects,
                     &without_folder,
                 );
+                let generating =
+                    state.generating && state.selected == Some(id);
                 col = col.child(session_row(
                     ("sess-earlier", session.id.as_u128() as usize),
                     &session.title,
                     &format_relative(now, activity),
                     &folder,
                     selected,
-                    session_row_width_px,
+                    generating,
+                    session_row_inner_width_px,
                     cx.listener(move |this, _, window, cx| {
                         this.select_session(id, window, cx);
                         cx.notify();
@@ -2643,6 +2929,7 @@ fn section_open_project_button(
         .text_color(TEXT_MUTED)
         .hover(|style| style.bg(BG_MAIN).text_color(TEXT))
         .cursor_pointer()
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(on_click)
         .child(icon(icon_path::FOLDER_PLUS, px(14.), TEXT_MUTED))
 }
@@ -2675,14 +2962,14 @@ fn section_header_layout(
                 .gap_1()
                 .cursor_pointer()
                 .on_click(on_toggle)
-                .child(icon(chevron_path, px(12.), TEXT_MUTED))
                 .child(
                     div()
                         .text_xs()
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(TEXT_MUTED)
                         .child(text.to_string()),
-                ),
+                )
+                .child(icon(chevron_path, px(12.), TEXT_MUTED)),
         );
 
     if show_open_project {
@@ -2697,6 +2984,31 @@ fn section_header_layout(
 fn action_row(
     id: &'static str,
     text: &str,
+    icon_path: Option<&'static str>,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    let mut row = div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap_1()
+        .px_2()
+        .py_1()
+        .rounded_md()
+        .text_sm()
+        .text_color(TEXT)
+        .hover(|style| style.bg(BG_MAIN))
+        .cursor_pointer()
+        .on_click(on_click);
+    if let Some(path) = icon_path {
+        row = row.child(icon(path, px(14.), TEXT));
+    }
+    row.child(div().flex_1().child(text.to_string()))
+}
+
+pub(crate) fn settings_text_button(
+    id: (&'static str, usize),
+    text: String,
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
     div()
@@ -2709,7 +3021,41 @@ fn action_row(
         .hover(|style| style.bg(BG_MAIN))
         .cursor_pointer()
         .on_click(on_click)
-        .child(text.to_string())
+        .child(text)
+}
+
+pub(crate) fn settings_text_button_accent(
+    id: (&'static str, usize),
+    text: String,
+    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .px_2()
+        .py_1()
+        .rounded_md()
+        .text_sm()
+        .text_color(ACCENT)
+        .hover(|style| style.bg(BG_MAIN))
+        .cursor_pointer()
+        .on_click(on_click)
+        .child(text)
+}
+
+fn ellipsize_session_title(title: &str, available_width_px: f32) -> String {
+    let width_chars = (available_width_px / SESSION_TITLE_CHAR_WIDTH_PX).floor() as usize;
+    let max_chars = width_chars
+        .min(SESSION_TITLE_ELLIPSIS_AT_CHARS)
+        .max(1);
+    let chars: Vec<char> = title.chars().collect();
+    if chars.len() <= max_chars {
+        return title.to_string();
+    }
+    let suffix_len = SESSION_TITLE_ELLIPSIS.chars().count();
+    let keep = max_chars.saturating_sub(suffix_len);
+    let mut out: String = chars.into_iter().take(keep).collect();
+    out.push_str(SESSION_TITLE_ELLIPSIS);
+    out
 }
 
 fn session_row(
@@ -2718,60 +3064,105 @@ fn session_row(
     time: &str,
     project: &str,
     selected: bool,
-    width_px: f32,
+    generating: bool,
+    inner_content_width_px: f32,
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
     on_context_menu: impl Fn(&MouseDownEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
-    let row_width = width_px.max(SESSION_TITLE_MIN_WIDTH_PX);
+    let title_width = inner_content_width_px
+        - if generating {
+            SESSION_META_ICON_PX + 8.
+        } else {
+            0.
+        };
+    let display_title = ellipsize_session_title(title, title_width);
+    let mut title_row = div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .w_full()
+        .min_w_0()
+        .overflow_hidden()
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.))
+                .overflow_hidden()
+                .text_size(px(SESSION_TITLE_TEXT_PX))
+                .line_height(px(SESSION_TITLE_LINE_HEIGHT_PX))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(TEXT)
+                .child(display_title),
+        );
+    if generating {
+        title_row = title_row.child(icon(
+            icon_path::LOADER_2,
+            px(SESSION_META_ICON_PX),
+            SESSION_ACTIVITY_SPINNER,
+        ));
+    }
+
     div()
         .id(id)
         .flex()
         .flex_col()
-        .w(px(row_width))
-        .flex_shrink_0()
+        .gap_0p5()
+        .w_full()
+        .min_w_0()
+        .overflow_hidden()
         .px_2()
         .py_1()
         .rounded_md()
         .cursor_pointer()
-        .when(selected, |el| el.bg(BG_MAIN))
+        .when(selected, |el| el.bg(BG_HOVER))
+        .when(!selected, |el| el.hover(|style| style.bg(BG_HOVER)))
         .on_click(on_click)
         .on_mouse_down(MouseButton::Right, on_context_menu)
-        .child(session_title_line(title))
+        .child(title_row)
         .child(
             div()
                 .flex()
                 .items_center()
-                .gap_1()
+                .justify_between()
+                .gap(px(6.))
                 .w_full()
-                .text_size(px(SESSION_META_TEXT_PX))
-                .line_height(px(14.))
-                .text_color(TEXT_MUTED)
                 .child(
                     div()
-                        .flex_1()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
                         .min_w_0()
-                        .truncate()
-                        .child(project.to_string()),
+                        .flex_1()
+                        .child(icon(
+                            icon_path::FOLDER,
+                            px(SESSION_META_ICON_PX),
+                            TEXT_TERTIARY,
+                        ))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w(px(0.))
+                                .overflow_hidden()
+                                .truncate()
+                                .text_size(px(SESSION_META_PROJECT_TEXT_PX))
+                                .line_height(px(SESSION_META_TIME_LINE_HEIGHT_PX))
+                                .text_color(TEXT_TERTIARY)
+                                .child(project.to_string()),
+                        ),
                 )
                 .child(
                     div()
                         .flex_none()
                         .flex_shrink_0()
+                        .text_size(px(SESSION_META_TIME_TEXT_PX))
+                        .line_height(px(SESSION_META_TIME_LINE_HEIGHT_PX))
+                        .text_color(TEXT_TERTIARY)
                         .child(time.to_string()),
                 ),
         )
 }
 
-fn session_title_line(title: &str) -> impl IntoElement {
-    div()
-        .w_full()
-        .min_w(px(SESSION_TITLE_MIN_WIDTH_PX))
-        .truncate()
-        .text_sm()
-        .child(title.to_string())
-}
-
-fn main_column(
+    fn main_column(
     state: &mut AppShell,
     catalog: &Catalog,
     cx: &mut Context<AppShell>,
@@ -2781,9 +3172,6 @@ fn main_column(
     }
 
     let no_session = state.selected.is_none();
-    if !no_session {
-        state.sync_composer(cx);
-    }
     let collapsed = state.sidebar_collapsed;
     let mut column = div()
         .flex()
@@ -2801,15 +3189,15 @@ fn main_column(
                 .flex()
                 .items_center()
                 .border_b_1()
-                .border_color(BORDER)
+                .border_color(BORDER_SUBTLE)
                 .child(
                     div()
                         .flex_1()
+                        .min_w(px(0.))
                         .overflow_hidden()
                         .child(
                             div()
                                 .truncate()
-                                .min_w(px(SESSION_TITLE_MIN_WIDTH_PX))
                                 .text_size(px(MAIN_HEADER_TITLE_TEXT_PX))
                                 .child(state.selected_title()),
                         ),
@@ -2865,15 +3253,34 @@ fn settings_main_column(
     cx: &mut Context<AppShell>,
 ) -> gpui::Div {
     let collapsed = state.sidebar_collapsed;
-    let panel = models_settings_panel(
-        &state.composer_models,
-        &state.enabled_model_ids,
-        &state.settings_models_query,
-        state.settings_models_expanded,
-        &state.settings_models_focus,
-        catalog,
-        cx,
-    );
+    let panel: gpui::AnyElement = match state.settings_section {
+        SettingsSection::General => general_settings_panel(
+            state.settings_health.as_ref(),
+            state.settings_health_error.as_deref(),
+            catalog,
+            cx,
+        )
+        .into_any_element(),
+        SettingsSection::Projects => active_projects_panel(
+            &state.projects,
+            state.pending_delete_project,
+            catalog,
+            cx,
+        )
+        .into_any_element(),
+        SettingsSection::Archived => archived_projects_panel(&state.archived_projects, catalog, cx)
+            .into_any_element(),
+        SettingsSection::Models => models_settings_panel(
+            &state.composer_models,
+            &state.enabled_model_ids,
+            &state.settings_models_query,
+            state.settings_models_expanded,
+            &state.settings_models_focus,
+            catalog,
+            cx,
+        )
+        .into_any_element(),
+    };
 
     div()
         .flex()
@@ -2891,7 +3298,7 @@ fn settings_main_column(
                 .flex()
                 .items_center()
                 .border_b_1()
-                .border_color(BORDER)
+                .border_color(BORDER_SUBTLE)
                 .child(
                     div()
                         .flex_1()
@@ -2905,7 +3312,7 @@ fn settings_main_column(
 }
 
 fn message_list(
-    state: &AppShell,
+    state: &mut AppShell,
     catalog: &Catalog,
     cx: &mut Context<AppShell>,
 ) -> impl IntoElement {
@@ -2944,24 +3351,44 @@ fn message_list(
         .flex()
         .flex_col()
         .flex_1()
+        .min_h_0()
         .overflow_y_scroll()
         .track_scroll(&state.scroll)
+        .on_scroll_wheel(cx.listener(|this, _, _, cx| {
+            this.sync_transcript_scroll_state(cx);
+        }))
         .py_2()
         .pb(px(8.))
         .child(content_rail(inner));
 
-    wrap_message_list(
-        list,
-        state.any_streaming() && !state.anchored(),
-        catalog,
-        cx,
-    )
+    wrap_message_list(list, state.show_jump_to_latest(), catalog, cx)
+}
+
+fn jump_to_latest_button(cx: &mut Context<AppShell>) -> impl IntoElement {
+    div()
+        .id("jump-latest")
+        .flex()
+        .items_center()
+        .justify_center()
+        .w(px(28.))
+        .h(px(28.))
+        .rounded_full()
+        .bg(BG_SIDEBAR)
+        .border_1()
+        .border_color(BORDER)
+        .shadow_lg()
+        .cursor_pointer()
+        .hover(|style| style.bg(BG_HOVER))
+        .on_click(cx.listener(|this, _, _, cx| {
+            this.scroll_transcript_to_bottom(cx);
+        }))
+        .child(icon(icon_path::CHEVRON_DOWN, px(14.), TEXT_MUTED))
 }
 
 fn wrap_message_list(
     list: impl IntoElement,
     show_jump: bool,
-    catalog: &Catalog,
+    _catalog: &Catalog,
     cx: &mut Context<AppShell>,
 ) -> impl IntoElement {
     div()
@@ -2973,24 +3400,13 @@ fn wrap_message_list(
         .when(show_jump, |wrapper| {
             wrapper.child(
                 div()
-                    .id("jump-latest")
                     .absolute()
-                    .bottom_4()
-                    .right_4()
-                    .px_3()
-                    .py_1()
-                    .rounded_md()
-                    .bg(BG_SIDEBAR)
-                    .border_1()
-                    .border_color(BORDER)
-                    .text_xs()
-                    .text_color(TEXT)
-                    .cursor_pointer()
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.scroll.scroll_to_bottom();
-                        cx.notify();
-                    }))
-                    .child(catalog.get("messages.jump_to_latest").to_string()),
+                    .bottom(px(JUMP_TO_LATEST_ABOVE_COMPOSER_PX))
+                    .left(px(0.))
+                    .right(px(0.))
+                    .flex()
+                    .justify_center()
+                    .child(jump_to_latest_button(cx)),
             )
         })
 }
@@ -3079,7 +3495,7 @@ fn message_column(
     }
 
     div()
-        .id(("msg", index))
+        .id(("msg", message.id.as_u128() as u64))
         .w_full()
         .min_w_0()
         .py_3()
@@ -3157,4 +3573,80 @@ fn muted(text: &str) -> impl IntoElement {
         .text_sm()
         .text_color(TEXT_MUTED)
         .child(text.to_string())
+}
+
+fn is_transcript_anchored(max_offset_height: f32, offset_y: f32, threshold: f32) -> bool {
+    max_offset_height <= 0. || (max_offset_height + offset_y) <= threshold
+}
+
+fn should_show_jump_to_latest(
+    has_session: bool,
+    message_count: usize,
+    max_offset_height: f32,
+    offset_y: f32,
+    threshold: f32,
+) -> bool {
+    has_session
+        && message_count > 0
+        && max_offset_height > 0.
+        && !is_transcript_anchored(max_offset_height, offset_y, threshold)
+}
+
+#[cfg(test)]
+mod session_title_tests {
+    use super::{ellipsize_session_title, SESSION_TITLE_CHAR_WIDTH_PX, SESSION_TITLE_ELLIPSIS_AT_CHARS};
+
+    #[test]
+    fn short_titles_are_unchanged() {
+        let title = "Short title";
+        assert_eq!(
+            ellipsize_session_title(title, 200.),
+            title
+        );
+    }
+
+    #[test]
+    fn long_titles_end_with_ellipsis() {
+        let title = "Q3 Campaign Draft from the publisher team and more copy here";
+        let out = ellipsize_session_title(title, 400.);
+        assert!(out.ends_with("..."));
+        assert!(out.chars().count() <= SESSION_TITLE_ELLIPSIS_AT_CHARS);
+        assert!(out.chars().count() > 20);
+    }
+
+    #[test]
+    fn narrow_width_reduces_visible_characters() {
+        let title = "abcdefghijklmnopqrs";
+        let out = ellipsize_session_title(title, SESSION_TITLE_CHAR_WIDTH_PX * 8.);
+        assert!(out.ends_with("..."));
+        assert!(out.chars().count() < title.chars().count());
+    }
+}
+
+#[cfg(test)]
+mod transcript_scroll_tests {
+    use super::{is_transcript_anchored, should_show_jump_to_latest, ANCHOR_THRESHOLD};
+
+    #[test]
+    fn anchored_when_at_bottom() {
+        assert!(is_transcript_anchored(400., -400., ANCHOR_THRESHOLD));
+        assert!(is_transcript_anchored(400., -320., ANCHOR_THRESHOLD));
+    }
+
+    #[test]
+    fn not_anchored_when_scrolled_up() {
+        assert!(!is_transcript_anchored(400., -100., ANCHOR_THRESHOLD));
+    }
+
+    #[test]
+    fn jump_button_when_scrolled_up_with_messages() {
+        assert!(should_show_jump_to_latest(true, 3, 400., -100., ANCHOR_THRESHOLD));
+    }
+
+    #[test]
+    fn jump_button_hidden_at_bottom_or_empty() {
+        assert!(!should_show_jump_to_latest(true, 3, 400., -400., ANCHOR_THRESHOLD));
+        assert!(!should_show_jump_to_latest(true, 0, 400., -100., ANCHOR_THRESHOLD));
+        assert!(!should_show_jump_to_latest(false, 3, 400., -100., ANCHOR_THRESHOLD));
+    }
 }
