@@ -86,6 +86,24 @@ The Projects Settings section MUST list active projects and offer Archive and De
 - **THEN** the project and its sessions are removed locally
 - **AND** an open session from that project is deselected
 
+### Requirement: Active projects can be renamed from Settings
+
+The Projects Settings section MUST allow renaming an active project. The rename MUST call `PATCH /v1/projects/{id}` with the new name. After a successful rename, the project list and the Sidebar folder label MUST reflect the new name on the next refresh.
+
+#### Scenario: Rename updates project and sidebar label
+
+- **GIVEN** an active project with sessions
+- **WHEN** the user renames it from Settings → Projects
+- **THEN** the project name updates in the panel
+- **AND** sessions belonging to that project show the new name in the Sidebar
+
+#### Scenario: Empty rename name is rejected
+
+- **GIVEN** the user is editing a project name in Settings → Projects
+- **WHEN** they submit an empty or whitespace-only name
+- **THEN** the rename is not sent
+- **AND** a human error message is shown
+
 ### Requirement: Archived projects can be restored from Settings
 
 The Archived Settings section MUST list archived projects and offer Restore without an extra confirmation dialog.
