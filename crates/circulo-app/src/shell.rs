@@ -132,6 +132,8 @@ pub struct AppShell {
     interaction_mode: InteractionMode,
     composer_models: Vec<ModelCatalogEntry>,
     enabled_model_ids: Vec<String>,
+    preferences: circulo_core::UserPreferences,
+    pending_provider_toggle: Option<(circulo_core::AgentType, bool)>,
     settings_open: bool,
     pub(crate) settings_section: SettingsSection,
     settings_health: Option<circulo_protocol::HealthResponse>,
@@ -237,6 +239,8 @@ impl AppShell {
             interaction_mode: InteractionMode::default(),
             composer_models: Vec::new(),
             enabled_model_ids: Vec::new(),
+            preferences: circulo_core::UserPreferences::default(),
+            pending_provider_toggle: None,
             settings_open: false,
             settings_section: SettingsSection::General,
             settings_health: None,
@@ -678,6 +682,7 @@ impl AppShell {
         let client = self.client.clone();
         let body = PreferencesBody {
             enabled_model_ids: self.enabled_model_ids.clone(),
+            disabled_agents: self.preferences.disabled_agents.iter().copied().collect(),
         };
         cx.spawn(async move |this, cx| {
             let saved = cx

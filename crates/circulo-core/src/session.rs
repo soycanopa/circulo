@@ -12,6 +12,15 @@ pub enum AgentType {
     CommandCode,
 }
 
+impl std::fmt::Display for AgentType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::OpenCode => "opencode",
+            Self::CommandCode => "command_code",
+        })
+    }
+}
+
 impl AgentType {
     /// All variants, in declaration order. Used by the daemon to
     /// validate the "at least one provider enabled" guard.

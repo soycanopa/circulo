@@ -5,6 +5,7 @@ use circulo_core::{
     ComposerInteractionMode, ComposerPermissionMode, Message, ModelCatalogEntry, Project,
     Session, Uuid,
 };
+use circulo_core::AgentType;
 use circulo_protocol::{
     AgentDescriptor, CreateMessageRequest, CreateProjectRequest, CreateSessionRequest,
     HealthResponse, PatchProjectRequest, PatchSessionRequest, PreferencesBody,
@@ -99,6 +100,24 @@ impl DaemonClient {
 
     pub fn list_agents(&self) -> Result<Vec<AgentDescriptor>, String> {
         self.get("/v1/agents")
+    }
+
+    pub fn set_provider_enabled(
+        &self,
+        agent: AgentType,
+        enabled: bool,
+    ) -> Result<PreferencesBody, String> {
+        let path = if enabled {
+            format!("/v1/agents/{agent}/enable")
+        } else {
+            format!("/v1/agents/{agent}/disable")
+        };
+        ureq::post(&format!("{}{path}", self.base))
+            .timeout(Duration::from_secs(2))
+            .call()
+            .map_err(|err| err.to_string())?
+            .into_json()
+            .map_err(|err| err.to_string())
     }
 
     pub fn patch_session_agent(
