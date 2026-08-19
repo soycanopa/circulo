@@ -346,8 +346,9 @@ Un cambio de UI no está listo si solo “se ve parecido a la referencia”. Est
 
 ## 11. Decisiones abiertas de UX
 
-1. Enter vs Shift+Enter (propuesta: Enter envía).
-2. ¿El título se edita inline o en un diálogo?
-3. ¿Settings es panel, ventana, o popover?
-4. Densidad de `SessionItem` (dos vs tres líneas: nombre / tiempo / proyecto).
+1. ~~Enter vs Shift+Enter (propuesta: Enter envía).~~ **Cerrada**: Enter envía, Shift+Enter nueva línea (UX-UI §4.11).
+2. ¿El título se edita inline o en un diálogo? — fuera del MVP. P1.
+3. ~~¿Settings es panel, ventana, o popover?~~ **Cerrada**: panel dentro de la ventana principal, anclado al footer del Sidebar; secciones General / Projects / Archived / Models en orden fijo.
+4. ~~Densidad de `SessionItem` (dos vs tres líneas: nombre / tiempo / proyecto).~~ **Cerrada**: tres elementos por fila — nombre, carpeta (o **Without Folder**) debajo a la izquierda, duración relativa a la derecha.
+
 Cerradas: restore desde Settings; selector locked tras primer send; sidebar Today/Earlier; sin worktree.
