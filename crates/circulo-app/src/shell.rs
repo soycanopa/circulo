@@ -138,6 +138,7 @@ pub struct AppShell {
     settings_health_error: Option<String>,
     archived_projects: Vec<Project>,
     pending_delete_project: Option<Uuid>,
+    pending_rename_project: Option<Uuid>,
     pub(crate) settings_models_query: String,
     pub(crate) settings_models_expanded: bool,
     pub(crate) settings_models_focus: gpui::FocusHandle,
@@ -229,6 +230,7 @@ impl AppShell {
             settings_health_error: None,
             archived_projects: Vec::new(),
             pending_delete_project: None,
+            pending_rename_project: None,
             settings_models_query: String::new(),
             settings_models_expanded: false,
             settings_models_focus: cx.focus_handle(),
@@ -554,6 +556,49 @@ impl AppShell {
                     this.pending_delete_project = None;
                     this.refresh();
                     this.reconcile_selection_after_refresh(cx);
+                    this.reload_archived_projects(cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn request_rename_project(&mut self, project_id: Uuid, cx: &mut Context<Self>) {
+        self.pending_rename_project = Some(project_id);
+        self.pending_delete_project = None;
+        cx.notify();
+    }
+
+    pub(crate) fn cancel_rename_project(&mut self, cx: &mut Context<Self>) {
+        self.pending_rename_project = None;
+        cx.notify();
+    }
+
+    pub(crate) fn commit_rename_project(
+        &mut self,
+        project_id: Uuid,
+        name: String,
+        cx: &mut Context<Self>,
+    ) {
+        let trimmed = name.trim().to_string();
+        if trimmed.is_empty() {
+            self.error = Some("Project name cannot be empty.".to_string());
+            cx.notify();
+            return;
+        }
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { client.rename_project(project_id, trimmed) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if let Err(err) = result {
+                    this.error = Some(err);
+                } else {
+                    this.pending_rename_project = None;
+                    this.refresh();
                     this.reload_archived_projects(cx);
                 }
                 cx.notify();
