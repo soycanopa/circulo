@@ -269,11 +269,10 @@ El roadmap no autoriza implementación. Cada incremento es un change de OpenSpec
 
 ## 12. Decisiones abiertas (no asumir)
 
-Preguntas que aún condicionan trabajo futuro:
+Cerradas el 19 ago 2026:
 
-3. **Settings más allá de OpenCode + archived/restore:** ¿también modelo / extras? (worktree no). *Parcialmente resuelto: panel Models ya existe; falta decidir alcance final.*
-
-5. **Orden de la lista plana:** ¿por `last_message_at` descendente? *Implementado así en sidebar; pendiente confirmación formal en spec.*
+3. **Settings más allá de OpenCode + archived/restore:** el alcance del MVP queda **General + Projects + Archived + Models**. Las cuatro secciones están implementadas y son canónicas; renombrar o reordenar requiere un change de OpenSpec propio. `worktree` sigue fuera de scope.
+5. **Orden de la lista plana:** confirmado `last_message_at DESC` con `NULL` al final; empate por `created_at DESC`. Regla escrita explícitamente en `openspec/specs/sessions-sidebar/spec.md`. La implementación en `circulo-persist/src/store.rs` ya cumple.
 
 Cerradas el 16 ago 2026: restore desde Settings; selector locked tras el primer send; sin worktree; sidebar Today/Earlier.
 
