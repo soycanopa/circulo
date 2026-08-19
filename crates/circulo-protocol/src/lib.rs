@@ -199,6 +199,8 @@ pub struct CreateSessionRequest {
     pub project_id: Option<Uuid>,
     #[serde(default)]
     pub title: Option<String>,
+    #[serde(default)]
+    pub agent: Option<circulo_core::AgentType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -210,6 +212,8 @@ pub struct PatchSessionRequest {
     #[serde(default)]
     pub archive: Option<bool>,
     #[serde(default)]
+    pub agent: Option<circulo_core::AgentType>,
+    #[serde(default)]
     pub composer_model_id: Option<String>,
     #[serde(default)]
     pub composer_model_variant: Option<String>,
@@ -217,6 +221,14 @@ pub struct PatchSessionRequest {
     pub composer_permission_mode: Option<ComposerPermissionMode>,
     #[serde(default)]
     pub composer_interaction_mode: Option<ComposerInteractionMode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentDescriptor {
+    pub agent: circulo_core::AgentType,
+    pub available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
