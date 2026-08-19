@@ -103,6 +103,31 @@ Changing `project_id` after the first user message MUST fail with HTTP 409 and `
 - **THEN** the response array contains one entry per registered provider
 - **AND** each entry's `available` is independent of the others
 
+### Requirement: Model catalog endpoint aggregates per-provider entries
+
+`GET /v1/models` MUST return the union of model catalogs from every registered provider whose `enabled` flag is `true`. Each entry MUST carry the `agent` field so the client can dispatch implicitly when picking a model. The result is cached per provider with a TTL (default 5 minutes).
+
+#### Scenario: Single-provider build
+
+- **GIVEN** a daemon build with only OpenCode registered
+- **WHEN** the client calls `GET /v1/models`
+- **THEN** the response is the OpenCode model catalog
+- **AND** every entry has `agent = open_code`
+
+#### Scenario: Multi-provider build
+
+- **GIVEN** a daemon build with both OpenCode and CommandCode registered
+- **WHEN** the client calls `GET /v1/models`
+- **THEN** the response contains OpenCode entries (with `agent = open_code`) and CommandCode entries (with `agent = command_code`)
+- **AND** the entries are sorted by `(provider_name, name)`
+
+#### Scenario: Disabled provider is excluded
+
+- **GIVEN** the user has disabled CommandCode in Settings → Providers
+- **WHEN** the client calls `GET /v1/models`
+- **THEN** the response contains only OpenCode entries
+- **AND** the CommandCode catalog is not fetched
+
 #### Scenario: Disabled provider shows enabled = false
 
 - **GIVEN** a daemon build with both providers, and CommandCode is in `UserPreferences.disabled_agents`

@@ -208,3 +208,29 @@ The composer MUST render an `AgentSelector` chip only when `GET /v1/agents` repo
 - **WHEN** the composer renders
 - **THEN** the AgentSelector is visible but disabled
 - **AND** displays the locked copy from the catalog
+
+### Requirement: Model selection implies provider
+
+When the user picks a model in the composer's model picker, the session's `agent` MUST be set to the picked entry's `agent` field. This is the user-facing way to switch providers in v0.3 (no separate provider selector). The app dispatches a single PATCH to `/v1/sessions/{id}` with both `composer_model_id` and `agent` set.
+
+#### Scenario: Picking a model from the same provider
+
+- **GIVEN** the session's current agent is `open_code` and the user picks another OpenCode model
+- **WHEN** the picker click fires
+- **THEN** the app PATCHes `composer_model_id` only
+- **AND** the session's `agent` stays `open_code`
+
+#### Scenario: Picking a model from a different provider
+
+- **GIVEN** the session's current agent is `open_code` and the user picks a Command Code model
+- **WHEN** the picker click fires
+- **THEN** the app PATCHes both `composer_model_id` and `agent = command_code`
+- **AND** the next send on this session dispatches to the Command Code adapter
+
+#### Scenario: Picking a model from a disabled provider
+
+- **GIVEN** the user has disabled Command Code in Settings → Providers
+- **AND** the user picks a Command Code model
+- **WHEN** the picker click fires
+- **THEN** the daemon returns 422 with `ErrorCode::AgentDisabled`
+- **AND** the UI surfaces the existing copy
