@@ -2046,6 +2046,20 @@ impl AppShell {
         let _ = self.client.list_agents().map(|agents| self.available_agents = agents);
     }
 
+    /// Agents the user can pick in the AgentSelector: registered AND
+    /// enabled. The AgentSelector chip renders when this list has more
+    /// than one entry.
+    #[allow(dead_code)]
+    pub(crate) fn visible_agents(&self) -> Vec<circulo_protocol::AgentDescriptor> {
+        self.available_agents
+            .iter()
+            .filter(|agent| {
+                agent.enabled && !self.preferences.disabled_agents.contains(&agent.agent)
+            })
+            .cloned()
+            .collect()
+    }
+
         /// Change the agent of an unstarted session. Wired up by the AgentSelector
     /// in the composer; the selector is only rendered when
     /// `available_agents.len() > 1`, so this is currently dead code. The
