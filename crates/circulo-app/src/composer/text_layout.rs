@@ -108,11 +108,6 @@ impl ComposerTextLayout {
         self.visual_lines.len().max(COMPOSER_MIN_LINES)
     }
 
-    pub fn container_height(&self, line_height: Pixels, expanded: bool) -> Pixels {
-        let cap = visible_line_cap(expanded);
-        line_height * self.visual_line_count().min(cap) as f32
-    }
-
     pub fn needs_scroll(&self, expanded: bool) -> bool {
         self.visual_line_count() > visible_line_cap(expanded)
     }
@@ -176,7 +171,7 @@ impl ComposerTextLayout {
             .unwrap_or(0)
     }
 
-    pub fn cursor_position(&self, offset: usize, line_height: Pixels) -> Point<Pixels> {
+    pub fn cursor_position(&self, offset: usize) -> Point<Pixels> {
         let clamped = offset.min(total_content_len(&self.lines));
         for segment in &self.visual_lines {
             if clamped >= segment.range.start && clamped <= segment.range.end {
@@ -202,8 +197,8 @@ impl ComposerTextLayout {
         range: Range<usize>,
         line_height: Pixels,
     ) -> Option<Bounds<Pixels>> {
-        let start = self.cursor_position(range.start, line_height);
-        let end = self.cursor_position(range.end, line_height);
+        let start = self.cursor_position(range.start);
+        let end = self.cursor_position(range.end);
         Some(Bounds::from_corners(
             point(start.x, start.y),
             point(end.x.max(start.x + px(1.)), start.y + line_height),

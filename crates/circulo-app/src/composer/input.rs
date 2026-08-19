@@ -142,7 +142,7 @@ impl ComposerInput {
             return;
         }
         let cursor = self.cursor_offset();
-        let cursor_pos = layout.cursor_position(cursor, line_height);
+        let cursor_pos = layout.cursor_position(cursor);
         let visible_height = self.container_height(line_height);
         let scroll_y = self.scroll.offset().y;
         let visible_top = -scroll_y;
@@ -538,7 +538,7 @@ impl Element for ComposerInputElement {
         let line_height = window.line_height();
         let visual_line_count = layout.visual_line_count();
         let content_height = layout.content_height().max(line_height);
-        let cursor_pos = layout.cursor_position(cursor.min(input.content.len()), line_height);
+        let cursor_pos = layout.cursor_position(cursor.min(input.content.len()));
         let scroll_y = input.scroll.offset().y;
 
         let cursor_quad = if input.focus_handle.is_focused(window) && input.accepts_input() {
