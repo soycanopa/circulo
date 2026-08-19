@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use circulo_adapter::AgentAdapter;
 use circulo_core::{AgentType, UserPreferences};
@@ -9,7 +9,7 @@ use circulo_protocol::AgentDescriptor;
 pub struct AdapterRegistry {
     opencode: Arc<dyn AgentAdapter>,
     commandcode: Option<Arc<dyn AgentAdapter>>,
-    disabled: HashSet<AgentType>,
+    disabled: Arc<RwLock<HashSet<AgentType>>>,
 }
 
 impl AdapterRegistry {
@@ -23,7 +23,9 @@ impl AdapterRegistry {
         Self {
             opencode,
             commandcode,
-            disabled: prefs.disabled_agents.iter().copied().collect(),
+            disabled: Arc::new(RwLock::new(
+                prefs.disabled_agents.iter().copied().collect(),
+            )),
         }
     }
 
@@ -33,7 +35,7 @@ impl AdapterRegistry {
         Self {
             opencode,
             commandcode: None,
-            disabled: HashSet::new(),
+            disabled: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -42,14 +44,20 @@ impl AdapterRegistry {
     }
 
     pub fn is_enabled(&self, agent: AgentType) -> bool {
-        !self.disabled.contains(&agent)
+        !self
+            .disabled
+            .read()
+            .map(|g| g.contains(&agent))
+            .unwrap_or(false)
     }
 
-    pub fn set_disabled(&mut self, agent: AgentType, disabled: bool) {
-        if disabled {
-            self.disabled.insert(agent);
-        } else {
-            self.disabled.remove(&agent);
+    pub fn set_disabled(&self, agent: AgentType, disabled: bool) {
+        if let Ok(mut g) = self.disabled.write() {
+            if disabled {
+                g.insert(agent);
+            } else {
+                g.remove(&agent);
+            }
         }
     }
 

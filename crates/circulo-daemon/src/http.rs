@@ -105,6 +105,8 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/v1/health", get(health))
         .route("/v1/agents", get(list_agents))
+        .route("/v1/agents/{agent}/enable", post(enable_agent))
+        .route("/v1/agents/{agent}/disable", post(disable_agent))
         .route("/v1/projects", get(list_projects).post(create_project))
         .route(
             "/v1/projects/{id}",
@@ -319,6 +321,10 @@ async fn create_session(
     Json(body): Json<CreateSessionRequest>,
 ) -> Result<(StatusCode, Json<Session>), HttpError> {
     let now = OffsetDateTime::now_utc();
+    let agent = body.agent.unwrap_or(AgentType::OpenCode);
+    if !state.registry.is_enabled(agent) {
+        return Err(HttpError::from(ApiError::agent_disabled(agent)));
+    }
     let session = Session {
         id: Uuid::new_v4(),
         project_id: body.project_id,
@@ -326,7 +332,7 @@ async fn create_session(
             .title
             .filter(|title| !title.trim().is_empty())
             .unwrap_or_else(|| "New session".into()),
-        agent: body.agent.unwrap_or(AgentType::OpenCode),
+        agent,
         status: SessionStatus::Active,
         created_at: now,
         updated_at: now,
@@ -685,5 +691,61 @@ async fn put_preferences(
         .with_store(|store| store.set_preferences(&prefs))
         .await
         .map_err(HttpError::from)?;
+    Ok(Json(PreferencesBody::from(prefs)))
+}
+
+async fn disable_agent(
+    State(state): State<AppState>,
+    Path(agent): Path<circulo_core::AgentType>,
+) -> Result<Json<PreferencesBody>, HttpError> {
+    toggle_agent(&state, agent, true).await
+}
+
+async fn enable_agent(
+    State(state): State<AppState>,
+    Path(agent): Path<circulo_core::AgentType>,
+) -> Result<Json<PreferencesBody>, HttpError> {
+    toggle_agent(&state, agent, false).await
+}
+
+async fn toggle_agent(
+    state: &AppState,
+    agent: circulo_core::AgentType,
+    disabled: bool,
+) -> Result<Json<PreferencesBody>, HttpError> {
+    let mut prefs = state
+        .with_store(|store| store.get_preferences())
+        .await
+        .map_err(HttpError::from)?;
+    if disabled && !prefs.disabled_agents.contains(&agent) {
+        prefs.disabled_agents.insert(agent);
+    } else if !disabled && prefs.disabled_agents.contains(&agent) {
+        prefs.disabled_agents.remove(&agent);
+    }
+    // Last-enabled guard: would any provider remain enabled?
+    let would_remain = circulo_core::AgentType::ALL
+        .iter()
+        .filter(|a| !prefs.disabled_agents.contains(a))
+        .count();
+    if would_remain == 0 {
+        return Err(HttpError::from(ApiError::last_provider_enabled()));
+    }
+    if disabled {
+        let migrated = state
+            .with_store(|store| {
+                store.migrate_sessions_to_agent(agent, circulo_core::AgentType::OpenCode)
+            })
+            .await
+            .map_err(HttpError::from)?;
+        eprintln!(
+            "circulo-daemon: disabled agent {:?}, migrated {} session(s) to opencode",
+            agent, migrated
+        );
+    }
+    state
+        .with_store(|store| store.set_preferences(&prefs))
+        .await
+        .map_err(HttpError::from)?;
+    state.registry.set_disabled(agent, disabled);
     Ok(Json(PreferencesBody::from(prefs)))
 }
