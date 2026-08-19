@@ -229,4 +229,43 @@ mod tests {
         let loaded2 = store.get_session(s2.id).unwrap().unwrap();
         assert_eq!(loaded2.agent, AgentType::OpenCode);
     }
+
+    #[test]
+    fn migrate_sessions_to_agent_reassigns_rows() {
+        let store = Store::open_in_memory().unwrap();
+        let mut s1 = session(80, None, "CmdCode 1");
+        s1.agent = AgentType::CommandCode;
+        let mut s2 = session(81, None, "CmdCode 2");
+        s2.agent = AgentType::CommandCode;
+        let s3 = session(82, None, "OpenCode kept");
+        store.create_session(&s1).unwrap();
+        store.create_session(&s2).unwrap();
+        store.create_session(&s3).unwrap();
+
+        let migrated =
+            store.migrate_sessions_to_agent(AgentType::CommandCode, AgentType::OpenCode).unwrap();
+        assert_eq!(migrated, 2);
+        assert_eq!(
+            store.get_session(s1.id).unwrap().unwrap().agent,
+            AgentType::OpenCode
+        );
+        assert_eq!(
+            store.get_session(s2.id).unwrap().unwrap().agent,
+            AgentType::OpenCode
+        );
+        assert_eq!(
+            store.get_session(s3.id).unwrap().unwrap().agent,
+            AgentType::OpenCode
+        );
+    }
+
+    #[test]
+    fn migrate_sessions_to_agent_same_source_is_noop() {
+        let store = Store::open_in_memory().unwrap();
+        let s = session(90, None, "OpenCode");
+        store.create_session(&s).unwrap();
+        let migrated =
+            store.migrate_sessions_to_agent(AgentType::OpenCode, AgentType::OpenCode).unwrap();
+        assert_eq!(migrated, 0);
+    }
 }

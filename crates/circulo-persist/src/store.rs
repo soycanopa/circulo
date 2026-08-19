@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use circulo_core::{
-    Message, MessagePart, MessageRole, Project, ProjectStatus, Session, UserPreferences, Uuid,
+    AgentType, Message, MessagePart, MessageRole, Project, ProjectStatus, Session, UserPreferences,
+    Uuid,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::de::{DeserializeOwned, Error as _};
@@ -464,6 +465,26 @@ impl Store {
             [json],
         )?;
         Ok(())
+    }
+
+    /// Reassign all sessions whose `agent` equals `from` to `to`. Used when
+    /// the user disables a provider: existing sessions migrate to OpenCode
+    /// in the same SQLite transaction that records the preference change.
+    /// Returns the number of rows updated.
+    pub fn migrate_sessions_to_agent(
+        &self,
+        from: AgentType,
+        to: AgentType,
+    ) -> Result<usize, PersistError> {
+        if from == to {
+            return Ok(0);
+        }
+        let updated_at = format_time(OffsetDateTime::now_utc())?;
+        let updated = self.conn.execute(
+            "UPDATE sessions SET agent = ?1, updated_at = ?2 WHERE agent = ?3",
+            params![enum_to_db(&to)?, updated_at, enum_to_db(&from)?],
+        )?;
+        Ok(updated)
     }
 
     pub fn list_messages(&self, session_id: Uuid) -> Result<Vec<Message>, PersistError> {
