@@ -77,3 +77,20 @@ The daemon MUST expose `GET /v1/agents` returning a list of `AgentDescriptor` en
 - **WHEN** the client calls `GET /v1/agents`
 - **THEN** the response contains a single descriptor with `agent = opencode`
 - **AND** `available` reflects OpenCode's current health probe
+
+### Requirement: Command Code adapter maps NDJSON to normalized events
+
+The Command Code adapter MUST run `cmd -p <query> --output-format json`, parse the resulting NDJSON into `AdapterEvent`s, and surface auth errors (exit code 3) as `AdapterError::unavailable(Unauthorized, ...)`. The adapter MUST accept a `COMMANDCODE_BIN` env override and fall back to `cmd` on `PATH`.
+
+#### Scenario: Successful turn emits SessionBound
+
+- **GIVEN** a Command Code binary is present and authenticated
+- **WHEN** the adapter runs a turn that emits a `result` frame with `sessionId`
+- **THEN** the event stream ends with `SessionBound { agent_session_id: <that id> }` and `Completed`
+
+#### Scenario: Auth failure surfaces as Unavailable
+
+- **GIVEN** the binary is present but the user is not authenticated
+- **WHEN** the adapter runs a turn
+- **THEN** the result is `AdapterError::unavailable(Unauthorized, ...)` with a human message
+- **AND** `probe()` returns `AdapterHealth::Error { message: "Sign in required..." }`
