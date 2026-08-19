@@ -162,7 +162,7 @@ Transporte: HTTPS en localhost + SSE para eventos.
 | ID | Requisito |
 | --- | --- |
 | TRD-API-01 | El daemon escucha solo en localhost. |
-| TRD-API-02 | HTTPS. El esquema de certificados locales es decisión abierta (self-signed de máquina, rustls, etc.). Investigar antes de implementar. |
+| TRD-API-02 | HTTP plano en localhost para el MVP. TLS local queda diferido fuera de MVP (ver §15.1); reintroducirlo requiere un change propio. |
 | TRD-API-03 | El stream de una generación es SSE con eventos tipados, no un blob opaco. |
 | TRD-API-04 | El contrato lleva `api_version`. Cambios breaking = version nueva o change de OpenSpec explícito. |
 | TRD-API-05 | Errores de API tienen código estable + mensaje humano. |
@@ -250,15 +250,13 @@ Hechos conocidos por investigación previa, **a verificar de nuevo antes de impl
 
 El adapter **debe** basarse en esa API real (o la que esté vigente al momento del change), no en conjeturas.
 
-Decisiones abiertas del adapter:
+Decisiones resueltas del adapter (todas vía `opencode-provider-hardening`, archivado el 18-ago-2026):
 
-1. ¿Circulo lanza `opencode serve` o se conecta a uno ya levantado?
-2. ¿Cómo se mapea `Project`/`Session` de Circulo a project/session de OpenCode?
-3. ¿El working directory lo elige el usuario o es implícito?
-4. ¿Qué subset de eventos OpenCode se traduce a `MessagePart`?
-5. Auth del server OpenCode (`OPENCODE_SERVER_PASSWORD`) — ¿el daemon la gestiona?
-
-Sin esas respuestas investigadas, no se escribe el adapter.
+1. **Lanzamiento:** `circulo-daemon` spawnea `opencode serve` en el puerto 7433 desde el `.app` bundleado. Attach a un `opencode serve` externo queda diferido (`docs/POST-MVP.md` §2).
+2. **Mapping session:** `circulo-persist` persiste `agent_session_id` por sesión; el adapter lo usa en cada `prompt_async`.
+3. **Working directory:** implícito desde la carpeta del proyecto asociada a la sesión (o default si no hay proyecto); configurable vía `CIRCULO_OPENCODE_CWD`.
+4. **Subset de eventos:** todos los documentados en `crates/circulo-adapter-opencode/tests/fixtures/EVENTS.md`; los liveness (`server.connected`, `server.heartbeat`) se consumen sin emitirse al daemon.
+5. **Auth:** el daemon usa el server OpenCode sin autenticación para el spawn bundled (puerto 7433). Auth vía `OPENCODE_SERVER_PASSWORD` queda atada al modo attach diferido.
 
 ---
 
