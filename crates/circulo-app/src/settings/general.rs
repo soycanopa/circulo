@@ -1,3 +1,4 @@
+use circulo_core::AgentType;
 use circulo_i18n::Catalog;
 use circulo_protocol::HealthResponse;
 use gpui::{
@@ -13,6 +14,7 @@ use crate::theme::{
 pub fn general_settings_panel(
     health: Option<&HealthResponse>,
     health_error: Option<&str>,
+    available_agents: &[circulo_protocol::AgentDescriptor],
     catalog: &Catalog,
     cx: &mut Context<AppShell>,
 ) -> impl gpui::IntoElement {
@@ -42,6 +44,26 @@ pub fn general_settings_panel(
         None => (
             catalog.get("settings.health.opencode_unknown").to_string(),
             catalog.get("settings.health.opencode_hint").to_string(),
+        ),
+    };
+
+    let commandcode = available_agents
+        .iter()
+        .find(|agent| agent.agent == AgentType::CommandCode);
+    let (commandcode_label, commandcode_detail) = match commandcode {
+        Some(agent) if agent.available => (
+            catalog.get("settings.health.opencode_ok").to_string(),
+            catalog.get("settings.commandcode.title").to_string(),
+        ),
+        Some(_) => (
+            catalog.get("settings.commandcode.unavailable").to_string(),
+            catalog
+                .get("settings.commandcode.auth_required")
+                .to_string(),
+        ),
+        None => (
+            catalog.get("settings.commandcode.unavailable").to_string(),
+            catalog.get("settings.commandcode.install_hint").to_string(),
         ),
     };
 
@@ -79,6 +101,12 @@ pub fn general_settings_panel(
                     health
                         .and_then(|h| h.opencode.as_ref())
                         .is_some_and(|o| o.available),
+                ))
+                .child(health_card(
+                    catalog.get("settings.commandcode.title").to_string(),
+                    commandcode_label,
+                    Some(commandcode_detail),
+                    commandcode.is_some_and(|agent| agent.available),
                 ))
                 .child(
                     div()

@@ -3369,6 +3369,7 @@ fn settings_main_column(
         SettingsSection::General => general_settings_panel(
             state.settings_health.as_ref(),
             state.settings_health_error.as_deref(),
+            &state.available_agents,
             catalog,
             cx,
         )
