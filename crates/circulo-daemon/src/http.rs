@@ -658,10 +658,10 @@ async fn get_preferences(State(state): State<AppState>) -> Result<Json<Preferenc
 }
 
 async fn list_models(State(state): State<AppState>) -> Result<Json<Vec<ModelCatalogEntry>>, HttpError> {
-    let adapter = state.registry.opencode();
     let cache = Arc::clone(&state.model_catalog_cache);
+    let registry = state.registry.clone();
     let models = tokio::task::spawn_blocking(move || {
-        let mut cache = cache
+        let cache = cache
             .lock()
             .map_err(|_| {
                 AdapterError::failed(
@@ -669,13 +669,13 @@ async fn list_models(State(state): State<AppState>) -> Result<Json<Vec<ModelCata
                     "Model catalog cache lock poisoned.",
                 )
             })?;
-        cache.get_or_load(adapter.as_ref())
+        cache.get(&registry)
     })
         .await
         .map_err(|_| HttpError::from(ApiError::internal()))?
         .map_err(|err| {
             HttpError::from(ApiError::unavailable(format!(
-                "Could not load models from the agent adapter: {}",
+                "Could not load models from the agent adapters: {}",
                 err.message()
             )))
         })?;

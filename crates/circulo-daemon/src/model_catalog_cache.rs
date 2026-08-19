@@ -1,9 +1,18 @@
-//! In-memory TTL cache for the OpenCode model catalog.
+//! In-memory TTL cache for the model catalog.
+//!
+//! Per-provider cache. `get(&registry)` aggregates the entries from
+//! every enabled provider, de-duplicating by `(agent, id)`. Disabled
+//! providers are skipped so a disabled CommandCode doesn't leak its
+//! catalog into the picker.
 
+use std::collections::HashMap;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use circulo_adapter::{AdapterError, AgentAdapter};
-use circulo_core::ModelCatalogEntry;
+use circulo_core::{AgentType, ModelCatalogEntry};
+
+use crate::adapter_registry::AdapterRegistry;
 
 /// Default catalog cache lifetime (5 minutes).
 pub const DEFAULT_MODEL_CATALOG_TTL: Duration = Duration::from_secs(300);
@@ -17,31 +26,59 @@ struct CachedCatalog {
 #[derive(Debug)]
 pub struct ModelCatalogCache {
     ttl: Duration,
-    cached: Option<CachedCatalog>,
+    cached: Mutex<HashMap<AgentType, CachedCatalog>>,
 }
 
 impl ModelCatalogCache {
     pub fn new(ttl: Duration) -> Self {
         Self {
             ttl,
-            cached: None,
+            cached: Mutex::new(HashMap::new()),
         }
     }
 
-    pub fn get_or_load(
-        &mut self,
+    /// Returns the union of every enabled provider's catalog, sorted
+    /// by (provider_name, name). The result is cached per-provider
+    /// for the configured TTL.
+    pub fn get(&self, registry: &AdapterRegistry) -> Result<Vec<ModelCatalogEntry>, AdapterError> {
+        let mut out = Vec::new();
+        for &agent in AgentType::ALL.iter() {
+            if !registry.is_enabled(agent) {
+                continue;
+            }
+            let Some(adapter) = registry.for_agent(agent) else {
+                continue;
+            };
+            let entries = self.fetch(agent, adapter.as_ref())?;
+            out.extend(entries);
+        }
+        out.sort_by(|left, right| {
+            left
+                .provider_name
+                .cmp(&right.provider_name)
+                .then_with(|| left.name.cmp(&right.name))
+        });
+        Ok(out)
+    }
+
+    fn fetch(
+        &self,
+        agent: AgentType,
         adapter: &dyn AgentAdapter,
     ) -> Result<Vec<ModelCatalogEntry>, AdapterError> {
-        if let Some(cached) = &self.cached {
+        if let Some(cached) = self.cached.lock().unwrap().get(&agent) {
             if cached.fetched_at.elapsed() < self.ttl {
                 return Ok(cached.entries.clone());
             }
         }
         let entries = adapter.list_models()?;
-        self.cached = Some(CachedCatalog {
-            fetched_at: Instant::now(),
-            entries: entries.clone(),
-        });
+        self.cached.lock().unwrap().insert(
+            agent,
+            CachedCatalog {
+                fetched_at: Instant::now(),
+                entries: entries.clone(),
+            },
+        );
         Ok(entries)
     }
 }
@@ -105,10 +142,15 @@ mod tests {
             model_id: "gpt-4o".into(),
             context_window: None,
             reasoning_variants: vec![],
+            agent: circulo_core::AgentType::OpenCode,
         }]);
         let mut cache = ModelCatalogCache::new(Duration::from_secs(60));
-        cache.get_or_load(adapter.as_ref()).expect("first load");
-        cache.get_or_load(adapter.as_ref()).expect("cached load");
+        cache
+            .fetch(circulo_core::AgentType::OpenCode, adapter.as_ref())
+            .expect("first load");
+        cache
+            .fetch(circulo_core::AgentType::OpenCode, adapter.as_ref())
+            .expect("cached load");
         assert_eq!(adapter.calls.load(Ordering::SeqCst), 1);
     }
 }

@@ -45,6 +45,7 @@ impl AgentAdapter for FakeAdapter {
                 model_id: "default".into(),
                 context_window: Some("128K".into()),
                 reasoning_variants: vec!["low".into(), "medium".into(), "high".into()],
+                agent: circulo_core::AgentType::OpenCode,
             },
         ])
     }
