@@ -814,7 +814,27 @@ impl AppShell {
                 self.selected_model = model_id.clone();
                 self.sync_local_session_composer_fields();
                 self.sync_composer(cx);
-                self.patch_session_composer(cx);
+                // If the new model is served by a different Circulo
+                // provider, the daemon dispatch needs the session's
+                // `agent` field updated too. set_model_and_agent
+                // PATCHes both in one round trip; otherwise fall back
+                // to patch_session_composer (variant-only / same
+                // provider).
+                let new_agent = self
+                    .composer_models
+                    .iter()
+                    .find(|entry| entry.id == model_id.as_str())
+                    .map(|entry| entry.agent)
+                    .unwrap_or(circulo_core::AgentType::OpenCode);
+                let same_provider = self
+                    .selected_session()
+                    .map(|session| session.agent == new_agent)
+                    .unwrap_or(true);
+                if same_provider {
+                    self.patch_session_composer(cx);
+                } else if let Some(session) = self.selected_session().cloned() {
+                    self.set_model_and_agent(session.id, model_id.clone(), new_agent, cx);
+                }
             }
             ComposerEvent::ModelVariantChanged(variant) => {
                 self.selected_model_variant = variant.clone();
@@ -988,6 +1008,38 @@ impl AppShell {
                     this.sync_composer(cx);
                 } else if let Err(err) = result {
                     this.error = Some(err);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn set_model_and_agent(
+        &mut self,
+        session_id: Uuid,
+        model_id: String,
+        agent: circulo_core::AgentType,
+        cx: &mut Context<Self>,
+    ) {
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { client.set_model_and_agent(session_id, model_id, agent) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                match result {
+                    Ok(session) => {
+                        if let Some(index) =
+                            this.sessions.iter().position(|entry| entry.id == session_id)
+                        {
+                            this.sessions[index] = session;
+                        }
+                        this.sync_composer(cx);
+                        this.error = None;
+                    }
+                    Err(err) => this.error = Some(err),
                 }
                 cx.notify();
             });
