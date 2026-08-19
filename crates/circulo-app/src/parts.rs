@@ -11,7 +11,7 @@ use gpui::{
 use serde_json::Value;
 
 use crate::theme::{
-    ACCENT, BG_SIDEBAR, BORDER, CODE_BG, DANGER, DIFF_ADD, DIFF_DEL, SUCCESS, TEXT, TEXT_MUTED,
+    ACCENT, BORDER, CODE_BG, DANGER, DIFF_ADD, DIFF_DEL, SUCCESS, TEXT, TEXT_MUTED,
 };
 
 pub fn human_tool_name(name: &str) -> String {

@@ -6,7 +6,7 @@ use gpui::{
     StatefulInteractiveElement, Styled, Window,
 };
 
-use crate::icons::{icon, icon_sized, path as icon_path, MODEL_PROVIDER_ICON_HEIGHT_PX, MODEL_PROVIDER_ICON_WIDTH_PX};
+use crate::icons::{icon, icon_sized, MODEL_PROVIDER_ICON_HEIGHT_PX, MODEL_PROVIDER_ICON_WIDTH_PX};
 use crate::context_menu::MENU_WIDTH_PX;
 use crate::theme::{ACCENT, ACCENT_SURFACE, PROVIDER_OPENCODE_CHIP_ICON, TEXT_MUTED};
 use crate::ui::reasoning_effort_tag;

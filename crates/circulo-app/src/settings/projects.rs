@@ -1,15 +1,13 @@
 use circulo_core::Project;
 use circulo_i18n::Catalog;
 use gpui::{
-    div, prelude::FluentBuilder, px, Context, FontWeight, InteractiveElement, ParentElement,
-    StatefulInteractiveElement, Styled,
+    div, px, Context, FontWeight, InteractiveElement, ParentElement, StatefulInteractiveElement,
+    Styled,
 };
 use uuid::Uuid;
 
 use crate::shell::{settings_text_button, settings_text_button_accent, AppShell};
-use crate::theme::{
-    BG_SIDEBAR, BORDER, COMPOSER_GUTTER_PX, CONTENT_MAX_WIDTH_PX, TEXT, TEXT_MUTED,
-};
+use crate::theme::{BG_SIDEBAR, BORDER, COMPOSER_GUTTER_PX, CONTENT_MAX_WIDTH_PX, TEXT_MUTED};
 
 pub fn active_projects_panel(
     projects: &[Project],

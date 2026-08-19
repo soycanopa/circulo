@@ -39,8 +39,8 @@ use crate::settings::{
     SettingsSection,
 };
 use crate::stream::{
-    apply_protocol_event, resubscribe_delay, should_apply_post_transcript,
-    should_apply_refresh_transcript, should_unlock_composer, stream_attempts_after_event,
+    apply_protocol_event, resubscribe_delay, should_apply_refresh_transcript,
+    should_unlock_composer, stream_attempts_after_event,
 };
 use crate::ui::{TextInput, TextInputEvent};
 use crate::theme::{
@@ -3553,17 +3553,6 @@ fn project_name_from_picked_path(path: &std::path::Path) -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or("Project")
         .to_string()
-}
-
-fn label(text: &str, active: bool) -> impl IntoElement {
-    div()
-        .px_2()
-        .py_1()
-        .rounded_md()
-        .text_sm()
-        .when(active, |el| el.bg(ACCENT).text_color(TEXT))
-        .when(!active, |el| el.text_color(TEXT_MUTED))
-        .child(text.to_string())
 }
 
 fn muted(text: &str) -> impl IntoElement {
