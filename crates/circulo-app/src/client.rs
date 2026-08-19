@@ -285,6 +285,32 @@ impl DaemonClient {
         )
     }
 
+    /// Update the session's model and provider in one round trip. The
+    /// model id alone doesn't tell the daemon which adapter to
+    /// dispatch to; the `agent` field carries the routing hint.
+    /// The composer picker uses this whenever the user picks a model
+    /// from a different provider than the session's current agent.
+    pub fn set_model_and_agent(
+        &self,
+        session_id: Uuid,
+        model_id: String,
+        agent: AgentType,
+    ) -> Result<Session, String> {
+        self.patch(
+            &format!("/v1/sessions/{session_id}"),
+            &PatchSessionRequest {
+                title: None,
+                project_id: None,
+                archive: None,
+                agent: Some(agent),
+                composer_model_id: Some(model_id),
+                composer_model_variant: None,
+                composer_permission_mode: None,
+                composer_interaction_mode: None,
+            },
+        )
+    }
+
     pub fn rename_session(&self, session_id: Uuid, title: String) -> Result<Session, String> {
         self.patch(
             &format!("/v1/sessions/{session_id}"),
