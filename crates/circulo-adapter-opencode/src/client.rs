@@ -364,10 +364,6 @@ impl EventStream {
     /// (`server.connected`, `server.heartbeat`) are consumed without being
     /// returned; `on_activity` runs for every frame so callers can extend an
     /// inactivity deadline while OpenCode is still alive.
-    pub fn next_event(&mut self) -> Result<serde_json::Value, AdapterError> {
-        self.next_event_with_activity(|| {})
-    }
-
     pub fn next_event_with_activity(
         &mut self,
         mut on_activity: impl FnMut(),
