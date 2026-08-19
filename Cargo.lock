@@ -939,6 +939,7 @@ name = "circulo-adapter-fake"
 version = "0.1.0"
 dependencies = [
  "circulo-adapter",
+ "circulo-core",
  "serde_json",
 ]
 

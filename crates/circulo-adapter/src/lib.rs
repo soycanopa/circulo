@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 pub use circulo_core::{
-    ComposerInteractionMode, ComposerPermissionMode, ModelCatalogEntry, Task, TaskStatus,
+    AgentType, ComposerInteractionMode, ComposerPermissionMode, ModelCatalogEntry, Task, TaskStatus,
     ToolCall, ToolCallStatus, ToolOutput, Uuid,
 };
 
