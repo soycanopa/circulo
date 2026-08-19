@@ -214,4 +214,19 @@ mod tests {
             Some("ses_first")
         );
     }
+
+    #[test]
+    fn non_opencode_agent_roundtrips() {
+        let store = Store::open_in_memory().unwrap();
+        let mut s = session(70, None, "CmdCode session");
+        s.agent = AgentType::CommandCode;
+        store.create_session(&s).unwrap();
+        let loaded = store.get_session(s.id).unwrap().unwrap();
+        assert_eq!(loaded.agent, AgentType::CommandCode);
+        // Existing OpenCode sessions still load correctly.
+        let s2 = session(71, None, "OpenCode session");
+        store.create_session(&s2).unwrap();
+        let loaded2 = store.get_session(s2.id).unwrap().unwrap();
+        assert_eq!(loaded2.agent, AgentType::OpenCode);
+    }
 }
