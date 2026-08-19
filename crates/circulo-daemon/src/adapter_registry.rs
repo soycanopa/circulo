@@ -1,17 +1,19 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use circulo_adapter::AgentAdapter;
-use circulo_core::AgentType;
+use circulo_core::{AgentType, UserPreferences};
 use circulo_protocol::AgentDescriptor;
 
 #[derive(Clone)]
 pub struct AdapterRegistry {
     opencode: Arc<dyn AgentAdapter>,
     commandcode: Option<Arc<dyn AgentAdapter>>,
+    disabled: HashSet<AgentType>,
 }
 
 impl AdapterRegistry {
-    pub fn build() -> Self {
+    pub fn build(prefs: &UserPreferences) -> Self {
         let opencode: Arc<dyn AgentAdapter> = match std::env::var("CIRCULO_ADAPTER").as_deref() {
             Ok("fake") => Arc::new(circulo_adapter_fake::FakeAdapter::new()),
             _ => Arc::new(circulo_adapter_opencode::OpenCodeAdapter::from_env()),
@@ -21,6 +23,7 @@ impl AdapterRegistry {
         Self {
             opencode,
             commandcode,
+            disabled: prefs.disabled_agents.iter().copied().collect(),
         }
     }
 
@@ -30,6 +33,7 @@ impl AdapterRegistry {
         Self {
             opencode,
             commandcode: None,
+            disabled: HashSet::new(),
         }
     }
 
@@ -37,7 +41,22 @@ impl AdapterRegistry {
         Arc::clone(&self.opencode)
     }
 
+    pub fn is_enabled(&self, agent: AgentType) -> bool {
+        !self.disabled.contains(&agent)
+    }
+
+    pub fn set_disabled(&mut self, agent: AgentType, disabled: bool) {
+        if disabled {
+            self.disabled.insert(agent);
+        } else {
+            self.disabled.remove(&agent);
+        }
+    }
+
     pub fn for_agent(&self, agent: AgentType) -> Option<Arc<dyn AgentAdapter>> {
+        if !self.is_enabled(agent) {
+            return None;
+        }
         match agent {
             AgentType::OpenCode => Some(Arc::clone(&self.opencode)),
             AgentType::CommandCode => self.commandcode.as_ref().map(Arc::clone),
@@ -53,6 +72,7 @@ impl AdapterRegistry {
             agent: AgentType::OpenCode,
             available: opencode_available,
             version: opencode_version,
+            enabled: self.is_enabled(AgentType::OpenCode),
         }];
         if let Some(commandcode) = self.commandcode.as_ref() {
             let cc_available =
@@ -61,6 +81,7 @@ impl AdapterRegistry {
                 agent: AgentType::CommandCode,
                 available: cc_available,
                 version: None,
+                enabled: self.is_enabled(AgentType::CommandCode),
             });
         }
         descriptors

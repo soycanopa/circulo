@@ -20,7 +20,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         Some(path) => Store::open(path)?,
         None => Store::open_default()?,
     };
-    let registry = AdapterRegistry::build();
+    let prefs = store.get_preferences().unwrap_or_default();
+    let registry = AdapterRegistry::build(&prefs);
     let state = AppState::new(store, registry);
     let listener = TcpListener::bind(addr).await?;
     println!("circulo-daemon listening on http://{addr} (default {DEFAULT_ADDR})");

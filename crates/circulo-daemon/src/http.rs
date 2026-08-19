@@ -78,6 +78,8 @@ impl From<ApiError> for HttpError {
             ErrorCode::ProjectAssignmentLocked => StatusCode::CONFLICT,
             ErrorCode::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
             ErrorCode::Internal => StatusCode::INTERNAL_SERVER_ERROR,
+            ErrorCode::AgentDisabled => StatusCode::UNPROCESSABLE_ENTITY,
+            ErrorCode::LastProviderEnabled => StatusCode::CONFLICT,
         };
         Self(status, value)
     }
