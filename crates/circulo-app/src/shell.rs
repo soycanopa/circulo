@@ -157,6 +157,7 @@ pub struct AppShell {
     session_menu_focus: gpui::FocusHandle,
     pub(crate) session_menu_selected: usize,
     rename_input: Entity<TextInput>,
+    project_rename_input: Entity<TextInput>,
     stream_gen: u64,
     stream_session: Option<Uuid>,
     stream_attempts: u32,
@@ -166,6 +167,7 @@ pub struct AppShell {
     question_answer_input: Entity<TextInput>,
     _composer_subscription: Subscription,
     _rename_input_subscription: Subscription,
+    _project_rename_input_subscription: Subscription,
     _question_input_subscription: Subscription,
 }
 
@@ -174,6 +176,7 @@ impl AppShell {
         let composer = cx.new(|cx| Composer::new(window, cx));
         let rename_input = cx.new(|cx| TextInput::new(window, cx));
         let question_answer_input = cx.new(|cx| TextInput::new(window, cx));
+        let project_rename_input = cx.new(|cx| TextInput::new(window, cx));
         let composer_subscription = {
             let composer_entity = composer.clone();
             cx.subscribe(&composer_entity, |shell, _, event, cx| {
@@ -185,6 +188,15 @@ impl AppShell {
                 shell.commit_rename_session(cx);
             }
         });
+        let project_rename_input_subscription =
+            cx.subscribe(&project_rename_input, |shell, _, event, cx| {
+                if matches!(event, TextInputEvent::Submit(_)) {
+                    if let Some(project_id) = shell.pending_rename_project {
+                        let name = shell.project_rename_input.read(cx).content().to_string();
+                        shell.commit_rename_project(project_id, name, cx);
+                    }
+                }
+            });
         let question_input_subscription =
             cx.subscribe(&question_answer_input, |shell, input, event, cx| {
                 if matches!(event, TextInputEvent::Submit(_)) {
@@ -249,6 +261,7 @@ impl AppShell {
             session_menu_focus: cx.focus_handle(),
             session_menu_selected: 0,
             rename_input,
+            project_rename_input,
             stream_gen: 0,
             stream_attempts: 0,
             stream_session: None,
@@ -258,6 +271,7 @@ impl AppShell {
             question_answer_input,
             _composer_subscription: composer_subscription,
             _rename_input_subscription: rename_input_subscription,
+            _project_rename_input_subscription: project_rename_input_subscription,
             _question_input_subscription: question_input_subscription,
         };
         shell.schedule_refresh(cx);
@@ -564,9 +578,26 @@ impl AppShell {
         .detach();
     }
 
-    pub(crate) fn request_rename_project(&mut self, project_id: Uuid, cx: &mut Context<Self>) {
+    pub(crate) fn request_rename_project(
+        &mut self,
+        project_id: Uuid,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let initial = self
+            .projects
+            .iter()
+            .find(|project| project.id == project_id)
+            .map(|project| project.name.clone())
+            .unwrap_or_default();
+        let placeholder = self.catalog.get("settings.projects.rename_placeholder").to_string();
+        self.project_rename_input.update(cx, |input, cx| {
+            input.set_placeholder(placeholder, cx);
+            input.set_content(initial, cx);
+        });
         self.pending_rename_project = Some(project_id);
         self.pending_delete_project = None;
+        self.project_rename_input.read(cx).focus(window);
         cx.notify();
     }
 
@@ -2003,7 +2034,7 @@ impl Render for AppShell {
                 div()
                     .flex_1()
                     .min_h_0()
-                    .child(main_column(self, &catalog, cx)),
+                    .child(main_column(self, &catalog, window, cx)),
             )
             .child(sidebar_toggle(collapsed, cx))
             .when(!collapsed, |el| {
@@ -3210,10 +3241,11 @@ fn session_row(
     fn main_column(
     state: &mut AppShell,
     catalog: &Catalog,
+    window: &mut Window,
     cx: &mut Context<AppShell>,
 ) -> gpui::Div {
     if state.settings_open {
-        return settings_main_column(state, catalog, cx);
+        return settings_main_column(state, catalog, window, cx);
     }
 
     let no_session = state.selected.is_none();
@@ -3295,6 +3327,7 @@ fn session_row(
 fn settings_main_column(
     state: &AppShell,
     catalog: &Catalog,
+    window: &mut Window,
     cx: &mut Context<AppShell>,
 ) -> gpui::Div {
     let collapsed = state.sidebar_collapsed;
@@ -3309,7 +3342,10 @@ fn settings_main_column(
         SettingsSection::Projects => active_projects_panel(
             &state.projects,
             state.pending_delete_project,
+            state.pending_rename_project,
+            &state.project_rename_input,
             catalog,
+            window,
             cx,
         )
         .into_any_element(),
