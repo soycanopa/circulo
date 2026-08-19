@@ -145,6 +145,8 @@
   "settings.health.opencode_unknown": "OpenCode status unknown",
   "settings.health.retry": "Retry",
   "settings.health.version_unknown": "Version unknown",
+  "commandcode.badge": "Command Code",
+  "opencode.badge": "OpenCode",
   "settings.commandcode.title": "Command Code",
   "settings.commandcode.unavailable": "Command Code isn’t available",
   "settings.commandcode.auth_required": "Sign in required. Run `cmd login` in your terminal.",

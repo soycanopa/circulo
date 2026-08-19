@@ -1,4 +1,4 @@
-use circulo_core::{model_provider_tag, ModelCatalogEntry};
+use circulo_core::{model_provider_tag, AgentType, ModelCatalogEntry};
 use circulo_i18n::Catalog;
 use gpui::{
     div, prelude::FluentBuilder, px, Context, FocusHandle, FontWeight, InteractiveElement,
@@ -63,10 +63,15 @@ pub fn models_settings_panel(
             let model_id = model.id.clone();
             let enabled = enabled_ids.iter().any(|id| id == &model_id);
             let tag = model_provider_tag(&model.provider_id, &model.provider_name);
+            let agent_label = match model.agent {
+                AgentType::OpenCode => catalog.get("opencode.badge").to_string(),
+                AgentType::CommandCode => catalog.get("commandcode.badge").to_string(),
+            };
             list = list.child(model_row(
                 index,
                 model.name.clone(),
                 tag,
+                agent_label,
                 enabled,
                 cx.listener(move |this, _, _, cx| {
                     this.toggle_model_enabled(&model_id, cx);
@@ -202,6 +207,7 @@ fn model_row(
     index: usize,
     label: String,
     provider_tag: String,
+    agent_label: String,
     enabled: bool,
     on_toggle: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> impl gpui::IntoElement {
@@ -229,9 +235,25 @@ fn model_row(
                         .text_color(TEXT)
                         .child(label),
                 )
-                .child(provider_tag_chip(provider_tag)),
+                .child(provider_tag_chip(provider_tag))
+                .child(agent_badge_chip(agent_label)),
         )
         .child(toggle_switch(("model-toggle", index), enabled, on_toggle))
+}
+
+fn agent_badge_chip(label: String) -> impl gpui::IntoElement {
+    div()
+        .flex_none()
+        .px(px(6.))
+        .py(px(2.))
+        .rounded(px(4.))
+        .bg(BG_MAIN)
+        .border_1()
+        .border_color(BORDER)
+        .text_xs()
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(TEXT_MUTED)
+        .child(label)
 }
 
 fn provider_tag_chip(label: String) -> impl gpui::IntoElement {
