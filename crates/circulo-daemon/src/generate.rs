@@ -3,15 +3,14 @@ use std::sync::Arc;
 
 use circulo_adapter::{
     AdapterError, AdapterEvent, AgentAdapter, ErrorReason, GenerateRequest, PermissionDecision,
-    PermissionRequest, PermissionResponder, QuestionAnswer, QuestionRequest, QuestionResponder,
-    QuestionResponse, UserQuestion,
+    PermissionRequest, PermissionResponder, QuestionRequest, QuestionResponder, UserQuestion,
 };
 use circulo_core::{
     ComposerInteractionMode, ComposerPermissionMode, Message, MessagePart, MessageRole,
     MessageStatus, OffsetDateTime, ToolCall, Uuid, is_default_session_title,
 };
 use circulo_i18n::Catalog;
-use circulo_persist::{PersistError, Store};
+use circulo_persist::Store;
 use circulo_protocol::{ApiError, ProtocolEvent, QuestionOptionBody, UserQuestionBody, API_VERSION};
 use tokio::sync::Mutex;
 
@@ -78,33 +77,6 @@ pub fn persist_user_message(
         message: user.clone(),
     });
     Ok(user)
-}
-
-pub fn run_turn(
-    store: Arc<Mutex<Store>>,
-    adapter: &dyn AgentAdapter,
-    session_id: Uuid,
-    user_text: &str,
-    cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
-    turn_registry: Option<(&crate::turn_registry::TurnRegistry, Uuid)>,
-    permission_waiter: Option<&crate::permission_waiter::PermissionWaiter>,
-    question_waiter: Option<&crate::question_waiter::QuestionWaiter>,
-    protocol_events: Option<&tokio::sync::broadcast::Sender<ProtocolEvent>>,
-    emit: &mut dyn FnMut(ProtocolEvent),
-) -> Result<Message, ApiError> {
-    let _user = persist_user_message(&store, session_id, user_text, emit)?;
-    run_assistant_turn(
-        store,
-        adapter,
-        session_id,
-        user_text,
-        cancel,
-        turn_registry,
-        permission_waiter,
-        question_waiter,
-        protocol_events,
-        emit,
-    )
 }
 
 pub fn run_assistant_turn(
@@ -457,7 +429,7 @@ mod tests {
     use circulo_adapter::{
         AdapterError, AdapterEvent, AdapterHealth, AgentAdapter, ErrorReason, GenerateRequest,
     };
-    use circulo_persist::{PersistError, Store};
+    use circulo_persist::Store;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct BindingFakeAdapter {
@@ -517,7 +489,8 @@ mod tests {
         };
 
         let mut events = Vec::new();
-        let assistant = run_turn(
+        persist_user_message(&store, session.id, "hi", &mut |event| events.push(event)).unwrap();
+        let assistant = run_assistant_turn(
             Arc::clone(&store),
             &adapter,
             session.id,
@@ -546,19 +519,22 @@ mod tests {
             .iter()
             .any(|event| matches!(event, ProtocolEvent::SessionMessageCompleted { .. })));
 
-        let second = run_turn(
-            Arc::clone(&store),
-            &adapter,
-            session.id,
-            "again",
-            None,
-            None,
-            None,
-            None,
-            None,
-            &mut |_| {},
-        )
-        .unwrap();
+        let second = {
+            persist_user_message(&store, session.id, "again", &mut |_| {}).unwrap();
+            run_assistant_turn(
+                Arc::clone(&store),
+                &adapter,
+                session.id,
+                "again",
+                None,
+                None,
+                None,
+                None,
+                None,
+                &mut |_| {},
+            )
+            .unwrap()
+        };
         assert_eq!(second.status, MessageStatus::Complete);
         assert_eq!(
             with_store(&store, |store| {
@@ -649,7 +625,14 @@ mod tests {
         .unwrap();
 
         let mut events = Vec::new();
-        run_turn(
+        persist_user_message(
+            &store,
+            default_session.id,
+            "hi",
+            &mut |event| events.push(event),
+        )
+        .unwrap();
+        run_assistant_turn(
             Arc::clone(&store),
             &TitleFakeAdapter,
             default_session.id,
@@ -705,7 +688,8 @@ mod tests {
         })
         .unwrap();
 
-        run_turn(
+        persist_user_message(&store, renamed.id, "hi", &mut |_| {}).unwrap();
+        run_assistant_turn(
             Arc::clone(&store),
             &TitleFakeAdapter,
             renamed.id,
