@@ -387,15 +387,17 @@ Un adapter fake (`circulo-adapter-fake`) es deseable para desarrollar UI sin Ope
 
 ## 15. Decisiones abiertas (bloqueantes para código)
 
-1. Estrategia HTTPS/certs en localhost (app ↔ daemon).
-2. Cómo se descubre y lanza OpenCode (`opencode serve`).
-3. Mapeo de identidad Session Circulo ↔ session OpenCode.
-4. Pipeline de Heroicons → GPUI.
-5. Virtualización del message list: ¿desde el día 1 o cuando duela?
-6. Versión mínima de macOS.
-7. Bundle ID y nombre de app (`app.circulo` u otro).
-8. Formato de catálogo i18n (Fluent vs JSON).
-9. Supervisión concreta app → daemon (socket, pidfile, puerto fijo).
+Cerradas el 19 ago 2026:
+
+1. **HTTPS/certs localhost (app ↔ daemon):** el daemon escucha HTTP plano en `127.0.0.1` (`axum` sin TLS). TLS local queda diferido fuera del MVP; se reintroduce como change propio si surge necesidad real.
+2. **Lanzamiento de OpenCode:** `circulo-daemon` spawnea `opencode serve` en el puerto 7433 desde el `.app` bundleado. Attach a un `opencode serve` externo queda diferido (`docs/POST-MVP.md` §2).
+3. **Mapping Circulo ↔ OpenCode session:** `circulo-persist` persiste `agent_session_id` por sesión; el adapter OpenCode lo usa en cada `prompt_async`. Implementación cerrada.
+4. **Pipeline Heroicons → GPUI:** `circulo-app/src/icons.rs` resuelve paths SVG inline; el resto de la UI consume `crate::icons::icon(...)`. Implementación cerrada.
+5. **Virtualización del message list:** se aplicó `content_rail` con caché de markdown renderizado (`circulo-app/src/ui/layout.rs`, `circulo-app/src/parts.rs`). Suficiente para sesiones largas del MVP; virtualización completa sigue fuera de scope.
+6. **Versión mínima de macOS:** **macOS 14 (Sonoma)** para el MVP.
+7. **Bundle ID:** **`app.circulo.client`** para el `.app` de Circulo.
+8. **Formato de catálogo i18n:** JSON, en `crates/circulo-i18n/locales/` con fallback a `en`. Implementación cerrada.
+9. **Supervisión app → daemon:** `scripts/run-app.sh` y `scripts/build-desktop-app.sh` orquestan el spawn del daemon; la app reusa un daemon ya vivo vía healthcheck en `/v1/health`. Implementación cerrada.
 
 Cerradas el 16 ago 2026: SQLite; dos procesos Circulo; `project_id` nullable; app no habla con OpenCode; UI `en` + locales.
 
@@ -403,7 +405,7 @@ Cerradas: restore de proyecto; `project_id` inmutable tras el primer send; sideb
 
 Cerradas el 18 ago 2026: auto-título vía OpenCode (solo defaults); cancel/stop de generación; Settings con health + proyectos archivados; spawn bundled daemon desde `.app`.
 
-Hasta investigar y pedir permiso, las abiertas no se “resuelven” en un commit.
+Hasta investigar y pedir permiso, las decisiones de producto no se “resuelven” en un commit.
 
 ---
 
