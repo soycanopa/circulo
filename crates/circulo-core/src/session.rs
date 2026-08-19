@@ -9,6 +9,7 @@ use crate::{ComposerInteractionMode, ComposerPermissionMode};
 #[serde(rename_all = "snake_case")]
 pub enum AgentType {
     OpenCode,
+    CommandCode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
