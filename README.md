@@ -24,10 +24,10 @@ Circulo is the opposite bet:
 
 | Item | State |
 | --- | --- |
-| Product definition | Current (`Circulo-Project-Definition.md` v0.6) |
+| Product definition | Current (`Circulo-Project-Definition.md` v0.8) |
 | PRD / TRD / UX / Flows / Implementation | Current in `docs/` |
 | Engineering contract | `AGENTS.md` |
-| Application code | Workspace scaffold only (no product behavior) |
+| Application code | MVP feature-complete: app, daemon, OpenCode adapter, persistence, settings, sidebar, composer, streaming. 153 unit/integration tests passing. |
 | Platform | macOS first (Windows / Linux later) |
 | MVP agent | OpenCode only |
 
