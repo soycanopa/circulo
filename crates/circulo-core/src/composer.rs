@@ -55,7 +55,7 @@ impl ComposerPermissionMode {
     ];
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelCatalogEntry {
     pub id: String,
     pub name: String,
@@ -67,6 +67,14 @@ pub struct ModelCatalogEntry {
     /// OpenCode variant ids for reasoning effort (`low`, `medium`, `high`, …).
     #[serde(default)]
     pub reasoning_variants: Vec<String>,
+    /// Which Circulo provider serves this model. Defaults to OpenCode
+    /// for backward compat with fixtures that don't include the field.
+    #[serde(default = "default_model_agent")]
+    pub agent: AgentType,
+}
+
+fn default_model_agent() -> AgentType {
+    AgentType::OpenCode
 }
 
 pub fn model_catalog_id(provider_id: &str, model_id: &str) -> String {
