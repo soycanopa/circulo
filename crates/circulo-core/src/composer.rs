@@ -1,4 +1,8 @@
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
+
+use crate::AgentType;
 
 /// Tool permission posture for a session.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
@@ -113,6 +117,11 @@ pub fn model_provider_tag(provider_id: &str, provider_name: &str) -> String {
 pub struct UserPreferences {
     #[serde(default)]
     pub enabled_model_ids: Vec<String>,
+    /// Providers the user has disabled in Settings. A disabled provider
+    /// disappears from the AgentSelector and is rejected by the daemon on
+    /// new session creation; existing sessions are migrated to OpenCode.
+    #[serde(default)]
+    pub disabled_agents: BTreeSet<AgentType>,
 }
 
 #[cfg(test)]

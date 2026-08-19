@@ -5,11 +5,17 @@ use uuid::Uuid;
 use crate::DomainError;
 use crate::{ComposerInteractionMode, ComposerPermissionMode};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentType {
     OpenCode,
     CommandCode,
+}
+
+impl AgentType {
+    /// All variants, in declaration order. Used by the daemon to
+    /// validate the "at least one provider enabled" guard.
+    pub const ALL: [Self; 2] = [Self::OpenCode, Self::CommandCode];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
