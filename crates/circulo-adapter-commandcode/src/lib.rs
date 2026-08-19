@@ -6,6 +6,7 @@
 //! and maps the frames to `AdapterEvent`s. Exit codes map to
 //! `AdapterError`s; auth (3) becomes `Unavailable(Unauthorized)`.
 
+mod catalog;
 mod discovery;
 mod mapping;
 mod subprocess;
@@ -19,6 +20,7 @@ use circulo_adapter::{
     GenerateRequest, ModelCatalogEntry, OpenCodeHealth,
 };
 
+pub use catalog::list_commandcode_models;
 pub use discovery::discover_commandcode_binary;
 
 pub struct CommandCodeAdapter {
@@ -92,7 +94,7 @@ impl AgentAdapter for CommandCodeAdapter {
     }
 
     fn list_models(&self) -> Result<Vec<ModelCatalogEntry>, AdapterError> {
-        Ok(Vec::new())
+        Ok(catalog::list_commandcode_models())
     }
 
     fn sync_session_settings(
