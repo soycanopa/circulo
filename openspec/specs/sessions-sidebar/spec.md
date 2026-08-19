@@ -43,6 +43,16 @@ Search MUST filter session titles in both Today and Earlier. Empty sections afte
 - **WHEN** the sidebar renders
 - **THEN** only the Earlier section is shown with matching rows
 
+### Requirement: Today and Earlier order sessions by last activity
+
+Within Today and within Earlier, sessions MUST be listed in `last_message_at DESC` order, with `NULL` values placed last. Ties MUST be broken by `created_at DESC`. The implementation MAY push the ordering down to SQL (for example, `ORDER BY last_message_at IS NULL, last_message_at DESC, created_at DESC`).
+
+#### Scenario: New session ranks above untouched sessions
+
+- **GIVEN** a fresh session with no messages and an existing session with a message today
+- **WHEN** Today renders
+- **THEN** the existing session appears before the new one (real activity above no-activity)
+
 ### Requirement: New session is unassigned and selected
 
 Creating a session MUST call the daemon without a project id and select the new session.
