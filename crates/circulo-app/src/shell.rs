@@ -36,6 +36,7 @@ use crate::ui::{
 use crate::session_overlay::{session_overlay, SessionOverlay};
 use crate::settings::{
     active_projects_panel, archived_projects_panel, general_settings_panel, models_settings_panel,
+    providers_panel,
     SettingsSection,
 };
 use crate::stream::{
@@ -469,6 +470,55 @@ impl AppShell {
         self.settings_models_query.clear();
         self.pending_delete_project = None;
         cx.notify();
+    }
+
+    /// Stage a provider toggle. Disables always require confirmation;
+    /// enables run immediately.
+    pub(crate) fn request_provider_toggle(
+        &mut self,
+        agent: circulo_core::AgentType,
+        enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if enabled {
+            self.confirm_provider_toggle(agent, true, cx);
+        } else {
+            self.pending_provider_toggle = Some((agent, false));
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn cancel_provider_toggle(&mut self) {
+        self.pending_provider_toggle = None;
+    }
+
+    pub(crate) fn confirm_provider_toggle(
+        &mut self,
+        agent: circulo_core::AgentType,
+        enabled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { client.set_provider_enabled(agent, enabled) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if let Err(err) = result {
+                    this.error = Some(err);
+                } else {
+                    this.preferences.disabled_agents.remove(&agent);
+                    if !enabled {
+                        this.preferences.disabled_agents.insert(agent);
+                    }
+                    this.pending_provider_toggle = None;
+                    this.refresh();
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn refresh_settings_health(&mut self, cx: &mut Context<Self>) {
@@ -3391,6 +3441,13 @@ fn settings_main_column(
         .into_any_element(),
         SettingsSection::Archived => archived_projects_panel(&state.archived_projects, catalog, cx)
             .into_any_element(),
+        SettingsSection::Providers => providers_panel(
+            &state.available_agents,
+            state.pending_provider_toggle,
+            catalog,
+            cx,
+        )
+        .into_any_element(),
         SettingsSection::Models => models_settings_panel(
             &state.composer_models,
             &state.enabled_model_ids,
