@@ -96,3 +96,22 @@ The Archived Settings section MUST list archived projects and offer Restore with
 - **WHEN** the user restores it from Settings → Archived
 - **THEN** the project becomes active again
 - **AND** its sessions reappear in Today or Earlier on refresh
+
+### Requirement: Settings exposes General, Projects, Archived, and Models
+
+The Settings surface MUST expose exactly four navigation sections in this fixed order: **General**, **Projects**, **Archived**, **Models**. Each section routes to its dedicated panel. Removing, renaming, or reordering a section requires a new OpenSpec change.
+
+#### Scenario: All four sections are visible
+
+- **GIVEN** the user opens Settings
+- **WHEN** the sidebar nav renders
+- **THEN** General, Projects, Archived, and Models are listed in that order
+- **AND** each section routes to its dedicated panel
+
+#### Scenario: Models panel shows the model catalog
+
+- **GIVEN** the user opens Settings → Models
+- **WHEN** the panel renders
+- **THEN** the catalog entries fetched from the daemon are listed
+- **AND** the user can toggle a model's enabled state
+- **AND** changes round-trip to the daemon
