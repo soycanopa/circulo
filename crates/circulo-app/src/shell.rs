@@ -139,6 +139,7 @@ pub struct AppShell {
     archived_projects: Vec<Project>,
     pending_delete_project: Option<Uuid>,
     pending_rename_project: Option<Uuid>,
+    available_agents: Vec<circulo_protocol::AgentDescriptor>,
     pub(crate) settings_models_query: String,
     pub(crate) settings_models_expanded: bool,
     pub(crate) settings_models_focus: gpui::FocusHandle,
@@ -243,6 +244,7 @@ impl AppShell {
             archived_projects: Vec::new(),
             pending_delete_project: None,
             pending_rename_project: None,
+            available_agents: Vec::new(),
             settings_models_query: String::new(),
             settings_models_expanded: false,
             settings_models_focus: cx.focus_handle(),
@@ -1984,6 +1986,38 @@ impl AppShell {
             self.messages.clear();
             self.jump_to_latest_visible = false;
         }
+        // Best-effort refresh of the available agents. Failure here is
+        // non-fatal: the composer falls back to a single-entry list.
+        let _ = self.client.list_agents().map(|agents| self.available_agents = agents);
+    }
+
+        /// Change the agent of an unstarted session. Wired up by the AgentSelector
+    /// in the composer; the selector is only rendered when
+    /// `available_agents.len() > 1`, so this is currently dead code. The
+    /// `commandcode-adapter` change wires it up.
+    #[allow(dead_code)]
+    pub(crate) fn set_session_agent(
+        &mut self,
+        session_id: Uuid,
+        agent: circulo_core::AgentType,
+        cx: &mut Context<Self>,
+    ) {
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { client.patch_session_agent(session_id, agent) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if let Err(err) = result {
+                    this.error = Some(err);
+                } else {
+                    this.refresh();
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 }
 
