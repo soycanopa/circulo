@@ -925,6 +925,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "circulo-adapter-commandcode"
+version = "0.1.0"
+dependencies = [
+ "circulo-adapter",
+ "circulo-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "circulo-adapter-fake"
 version = "0.1.0"
 dependencies = [

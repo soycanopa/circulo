@@ -29,6 +29,7 @@ circulo-protocol = { path = "crates/circulo-protocol" }
 circulo-adapter = { path = "crates/circulo-adapter" }
 circulo-adapter-fake = { path = "crates/circulo-adapter-fake" }
 circulo-adapter-opencode = { path = "crates/circulo-adapter-opencode" }
+circulo-adapter-commandcode = { path = "crates/circulo-adapter-commandcode" }
 circulo-persist = { path = "crates/circulo-persist" }
 circulo-i18n = { path = "crates/circulo-i18n" }
 circulo-markdown = { path = "crates/circulo-markdown" }

@@ -1,0 +1,14 @@
+[package]
+name = "circulo-adapter-commandcode"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Circulo adapter for Command Code headless mode (cmd -p --output-format json)."
+
+[dependencies]
+circulo-adapter.workspace = true
+circulo-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
