@@ -17,6 +17,8 @@ pub enum ErrorCode {
     InvalidRequest,
     Unavailable,
     Internal,
+    AgentDisabled,
+    LastProviderEnabled,
 }
 
 impl ErrorCode {
@@ -27,6 +29,8 @@ impl ErrorCode {
             Self::InvalidRequest => "invalid_request",
             Self::Unavailable => "unavailable",
             Self::Internal => "internal",
+            Self::AgentDisabled => "agent_disabled",
+            Self::LastProviderEnabled => "last_provider_enabled",
         }
     }
 }
@@ -68,6 +72,20 @@ impl ApiError {
 
     pub fn internal() -> Self {
         Self::new(ErrorCode::Internal, "Something went wrong inside Circulo.")
+    }
+
+    pub fn agent_disabled(agent: circulo_core::AgentType) -> Self {
+        Self::new(
+            ErrorCode::AgentDisabled,
+            format!("{agent:?} is disabled in Settings."),
+        )
+    }
+
+    pub fn last_provider_enabled() -> Self {
+        Self::new(
+            ErrorCode::LastProviderEnabled,
+            "At least one provider must stay enabled.",
+        )
     }
 }
 
@@ -229,6 +247,14 @@ pub struct AgentDescriptor {
     pub available: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+    /// User preference. A disabled provider is not selectable for new
+    /// sessions and is omitted from the AgentSelector.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -274,12 +300,15 @@ pub struct QuestionReplyRequest {
 pub struct PreferencesBody {
     #[serde(default)]
     pub enabled_model_ids: Vec<String>,
+    #[serde(default)]
+    pub disabled_agents: Vec<circulo_core::AgentType>,
 }
 
 impl From<UserPreferences> for PreferencesBody {
     fn from(value: UserPreferences) -> Self {
         Self {
             enabled_model_ids: value.enabled_model_ids,
+            disabled_agents: value.disabled_agents.into_iter().collect(),
         }
     }
 }
@@ -288,6 +317,7 @@ impl From<PreferencesBody> for UserPreferences {
     fn from(value: PreferencesBody) -> Self {
         Self {
             enabled_model_ids: value.enabled_model_ids,
+            disabled_agents: value.disabled_agents.into_iter().collect(),
         }
     }
 }
