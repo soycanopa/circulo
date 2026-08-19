@@ -102,3 +102,31 @@ Changing `project_id` after the first user message MUST fail with HTTP 409 and `
 - **WHEN** the client calls `GET /v1/agents`
 - **THEN** the response array contains one entry per registered provider
 - **AND** each entry's `available` is independent of the others
+
+#### Scenario: Disabled provider shows enabled = false
+
+- **GIVEN** a daemon build with both providers, and CommandCode is in `UserPreferences.disabled_agents`
+- **WHEN** the client calls `GET /v1/agents`
+- **THEN** the CommandCode entry has `enabled = false`
+- **AND** the OpenCode entry has `enabled = true`
+
+### Requirement: Provider enable/disable endpoints
+
+The daemon MUST expose `POST /v1/agents/{agent}/enable` and `POST /v1/agents/{agent}/disable`. Both endpoints update the `disabled_agents` set in `UserPreferences`, update the in-memory registry, and return the updated `PreferencesBody`. Disabling a provider MUST atomically migrate existing sessions of that agent to OpenCode.
+
+#### Scenario: Disable with active sessions
+
+- **GIVEN** the user has 3 sessions with `agent = command_code`
+- **WHEN** the user POSTs to `/v1/agents/command_code/disable`
+- **THEN** the response is 200 with the updated `PreferencesBody`
+- **AND** all 3 sessions now have `agent = opencode`
+
+#### Scenario: Enable is idempotent
+
+- **GIVEN** CommandCode is already enabled
+- **WHEN** the user POSTs to `/v1/agents/command_code/enable`
+- **THEN** the response is 200 with no state change
+
+### Requirement: AgentDisabled error code on session create
+
+`POST /v1/sessions` MUST return 422 with `ErrorCode::AgentDisabled` when `body.agent` is in `UserPreferences.disabled_agents`. The error message MUST name the disabled provider.

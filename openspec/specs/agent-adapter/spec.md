@@ -94,3 +94,19 @@ The Command Code adapter MUST run `cmd -p <query> --output-format json`, parse t
 - **WHEN** the adapter runs a turn
 - **THEN** the result is `AdapterError::unavailable(Unauthorized, ...)` with a human message
 - **AND** `probe()` returns `AdapterHealth::Error { message: "Sign in required..." }`
+
+### Requirement: Registry respects user-enabled providers
+
+The `AdapterRegistry` MUST honor `UserPreferences.disabled_agents` on every dispatch. A disabled provider MUST NOT be returned by `for_agent` and MUST report `enabled = false` in the descriptor. The adapter instance MAY still be constructed (so re-enabling is a state change, not a re-build), but it MUST NOT be invoked.
+
+#### Scenario: Disabled provider is rejected at session create
+
+- **GIVEN** a session create request with `body.agent` set to a disabled provider
+- **WHEN** the daemon handles `POST /v1/sessions`
+- **THEN** the response is 422 with `ErrorCode::AgentDisabled` and a human message
+
+#### Scenario: Last-enabled guard prevents disabling all providers
+
+- **GIVEN** only one provider is currently enabled
+- **WHEN** the user disables that provider
+- **THEN** the response is 409 with `ErrorCode::LastProviderEnabled` and the state is unchanged

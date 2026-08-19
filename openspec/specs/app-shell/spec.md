@@ -133,3 +133,28 @@ The Settings surface MUST expose exactly four navigation sections in this fixed 
 - **THEN** the catalog entries fetched from the daemon are listed
 - **AND** the user can toggle a model's enabled state
 - **AND** changes round-trip to the daemon
+
+### Requirement: Settings exposes a Providers section
+
+The Settings surface MUST include a `Providers` section as a fifth nav item. Each registered provider MUST be listed with a status (active / disabled / not installed) and a toggle. Disabling a provider MUST require an inline confirmation that explains the migration consequence. The toggle MUST be rejected with a human message when the change would leave zero providers enabled.
+
+#### Scenario: Toggle row shows current state
+
+- **GIVEN** the user opens Settings → Providers
+- **WHEN** the panel renders
+- **THEN** one row per registered provider is shown
+- **AND** each row has a status badge and a toggle button whose label matches the current state (Disable when active, Enable when disabled)
+
+#### Scenario: Disable requires confirmation
+
+- **GIVEN** the user clicks Disable on a provider with active sessions
+- **WHEN** the panel shows the confirm strip
+- **THEN** the copy explains that existing sessions will move to OpenCode
+- **AND** the user can confirm or cancel
+
+#### Scenario: Last-enabled guard surfaces as human error
+
+- **GIVEN** only one provider is currently enabled
+- **WHEN** the user tries to disable it
+- **THEN** the daemon returns 409 with a human message
+- **AND** the toggle UI shows the message and the state is unchanged
