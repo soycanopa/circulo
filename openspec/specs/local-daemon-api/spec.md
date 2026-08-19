@@ -84,3 +84,21 @@ Changing `project_id` after the first user message MUST fail with HTTP 409 and `
 - **GIVEN** the OpenCode binary is missing or the server failed to start
 - **WHEN** the client calls `/v1/health`
 - **THEN** the response reflects OpenCode unavailable with a stable reason code mappable to locale copy
+
+### Requirement: Agent list endpoint exposes registered providers
+
+`GET /v1/agents` MUST return a JSON array of `AgentDescriptor` entries, one per registered provider. Each entry MUST include the `agent` enum (snake_case), an `available` boolean, and an optional `version` string.
+
+#### Scenario: List agents in a single-provider build
+
+- **GIVEN** a daemon build that only registers the OpenCode adapter
+- **WHEN** the client calls `GET /v1/agents`
+- **THEN** the response is a one-element array
+- **AND** the element has `agent = "opencode"`, `available` reflects the live probe, and `version` is the OpenCode version when available
+
+#### Scenario: Multi-provider build returns one entry per provider
+
+- **GIVEN** a daemon build that registers both OpenCode and CommandCode
+- **WHEN** the client calls `GET /v1/agents`
+- **THEN** the response array contains one entry per registered provider
+- **AND** each entry's `available` is independent of the others
