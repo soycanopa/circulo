@@ -6,8 +6,8 @@ use circulo_core::{
     Session, Uuid,
 };
 use circulo_protocol::{
-    CreateMessageRequest, CreateProjectRequest, CreateSessionRequest, HealthResponse,
-    PatchProjectRequest, PatchSessionRequest, PreferencesBody,
+    AgentDescriptor, CreateMessageRequest, CreateProjectRequest, CreateSessionRequest,
+    HealthResponse, PatchProjectRequest, PatchSessionRequest, PreferencesBody,
 };
 use time::{OffsetDateTime, UtcOffset};
 
@@ -79,11 +79,44 @@ impl DaemonClient {
         &self,
         project_id: Option<Uuid>,
     ) -> Result<Session, String> {
+        self.create_session_with_agent(project_id, None)
+    }
+
+    pub fn create_session_with_agent(
+        &self,
+        project_id: Option<Uuid>,
+        agent: Option<circulo_core::AgentType>,
+    ) -> Result<Session, String> {
         self.post(
             "/v1/sessions",
             &CreateSessionRequest {
                 project_id,
                 title: None,
+                agent,
+            },
+        )
+    }
+
+    pub fn list_agents(&self) -> Result<Vec<AgentDescriptor>, String> {
+        self.get("/v1/agents")
+    }
+
+    pub fn patch_session_agent(
+        &self,
+        session_id: Uuid,
+        agent: circulo_core::AgentType,
+    ) -> Result<Session, String> {
+        self.patch(
+            &format!("/v1/sessions/{session_id}"),
+            &PatchSessionRequest {
+                title: None,
+                project_id: None,
+                archive: None,
+                agent: Some(agent),
+                composer_model_id: None,
+                composer_model_variant: None,
+                composer_permission_mode: None,
+                composer_interaction_mode: None,
             },
         )
     }
@@ -204,6 +237,7 @@ impl DaemonClient {
                 title: None,
                 project_id: None,
                 archive: None,
+                agent: None,
                 composer_model_id: Some(composer_model_id),
                 composer_model_variant: composer_model_variant,
                 composer_permission_mode: Some(permission_mode),
@@ -223,6 +257,7 @@ impl DaemonClient {
                 title: None,
                 project_id: Some(project_id),
                 archive: None,
+                agent: None,
                 composer_model_id: None,
                 composer_model_variant: None,
                 composer_permission_mode: None,
@@ -238,6 +273,7 @@ impl DaemonClient {
                 title: Some(title),
                 project_id: None,
                 archive: None,
+                agent: None,
                 composer_model_id: None,
                 composer_model_variant: None,
                 composer_permission_mode: None,
