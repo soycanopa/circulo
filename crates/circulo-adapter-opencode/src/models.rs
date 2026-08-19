@@ -56,6 +56,7 @@ pub fn parse_provider_catalog(body: &serde_json::Value) -> Vec<ModelCatalogEntry
                 model_id: model_id.clone(),
                 context_window: format_context_window(&model),
                 reasoning_variants: parse_reasoning_variants(&model),
+                agent: circulo_core::AgentType::OpenCode,
             });
         }
     }
