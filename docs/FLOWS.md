@@ -74,7 +74,7 @@ No hay que crear un proyecto para empezar. Empty state: **New session**, no “N
 4. Se selecciona la sesión. Header muestra título placeholder. Composer recibe foco. El selector de carpeta queda en **Without Folder**.
 5. El item aparece en **Today** con nombre, duración relativa y **Without Folder**.
 
-**Título:** placeholder (“New session”). Generación automática: P1 y abierta.
+**Título:** placeholder (`New session`). Generación automática: el adapter OpenCode puede reemplazar el placeholder después del primer mensaje cuando el título sigue siendo el default; los renombres manuales del usuario no se pisan (`opencode-provider-hardening` §6).
 
 ## 5.1 Elegir carpeta en el composer (antes del chat)
 
