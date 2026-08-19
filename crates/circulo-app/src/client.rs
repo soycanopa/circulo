@@ -7,7 +7,7 @@ use circulo_core::{
 };
 use circulo_protocol::{
     CreateMessageRequest, CreateProjectRequest, CreateSessionRequest, HealthResponse,
-    PatchSessionRequest, PreferencesBody,
+    PatchProjectRequest, PatchSessionRequest, PreferencesBody,
 };
 use time::{OffsetDateTime, UtcOffset};
 
@@ -49,6 +49,22 @@ impl DaemonClient {
 
     pub fn restore_project(&self, project_id: Uuid) -> Result<(), String> {
         self.post_no_content(&format!("/v1/projects/{project_id}/restore"))
+    }
+
+    pub fn rename_project(
+        &self,
+        project_id: Uuid,
+        name: String,
+    ) -> Result<Project, String> {
+        self.patch(
+            &format!("/v1/projects/{project_id}"),
+            &PatchProjectRequest {
+                name: Some(name),
+                description: None,
+                color: None,
+                folder_path: None,
+            },
+        )
     }
 
     pub fn delete_project(&self, project_id: Uuid) -> Result<(), String> {
