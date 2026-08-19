@@ -102,6 +102,7 @@ impl IntoResponse for HttpError {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/v1/health", get(health))
+        .route("/v1/agents", get(list_agents))
         .route("/v1/projects", get(list_projects).post(create_project))
         .route(
             "/v1/projects/{id}",
@@ -173,6 +174,10 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
 #[derive(Debug, Deserialize)]
 struct ProjectQuery {
     status: Option<String>,
+}
+
+async fn list_agents(State(state): State<AppState>) -> Json<Vec<circulo_protocol::AgentDescriptor>> {
+    Json(state.registry.list())
 }
 
 async fn list_projects(
@@ -319,7 +324,7 @@ async fn create_session(
             .title
             .filter(|title| !title.trim().is_empty())
             .unwrap_or_else(|| "New session".into()),
-        agent: AgentType::OpenCode,
+        agent: body.agent.unwrap_or(AgentType::OpenCode),
         status: SessionStatus::Active,
         created_at: now,
         updated_at: now,
@@ -360,6 +365,12 @@ async fn patch_session(
             .ok_or_else(|| ApiError::not_found("Session not found."))?;
         if let Some(title) = body.title {
             session.title = title;
+        }
+        if let Some(agent) = body.agent {
+            if session.first_send_at.is_some() {
+                return Err(HttpError::from(ApiError::project_assignment_locked()));
+            }
+            session.agent = agent;
         }
         if let Some(model_id) = body.composer_model_id {
             session.composer_model_id = Some(model_id);
@@ -452,7 +463,7 @@ async fn post_message(
     if body.content.trim().is_empty() {
         return Err(ApiError::invalid_request("Message content is required.").into());
     }
-    let working_directory = {
+    let (working_directory, agent) = {
         let store_guard = state.store.lock().await;
         let session = store_guard
             .get_session(id)?
@@ -466,12 +477,25 @@ async fn post_message(
                 ApiError::invalid_request("Choose a model before sending a message.").into(),
             );
         }
-        resolve_working_directory(&store_guard, &session)
+        let wd = resolve_working_directory(&store_guard, &session);
+        (wd, session.agent)
     };
+
+    let adapter = state
+        .registry
+        .for_agent(agent)
+        .ok_or_else(|| {
+            HttpError::from(ApiError::unavailable(format!(
+                "Agent {} is not registered in this build.",
+                serde_json::to_value(agent)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_string))
+                    .unwrap_or_else(|| format!("{:?}", agent))
+            )))
+        })?;
 
     let content = body.content.trim().to_owned();
     let store = Arc::clone(&state.store);
-    let adapter = state.registry.opencode();
     let events = state.events.clone();
     let turns = Arc::clone(&state.turns);
     let permissions = Arc::clone(&state.permissions);
