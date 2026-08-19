@@ -183,3 +183,28 @@ While a turn is generating, the composer MUST offer a stop control that requests
 - **GIVEN** no turn is generating
 - **WHEN** the composer renders
 - **THEN** stop is not shown (send remains the primary action)
+
+### Requirement: Agent selector is visible only when more than one agent is available
+
+The composer MUST render an `AgentSelector` chip only when `GET /v1/agents` reports more than one provider. The chip MUST list each `AgentDescriptor` and dispatch `PATCH /v1/sessions/{id}` with the chosen `agent` on selection. The chip MUST be disabled once the session's `first_send_at` is set.
+
+#### Scenario: Single-agent build hides the selector
+
+- **GIVEN** a daemon build with only OpenCode registered
+- **WHEN** the composer renders
+- **THEN** the AgentSelector is not visible
+
+#### Scenario: Multi-agent build shows the selector pre-send
+
+- **GIVEN** a daemon build with OpenCode and CommandCode registered
+- **AND** an open session whose `first_send_at` is null
+- **WHEN** the composer renders
+- **THEN** the AgentSelector is visible
+- **AND** choosing a different agent dispatches the PATCH
+
+#### Scenario: Selector is disabled after first send
+
+- **GIVEN** a session whose `first_send_at` is set
+- **WHEN** the composer renders
+- **THEN** the AgentSelector is visible but disabled
+- **AND** displays the locked copy from the catalog
