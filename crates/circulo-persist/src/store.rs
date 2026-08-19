@@ -1,8 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use circulo_core::{
-    ComposerInteractionMode, ComposerPermissionMode, Message, MessagePart, MessageRole, Project,
-    ProjectStatus, Session, UserPreferences, Uuid,
+    Message, MessagePart, MessageRole, Project, ProjectStatus, Session, UserPreferences, Uuid,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::de::{DeserializeOwned, Error as _};
