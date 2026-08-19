@@ -12,6 +12,7 @@ axum.workspace = true
 circulo-adapter.workspace = true
 circulo-adapter-fake.workspace = true
 circulo-adapter-opencode.workspace = true
+circulo-adapter-commandcode.workspace = true
 circulo-core.workspace = true
 circulo-i18n.workspace = true
 circulo-persist.workspace = true
