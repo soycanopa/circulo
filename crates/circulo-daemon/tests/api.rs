@@ -11,7 +11,7 @@ use circulo_adapter_opencode::testing::{
 };
 use circulo_adapter_opencode::{OpenCodeAdapter, ServerConfig};
 use circulo_core::{Message, MessagePart, MessageStatus, Project, Session, ToolCallStatus};
-use circulo_daemon::{listen_addr, router, AppState};
+use circulo_daemon::{listen_addr, router, AdapterRegistry, AppState};
 use circulo_persist::Store;
 use circulo_protocol::{
     ApiError, CreateMessageRequest, CreateProjectRequest, CreateSessionRequest, ErrorCode,
@@ -27,7 +27,8 @@ async fn spawn_server() -> (SocketAddr, reqwest::Client) {
 
 async fn spawn_server_with(adapter: Arc<dyn AgentAdapter>) -> (SocketAddr, reqwest::Client) {
     let store = Store::open_in_memory().expect("memory store");
-    let state = AppState::new(store, adapter);
+    let registry = AdapterRegistry::with_opencode(adapter);
+    let state = AppState::new(store, registry);
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().expect("addr");
     tokio::spawn(async move {
@@ -51,6 +52,7 @@ async fn select_composer_model(
             title: None,
             project_id: None,
             archive: None,
+            agent: None,
             composer_model_id: Some("test-model".into()),
             composer_model_variant: None,
             composer_permission_mode: None,
@@ -123,6 +125,7 @@ async fn create_unassigned_session() {
         .json(&CreateSessionRequest {
             project_id: None,
             title: None,
+            agent: None,
         })
         .send()
         .await
@@ -152,6 +155,7 @@ async fn delete_single_session() {
         .json(&CreateSessionRequest {
             project_id: None,
             title: Some("Keep".into()),
+            agent: None,
         })
         .send()
         .await
@@ -166,6 +170,7 @@ async fn delete_single_session() {
         .json(&CreateSessionRequest {
             project_id: None,
             title: Some("Gone".into()),
+            agent: None,
         })
         .send()
         .await
@@ -208,6 +213,7 @@ async fn post_message_runs_fake_turn() {
         .json(&CreateSessionRequest {
             project_id: None,
             title: Some("Chat".into()),
+            agent: None,
         })
         .send()
         .await
@@ -255,6 +261,7 @@ async fn sse_starts_with_connected() {
         .json(&CreateSessionRequest {
             project_id: None,
             title: None,
+            agent: None,
         })
         .send()
         .await
@@ -304,6 +311,7 @@ async fn project_patch_after_first_send_is_locked() {
         .json(&CreateSessionRequest {
             project_id: None,
             title: None,
+            agent: None,
         })
         .send()
         .await
@@ -335,6 +343,7 @@ async fn project_patch_after_first_send_is_locked() {
         title: None,
         project_id: Some(Some(project.id)),
         archive: None,
+        agent: None,
         composer_model_id: None,
         composer_model_variant: None,
         composer_permission_mode: None,
@@ -371,6 +380,7 @@ async fn opencode_adapter_turn_binds_and_reuses_across_requests() {
         .json(&CreateSessionRequest {
             project_id: None,
             title: None,
+            agent: None,
         })
         .send()
         .await
@@ -438,6 +448,7 @@ async fn delete_session_calls_opencode_and_removes_local_binding() {
         .json(&CreateSessionRequest {
             project_id: None,
             title: None,
+            agent: None,
         })
         .send()
         .await
@@ -508,6 +519,7 @@ async fn auto_title_updates_default_session_title_and_emits_event() {
         .json(&CreateSessionRequest {
             project_id: None,
             title: None,
+            agent: None,
         })
         .send()
         .await
@@ -566,6 +578,7 @@ async fn auto_title_does_not_overwrite_manual_rename() {
         .json(&CreateSessionRequest {
             project_id: None,
             title: Some("My custom title".into()),
+            agent: None,
         })
         .send()
         .await

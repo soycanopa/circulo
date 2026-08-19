@@ -10,7 +10,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use circulo_adapter::{AdapterError, AdapterHealth, AgentAdapter, AgentSessionSettings, ErrorReason, QuestionAnswer};
+use circulo_adapter::{AdapterError, AdapterHealth, AgentSessionSettings, ErrorReason, QuestionAnswer};
 use circulo_core::{
     AgentType, ModelCatalogEntry, OffsetDateTime, Project, ProjectStatus, Session, SessionStatus,
     Uuid,
@@ -27,6 +27,7 @@ use tokio::sync::{broadcast, Mutex as AsyncMutex};
 use tokio_stream::wrappers::BroadcastStream;
 
 use crate::generate::{persist_user_message, resolve_working_directory, run_assistant_turn};
+use crate::adapter_registry::AdapterRegistry;
 use crate::permission_waiter::PermissionWaiter;
 use crate::question_waiter::QuestionWaiter;
 use crate::turn_registry::TurnRegistry;
@@ -34,7 +35,7 @@ use crate::turn_registry::TurnRegistry;
 #[derive(Clone)]
 pub struct AppState {
     pub store: Arc<AsyncMutex<Store>>,
-    pub adapter: Arc<dyn AgentAdapter>,
+    pub registry: AdapterRegistry,
     pub events: broadcast::Sender<ProtocolEvent>,
     pub turns: Arc<TurnRegistry>,
     pub permissions: Arc<PermissionWaiter>,
@@ -43,11 +44,11 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(store: Store, adapter: Arc<dyn AgentAdapter>) -> Self {
+    pub fn new(store: Store, registry: AdapterRegistry) -> Self {
         let (events, _) = broadcast::channel(256);
         Self {
             store: Arc::new(AsyncMutex::new(store)),
-            adapter,
+            registry,
             events,
             turns: Arc::new(TurnRegistry::new()),
             permissions: Arc::new(PermissionWaiter::new()),
@@ -134,7 +135,7 @@ async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     // Liveness must stay fast even when turns saturate the blocking pool or OpenCode
     // is slow to probe; adapter details are best-effort under a short timeout.
     const PROBE_TIMEOUT: Duration = Duration::from_millis(500);
-    let adapter = Arc::clone(&state.adapter);
+    let adapter = state.registry.opencode();
     let probe = tokio::time::timeout(
         PROBE_TIMEOUT,
         tokio::task::spawn_blocking(move || {
@@ -386,7 +387,7 @@ async fn patch_session(
     };
 
     if let Some(agent_session_id) = agent_session_id {
-        let adapter = Arc::clone(&state.adapter);
+        let adapter = state.registry.opencode();
         let settings = AgentSessionSettings {
             composer_permission_mode: session.composer_permission_mode,
         };
@@ -418,7 +419,7 @@ async fn delete_session(
     };
 
     if let Some(agent_session_id) = agent_session_id {
-        let adapter = Arc::clone(&state.adapter);
+        let adapter = state.registry.opencode();
         let delete_result = tokio::task::spawn_blocking(move || {
             adapter.delete_agent_session(&agent_session_id, working_directory.as_deref())
         })
@@ -470,7 +471,7 @@ async fn post_message(
 
     let content = body.content.trim().to_owned();
     let store = Arc::clone(&state.store);
-    let adapter = Arc::clone(&state.adapter);
+    let adapter = state.registry.opencode();
     let events = state.events.clone();
     let turns = Arc::clone(&state.turns);
     let permissions = Arc::clone(&state.permissions);
@@ -525,7 +526,7 @@ async fn abort_session(
         .with_store(|store| store.get_session(id))
         .await?
         .ok_or_else(|| HttpError::from(ApiError::not_found("Session not found.")))?;
-    let adapter = Arc::clone(&state.adapter);
+    let adapter = state.registry.opencode();
     let turns = Arc::clone(&state.turns);
     tokio::task::spawn_blocking(move || turns.abort(id, adapter.as_ref()))
         .await
@@ -625,7 +626,7 @@ async fn get_preferences(State(state): State<AppState>) -> Result<Json<Preferenc
 }
 
 async fn list_models(State(state): State<AppState>) -> Result<Json<Vec<ModelCatalogEntry>>, HttpError> {
-    let adapter = Arc::clone(&state.adapter);
+    let adapter = state.registry.opencode();
     let cache = Arc::clone(&state.model_catalog_cache);
     let models = tokio::task::spawn_blocking(move || {
         let mut cache = cache
