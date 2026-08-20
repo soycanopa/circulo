@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use circulo_core::{Project, Session, Uuid};
+use circulo_core::{AgentType, Project, Session, Uuid};
 use circulo_i18n::Catalog;
 use gpui::{
     div, prelude::*, px, Context, Entity, EventEmitter, InteractiveElement, IntoElement,
@@ -26,7 +26,8 @@ use crate::context_menu::{
     menu_chip_model_selector_popover, menu_chip_popover, menu_chip_reasoning_selector_popover,
     menu_item, menu_item_model_selector, menu_item_reasoning_selector,
     menu_item_with_description, menu_item_with_edit_model_selector, menu_model_selector_header,
-    menu_model_selector_reasoning_header, menu_separator, MODEL_SELECTOR_MENU_WIDTH_PX,
+    menu_model_selector_reasoning_header, menu_separator, model_picker_provider_tabs,
+    MODEL_MENU_PADDING_PX, MODEL_MENU_ROW_GAP_PX, MODEL_PICKER_WITH_TABS_WIDTH_PX,
 };
 use crate::ui::menu_chip::{
     menu_chip, menu_chip_dropdown_above, menu_chip_subpopover_right_offset,
@@ -51,6 +52,7 @@ pub struct Composer {
     model_menu_open: bool,
     permission_menu_open: bool,
     model_reasoning_edit: Option<String>,
+    model_picker_tab: AgentType,
     selected_model: String,
     selected_model_variant: String,
     models: Vec<ComposerModel>,
@@ -81,6 +83,7 @@ impl Composer {
             model_menu_open: false,
             permission_menu_open: false,
             model_reasoning_edit: None,
+            model_picker_tab: AgentType::OpenCode,
             selected_model: String::new(),
             selected_model_variant: String::new(),
             models: Vec::new(),
@@ -130,11 +133,12 @@ impl Composer {
             .map(|s| s.id)
             != session.as_ref().map(|s| s.id);
         let usage_fraction = context_usage_fraction.clamp(0.0, 1.0);
+        let models_changed = self.models != models;
         let mut changed = session_changed
             || self.projects != projects
             || self.selected_session != session
             || self.work_mode != work_mode
-            || self.models != models
+            || models_changed
             || self.selected_model != selected_model
             || self.permission_mode != permission_mode
             || self.interaction_mode != interaction_mode
@@ -144,12 +148,29 @@ impl Composer {
         self.projects = projects;
         self.selected_session = session.clone();
         self.work_mode = work_mode;
-        self.models = models;
+        self.models = models.clone();
         self.selected_model = selected_model;
         self.permission_mode = permission_mode;
         self.interaction_mode = interaction_mode;
         self.catalog = catalog;
         self.context_usage_fraction = usage_fraction;
+
+        // Reset the model picker tab when the session changes, when
+        // the catalog refreshes, or when the active tab's provider
+        // no longer has any entries. Default to the session's current
+        // agent; fall back to the first available provider otherwise.
+        let active_provider_present = self
+            .models
+            .iter()
+            .any(|m| m.agent == self.model_picker_tab);
+        if session_changed || models_changed || !active_provider_present {
+            let session_agent = session.as_ref().map(|s| s.agent);
+            let candidate = session_agent
+                .filter(|a| self.models.iter().any(|m| m.agent == *a))
+                .or_else(|| self.models.first().map(|m| m.agent))
+                .unwrap_or(AgentType::OpenCode);
+            self.model_picker_tab = candidate;
+        }
         self.selected_model_variant = selected_model_variant;
 
         if session_changed {
@@ -397,6 +418,18 @@ impl Composer {
         cx.notify();
     }
 
+    pub fn set_model_picker_tab(
+        &mut self,
+        agent: AgentType,
+        cx: &mut Context<Self>,
+    ) {
+        if self.model_picker_tab == agent {
+            return;
+        }
+        self.model_picker_tab = agent;
+        cx.notify();
+    }
+
     fn pick_permission_mode(&mut self, mode: PermissionMode, cx: &mut Context<Self>) {
         self.permission_menu_open = false;
         self.permission_mode = mode;
@@ -478,12 +511,41 @@ impl Render for Composer {
             let edit_label = self.catalog.get("composer.model.edit").to_string();
             let reasoning_title = self.catalog.get("composer.reasoning.title").to_string();
             let favorites_label = self.catalog.get("composer.models.favorites").to_string();
+            // Build the per-provider tab list from the visible catalog.
+            let mut tabs: Vec<(AgentType, String, usize)> = Vec::new();
+            for &agent in AgentType::ALL.iter() {
+                let count = self.models.iter().filter(|m| m.agent == agent).count();
+                if count == 0 {
+                    continue;
+                }
+                let label = match agent {
+                    AgentType::OpenCode => self.catalog.get("opencode.badge").to_string(),
+                    AgentType::CommandCode => self.catalog.get("commandcode.badge").to_string(),
+                };
+                tabs.push((agent, label, count));
+            }
+            let active_tab = self.model_picker_tab;
             let mut menu = menu_chip_model_selector_popover();
-            menu = menu.child(menu_model_selector_header(
-                favorites_label,
-                cx.listener(|this, _, _, cx| this.open_model_settings(cx)),
-            ));
-            for (index, model) in self.models.iter().enumerate() {
+            menu = menu.w(px(MODEL_PICKER_WITH_TABS_WIDTH_PX));
+            let right_column = div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap(px(MODEL_MENU_ROW_GAP_PX))
+                .child(menu_model_selector_header(
+                    favorites_label,
+                    cx.listener(|this, _, _, cx| this.open_model_settings(cx)),
+                ));
+            // Filter the visible models by the active tab.
+            let visible: Vec<(usize, &crate::composer::models::ComposerModel)> = self
+                .models
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| m.agent == active_tab)
+                .collect();
+            let mut list = right_column;
+            for (index, model) in visible {
                 let id = model.id.clone();
                 let selected = self.selected_model == id;
                 let edit_open = self.model_reasoning_edit.as_ref() == Some(&id);
@@ -544,12 +606,34 @@ impl Render for Composer {
                     row_wrap = row_wrap.child(
                         menu_chip_subpopover_right_offset(
                             sub,
-                            MODEL_SELECTOR_MENU_WIDTH_PX + 6.,
+                            MODEL_PICKER_WITH_TABS_WIDTH_PX - 24.,
                         ),
                     );
                 }
-                menu = menu.child(row_wrap);
+                list = list.child(row_wrap);
             }
+            let mut tabs_with_handlers: Vec<(
+                AgentType,
+                String,
+                usize,
+                Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static>,
+            )> = Vec::with_capacity(tabs.len());
+            for (agent, label, count) in tabs {
+                let on_click: Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static> =
+                    Box::new(cx.listener(move |this, _, _, cx| {
+                        this.set_model_picker_tab(agent, cx);
+                    }));
+                tabs_with_handlers.push((agent, label, count, on_click));
+            }
+            let tabs_col = model_picker_provider_tabs(active_tab, tabs_with_handlers);
+            // Render tabs on the left, the filtered list on the right.
+            let row = div()
+                .flex()
+                .flex_row()
+                .gap(px(MODEL_MENU_PADDING_PX))
+                .child(tabs_col)
+                .child(list);
+            menu = menu.child(row);
             model_control = model_control.child(menu_chip_dropdown_above(menu));
         }
 

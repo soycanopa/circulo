@@ -1,6 +1,6 @@
 //! Composer model catalog (UI-facing).
 
-use circulo_core::ModelCatalogEntry;
+use circulo_core::{AgentType, ModelCatalogEntry};
 use circulo_i18n::Catalog;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -11,6 +11,9 @@ pub struct ComposerModel {
     pub context_window: Option<String>,
     /// OpenCode variant ids (`low`, `medium`, `high`, …).
     pub reasoning_variants: Vec<String>,
+    /// Which Circulo provider serves this model. The composer
+    /// popover uses it to filter by tab.
+    pub agent: AgentType,
 }
 
 impl ComposerModel {
@@ -42,6 +45,7 @@ impl From<&ModelCatalogEntry> for ComposerModel {
             name: entry.name.clone(),
             context_window: entry.context_window.clone(),
             reasoning_variants: entry.reasoning_variants.clone(),
+            agent: entry.agent,
         }
     }
 }
@@ -54,6 +58,7 @@ pub fn placeholder_models(catalog: &Catalog) -> Vec<ComposerModel> {
             name: catalog.get("composer.model.default").to_string(),
             context_window: Some("128K".into()),
             reasoning_variants: vec!["low".into(), "medium".into(), "high".into()],
+            agent: AgentType::OpenCode,
         },
         ComposerModel {
             id: "placeholder/sonnet".into(),
@@ -65,12 +70,14 @@ pub fn placeholder_models(catalog: &Catalog) -> Vec<ComposerModel> {
                 "high".into(),
                 "max".into(),
             ],
+            agent: AgentType::CommandCode,
         },
         ComposerModel {
             id: "placeholder/gpt4o".into(),
             name: catalog.get("composer.model.gpt4o").to_string(),
             context_window: Some("128K".into()),
             reasoning_variants: vec!["low".into(), "medium".into(), "high".into()],
+            agent: AgentType::OpenCode,
         },
     ]
 }

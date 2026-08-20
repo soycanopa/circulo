@@ -5,9 +5,11 @@ use gpui::{
     SharedString, StatefulInteractiveElement, Styled, Window,
 };
 
+use circulo_core::AgentType;
+
 use crate::icons::{icon, icon_sized, MODEL_PROVIDER_ICON_HEIGHT_PX, MODEL_PROVIDER_ICON_WIDTH_PX};
 use crate::theme::{
-    ACCENT_SURFACE, BORDER, DANGER, DANGER_SURFACE, BG_HOVER, BG_MAIN, BG_SIDEBAR,
+    ACCENT, ACCENT_SURFACE, BORDER, DANGER, DANGER_SURFACE, BG_HOVER, BG_MAIN, BG_SIDEBAR,
     PROVIDER_OPENCODE_LIST_ICON, TEXT, TEXT_MUTED,
 };
 
@@ -30,13 +32,77 @@ pub fn menu_content() -> gpui::Div {
     menu_surface_base().border_1().border_color(BORDER)
 }
 
+/// Total width of the model picker when the provider tab column is shown.
+pub const MODEL_PICKER_WITH_TABS_WIDTH_PX: f32 = 360.0;
+const MODEL_PICKER_TAB_WIDTH_PX: f32 = 96.0;
+const MODEL_PICKER_TAB_PY_PX: f32 = 6.0;
+const MODEL_PICKER_TAB_GAP_PX: f32 = 2.0;
+const MODEL_PICKER_TAB_RADIUS_PX: f32 = 6.0;
+
+/// Vertical column of provider tabs for the model picker. One row per
+/// `(agent, label, count, on_click)` tuple. The caller provides the
+/// click handler per tab (so the caller's `cx.listener` can wire
+/// per-agent behavior). The active tab gets the accent surface
+/// background; inactive tabs gain the hover surface on hover.
+pub fn model_picker_provider_tabs(
+    current: AgentType,
+    tabs: Vec<(
+        AgentType,
+        String,
+        usize,
+        Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static>,
+    )>,
+) -> impl IntoElement {
+    let mut col = div()
+        .w(px(MODEL_PICKER_TAB_WIDTH_PX))
+        .flex_none()
+        .flex()
+        .flex_col()
+        .gap(px(MODEL_PICKER_TAB_GAP_PX));
+    for (agent, label, count, on_click) in tabs {
+        let is_active = current == agent;
+        let tab_id: &'static str = match agent {
+            AgentType::OpenCode => "model-picker-tab-open-code",
+            AgentType::CommandCode => "model-picker-tab-command-code",
+        };
+        col = col.child(
+            div()
+                .id(tab_id)
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .px(px(8.))
+                .py(px(MODEL_PICKER_TAB_PY_PX))
+                .rounded(px(MODEL_PICKER_TAB_RADIUS_PX))
+                .cursor_pointer()
+                .text_color(if is_active { ACCENT } else { TEXT_MUTED })
+                .when(is_active, |el| el.bg(ACCENT_SURFACE))
+                .when(!is_active, |el| el.hover(|style| style.bg(BG_HOVER)))
+                .on_click(on_click)
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .child(label),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(TEXT_MUTED)
+                        .child(format!("{count}")),
+                ),
+        );
+    }
+    col
+}
+
 /// Model selector popover width (wider than default chip menus).
 pub const MODEL_SELECTOR_MENU_WIDTH_PX: f32 = 220.0;
 /// Reasoning-effort sub-popover width.
 pub const MODEL_REASONING_MENU_WIDTH_PX: f32 = 176.0;
 
-const MODEL_MENU_PADDING_PX: f32 = 6.0;
-const MODEL_MENU_ROW_GAP_PX: f32 = 4.0;
+pub(crate) const MODEL_MENU_PADDING_PX: f32 = 6.0;
+pub(crate) const MODEL_MENU_ROW_GAP_PX: f32 = 4.0;
 const MODEL_ITEM_PX: f32 = 6.0;
 const MODEL_ITEM_PY: f32 = 4.0;
 const MODEL_ITEM_GAP_PX: f32 = 8.0;
