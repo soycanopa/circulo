@@ -20,9 +20,9 @@ pub mod path {
     pub const MINIMIZE_2: &str = "icons/minimize-2.svg";
     pub const BOT: &str = "icons/bot.svg";
     pub const OPENCODE: &str = "icons/opencode.svg";
-    /// Chevron used as the CommandCode mark in picker lists. CommandCode's
-    /// CLI binary is `cmd`, so the prompt-style chevron fits the brand.
-    pub const COMMANDCODE: &str = "icons/chevron-right.svg";
+    /// CommandCode mark in picker lists. Rounded square with a plus
+    /// inside; the brand supplied this path.
+    pub const COMMANDCODE: &str = "icons/commandcode.svg";
     pub const SHIELD: &str = "icons/shield.svg";
     pub const LIST: &str = "icons/list.svg";
     pub const WRENCH: &str = "icons/wrench.svg";
