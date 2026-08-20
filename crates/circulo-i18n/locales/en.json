@@ -37,6 +37,7 @@
   "composer.mode.plan": "Plan",
   "composer.model.default": "Default model",
   "composer.model.edit": "Edit",
+  "composer.model.tab_count": "{count}",
   "composer.models.favorites": "Favorite",
   "composer.model.gpt4o": "GPT-4o",
   "composer.model.sonnet": "Claude Sonnet",

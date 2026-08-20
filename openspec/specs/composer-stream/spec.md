@@ -234,3 +234,39 @@ When the user picks a model in the composer's model picker, the session's `agent
 - **WHEN** the picker click fires
 - **THEN** the daemon returns 422 with `ErrorCode::AgentDisabled`
 - **AND** the UI surfaces the existing copy
+
+### Requirement: Model picker has provider tabs
+
+The model popover MUST show a vertical column of provider tabs on the left, one per Circulo provider that has at least one model in the visible catalog. Each tab MUST display the provider's name and the count of models it owns. The right column MUST render only the models whose `agent` matches the active tab. The default tab is the session's current `agent`; if that provider has no models, the picker falls back to the first available tab.
+
+#### Scenario: Tabs reflect the catalog
+
+- **GIVEN** the daemon's `/v1/models` returns 26 OpenCode + 56 CommandCode models
+- **WHEN** the user opens the model picker
+- **THEN** the popover shows two tabs ("OpenCode 26" and "Command Code 56")
+- **AND** the right column lists only the models whose `agent` matches the active tab
+
+#### Scenario: Switching tabs filters the list
+
+- **GIVEN** the picker is open with the OpenCode tab active
+- **WHEN** the user clicks the Command Code tab
+- **THEN** the right column updates to show only Command Code models
+- **AND** the tab visual state updates to reflect the active tab
+
+#### Scenario: Disabling a provider removes its tab
+
+- **GIVEN** the user disables Command Code in Settings → Providers
+- **WHEN** the user re-opens the model picker
+- **THEN** only the OpenCode tab is shown
+- **AND** the right column shows only OpenCode models
+
+### Requirement: Models panel sorts enabled first and shows provider icon
+
+The Settings → Models panel MUST sort enabled models to the top of the list, with stable order by `(provider_name, name)` inside each group. Each row MUST display a small provider icon (OpenCode logo or CommandCode chevron) before the model name. The text badge for the provider is no longer used.
+
+#### Scenario: Enabled models appear first
+
+- **GIVEN** the user has enabled `claude-sonnet-5` (CommandCode) and `gpt-4o` (OpenCode)
+- **WHEN** the user opens Settings → Models
+- **THEN** the two enabled rows are at the top of the list
+- **AND** the remaining disabled rows follow
