@@ -5,12 +5,14 @@ use gpui::{
     ParentElement, Styled, StatefulInteractiveElement, Window,
 };
 
-use crate::icons::{icon, path as icon_path};
+use crate::icons::{icon, icon_sized, path as icon_path};
 use crate::shell::AppShell;
 use crate::theme::{
     ACCENT, ACCENT_SURFACE, BG_MAIN, BG_SIDEBAR, BORDER, COMPOSER_GUTTER_PX, CONTENT_MAX_WIDTH_PX,
     INPUT_BG, INPUT_HEIGHT_PX, SUCCESS, TEXT, TEXT_MUTED, TOGGLE_TRACK_OFF,
 };
+
+const MODEL_PROVIDER_BADGE_SIZE_PX: f32 = 12.0;
 
 const MODEL_ROW_PY_PX: f32 = 10.0;
 const MODELS_INITIAL_VISIBLE: usize = 12;
@@ -59,19 +61,31 @@ pub fn models_settings_panel(
                 .child(catalog.get("sidebar.search_empty").to_string()),
         );
     } else {
+        // Sort: enabled first, then by (provider_name, name). Stable so
+        // a refresh that doesn't change the enabled set keeps the same
+        // order — important for the user's muscle memory.
+        let mut filtered = filtered;
+        filtered.sort_by(|left, right| {
+            let left_enabled = enabled_ids.iter().any(|id| id == &left.id);
+            let right_enabled = enabled_ids.iter().any(|id| id == &right.id);
+            right_enabled
+                .cmp(&left_enabled)
+                .then_with(|| {
+                    left
+                        .provider_name
+                        .cmp(&right.provider_name)
+                        .then_with(|| left.name.cmp(&right.name))
+                })
+        });
         for (index, model) in filtered.iter().take(visible_count).enumerate() {
             let model_id = model.id.clone();
             let enabled = enabled_ids.iter().any(|id| id == &model_id);
             let tag = model_provider_tag(&model.provider_id, &model.provider_name);
-            let agent_label = match model.agent {
-                AgentType::OpenCode => catalog.get("opencode.badge").to_string(),
-                AgentType::CommandCode => catalog.get("commandcode.badge").to_string(),
-            };
             list = list.child(model_row(
                 index,
                 model.name.clone(),
                 tag,
-                agent_label,
+                model.agent,
                 enabled,
                 cx.listener(move |this, _, _, cx| {
                     this.toggle_model_enabled(&model_id, cx);
@@ -207,10 +221,14 @@ fn model_row(
     index: usize,
     label: String,
     provider_tag: String,
-    agent_label: String,
+    agent: AgentType,
     enabled: bool,
     on_toggle: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> impl gpui::IntoElement {
+    let provider_icon = match agent {
+        AgentType::OpenCode => icon_path::OPENCODE,
+        AgentType::CommandCode => icon_path::COMMANDCODE,
+    };
     div()
         .id(("settings-model", index))
         .flex()
@@ -227,6 +245,12 @@ fn model_row(
                 .flex()
                 .items_center()
                 .gap_2()
+                .child(icon_sized(
+                    provider_icon,
+                    px(MODEL_PROVIDER_BADGE_SIZE_PX),
+                    px(MODEL_PROVIDER_BADGE_SIZE_PX),
+                    TEXT_MUTED,
+                ))
                 .child(
                     div()
                         .min_w_0()
@@ -235,25 +259,14 @@ fn model_row(
                         .text_color(TEXT)
                         .child(label),
                 )
-                .child(provider_tag_chip(provider_tag))
-                .child(agent_badge_chip(agent_label)),
+                .child(provider_tag_chip(provider_tag)),
         )
         .child(toggle_switch(("model-toggle", index), enabled, on_toggle))
 }
 
-fn agent_badge_chip(label: String) -> impl gpui::IntoElement {
+#[allow(dead_code)]
+fn agent_badge_chip(_label: String) -> impl gpui::IntoElement {
     div()
-        .flex_none()
-        .px(px(6.))
-        .py(px(2.))
-        .rounded(px(4.))
-        .bg(BG_MAIN)
-        .border_1()
-        .border_color(BORDER)
-        .text_xs()
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(TEXT_MUTED)
-        .child(label)
 }
 
 fn provider_tag_chip(label: String) -> impl gpui::IntoElement {
