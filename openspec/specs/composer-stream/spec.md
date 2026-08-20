@@ -237,13 +237,13 @@ When the user picks a model in the composer's model picker, the session's `agent
 
 ### Requirement: Model picker has provider tabs
 
-The model popover MUST show a vertical column of provider tabs on the left, one per Circulo provider that has at least one model in the visible catalog. Each tab MUST display the provider's name and the count of models it owns. The right column MUST render only the models whose `agent` matches the active tab. The default tab is the session's current `agent`; if that provider has no models, the picker falls back to the first available tab.
+The model popover MUST show a vertical column of provider tabs on the left, one per Circulo provider that has at least one model in the visible catalog. Each tab MUST display the provider's icon (no text label) and the count of models it owns. The right column MUST render only the models whose `agent` matches the active tab. The default tab is the session's current `agent`; if that provider has no models, the picker falls back to the first available tab.
 
 #### Scenario: Tabs reflect the catalog
 
 - **GIVEN** the daemon's `/v1/models` returns 26 OpenCode + 56 CommandCode models
 - **WHEN** the user opens the model picker
-- **THEN** the popover shows two tabs ("OpenCode 26" and "Command Code 56")
+- **THEN** the popover shows two tabs (one per provider) with the provider's icon and the count
 - **AND** the right column lists only the models whose `agent` matches the active tab
 
 #### Scenario: Switching tabs filters the list
