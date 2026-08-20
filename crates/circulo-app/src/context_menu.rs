@@ -7,7 +7,7 @@ use gpui::{
 
 use circulo_core::AgentType;
 
-use crate::icons::{icon, icon_sized, MODEL_PROVIDER_ICON_HEIGHT_PX, MODEL_PROVIDER_ICON_WIDTH_PX};
+use crate::icons::{icon, icon_sized, path as icon_path, MODEL_PROVIDER_ICON_HEIGHT_PX, MODEL_PROVIDER_ICON_WIDTH_PX};
 use crate::theme::{
     ACCENT, ACCENT_SURFACE, BORDER, DANGER, DANGER_SURFACE, BG_HOVER, BG_MAIN, BG_SIDEBAR,
     PROVIDER_OPENCODE_LIST_ICON, TEXT, TEXT_MUTED,
@@ -34,21 +34,22 @@ pub fn menu_content() -> gpui::Div {
 
 /// Total width of the model picker when the provider tab column is shown.
 pub const MODEL_PICKER_WITH_TABS_WIDTH_PX: f32 = 360.0;
-const MODEL_PICKER_TAB_WIDTH_PX: f32 = 96.0;
+const MODEL_PICKER_TAB_WIDTH_PX: f32 = 64.0;
 const MODEL_PICKER_TAB_PY_PX: f32 = 6.0;
 const MODEL_PICKER_TAB_GAP_PX: f32 = 2.0;
 const MODEL_PICKER_TAB_RADIUS_PX: f32 = 6.0;
+const MODEL_PICKER_TAB_ICON_PX: f32 = 16.0;
 
 /// Vertical column of provider tabs for the model picker. One row per
-/// `(agent, label, count, on_click)` tuple. The caller provides the
-/// click handler per tab (so the caller's `cx.listener` can wire
-/// per-agent behavior). The active tab gets the accent surface
-/// background; inactive tabs gain the hover surface on hover.
+/// `(agent, count, on_click)` tuple. The tab shows the provider's
+/// icon (no text label) and the model count below it. The caller
+/// provides the click handler per tab. The active tab gets the
+/// accent surface background; inactive tabs gain the hover surface
+/// on hover.
 pub fn model_picker_provider_tabs(
     current: AgentType,
     tabs: Vec<(
         AgentType,
-        String,
         usize,
         Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static>,
     )>,
@@ -59,17 +60,22 @@ pub fn model_picker_provider_tabs(
         .flex()
         .flex_col()
         .gap(px(MODEL_PICKER_TAB_GAP_PX));
-    for (agent, label, count, on_click) in tabs {
+    for (agent, count, on_click) in tabs {
         let is_active = current == agent;
         let tab_id: &'static str = match agent {
             AgentType::OpenCode => "model-picker-tab-open-code",
             AgentType::CommandCode => "model-picker-tab-command-code",
+        };
+        let icon_path = match agent {
+            AgentType::OpenCode => icon_path::OPENCODE,
+            AgentType::CommandCode => icon_path::COMMANDCODE,
         };
         col = col.child(
             div()
                 .id(tab_id)
                 .flex()
                 .flex_col()
+                .items_center()
                 .gap(px(2.))
                 .px(px(8.))
                 .py(px(MODEL_PICKER_TAB_PY_PX))
@@ -79,12 +85,12 @@ pub fn model_picker_provider_tabs(
                 .when(is_active, |el| el.bg(ACCENT_SURFACE))
                 .when(!is_active, |el| el.hover(|style| style.bg(BG_HOVER)))
                 .on_click(on_click)
-                .child(
-                    div()
-                        .text_sm()
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .child(label),
-                )
+                .child(icon_sized(
+                    icon_path,
+                    px(MODEL_PICKER_TAB_ICON_PX),
+                    px(MODEL_PICKER_TAB_ICON_PX),
+                    if is_active { ACCENT } else { TEXT_MUTED },
+                ))
                 .child(
                     div()
                         .text_xs()
