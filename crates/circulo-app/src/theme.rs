@@ -18,6 +18,16 @@ pub const BG_MAIN: Rgba = Rgba {
     b: 0.14,
     a: 1.0,
 };
+/// Chat stream panel (`#131313`). Sits next to the sidebar as a rounded
+/// panel; the app background shows through the rounded left corners.
+pub const BG_STREAM: Rgba = Rgba {
+    r: 0.0745,
+    g: 0.0745,
+    b: 0.0745,
+    a: 1.0,
+};
+/// Corner radius of the stream panel's left edge (top-left + bottom-left).
+pub const STREAM_PANEL_RADIUS_PX: f32 = 12.0;
 /// Item hover / selected surface (`--color-bg-hover` in Paper).
 pub const BG_HOVER: Rgba = Rgba {
     r: 0.169,

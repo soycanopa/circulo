@@ -45,8 +45,8 @@ use crate::stream::{
 };
 use crate::ui::{TextInput, TextInputEvent};
 use crate::theme::{
-    sidebar_width_px, ACCENT, ACCENT_SURFACE, BG_APP, BG_HOVER, BG_MAIN, BG_SIDEBAR, BORDER,
-    BORDER_SUBTLE,
+    sidebar_width_px, ACCENT, ACCENT_SURFACE, BG_APP, BG_HOVER, BG_MAIN, BG_SIDEBAR, BG_STREAM,
+    BORDER, BORDER_SUBTLE, STREAM_PANEL_RADIUS_PX,
     COMPOSER_BOTTOM_PADDING_PX, MESSAGE_AVATAR_PX, APP_BAR_HEIGHT_PX,
     MAIN_HEADER_TITLE_INSET_PX, MAIN_HEADER_TITLE_LEFT_PX, MAIN_HEADER_TITLE_TEXT_PX,
     SIDEBAR_EXPANDED_PX, SIDEBAR_MAX_PX, SIDEBAR_MIN_PX, SIDEBAR_RESIZE_HANDLE_CENTER,
@@ -3410,7 +3410,8 @@ fn session_row(
         .flex_col()
         .flex_1()
         .h_full()
-        .bg(BG_MAIN)
+        .bg(BG_STREAM)
+        .rounded_l(px(STREAM_PANEL_RADIUS_PX))
         .child(
             div()
                 .h(px(APP_BAR_HEIGHT_PX))
