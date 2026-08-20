@@ -34,33 +34,30 @@ pub fn menu_content() -> gpui::Div {
 
 /// Total width of the model picker when the provider tab column is shown.
 pub const MODEL_PICKER_WITH_TABS_WIDTH_PX: f32 = 360.0;
-const MODEL_PICKER_TAB_WIDTH_PX: f32 = 64.0;
 const MODEL_PICKER_TAB_PY_PX: f32 = 6.0;
 const MODEL_PICKER_TAB_GAP_PX: f32 = 2.0;
 const MODEL_PICKER_TAB_RADIUS_PX: f32 = 6.0;
-const MODEL_PICKER_TAB_ICON_PX: f32 = 16.0;
+const MODEL_PICKER_TAB_ICON_PX: f32 = 18.0;
 
 /// Vertical column of provider tabs for the model picker. One row per
-/// `(agent, count, on_click)` tuple. The tab shows the provider's
-/// icon (no text label) and the model count below it. The caller
-/// provides the click handler per tab. The active tab gets the
-/// accent surface background; inactive tabs gain the hover surface
-/// on hover.
+/// `(agent, on_click)` tuple. The tab shows only the provider's
+/// icon (no text label, no count). The active tab gets the accent
+/// surface background; inactive tabs gain the hover surface on
+/// hover. The tab width is just enough to fit the icon (no
+/// horizontal padding).
 pub fn model_picker_provider_tabs(
     current: AgentType,
     tabs: Vec<(
         AgentType,
-        usize,
         Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static>,
     )>,
 ) -> impl IntoElement {
     let mut col = div()
-        .w(px(MODEL_PICKER_TAB_WIDTH_PX))
         .flex_none()
         .flex()
         .flex_col()
         .gap(px(MODEL_PICKER_TAB_GAP_PX));
-    for (agent, count, on_click) in tabs {
+    for (agent, on_click) in tabs {
         let is_active = current == agent;
         let tab_id: &'static str = match agent {
             AgentType::OpenCode => "model-picker-tab-open-code",
@@ -74,14 +71,11 @@ pub fn model_picker_provider_tabs(
             div()
                 .id(tab_id)
                 .flex()
-                .flex_col()
                 .items_center()
-                .gap(px(2.))
-                .px(px(8.))
+                .justify_center()
                 .py(px(MODEL_PICKER_TAB_PY_PX))
                 .rounded(px(MODEL_PICKER_TAB_RADIUS_PX))
                 .cursor_pointer()
-                .text_color(if is_active { ACCENT } else { TEXT_MUTED })
                 .when(is_active, |el| el.bg(ACCENT_SURFACE))
                 .when(!is_active, |el| el.hover(|style| style.bg(BG_HOVER)))
                 .on_click(on_click)
@@ -90,13 +84,7 @@ pub fn model_picker_provider_tabs(
                     px(MODEL_PICKER_TAB_ICON_PX),
                     px(MODEL_PICKER_TAB_ICON_PX),
                     if is_active { ACCENT } else { TEXT_MUTED },
-                ))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(TEXT_MUTED)
-                        .child(format!("{count}")),
-                ),
+                )),
         );
     }
     col

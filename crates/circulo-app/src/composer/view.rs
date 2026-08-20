@@ -512,13 +512,11 @@ impl Render for Composer {
             let reasoning_title = self.catalog.get("composer.reasoning.title").to_string();
             let favorites_label = self.catalog.get("composer.models.favorites").to_string();
             // Build the per-provider tab list from the visible catalog.
-            let mut tabs: Vec<(AgentType, usize)> = Vec::new();
+            let mut tabs: Vec<AgentType> = Vec::new();
             for &agent in AgentType::ALL.iter() {
-                let count = self.models.iter().filter(|m| m.agent == agent).count();
-                if count == 0 {
-                    continue;
+                if self.models.iter().any(|m| m.agent == agent) {
+                    tabs.push(agent);
                 }
-                tabs.push((agent, count));
             }
             let active_tab = self.model_picker_tab;
             let mut menu = menu_chip_model_selector_popover();
@@ -610,15 +608,14 @@ impl Render for Composer {
             }
             let mut tabs_with_handlers: Vec<(
                 AgentType,
-                usize,
                 Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static>,
             )> = Vec::with_capacity(tabs.len());
-            for (agent, count) in tabs {
+            for agent in tabs {
                 let on_click: Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static> =
                     Box::new(cx.listener(move |this, _, _, cx| {
                         this.set_model_picker_tab(agent, cx);
                     }));
-                tabs_with_handlers.push((agent, count, on_click));
+                tabs_with_handlers.push((agent, on_click));
             }
             let tabs_col = model_picker_provider_tabs(active_tab, tabs_with_handlers);
             // Render tabs on the left, the filtered list on the right.
