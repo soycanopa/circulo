@@ -23,7 +23,7 @@
 
 - [x] 4.1 `create_new_session`: replace the blocking `refresh()` with `schedule_refresh(cx)`
 - [x] 4.2 `delete_session`: remove the session from `self.sessions` (and clear selection if needed) before spawning the daemon call; follow success with `schedule_refresh(cx)`; on failure show the existing `session.delete_failed` banner and let the refresh restore the list
-- [ ] 4.3 Manual pass (docs/FLOWS.md): delete a used session with the agent server down — card disappears immediately, no UI freeze, no error; delete with daemon stopped — error banner, session restored on next refresh
+- [x] 4.3 Manual pass (docs/FLOWS.md): delete a used session with the agent server down — card disappears immediately, no UI freeze, no error; delete with daemon stopped — error banner, session restored on next refresh
 
 ## 5. Copy: No folder
 
@@ -32,4 +32,4 @@
 ## 6. Verification
 
 - [x] 6.1 `cargo test -p circulo-daemon -p circulo-app -p circulo-i18n`
-- [ ] 6.2 Manual end-to-end: fresh `run-app.sh` boot (cold daemon), create a folder-less session from Home, model picker lists enabled models within a few seconds; sessions with folder still work
+- [x] 6.2 Manual end-to-end: fresh `run-app.sh` boot (cold daemon), create a folder-less session from Home, model picker lists enabled models within a few seconds; sessions with folder still work
