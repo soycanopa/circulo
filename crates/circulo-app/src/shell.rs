@@ -1684,7 +1684,7 @@ impl AppShell {
                     Ok(session) => {
                         this.sessions.push(session.clone());
                         this.activate_session(session.id, cx);
-                        this.refresh();
+                        this.schedule_refresh(cx);
                         this.error = None;
                     }
                     Err(message) => this.error = Some(message),
@@ -1849,6 +1849,16 @@ impl AppShell {
             });
         }
 
+        // Optimistic removal: the card disappears immediately; the daemon
+        // round trip follows in the background. On failure the error banner
+        // shows and the refresh below restores the session.
+        self.sessions.retain(|session| session.id != session_id);
+        if clearing_selection {
+            self.selected = None;
+            self.messages.clear();
+            self.sync_composer(cx);
+        }
+
         let client = self.client.clone();
         let delete_failed = self.catalog.get("session.delete_failed").to_string();
         cx.spawn(async move |this, cx| {
@@ -1859,23 +1869,19 @@ impl AppShell {
             let _ = this.update(cx, |this, cx| {
                 match result {
                     Ok(()) => {
-                        if clearing_selection {
-                            this.selected = None;
-                            this.messages.clear();
-                            this.sync_composer(cx);
-                        }
-                        this.sessions.retain(|session| session.id != session_id);
-                        this.refresh();
+                        this.schedule_refresh(cx);
                         this.error = None;
                     }
                     Err(err) => {
                         this.error = Some(format!("{delete_failed} ({err})"));
+                        this.schedule_refresh(cx);
                     }
                 }
                 cx.notify();
             });
         })
         .detach();
+        cx.notify();
     }
 
     pub(crate) fn commit_rename_session(&mut self, cx: &mut Context<Self>) {
