@@ -61,6 +61,10 @@ use crate::timefmt::{format_relative, local_offset_or_utc};
 /// How often the drain loop applies buffered stream events; doubles as render
 /// batching for incoming deltas.
 const DRAIN_INTERVAL: Duration = Duration::from_millis(32);
+
+/// Fetch attempts for the composer model catalog before giving up (and
+/// waiting for the next session activation to try again).
+const CATALOG_FETCH_ATTEMPTS: usize = 3;
 /// Distance from the bottom (px) within which the transcript keeps following
 /// new content.
 const ANCHOR_THRESHOLD: f32 = 80.0;
@@ -133,6 +137,7 @@ pub struct AppShell {
     interaction_mode: InteractionMode,
     composer_models: Vec<ModelCatalogEntry>,
     enabled_model_ids: Vec<String>,
+    catalog_fetch_in_flight: bool,
     preferences: circulo_core::UserPreferences,
     pending_provider_toggle: Option<(circulo_core::AgentType, bool)>,
     settings_open: bool,
@@ -177,6 +182,14 @@ pub struct AppShell {
 
 impl AppShell {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::new_with_client(DaemonClient::default(), window, cx)
+    }
+
+    pub fn new_with_client(
+        client: DaemonClient,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let composer = cx.new(|cx| Composer::new(window, cx));
         let rename_input = cx.new(|cx| TextInput::new(window, cx));
         let question_answer_input = cx.new(|cx| TextInput::new(window, cx));
@@ -217,7 +230,7 @@ impl AppShell {
             today_expanded: true,
             earlier_expanded: true,
             catalog: Catalog::english(),
-            client: DaemonClient::default(),
+            client,
             sessions: Vec::new(),
             projects: Vec::new(),
             messages: Vec::new(),
@@ -240,6 +253,7 @@ impl AppShell {
             interaction_mode: InteractionMode::default(),
             composer_models: Vec::new(),
             enabled_model_ids: Vec::new(),
+            catalog_fetch_in_flight: false,
             preferences: circulo_core::UserPreferences::default(),
             pending_provider_toggle: None,
             settings_open: false,
@@ -1099,7 +1113,6 @@ impl AppShell {
 impl AppShell {
     pub fn schedule_refresh(&mut self, cx: &mut Context<Self>) {
         let client = self.client.clone();
-        let client_catalog = self.client.clone();
         let daemon_down = self.catalog.get("sidebar.daemon_down").to_string();
         let selected = self.selected;
         let snapshot_gen = self.stream_gen;
@@ -1172,35 +1185,67 @@ impl AppShell {
                         }
                     }
                     this.sync_composer(cx);
+                    this.fetch_composer_catalog(cx);
                     cx.notify();
                 });
             } else {
                 let _ = this.update(cx, |_, cx| cx.notify());
-                return;
             }
+        })
+        .detach();
+    }
 
-            let phase2 = cx
-                .background_executor()
-                .spawn(async move {
-                    if ensure_daemon(&client_catalog).is_err() {
-                        return None;
-                    }
-                    let models = client_catalog.list_models().unwrap_or_default();
-                    let prefs = client_catalog.get_preferences().unwrap_or_default();
-                    Some((models, prefs))
-                })
-                .await;
-
-            if let Some((models, prefs)) = phase2 {
-                let _ = this.update(cx, |this, cx| {
-                    this.composer_models = models;
-                    this.enabled_model_ids = prefs.enabled_model_ids;
-                    this.bootstrap_enabled_models_if_needed(cx);
-                    this.apply_session_composer_state();
-                    this.sync_composer(cx);
-                    cx.notify();
-                });
+    /// Loads the composer model catalog and enabled-model preferences with a
+    /// bounded backoff retry. A boot-time failure must not leave the picker
+    /// empty for the process lifetime: session activation re-triggers this
+    /// while the catalog is empty. One fetch runs at a time.
+    fn fetch_composer_catalog(&mut self, cx: &mut Context<Self>) {
+        if self.catalog_fetch_in_flight {
+            return;
+        }
+        self.catalog_fetch_in_flight = true;
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let mut delay = Duration::from_secs(1);
+            for attempt in 0..CATALOG_FETCH_ATTEMPTS {
+                let fetch_client = client.clone();
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        ensure_daemon(&fetch_client).ok()?;
+                        Some((
+                            fetch_client.list_models(),
+                            fetch_client.get_preferences(),
+                        ))
+                    })
+                    .await;
+                if let Some((Ok(models), Ok(prefs))) = result {
+                    let _ = this.update(cx, |this, cx| {
+                        this.catalog_fetch_in_flight = false;
+                        this.composer_models = models;
+                        this.enabled_model_ids = prefs.enabled_model_ids;
+                        this.bootstrap_enabled_models_if_needed(cx);
+                        this.apply_session_composer_state();
+                        this.sync_composer(cx);
+                        cx.notify();
+                    });
+                    return;
+                }
+                if attempt + 1 < CATALOG_FETCH_ATTEMPTS {
+                    cx.background_executor().timer(delay).await;
+                    delay *= 2;
+                }
             }
+            let _ = this.update(cx, |this, cx| {
+                this.catalog_fetch_in_flight = false;
+                // With a session open, the composer's empty-catalog label is
+                // the user-facing state and the next activation retries; the
+                // error banner belongs to the no-session surface.
+                if this.selected.is_none() {
+                    this.error = Some(this.catalog.get("sidebar.daemon_down").to_string());
+                }
+                cx.notify();
+            });
         })
         .detach();
     }
@@ -1616,6 +1661,9 @@ impl AppShell {
         self.error = None;
         self.apply_session_composer_state();
         self.sync_composer(cx);
+        if self.composer_models.is_empty() {
+            self.fetch_composer_catalog(cx);
+        }
         self.subscribe_stream(cx);
         self.composer_pending_focus = true;
     }
@@ -3882,5 +3930,112 @@ mod transcript_scroll_tests {
         assert!(!should_show_jump_to_latest(true, 3, 400., -400., ANCHOR_THRESHOLD));
         assert!(!should_show_jump_to_latest(true, 0, 400., -100., ANCHOR_THRESHOLD));
         assert!(!should_show_jump_to_latest(false, 3, 400., -100., ANCHOR_THRESHOLD));
+    }
+}
+
+#[cfg(test)]
+mod catalog_fetch_tests {
+    use super::{AppShell, DaemonClient, Duration, ModelCatalogEntry};
+    use gpui::TestAppContext;
+
+    fn shell_with_dead_daemon(cx: &mut TestAppContext) -> gpui::WindowHandle<AppShell> {
+        cx.add_window(|window, cx| {
+            AppShell::new_with_client(
+                DaemonClient::new_detached("http://127.0.0.1:1"),
+                window,
+                cx,
+            )
+        })
+    }
+
+    #[gpui::test]
+    async fn catalog_fetch_retries_then_releases_when_daemon_is_unreachable(
+        cx: &mut TestAppContext,
+    ) {
+        let window = shell_with_dead_daemon(cx);
+        cx.dispatcher.advance_clock(Duration::from_secs(1));
+
+        cx.update(|cx| {
+            window
+                .update(cx, |shell, _, cx| {
+                    assert!(shell.composer_models.is_empty());
+                    shell.fetch_composer_catalog(cx);
+                })
+                .unwrap();
+        });
+
+        // Drive the backoff ladder past exhaustion.
+        cx.dispatcher.advance_clock(Duration::from_secs(5));
+        cx.update(|cx| {
+            window
+                .update(cx, |shell, _, _| {
+                    assert!(
+                        !shell.catalog_fetch_in_flight,
+                        "in-flight flag must be released after retries are exhausted"
+                    );
+                    assert!(shell.composer_models.is_empty());
+                    assert!(
+                        shell.error.is_some(),
+                        "no session open: the failure is surfaced"
+                    );
+                })
+                .unwrap();
+        });
+    }
+
+    #[gpui::test]
+    async fn catalog_fetch_does_not_stack_while_in_flight(cx: &mut TestAppContext) {
+        let window = shell_with_dead_daemon(cx);
+        cx.dispatcher.advance_clock(Duration::from_secs(1));
+
+        cx.update(|cx| {
+            window
+                .update(cx, |shell, _, cx| {
+                    shell.catalog_fetch_in_flight = true;
+                    shell.fetch_composer_catalog(cx);
+                })
+                .unwrap();
+        });
+
+        // A second fetch while one is running must not spawn: the flag stays
+        // as this test set it instead of being released by a finished task.
+        cx.dispatcher.advance_clock(Duration::from_secs(1));
+        cx.update(|cx| {
+            window
+                .update(cx, |shell, _, _| {
+                    assert!(shell.catalog_fetch_in_flight);
+                })
+                .unwrap();
+        });
+    }
+
+    #[gpui::test]
+    async fn filtered_composer_models_documents_empty_catalog_trap(cx: &mut TestAppContext) {
+        let window = shell_with_dead_daemon(cx);
+        cx.update(|cx| {
+            window
+                .update(cx, |shell, _, _| {
+                    // Real enabled ids never match the placeholder catalog
+                    // ids: an empty catalog yields an empty picker instead of
+                    // a usable fallback. This is why the fetch must retry.
+                    shell.enabled_model_ids = vec!["zai-org/GLM-5.3".into()];
+                    assert!(shell.filtered_composer_models().is_empty());
+
+                    shell.composer_models = vec![ModelCatalogEntry {
+                        id: "zai-org/GLM-5.3".into(),
+                        name: "GLM 5.3".into(),
+                        provider_id: "zai-org".into(),
+                        provider_name: "Z.ai".into(),
+                        model_id: "glm-5.3".into(),
+                        context_window: None,
+                        reasoning_variants: vec![],
+                        agent: circulo_core::AgentType::OpenCode,
+                    }];
+                    let models = shell.filtered_composer_models();
+                    assert_eq!(models.len(), 1);
+                    assert_eq!(models[0].id, "zai-org/GLM-5.3");
+                })
+                .unwrap();
+        });
     }
 }

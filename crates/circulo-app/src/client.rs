@@ -14,20 +14,40 @@ use time::{OffsetDateTime, UtcOffset};
 
 const DEFAULT_BASE: &str = "http://127.0.0.1:7432";
 
+/// The model catalog may be served cold (first fetch can start the agent
+/// servers), so it gets a longer leash than ordinary reads.
+const MODEL_CATALOG_TIMEOUT: Duration = Duration::from_secs(10);
+
 #[derive(Debug, Clone)]
 pub struct DaemonClient {
     base: String,
+    /// When false, `ensure_daemon` only health-checks: no sibling daemon
+    /// spawn/kill. Tests use this to stay hermetic.
+    supervise: bool,
 }
 
 impl Default for DaemonClient {
     fn default() -> Self {
-        Self {
-            base: DEFAULT_BASE.into(),
-        }
+        Self::new(DEFAULT_BASE)
     }
 }
 
 impl DaemonClient {
+    pub fn new(base: impl Into<String>) -> Self {
+        Self {
+            base: base.into(),
+            supervise: true,
+        }
+    }
+
+    /// Health-check-only client for tests: never spawns or kills daemons.
+    pub fn new_detached(base: impl Into<String>) -> Self {
+        Self {
+            base: base.into(),
+            supervise: false,
+        }
+    }
+
     pub fn health(&self) -> Result<HealthResponse, String> {
         self.get("/v1/health")
     }
@@ -226,7 +246,7 @@ impl DaemonClient {
     }
 
     pub fn list_models(&self) -> Result<Vec<ModelCatalogEntry>, String> {
-        self.get("/v1/models")
+        self.get_timed("/v1/models", MODEL_CATALOG_TIMEOUT)
     }
 
     pub fn get_preferences(&self) -> Result<PreferencesBody, String> {
@@ -353,8 +373,16 @@ impl DaemonClient {
     }
 
     fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T, String> {
+        self.get_timed(path, Duration::from_secs(2))
+    }
+
+    fn get_timed<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        timeout: Duration,
+    ) -> Result<T, String> {
         ureq::get(&format!("{}{path}", self.base))
-            .timeout(Duration::from_secs(2))
+            .timeout(timeout)
             .call()
             .map_err(|err| err.to_string())?
             .into_json()
@@ -413,6 +441,9 @@ impl DaemonClient {
 pub fn ensure_daemon(client: &DaemonClient) -> Result<(), String> {
     if client.health().is_ok() {
         return Ok(());
+    }
+    if !client.supervise {
+        return client.health().map(|_| ());
     }
     spawn_sibling_daemon();
     if wait_for_health(client, 6, Duration::from_millis(250)).is_ok() {
