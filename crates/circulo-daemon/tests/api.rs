@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use circulo_adapter::AgentAdapter;
+use circulo_adapter::{
+    AdapterError, AdapterEvent, AdapterHealth, AgentAdapter, GenerateRequest, ModelCatalogEntry,
+};
 use circulo_adapter_fake::FakeAdapter;
 use circulo_adapter_opencode::testing::{
     idle, session_title_updated, text_delta, text_snapshot, todo_list, tool_state,
@@ -691,6 +693,91 @@ async fn wait_for_agent_delete(opencode: &FakeOpenCodeServer, agent_session_id: 
     panic!(
         "agent-side delete of {agent_session_id} did not happen in time; got {:?}",
         opencode.deleted_sessions()
+    );
+}
+
+/// Records `list_models` calls so pre-warm behavior is observable.
+struct CountingCatalogAdapter {
+    list_models_calls: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl AgentAdapter for CountingCatalogAdapter {
+    fn name(&self) -> &'static str {
+        "counting-catalog"
+    }
+
+    fn probe(&self) -> AdapterHealth {
+        AdapterHealth::Available
+    }
+
+    fn generate(
+        &self,
+        _request: GenerateRequest,
+        _emit: &mut dyn FnMut(AdapterEvent),
+    ) -> Result<(), AdapterError> {
+        Ok(())
+    }
+
+    fn list_models(&self) -> Result<Vec<ModelCatalogEntry>, AdapterError> {
+        self.list_models_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(vec![ModelCatalogEntry {
+            id: "counting/one".into(),
+            name: "Counting One".into(),
+            provider_id: "counting".into(),
+            provider_name: "Counting".into(),
+            model_id: "one".into(),
+            context_window: None,
+            reasoning_variants: vec![],
+            agent: circulo_core::AgentType::OpenCode,
+        }])
+    }
+}
+
+#[tokio::test]
+async fn model_catalog_prewarm_runs_for_enabled_providers_only() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // Enabled provider: pre-warm reaches the adapter exactly once.
+    let calls = Arc::new(AtomicUsize::new(0));
+    let adapter = Arc::new(CountingCatalogAdapter {
+        list_models_calls: Arc::clone(&calls),
+    });
+    let state = AppState::new(
+        Store::open_in_memory().expect("memory store"),
+        AdapterRegistry::with_opencode(adapter),
+    );
+    state.prewarm_model_catalog();
+    for _ in 0..200 {
+        if calls.load(Ordering::SeqCst) >= 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "enabled provider catalog was pre-warmed"
+    );
+
+    // Disabled provider: a fresh pre-warm never reaches the adapter.
+    let disabled_calls = Arc::new(AtomicUsize::new(0));
+    let adapter = Arc::new(CountingCatalogAdapter {
+        list_models_calls: Arc::clone(&disabled_calls),
+    });
+    let state = AppState::new(
+        Store::open_in_memory().expect("memory store"),
+        AdapterRegistry::with_opencode(adapter),
+    );
+    state
+        .registry
+        .set_disabled(circulo_core::AgentType::OpenCode, true);
+    state.prewarm_model_catalog();
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert_eq!(
+        disabled_calls.load(Ordering::SeqCst),
+        0,
+        "disabled provider catalog is not fetched"
     );
 }
 

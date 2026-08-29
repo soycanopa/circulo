@@ -66,6 +66,29 @@ impl AppState {
         let guard = self.store.lock().await;
         f(&guard).map_err(HttpError::from)
     }
+
+    /// Fills the per-provider model catalog cache for enabled providers in
+    /// the background, so the first `GET /v1/models` does not pay the
+    /// cold-catalog cost (first fetch may start agent servers). Failure is
+    /// logged; the on-demand path stays the safety net.
+    pub fn prewarm_model_catalog(&self) {
+        let cache = Arc::clone(&self.model_catalog_cache);
+        let registry = self.registry.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            let warm = cache
+                .lock()
+                .map_err(|_| {
+                    AdapterError::failed(
+                        ErrorReason::Internal,
+                        "Model catalog cache lock poisoned.",
+                    )
+                })
+                .and_then(|cache| cache.get(&registry));
+            if let Err(err) = warm {
+                eprintln!("circulo-daemon: model catalog pre-warm failed: {}", err.message());
+            }
+        });
+    }
 }
 
 struct HttpError(StatusCode, ApiError);

@@ -24,6 +24,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let registry = AdapterRegistry::build(&prefs);
     let state = AppState::new(store, registry);
     let listener = TcpListener::bind(addr).await?;
+    state.prewarm_model_catalog();
     println!("circulo-daemon listening on http://{addr} (default {DEFAULT_ADDR})");
     axum::serve(listener, router(state)).await?;
     Ok(())
