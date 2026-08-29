@@ -129,7 +129,7 @@
   "session.none": "No session selected",
   "session.rename": "Rename",
   "session.rename_placeholder": "Session name",
-  "session.without_folder": "Without Folder",
+  "session.without_folder": "No folder",
   "settings.back": "Back to chat",
   "settings.archived.description": "Projects you archived are kept here. Restore one to bring it back to your sidebar.",
   "settings.archived.empty": "No archived projects",
