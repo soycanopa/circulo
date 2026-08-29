@@ -427,6 +427,10 @@ async fn delete_session(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, HttpError> {
+    // Local-first: the Circulo row is the source of truth for the session
+    // list, so it is deleted (cascade) and acknowledged before any
+    // agent-side cleanup. The agent delete may spawn its server (~2 s) and
+    // must never hold the HTTP response.
     let (agent_session_id, working_directory) = {
         let store = state.store.lock().await;
         let session = store
@@ -437,22 +441,23 @@ async fn delete_session(
         (agent_session_id, Some(working_directory))
     };
 
+    state.with_store(|store| store.delete_session(id)).await?;
+
     if let Some(agent_session_id) = agent_session_id {
         let adapter = state.registry.opencode();
-        let delete_result = tokio::task::spawn_blocking(move || {
-            adapter.delete_agent_session(&agent_session_id, working_directory.as_deref())
-        })
-        .await
-        .map_err(|_| HttpError::from(ApiError::internal()))?;
-        if let Err(err) = delete_result {
-            eprintln!(
-                "circulo-daemon: opencode session delete failed: {}",
-                err.message()
-            );
-        }
+        // Detached: tokio keeps spawn_blocking tasks running after the
+        // handle is dropped.
+        let _ = tokio::task::spawn_blocking(move || {
+            if let Err(err) =
+                adapter.delete_agent_session(&agent_session_id, working_directory.as_deref())
+            {
+                eprintln!(
+                    "circulo-daemon: best-effort opencode session delete failed: {}",
+                    err.message()
+                );
+            }
+        });
     }
-
-    state.with_store(|store| store.delete_session(id)).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

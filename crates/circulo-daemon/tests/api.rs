@@ -486,13 +486,212 @@ async fn delete_session_calls_opencode_and_removes_local_binding() {
         .error_for_status()
         .unwrap();
 
-    assert_eq!(opencode.deleted_sessions(), vec![agent_session_id]);
+    wait_for_agent_delete(&opencode, &agent_session_id).await;
     let missing = client
         .get(format!("http://{addr}/v1/sessions/{}", session.id))
         .send()
         .await
         .unwrap();
     assert_eq!(missing.status(), 404);
+}
+
+#[tokio::test]
+async fn delete_session_returns_before_agent_cleanup_finishes() {
+    let opencode = FakeOpenCodeServer::spawn();
+    opencode.set_script(vec![text_snapshot("prt_1", "Bound."), idle()]);
+    // The agent-side delete stalls for 3 s; the HTTP response must not wait
+    // for it (local-first delete).
+    opencode.delay_deletes(3_000);
+    let adapter = OpenCodeAdapter::new(
+        ServerConfig {
+            port: opencode.port,
+            command: Some(PathBuf::from("/nonexistent/opencode-for-tests")),
+            cwd: PathBuf::from("."),
+            startup_timeout: Duration::from_secs(1),
+        },
+        Duration::from_secs(10),
+    );
+    let (addr, client) = spawn_server_with(Arc::new(adapter)).await;
+
+    let session: Session = client
+        .post(format!("http://{addr}/v1/sessions"))
+        .json(&CreateSessionRequest {
+            project_id: None,
+            title: None,
+            agent: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    select_composer_model(&client, addr, session.id).await;
+    client
+        .post(format!("http://{addr}/v1/sessions/{}/messages", session.id))
+        .json(&CreateMessageRequest {
+            content: "Bind me.".into(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let _ = wait_for_messages(&client, addr, session.id).await;
+    let agent_session_id = opencode
+        .last_prompt()
+        .expect("prompt recorded")
+        .0
+        .clone();
+
+    let started = std::time::Instant::now();
+    let response = client
+        .delete(format!("http://{addr}/v1/sessions/{}", session.id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 204);
+    assert!(
+        started.elapsed() < Duration::from_millis(1_500),
+        "delete blocked on agent cleanup for {:?}",
+        started.elapsed()
+    );
+
+    // The row is already gone even though the agent cleanup is still running.
+    let missing = client
+        .get(format!("http://{addr}/v1/sessions/{}", session.id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), 404);
+
+    // Best-effort cleanup still lands in the background.
+    wait_for_agent_delete(&opencode, &agent_session_id).await;
+}
+
+#[tokio::test]
+async fn delete_unsent_session_never_contacts_agent() {
+    let opencode = FakeOpenCodeServer::spawn();
+    let adapter = OpenCodeAdapter::new(
+        ServerConfig {
+            port: opencode.port,
+            command: Some(PathBuf::from("/nonexistent/opencode-for-tests")),
+            cwd: PathBuf::from("."),
+            startup_timeout: Duration::from_secs(1),
+        },
+        Duration::from_secs(10),
+    );
+    let (addr, client) = spawn_server_with(Arc::new(adapter)).await;
+
+    // No message is ever sent, so the session has no agent binding.
+    let session: Session = client
+        .post(format!("http://{addr}/v1/sessions"))
+        .json(&CreateSessionRequest {
+            project_id: None,
+            title: None,
+            agent: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+
+    let response = client
+        .delete(format!("http://{addr}/v1/sessions/{}", session.id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 204);
+
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert!(
+        opencode.deleted_sessions().is_empty(),
+        "unsent session must not trigger agent-side cleanup, got {:?}",
+        opencode.deleted_sessions()
+    );
+    let missing = client
+        .get(format!("http://{addr}/v1/sessions/{}", session.id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), 404);
+}
+
+#[tokio::test]
+async fn delete_session_survives_agent_cleanup_failure() {
+    let opencode = FakeOpenCodeServer::spawn();
+    opencode.set_script(vec![text_snapshot("prt_1", "Bound."), idle()]);
+    let adapter = OpenCodeAdapter::new(
+        ServerConfig {
+            port: opencode.port,
+            command: Some(PathBuf::from("/nonexistent/opencode-for-tests")),
+            cwd: PathBuf::from("."),
+            startup_timeout: Duration::from_secs(1),
+        },
+        Duration::from_secs(10),
+    );
+    let (addr, client) = spawn_server_with(Arc::new(adapter)).await;
+
+    let session: Session = client
+        .post(format!("http://{addr}/v1/sessions"))
+        .json(&CreateSessionRequest {
+            project_id: None,
+            title: None,
+            agent: None,
+        })
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    select_composer_model(&client, addr, session.id).await;
+    client
+        .post(format!("http://{addr}/v1/sessions/{}/messages", session.id))
+        .json(&CreateMessageRequest {
+            content: "Bind me.".into(),
+        })
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let _ = wait_for_messages(&client, addr, session.id).await;
+
+    // Flip auth on after the turn so the background agent delete gets a 401.
+    opencode.require_auth(true);
+
+    let response = client
+        .delete(format!("http://{addr}/v1/sessions/{}", session.id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 204);
+
+    // Give the background cleanup time to fail; the session stays deleted.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let missing = client
+        .get(format!("http://{addr}/v1/sessions/{}", session.id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), 404);
+}
+
+/// Waits for the detached agent-side delete to land (best-effort cleanup).
+async fn wait_for_agent_delete(opencode: &FakeOpenCodeServer, agent_session_id: &str) {
+    for _ in 0..200 {
+        if opencode.deleted_sessions().iter().any(|id| id == agent_session_id) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    panic!(
+        "agent-side delete of {agent_session_id} did not happen in time; got {:?}",
+        opencode.deleted_sessions()
+    );
 }
 
 #[tokio::test]

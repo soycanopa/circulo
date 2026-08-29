@@ -6,7 +6,7 @@
 //! Each prompt replays the configured script on the SSE stream.
 
 use std::convert::Infallible;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -40,6 +40,7 @@ struct Shared {
     last_event_directory: Mutex<Option<String>>,
     last_permission_reply: Mutex<Option<(String, String, bool)>>,
     deleted_sessions: Mutex<Vec<String>>,
+    delete_delay_ms: AtomicU64,
     event_tx: Mutex<Option<mpsc::Sender<String>>>,
     todo_snapshot: Mutex<Vec<Value>>,
 }
@@ -66,6 +67,7 @@ impl FakeOpenCodeServer {
             last_event_directory: Mutex::new(None),
             last_permission_reply: Mutex::new(None),
             deleted_sessions: Mutex::new(Vec::new()),
+            delete_delay_ms: AtomicU64::new(0),
             event_tx: Mutex::new(None),
             todo_snapshot: Mutex::new(Vec::new()),
         });
@@ -136,6 +138,12 @@ impl FakeOpenCodeServer {
 
     pub fn require_auth(&self, required: bool) {
         self.shared.require_auth.store(required, Ordering::SeqCst);
+    }
+
+    /// Artificially slow the session-delete endpoint so tests can prove a
+    /// caller is not blocked by agent-side cleanup.
+    pub fn delay_deletes(&self, ms: u64) {
+        self.shared.delete_delay_ms.store(ms, Ordering::SeqCst);
     }
 
     pub fn last_prompt(&self) -> Option<(String, String, Option<String>)> {
@@ -347,6 +355,10 @@ async fn delete_session(
         return Err(StatusCode::UNAUTHORIZED);
     }
     let _ = query.directory;
+    let delay_ms = state.shared.delete_delay_ms.load(Ordering::SeqCst);
+    if delay_ms > 0 {
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+    }
     state
         .shared
         .deleted_sessions
