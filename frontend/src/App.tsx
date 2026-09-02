@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { Sparkles } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import Transcript from "@/features/chat/Transcript";
@@ -91,10 +92,16 @@ export default function App() {
             {session ? (
               <Transcript session={session} />
             ) : (
-              <div className="flex min-h-0 flex-1 items-center justify-center">
-                <p className="text-[13px] text-muted-foreground">
-                  Ask anything — the session starts with your first message.
-                </p>
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 pb-6">
+                <div className="flex size-11 items-center justify-center rounded-xl border border-border-strong bg-card">
+                  <Sparkles className="size-4 text-foreground" />
+                </div>
+                <div className="text-[16px] font-semibold text-foreground">
+                  What are we making today?
+                </div>
+                <div className="text-[12px] text-text-tertiary">
+                  Describe it in your own words — Circulo handles the rest.
+                </div>
               </div>
             )}
             <Composer />
