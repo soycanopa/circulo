@@ -1,7 +1,8 @@
 /**
- * Sidebar sections — replica of the Circulo Paper design: New chat (⌘N),
- * project rows with adapter status dots, session items as cards, footer with
- * Settings + server indicator.
+ * Sidebar chrome — 1:1 replica of the Circulo dark design:
+ * New session button (h-34, indigo) → search (h-8, bg-bg-main) →
+ * [projects rows] → [sessions list] → footer (Settings row, border-t).
+ * Width 260px lives in AppShell.
  */
 
 import { useState } from "react";
@@ -10,33 +11,46 @@ import {
   FolderOpen,
   Loader2,
   Plus,
+  Search,
   Settings,
   X,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { PickFolder } from "@/bindings/circulogo/internal/appservice/dialog";
 import { useAppStore } from "@/lib/agent/store";
 import type { AdapterState } from "@/lib/agent/protocol";
 import { cn } from "@/lib/utils";
 
-export function NewChatButton() {
+export function NewSessionButton() {
   const activeProjectId = useAppStore((s) => s.activeProjectId);
   const newSession = useAppStore((s) => s.newSession);
   return (
-    <div className="px-3 pt-0 pb-2">
-      <Button
-        className="w-full justify-between gap-2"
+    <div className="flex flex-col shrink-0 pt-2 pb-3 gap-2 px-3">
+      <button
+        className="flex items-center justify-center h-[34px] rounded-md gap-[6px] shrink-0 bg-accent-cir hover:bg-accent-cir-hover disabled:opacity-50"
         disabled={!activeProjectId}
         onClick={() => activeProjectId && void newSession(activeProjectId)}
       >
-        <span className="flex items-center gap-2">
-          <Plus className="size-4" /> New chat
-        </span>
-        <kbd className="rounded-sm border border-primary/20 px-1 font-sans text-[11px] text-primary/60">
-          ⌘N
-        </kbd>
-      </Button>
+        <Plus className="size-3.5 text-white" strokeWidth={2.5} />
+        <span className="text-sm font-medium text-white">New session</span>
+      </button>
+    </div>
+  );
+}
+
+export function SearchInput() {
+  const setSearch = useAppStore((s) => s.setSessionSearch);
+  return (
+    <div className="flex flex-col shrink-0 px-3 pb-1">
+      <div className="flex items-center h-8 px-[10px] rounded-md gap-2 bg-bg-main border border-border">
+        <Search className="size-3.5 shrink-0 text-text-tertiary" />
+        <input
+          data-selectable
+          placeholder="Search sessions"
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full bg-transparent text-sm text-text-primary outline-none placeholder:text-text-tertiary"
+        />
+      </div>
     </div>
   );
 }
@@ -47,7 +61,7 @@ export function StatusDot({ status, detail }: { status: AdapterState; detail?: s
     <span title={title} aria-label={status}>
       {status === "running" && <Circle className="size-2 fill-success text-success" />}
       {status === "starting" && <Loader2 className="size-2.5 animate-spin text-warning" />}
-      {status === "error" && <Circle className="size-2 fill-destructive text-destructive" />}
+      {status === "error" && <Circle className="size-2 fill-danger text-danger" />}
       {status === "stopped" && <Circle className="size-2 fill-text-tertiary text-text-tertiary" />}
     </span>
   );
@@ -77,8 +91,10 @@ export function ProjectsSection() {
 
   return (
     <div>
-      <div className="px-2 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
-        Projects
+      <div className="flex items-center pt-3 pb-[6px] px-2">
+        <span className="text-xs font-medium tracking-wider uppercase leading-[14px] text-text-tertiary">
+          Projects
+        </span>
       </div>
       {projects.map((p) => {
         const name = p.path.split("/").filter(Boolean).pop() ?? p.path;
@@ -86,14 +102,14 @@ export function ProjectsSection() {
           <button
             key={p.id}
             className={cn(
-              "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-muted/60",
+              "group flex w-full items-center gap-2 rounded-md px-[10px] py-2 text-left text-sm hover:bg-muted/60",
               activeProjectId === p.id && "bg-muted",
             )}
             onClick={() => setActiveProject(p.id)}
           >
             <StatusDot status={p.status} detail={p.detail} />
-            <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
-            <span className="truncate text-[11px] text-text-tertiary">{p.mode}</span>
+            <span className="min-w-0 flex-1 truncate font-medium text-text-primary">{name}</span>
+            <span className="truncate text-xs text-text-tertiary">{p.mode}</span>
             <span
               role="button"
               aria-label="Remove project"
@@ -103,24 +119,24 @@ export function ProjectsSection() {
                 void useAppStore.getState().removeProject(p.id);
               }}
             >
-              <X className="size-3.5" />
+              <X className="size-3" />
             </span>
           </button>
         );
       })}
       <button
-        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-muted-foreground hover:bg-muted/60"
+        className="flex w-full items-center gap-2 rounded-md px-[10px] py-2 text-left text-sm text-text-secondary hover:bg-muted/60"
         onClick={() => void pickFolder()}
       >
         <FolderOpen className="size-3.5" /> Add project…
       </button>
-      {error && <div className="px-2 py-1 text-[11.5px] text-destructive">{error}</div>}
-      <label className="mt-1 flex items-center gap-2 px-2 text-[11.5px] text-muted-foreground">
+      {error && <div className="px-2 py-1 text-xs text-danger">{error}</div>}
+      <label className="mt-1 flex items-center gap-2 px-[10px] text-xs text-text-tertiary">
         <input
           type="checkbox"
           checked={attachMode}
           onChange={(e) => setAttachMode(e.target.checked)}
-          className="accent-accent-indigo"
+          className="accent-accent-cir"
         />
         attach to running server
       </label>
@@ -130,7 +146,7 @@ export function ProjectsSection() {
           placeholder="http://127.0.0.1:4096"
           value={attachUrl}
           onChange={(e) => setAttachUrl(e.target.value)}
-          className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1 text-[12px] outline-none"
+          className="mt-1 w-full rounded-md border border-border bg-bg-main px-2 py-1 text-xs outline-none"
         />
       )}
     </div>
@@ -139,16 +155,15 @@ export function ProjectsSection() {
 
 export function SidebarFooter() {
   return (
-    <div className="border-t border-border px-3 py-2">
-      <div className="flex items-center gap-2">
-        <button
-          className="flex items-center gap-2 rounded-md px-1.5 py-1 text-[12px] text-muted-foreground hover:bg-muted/60"
-          title="Settings — coming soon"
-        >
-          <Settings className="size-3.5" /> Settings
-        </button>
-        <span className="ml-auto flex items-center gap-[6px] text-[11px] text-text-tertiary">
-          <span className="size-2 rounded-full bg-success" />
+    <div className="flex flex-col shrink-0 py-2 px-3 border-t border-border">
+      <div className="flex items-center h-8 px-2 rounded-md gap-2">
+        <Settings className="size-3.5 text-text-secondary" />
+        <span className="text-sm text-text-secondary">Settings</span>
+        <span className="ml-auto flex items-center gap-[6px] text-xs text-text-tertiary">
+          <span
+            className="size-2 rounded-full bg-success"
+            title="circulo — local agent running"
+          />
           circulo
         </span>
       </div>

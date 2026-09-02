@@ -43,6 +43,8 @@ interface AppStore {
   metaModels: { id: string; name?: string; provider: string }[];
   selectedAgent: string;
   selectedModel: string; // "provider:model"
+  sessionSearch: string;
+  setSessionSearch: (q: string) => void;
 
   setConnection: (s: ConnectionState) => void;
   refreshProjects: () => Promise<void>;
@@ -77,13 +79,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
   metaModels: [],
   selectedAgent: "build",
   selectedModel: "",
+  sessionSearch: "",
+  setSessionSearch: (sessionSearch) => set({ sessionSearch }),
 
   setConnection: (connection) => set({ connection }),
 
   refreshProjects: async () => {
     const projects = await api.listProjects();
-    set({ projects });
-    // Load sessions for each known project (sidebar lists).
+    set((s) => ({
+      projects,
+      // First load with a stored project: activate it so the app lands in
+      // the chat view instead of the welcome screen.
+      activeProjectId:
+        s.activeProjectId ?? (projects.length > 0 ? projects[0].id : null),
+    }));
     await Promise.all(
       projects.map((p) =>
         get()
@@ -91,6 +100,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
           .catch(() => undefined),
       ),
     );
+    const { activeProjectId: id } = get();
+    if (id) void get().loadMeta(id).catch(() => undefined);
   },
 
   refreshSessions: async (projectID) => {

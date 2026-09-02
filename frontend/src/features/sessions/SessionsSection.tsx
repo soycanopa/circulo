@@ -24,7 +24,15 @@ import { timeAgo } from "./timeAgo";
 import type { Session } from "@/lib/agent/protocol";
 import { cn } from "@/lib/utils";
 
-function SessionRow({ projectId, session }: { projectId: string; session: Session }) {
+function SessionRow({
+  projectId,
+  projectName,
+  session,
+}: {
+  projectId: string;
+  projectName: string;
+  session: Session;
+}) {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const openSession = useAppStore((s) => s.openSession);
   const chat = useAppStore((s) => s.chat);
@@ -48,8 +56,8 @@ function SessionRow({ projectId, session }: { projectId: string; session: Sessio
       role="button"
       tabIndex={0}
       className={cn(
-        "group flex w-full cursor-pointer flex-col gap-[2px] rounded-md px-2 py-1 text-left outline-none hover:bg-muted/60 focus-visible:ring-1 focus-visible:ring-ring",
-        active && "bg-accent",
+        "group flex w-full cursor-pointer flex-col gap-[2px] rounded-md px-[10px] py-2 text-left outline-none hover:bg-muted/60 focus-visible:ring-1 focus-visible:ring-ring",
+        active && "bg-bg-hover",
       )}
       onClick={() => void openSession(projectId, session.id)}
       onKeyDown={(e) => {
@@ -73,10 +81,13 @@ function SessionRow({ projectId, session }: { projectId: string; session: Sessio
       ) : (
         <>
           <div className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-[18px] text-foreground line-clamp-1">
+            <span className="min-w-0 flex-1 truncate text-base font-medium leading-[18px] text-text-primary line-clamp-1">
               {session.title || "Untitled"}
             </span>
-            <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+            <span className="shrink-0 text-xs text-text-tertiary">
+          {timeAgo(session.timeUpdated || session.timeCreated)}
+        </span>
+        <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
               <button
                 aria-label="Rename session"
                 className="rounded p-0.5 text-muted-foreground hover:text-foreground"
@@ -102,8 +113,8 @@ function SessionRow({ projectId, session }: { projectId: string; session: Sessio
             {busy && <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />}
           </div>
           <div className="flex items-center gap-[6px]">
-            <span className="min-w-0 flex-1 truncate text-[12px] text-text-tertiary">
-              {timeAgo(session.timeUpdated || session.timeCreated)}
+            <span className="min-w-0 flex-1 truncate text-sm text-text-tertiary">
+              {projectName}
             </span>
           </div>
         </>
@@ -137,11 +148,18 @@ function SessionRow({ projectId, session }: { projectId: string; session: Sessio
 export function SessionsSection() {
   const activeProjectId = useAppStore((s) => s.activeProjectId);
   const sessionsByProject = useAppStore((s) => s.sessionsByProject);
-  const activeSessions = useMemo(
-    () => (activeProjectId ? sessionsByProject[activeProjectId] ?? [] : []),
-    [activeProjectId, sessionsByProject],
-  );
+  const search = useAppStore((s) => s.sessionSearch);
+  const activeSessions = useMemo(() => {
+    const list = activeProjectId ? sessionsByProject[activeProjectId] ?? [] : [];
+    const q = search.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((x) => (x.title || "").toLowerCase().includes(q));
+  }, [activeProjectId, sessionsByProject, search]);
   const groups = useMemo(() => groupByDate(activeSessions), [activeSessions]);
+  const activeProject = useAppStore((s) => s.projects.find((p) => p.id === activeProjectId));
+  const activeProjectName = activeProject
+    ? activeProject.path.split("/").filter(Boolean).pop() ?? activeProject.path
+    : "";
 
   if (!activeProjectId) return null;
   return (
@@ -158,7 +176,12 @@ export function SessionsSection() {
         <div key={g.label}>
           <div className="px-2 pb-0.5 pt-2 text-[11px] text-text-tertiary">{g.label}</div>
           {g.items.map((s) => (
-            <SessionRow key={s.id} projectId={activeProjectId} session={s} />
+            <SessionRow
+              key={s.id}
+              projectId={activeProjectId}
+              projectName={activeProjectName}
+              session={s}
+            />
           ))}
         </div>
       ))}
