@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"circulogo/internal/agent"
@@ -16,7 +17,10 @@ import (
 	"circulogo/internal/orchestrator"
 )
 
-// Server implements http.Handler for the /agent subtree.
+// Server implements http.Handler for the agent API. Wails mounts it at route
+// /agent and hands it paths with the prefix ALREADY stripped (assetserver.go
+// TrimPrefix) — handlers here therefore see "/projects", "/sse", … For direct
+// mounting (the debug listener) wrap with http.StripPrefix("/agent", …).
 type Server struct {
 	orch *orchestrator.Orchestrator
 }
@@ -27,18 +31,11 @@ func New(orch *orchestrator.Orchestrator) *Server {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	const prefix = "/agent"
-	path := r.URL.Path
-	if len(path) < len(prefix) || path[:len(prefix)] != prefix {
+	path := strings.TrimPrefix(r.URL.Path, "/")
+	if path == "" {
 		http.NotFound(w, r)
 		return
 	}
-	path = path[len(prefix):]
-	if path == "" || path == "/" {
-		http.NotFound(w, r)
-		return
-	}
-	path = path[1:] // drop leading slash
 
 	switch {
 	case path == "sse" && r.Method == http.MethodGet:

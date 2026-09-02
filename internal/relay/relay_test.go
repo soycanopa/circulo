@@ -99,7 +99,10 @@ func newServer(t *testing.T) (*httptest.Server, *factory) {
 	t.Helper()
 	ff := &factory{made: map[string]*fakeAdapter{}}
 	orch := orchestrator.New(store.New(t.TempDir()+"/settings.json"), ff.build)
-	srv := httptest.NewServer(relay.New(orch))
+	mux := http.NewServeMux()
+	// Same mounting as main.go: relay serves prefix-less paths.
+	mux.Handle("/agent/", http.StripPrefix("/agent", relay.New(orch)))
+	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	t.Cleanup(orch.Shutdown)
 	return srv, ff
