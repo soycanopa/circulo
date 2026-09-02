@@ -1,0 +1,8 @@
+# DOC-DERIVED fixture (not a live capture): shapes taken from the
+# opencode 1.18.25 OpenAPI spec (EventPermissionAsked, PermissionRequest).
+# Values are synthetic. Replace with a real capture after the E2E
+# checklist step 3 (edit permission) is exercised.
+data: {"id":"evt_perm_16078130","type":"permission.asked","properties":{"id":"per_01J8Z0EXAMPLE","type":"permission.asked","data":{"id":"per_01J8Z0EXAMPLE","sessionID":"ses_permexample0000000000000","permission":"bash","patterns":["rm -rf dist"],"metadata":{"command":"rm -rf dist"},"always":["rm -rf *"],"tool":{"messageID":"msg_permexample00000001","callID":"call_permexample0001"}}}}
+
+data: {"id":"evt_perm_69242658","type":"permission.replied","properties":{"id":"per_01J8Z0EXAMPLE","type":"permission.replied","data":{"sessionID":"ses_permexample0000000000000","requestID":"per_01J8Z0EXAMPLE","reply":"once"}}}
+
