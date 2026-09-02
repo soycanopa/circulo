@@ -25,9 +25,11 @@ marked **[adjusted]**. Everything else is verbatim intent from the project owner
 - **Do not loop.** If an approach fails twice, stop, write what you tried, and ask or
   change strategy.
 - **Do not implement remote access or a second adapter until the local protocol is
-  stable.** **[adjusted]** Original: "no remote/Tailcat". Concretely: no Tailscale/LAN
-  exposure, no adapter #2 (Claude, Codex, …) until the neutral protocol
-  (`internal/agent/protocol`) is proven stable by the OpenCode adapter in daily use.
+  stable.** **[adjusted]** Original: "no remote/Tailcat". Concretely: no Tailcat tunnel,
+  no remote listener, no adapter #2 (Claude, Codex, …) until the neutral protocol
+  (`internal/agent/protocol`) is proven stable by the OpenCode adapter in daily use
+  (gate: the E2E checklist in docs/implement.md). The remote design is frozen in
+  docs/remote.md — build from there when the gate opens, do not redesign.
 
 ## Architecture invariants **[adjusted]**
 

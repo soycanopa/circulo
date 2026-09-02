@@ -114,4 +114,4 @@ identically to live; usage footer correct.
 3. Syntax highlighting behind MarkdownView; diff syntax tone.
 4. Second adapter (Claude CLI stream-json) — proves the neutral protocol.
 5. Checkpoints/revert UI (OC supports revert/unrevert), session fork.
-6. Remote access (Tailscale) — blocked by project rule until local protocol is stable.
+6. Remote access (Tailcat) — design frozen in [remote.md](remote.md); implementation blocked by project rule until local protocol is stable.
