@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import Transcript from "@/features/chat/Transcript";
+import { ChatAppBar } from "@/features/chat/ChatAppBar";
 import { Composer } from "@/features/chat/Composer";
 import { ProjectBanner, ReconnectBar } from "@/features/connection/Banners";
 import {
@@ -81,16 +82,19 @@ export default function App() {
         <EmptyState />
       ) : (
         <>
-          {/* Banners are informational strips: the chat stays mounted while
-              the adapter starts, retries or recovers (docs/flow.md §9). */}
+          {/* The app bar carries session context; banners below it are
+              informational strips only — the chat stays mounted while the
+              adapter starts, retries or recovers (docs/flow.md §9). */}
+          <ChatAppBar project={activeProject} session={session} />
           <ProjectBanner project={activeProject} />
           <div className="flex min-h-0 flex-1 flex-col">
             {session ? (
               <Transcript session={session} />
             ) : (
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1">
-                <div className="text-[15px] font-medium">New chat</div>
-                <div className="text-[13px] text-muted-foreground">{activeProject.path}</div>
+              <div className="flex min-h-0 flex-1 items-center justify-center">
+                <p className="text-[13px] text-muted-foreground">
+                  Ask anything — the session starts with your first message.
+                </p>
               </div>
             )}
             <Composer />
