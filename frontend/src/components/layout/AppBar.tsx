@@ -1,6 +1,6 @@
 /**
  * AppBar: the extensible top bar of the main column (docs/ui.md §2).
- * It owns only the chrome — 46px height, border, slot layout. Features compose
+ * It owns only the chrome — 40px height, border, slot layout. Features compose
  * their content into the left/center/right slots; new controls plug in
  * without touching the layout.
  *
@@ -20,7 +20,7 @@ export function AppBar({
   right?: ReactNode;
 }) {
   return (
-    <div className="flex h-[46px] shrink-0 items-center gap-3 border-b border-border px-3">
+    <div className="flex h-[40px] shrink-0 items-center gap-3 border-b border-border px-4">
       {left && <div className="flex min-w-0 items-center gap-2">{left}</div>}
       {center && <div className="flex min-w-0 flex-1 justify-center">{center}</div>}
       {!center && <div className="flex-1" />}

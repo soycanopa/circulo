@@ -80,11 +80,11 @@ export const ToolCard = memo(function ToolCard({ part }: { part: Part }) {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="group/tool">
-      <div className="rounded-lg border border-border bg-bg-code">
+      <div className="flex w-full flex-col rounded-lg overflow-clip border border-border bg-bg-code">
         <CollapsibleTrigger className="flex w-full items-center gap-[10px] px-3 py-[10px] text-left">
           <StateBadge state={state} />
           <span className="flex min-w-0 flex-col grow gap-px">
-            <span className="truncate text-[13px] font-medium leading-[18px] text-foreground">
+            <span className="truncate text-base font-medium leading-[18px] text-text-primary">
               {part.tool}
               {state.status === "running" ? "…" : ""}
             </span>

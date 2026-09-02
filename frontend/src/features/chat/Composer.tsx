@@ -78,7 +78,7 @@ function ModelPicker() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex h-7 items-center gap-[6px] rounded-md border border-border-strong px-2 text-[12px] text-foreground hover:bg-muted"
+          className="flex h-[28px] items-center gap-[6px] rounded-md border border-border bg-bg-code px-[10px] text-sm text-text-primary hover:bg-muted"
         >
           {current?.name || current?.id || "model"}
           <ChevronDown className="size-3 text-text-tertiary" />
@@ -177,7 +177,7 @@ export function Composer() {
             ))}
           </div>
         )}
-        <div className="mx-auto max-w-3xl rounded-lg border border-border-strong bg-card focus-within:border-ring">
+        <div className="mx-auto flex w-full max-w-[768px] flex-col rounded-xl border border-border-strong bg-bg-main shadow-[#00000059_0px_8px_24px] focus-within:border-ring">
           <textarea
             ref={taRef}
             data-selectable
@@ -189,7 +189,7 @@ export function Composer() {
                 : "Write anything — Circulo does the rest"
             }
             disabled={!activeProjectId}
-            className="w-full resize-none bg-transparent px-3 pb-1 pt-3 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground/70 disabled:cursor-not-allowed"
+            className="w-full resize-none bg-transparent px-4 pt-4 pb-2 text-md text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed"
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -198,7 +198,7 @@ export function Composer() {
               }
             }}
           />
-          <div className="flex items-center gap-1.5 px-2.5 pb-2 pt-1">
+          <div className="flex items-center gap-1.5 px-3 pb-[10px] pt-2">
             <ModelPicker />
             <AgentPicker />
             <span className="flex-1" />
@@ -218,7 +218,7 @@ export function Composer() {
             )}
           </div>
         </div>
-        <div className="mx-auto flex max-w-3xl items-center gap-3 text-[11px] text-text-tertiary">
+        <div className="mx-auto mt-2 flex max-w-[768px] items-center gap-3 text-xs text-text-tertiary">
           <span className="flex items-center gap-[6px]">
             <span
               className={cn(

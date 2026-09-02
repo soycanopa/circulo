@@ -20,7 +20,7 @@ export const UserMessage = memo(function UserMessage({ m }: { m: MessageRecord }
     .join("\n");
   return (
     <div className="flex flex-col items-end">
-      <div className="max-w-[560px] whitespace-pre-wrap break-words rounded-l-lg rounded-br-lg rounded-tr-xs bg-accent px-4 py-3 text-[14px] font-medium leading-relaxed text-foreground">
+      <div className="max-w-[560px] whitespace-pre-wrap break-words rounded-l-lg rounded-br-lg rounded-tr-xs bg-bg-hover px-4 py-3 text-md font-medium text-text-primary">
         {text}
       </div>
     </div>
@@ -65,7 +65,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   }, [m.parts]);
 
   return (
-    <div className="space-y-2">
+    <div className="flex w-full flex-col gap-2">
       {m.parts.map((p) => {
         switch (p.type) {
           case "reasoning":

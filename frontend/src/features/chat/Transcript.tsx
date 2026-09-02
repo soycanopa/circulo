@@ -50,10 +50,12 @@ const Transcript = memo(function Transcript({ session }: { session: SessionState
   return (
     <div className="relative min-h-0 flex-1">
       <div ref={ref} className="h-full overflow-y-auto" role="log" aria-label="Chat transcript">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4 px-6 py-6">
+        <div className="mx-auto flex w-full max-w-[768px] flex-col items-center gap-6 px-0 pt-6 pb-2">
           {shown.map((m) =>
             m.info.role === "user" ? (
-              <UserMessage key={m.info.id} m={m} />
+              <div key={m.info.id} className="flex w-full flex-col items-end">
+                <UserMessage m={m} />
+              </div>
             ) : (
               <AssistantMessage key={m.info.id} m={m} streaming={busy} />
             ),

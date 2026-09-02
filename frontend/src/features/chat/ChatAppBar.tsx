@@ -5,7 +5,7 @@
  */
 
 import { memo } from "react";
-import { ChevronRight, Loader2, X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 
 import { AppBar } from "@/components/layout/AppBar";
 import { useAppStore } from "@/lib/agent/store";
@@ -28,21 +28,19 @@ export const ChatAppBar = memo(function ChatAppBar({
   return (
     <AppBar
       left={
-        <>
-          <span className="truncate text-[13px] text-muted-foreground">{projectName}</span>
-          <ChevronRight className="size-3 shrink-0 text-text-tertiary" />
-          <span className="truncate text-[13px] font-semibold text-foreground">{title}</span>
-        </>
+        <span className="truncate text-xs font-medium leading-[14px] text-text-secondary">
+          {session ? `${title} · ${projectName}` : `New session · ${projectName}`}
+        </span>
       }
       right={
         <>
           {busy && (
-            <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+            <span className="flex items-center gap-1.5 text-xs text-text-tertiary">
               <Loader2 className="size-3.5 animate-spin" /> working
             </span>
           )}
           {retrying && (
-            <span className="flex items-center gap-1.5 text-[12px] text-warning">
+            <span className="flex items-center gap-1.5 text-xs text-warning">
               <Loader2 className="size-3.5 animate-spin" />
               retrying{session?.retry ? ` (attempt ${session.retry.attempt})` : ""}
             </span>
@@ -51,7 +49,7 @@ export const ChatAppBar = memo(function ChatAppBar({
             <button
               aria-label="Close session"
               title="Close session"
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="flex size-7 items-center justify-center shrink-0 rounded-full bg-bg-code border border-border-strong text-muted-foreground hover:text-foreground"
               onClick={closeSession}
             >
               <X className="size-3.5" />

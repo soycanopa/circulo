@@ -7,8 +7,9 @@ import { ChatAppBar } from "@/features/chat/ChatAppBar";
 import { Composer } from "@/features/chat/Composer";
 import { ProjectBanner, ReconnectBar } from "@/features/connection/Banners";
 import {
-  NewChatButton,
+  NewSessionButton,
   ProjectsSection,
+  SearchInput,
   SidebarFooter,
 } from "@/features/projects/SidebarSections";
 import { SessionsSection } from "@/features/sessions/SessionsSection";
@@ -69,7 +70,8 @@ export default function App() {
     <AppShell
       sidebar={
         <>
-          <NewChatButton />
+          <NewSessionButton />
+          <SearchInput />
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
             <ProjectsSection />
             <SessionsSection />
@@ -93,13 +95,13 @@ export default function App() {
               <Transcript session={session} />
             ) : (
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 pb-6">
-                <div className="flex size-11 items-center justify-center rounded-xl border border-border-strong bg-card">
-                  <Sparkles className="size-4 text-foreground" />
+                <div className="flex size-[44px] items-center justify-center rounded-[14px] border border-border-strong bg-bg-code">
+                  <Sparkles className="size-4 text-accent-cir" />
                 </div>
-                <div className="text-[16px] font-semibold text-foreground">
+                <div className="text-xl font-semibold tracking-tight text-text-primary">
                   What are we making today?
                 </div>
-                <div className="text-[12px] text-text-tertiary">
+                <div className="text-md text-text-tertiary">
                   Describe it in your own words — Circulo handles the rest.
                 </div>
               </div>
