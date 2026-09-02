@@ -24,7 +24,8 @@
     /* Path alias for shadcn/ui */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@/bindings/*": ["./bindings/*"]
     }
   },
   "include": ["src", "bindings"],

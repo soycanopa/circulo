@@ -55,7 +55,9 @@ func main() {
 	if addr := os.Getenv("CIRCULOGO_DEBUG_ADDR"); addr != "" {
 		go func() {
 			log.Printf("debug API listening on http://%s/agent", addr)
-			if err := http.ListenAndServe(addr, api); err != nil {
+			// The relay serves prefix-less paths (Wails strips the route);
+			// direct HTTP needs the same strip.
+			if err := http.ListenAndServe(addr, http.StripPrefix("/agent", api)); err != nil {
 				log.Printf("debug API stopped: %v", err)
 			}
 		}()

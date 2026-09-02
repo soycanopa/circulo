@@ -13,8 +13,15 @@ export default defineConfig({
   },
   plugins: [react(), tailwindcss(), wails("./bindings")],
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
+    alias: [
+      {
+        find: "@/bindings",
+        replacement: path.resolve(__dirname, "./bindings"),
+      },
+      {
+        find: "@",
+        replacement: path.resolve(__dirname, "./src"),
+      },
+    ],
   },
 });
