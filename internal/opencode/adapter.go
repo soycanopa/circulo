@@ -228,11 +228,18 @@ func (a *Adapter) Stop(_ context.Context) error {
 	return nil
 }
 
+// reconnectHysteresis: transient stream blips (server heartbeats timing out,
+// brief proxy hiccups) must NOT flip the project banner to error — the loop
+// reconnects and server.connected restores running within a second. Only
+// surface an error after this many consecutive failed attempts.
+const reconnectHysteresis = 3
+
 // sseLoop consumes /event with reconnect until ctx is cancelled. Reconnect is
 // safe because every message.part.updated carries the full part (self-healing,
 // docs/trd.md §3.3).
 func (a *Adapter) sseLoop(ctx context.Context) {
 	defer close(a.events)
+	consecutiveFailures := 0
 	for {
 		if ctx.Err() != nil {
 			return
@@ -242,8 +249,10 @@ func (a *Adapter) sseLoop(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			// The server may be restarting; surface and retry.
-			a.emitStatus(protocol.AdapterError, err.Error())
+			consecutiveFailures++
+			if consecutiveFailures >= reconnectHysteresis {
+				a.emitStatus(protocol.AdapterError, err.Error())
+			}
 			select {
 			case <-ctx.Done():
 				return
@@ -260,6 +269,7 @@ func (a *Adapter) sseLoop(ctx context.Context) {
 		for !done {
 			select {
 			case f := <-frames:
+				consecutiveFailures = 0
 				env, err := DecodeEvent(f)
 				if err != nil {
 					// One malformed frame must not kill the stream.
@@ -285,7 +295,10 @@ func (a *Adapter) sseLoop(ctx context.Context) {
 				if ctx.Err() != nil {
 					return
 				}
-				a.emitStatus(protocol.AdapterError, "event stream dropped: "+err.Error())
+				consecutiveFailures++
+				if consecutiveFailures >= reconnectHysteresis {
+					a.emitStatus(protocol.AdapterError, "event stream dropped: "+err.Error())
+				}
 				done = true
 			case <-ctx.Done():
 				body.Close()
