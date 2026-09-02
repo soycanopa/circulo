@@ -150,6 +150,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   openSession: async (projectID, sessionID) => {
     set({ activeSessionId: sessionID });
+    // Seed the chat session from the sidebar entry: without it, a session
+    // with empty history never enters chat.sessions and the app bar keeps
+    // saying "New chat".
+    set((s) => {
+      if (s.chat.sessions[sessionID]) return s;
+      const meta = (s.sessionsByProject[projectID] ?? []).find((x) => x.id === sessionID);
+      if (!meta) return s;
+      return {
+        chat: applyEvent(s.chat, {
+          type: "session.updated",
+          payload: { projectID, session: meta },
+        }),
+      };
+    });
     // Hydrate history into the chat reducer (flow.md §5).
     try {
       const history = await api.messages(projectID, sessionID, 0);
