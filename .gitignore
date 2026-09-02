@@ -1,0 +1,21 @@
+# Go
+/bin/
+*.exe
+*.test
+*.out
+
+# Wails build output
+build/bin/
+frontend/dist/
+
+# Node
+node_modules/
+*.tsbuildinfo
+
+# Local scratch (fixtures for tests live in internal/opencode/testdata, not here)
+/.scratch/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
