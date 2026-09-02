@@ -259,6 +259,9 @@ deletes its history; acceptable and documented.
   extra listener; nothing to discover from the LAN).
 - Optional Basic auth passthrough (`OPENCODE_SERVER_PASSWORD`).
 - No telemetry, no outbound calls other than the agent server.
+- Future remote access (Tailcat, design in [remote.md](remote.md)) will expose exactly one
+  surface — a static-UI + relay listener — behind a token-gated tunnel; adapters and
+  `opencode serve` processes are never reachable off-machine.
 
 ## 10. Known risks & gotchas (verified where noted)
 
