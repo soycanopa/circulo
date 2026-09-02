@@ -161,7 +161,7 @@ export function Composer() {
   };
 
   return (
-    <div className="border-t border-border bg-background/80 px-6 pb-4 pt-2 backdrop-blur">
+    <div className="bg-background/80 px-6 pb-4 pt-2 backdrop-blur">
       <div className="mx-auto max-w-3xl space-y-2">
         {session && session.permissions.length > 0 && (
           <div className="space-y-2">
