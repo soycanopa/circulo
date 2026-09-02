@@ -11,7 +11,7 @@
 `docs/{prd,trd,ux,flow,ui,implement}.md` + `AGENTS.md`. DoD: docs review-able, AGENTS.md
 contains the adjusted rule set.
 
-## Phase 1 — Scaffold (branch `feature/scaffold`)
+## Phase 1 — Scaffold ✅ (merged)
 
 | # | Commit | Content | DoD |
 |---|---|---|---|
@@ -21,7 +21,7 @@ contains the adjusted rule set.
 | 1.4 | `test: vitest + go test wiring` | vitest config + sample, `make test` target (go test ./... + vitest run) | both suites green |
 | 1.5 | `docs: AGENTS.md guardrails in template` | ensure lint configs reflect rules | lint passes |
 
-## Phase 2 — Protocol + OpenCode adapter (branch `feature/agent-protocol`) **tests first**
+## Phase 2 — Protocol + OpenCode adapter ✅ (merged) **tests first**
 
 | # | Commit | Content |
 |---|---|---|
@@ -38,7 +38,7 @@ contains the adjusted rule set.
 httptest); with binary present, lifecycle test green. No Wails imports in
 `internal/{agent,opencode}` (assert via `go list -deps` in test or CI grep).
 
-## Phase 3 — Orchestrator + relay (branch `feature/orchestrator-relay`)
+## Phase 3 — Orchestrator + relay ✅ (merged; E2E verified with real opencode serve via CIRCULOGO_DEBUG_ADDR)
 
 | # | Commit | Content |
 |---|---|---|
@@ -52,7 +52,7 @@ httptest); with binary present, lifecycle test green. No Wails imports in
 shows neutral events for a real prompt; `wails3 dev` window still loads; fallback to
 `app.Event.Emit` decided/documented if route interception fails in dev.
 
-## Phase 4 — UI shell (branch `feature/ui-shell`)
+## Phase 4 — UI shell ✅ (merged into `feature/frontend`)
 
 | # | Commit | Content |
 |---|---|---|
@@ -65,7 +65,7 @@ shows neutral events for a real prompt; `wails3 dev` window still loads; fallbac
 **DoD Phase 4:** add real project via dialog → server starts (dot green) → session list
 populates; creating a session works; no chat rendering yet.
 
-## Phase 5 — Chat: parts + live streaming (branch `feature/chat`)
+## Phase 5 — Chat: parts + live streaming ✅ (merged into `feature/frontend`; streaming verified via relay E2E, in-window prompt verification pending manual pass)
 
 | # | Commit | Content |
 |---|---|---|
@@ -78,7 +78,7 @@ populates; creating a session works; no chat rendering yet.
 **DoD Phase 5:** real prompt streams text+reasoning+tools live; history renders
 identically to live; usage footer correct.
 
-## Phase 6 — Permissions, abort, errors (branch `feature/permissions-control`)
+## Phase 6 — Permissions, abort, errors ✅ (merged into `feature/frontend`; needs the manual E2E checklist pass)
 
 | # | Commit | Content |
 |---|---|---|

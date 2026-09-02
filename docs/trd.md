@@ -2,7 +2,7 @@
 
 - **Status:** Draft v0.1 (2026-09-02)
 - **Related:** [PRD](prd.md) · [Flow](flow.md) · [Implementation Plan](implement.md)
-- **Verified against:** OpenCode **1.18.25** (live `opencode serve` + `GET /doc` OpenAPI 3.1,
+- **Verified against:** OpenCode **1.18.25** — note: 1.18.25 uses `permission.asked`/`permission.replied` with a nested `data` payload (NOT the older `permission.updated` shape from the docs site), and `message.part.delta` exists on the v1 stream (live `opencode serve` + `GET /doc` OpenAPI 3.1,
   smoke-tested 2026-09-02), Wails **v3.0.0-beta.16** (`wails3 doctor` clean), Go 1.27, Node 24.
 
 ## 1. Stack
@@ -11,7 +11,7 @@
 |---|---|---|---|
 | Shell | Wails v3 | `v3.0.0-beta.16` (go.mod pin) | User decision. Beta is moving → pin + document gotchas (§10) |
 | Backend | Go | ≥ 1.25 (1.27 installed) | Wails v3 requirement |
-| Frontend | React + TypeScript + Vite | React 19, Vite 7 (template default) | `wails3 init -t react` baseline |
+| Frontend | React + TypeScript + Vite | React 18, Vite 8 (template default) | `wails3 init -t react` baseline |
 | Styling | Tailwind CSS | v4 (template default) | |
 | Components | shadcn/ui (Radix) | latest | Sidebar/Dialog/Dropdown primitives |
 | State | zustand | latest | Small event-reducer stores; no Redux ceremony |
