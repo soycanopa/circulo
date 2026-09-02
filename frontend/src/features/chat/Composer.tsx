@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/lib/agent/store";
+import { cn } from "@/lib/utils";
 import type { PermissionRequest } from "@/lib/agent/protocol";
 
 function PermissionCard({ perm }: { perm: PermissionRequest }) {
@@ -77,10 +78,10 @@ function ModelPicker() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] text-muted-foreground hover:bg-muted"
+          className="flex h-7 items-center gap-[6px] rounded-md border border-border-strong px-2 text-[12px] text-foreground hover:bg-muted"
         >
           {current?.name || current?.id || "model"}
-          <ChevronDown className="size-3" />
+          <ChevronDown className="size-3 text-text-tertiary" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-80 overflow-auto">
@@ -141,6 +142,8 @@ export function Composer() {
   const chat = useAppStore((s) => s.chat);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
+  const projects = useAppStore((s) => s.projects);
+  const activeProject = projects.find((p) => p.id === activeProjectId);
   const session =
     activeProjectId && activeSessionId ? chat.sessions[activeSessionId] : undefined;
   const busy = session?.status === "busy" || session?.status === "retry";
@@ -160,8 +163,12 @@ export function Composer() {
     void send(t);
   };
 
+  const models = useAppStore((s) => s.metaModels);
+  const selectedModel = useAppStore((s) => s.selectedModel);
+  const currentModel = models.find((m) => `${m.provider}:${m.id}` === selectedModel);
+
   return (
-    <div className="bg-background/80 px-6 pb-4 pt-2 backdrop-blur">
+    <div className="bg-background/80 px-6 pb-3 pt-2 backdrop-blur">
       <div className="mx-auto max-w-3xl space-y-2">
         {session && session.permissions.length > 0 && (
           <div className="space-y-2">
@@ -170,17 +177,19 @@ export function Composer() {
             ))}
           </div>
         )}
-        <div className="rounded-xl border border-border bg-card focus-within:border-ring">
+        <div className="mx-auto max-w-3xl rounded-lg border border-border-strong bg-card focus-within:border-ring">
           <textarea
             ref={taRef}
             data-selectable
             rows={1}
             value={text}
             placeholder={
-              activeProjectId ? "Message circuloGo…" : "Add a project to start"
+              activeSessionId
+                ? "Ask a follow-up…"
+                : "Write anything — Circulo does the rest"
             }
             disabled={!activeProjectId}
-            className="w-full resize-none bg-transparent px-3.5 pt-3 text-[15px] leading-relaxed outline-none placeholder:text-muted-foreground/70 disabled:cursor-not-allowed"
+            className="w-full resize-none bg-transparent px-3 pb-1 pt-3 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground/70 disabled:cursor-not-allowed"
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -189,7 +198,7 @@ export function Composer() {
               }
             }}
           />
-          <div className="flex items-center gap-1 px-2.5 pb-2 pt-1">
+          <div className="flex items-center gap-1.5 px-2.5 pb-2 pt-1">
             <ModelPicker />
             <AgentPicker />
             <span className="flex-1" />
@@ -209,8 +218,27 @@ export function Composer() {
             )}
           </div>
         </div>
+        <div className="mx-auto flex max-w-3xl items-center gap-3 text-[11px] text-text-tertiary">
+          <span className="flex items-center gap-[6px]">
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                activeProject && activeProject.status === "running" ? "bg-success" : "bg-text-tertiary",
+              )}
+            />
+            {activeProject
+              ? activeProject.path.split("/").filter(Boolean).pop()
+              : "no project"}
+          </span>
+          <span>•</span>
+          <span>Local environment</span>
+          <span>•</span>
+          <span className="truncate">
+            {currentModel ? `${currentModel.provider}/${currentModel.id}` : ""}
+          </span>
+        </div>
         {session?.status === "retry" && session.retry && (
-          <Badge variant="outline" className="text-amber-600 dark:text-amber-400">
+          <Badge variant="outline" className="text-warning">
             retrying (attempt {session.retry.attempt})
           </Badge>
         )}

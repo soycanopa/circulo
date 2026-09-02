@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 export function AppShell({ sidebar, children }: { sidebar: ReactNode; children: ReactNode }) {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
-      <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-sidebar">
+      <aside className="flex h-full w-[280px] shrink-0 flex-col border-r border-border bg-sidebar">
         <div className="h-11 shrink-0" />
         {sidebar}
       </aside>

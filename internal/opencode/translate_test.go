@@ -201,3 +201,27 @@ func TestTranslate_BadPropertiesIsError(t *testing.T) {
 		t.Fatal("expected error for corrupt properties")
 	}
 }
+
+func TestTranslate_TodoUpdated(t *testing.T) {
+	props := `{"sessionID":"ses_t","todos":[
+		{"id":"1","content":"Draft three hero options","status":"completed","priority":"high"},
+		{"id":"2","content":"Save the pick to the project","status":"in_progress","priority":"high"},
+		{"id":"3","content":"Suggest a follow-up email","status":"pending","priority":"medium"}]}`
+	envs, err := Translate("p", Envelope{Type: "todo.updated", Properties: json.RawMessage(props)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(envs) != 1 || envs[0].Type != protocol.EventTodoUpdated {
+		t.Fatalf("got %v", envelopeTypes(envs))
+	}
+	var p protocol.TodoUpdated
+	if err := json.Unmarshal(envs[0].Payload, &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.SessionID != "ses_t" || len(p.Tasks) != 3 {
+		t.Fatalf("todo payload = %+v", p)
+	}
+	if p.Tasks[1].Status != "in_progress" || p.Tasks[0].Content != "Draft three hero options" {
+		t.Errorf("tasks = %+v", p.Tasks)
+	}
+}

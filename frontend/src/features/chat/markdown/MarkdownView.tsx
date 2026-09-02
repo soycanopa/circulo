@@ -34,7 +34,7 @@ export const MarkdownView = memo(function MarkdownView({ text }: { text: string 
   return (
     <div
       data-selectable
-      className="prose-sm text-[15px] leading-relaxed text-foreground [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_hr]:border-border [&_li]:my-0.5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_table]:my-2 [&_table]:w-full [&_table]:border-collapse [&_table]:text-sm [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border [&_th]:bg-muted/50 [&_th]:px-2 [&_th]:py-1 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
+      className="prose-sm text-[14px] leading-relaxed text-foreground [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-semibold [&_hr]:border-border [&_li]:my-0.5 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_table]:my-2 [&_table]:w-full [&_table]:border-collapse [&_table]:text-sm [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border [&_th]:bg-muted/50 [&_th]:px-2 [&_th]:py-1 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
@@ -54,7 +54,7 @@ export const MarkdownView = memo(function MarkdownView({ text }: { text: string 
             }
             const lang = /language-(\S+)/.exec(className ?? "")?.[1] ?? "text";
             return (
-              <div className="group relative my-2 overflow-hidden rounded-lg border border-border bg-muted/40">
+              <div className="group relative my-2 overflow-hidden rounded-lg border border-border bg-bg-code">
                 <div className="flex h-7 items-center justify-between border-b border-border/60 px-3">
                   <span className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
                     {lang}
@@ -86,15 +86,15 @@ export const DiffView = memo(function DiffView({ diff }: { diff: string }) {
   return (
     <pre
       data-selectable
-      className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2 font-mono text-[12px] leading-relaxed"
+      className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md bg-bg-code p-2 font-mono text-[12px] leading-relaxed"
     >
       {diff.split("\n").map((line, i) => (
         <div
           key={i}
           className={cn(
-            line.startsWith("+") && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-            line.startsWith("-") && "bg-red-500/10 text-red-600 dark:text-red-400",
-            line.startsWith("@@") && "text-primary",
+            line.startsWith("+") && "bg-diff-add text-foreground",
+            line.startsWith("-") && "bg-diff-del text-foreground",
+            line.startsWith("@@") && "text-accent-indigo",
           )}
         >
           {line}

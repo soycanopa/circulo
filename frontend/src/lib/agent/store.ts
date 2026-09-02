@@ -52,6 +52,7 @@ interface AppStore {
   setActiveProject: (projectID: string | null) => void;
   newSession: (projectID: string, title?: string) => Promise<string | null>;
   openSession: (projectID: string, sessionID: string) => Promise<void>;
+  closeSession: () => void;
   deleteSession: (projectID: string, sessionID: string) => Promise<void>;
   loadMeta: (projectID: string) => Promise<void>;
   setSelectedAgent: (a: string) => void;
@@ -149,6 +150,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   openSession: async (projectID, sessionID) => {
     set({ activeSessionId: sessionID });
+    // Seed the chat session from the sidebar entry: without it, a session
+    // with empty history never enters chat.sessions and the app bar keeps
+    // saying "New chat".
+    set((s) => {
+      if (s.chat.sessions[sessionID]) return s;
+      const meta = (s.sessionsByProject[projectID] ?? []).find((x) => x.id === sessionID);
+      if (!meta) return s;
+      return {
+        chat: applyEvent(s.chat, {
+          type: "session.updated",
+          payload: { projectID, session: meta },
+        }),
+      };
+    });
     // Hydrate history into the chat reducer (flow.md §5).
     try {
       const history = await api.messages(projectID, sessionID, 0);
@@ -157,6 +172,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       console.error("hydrate failed", e);
     }
   },
+
+  closeSession: () => set({ activeSessionId: null }),
 
   deleteSession: async (projectID, sessionID) => {
     await api.deleteSession(projectID, sessionID);

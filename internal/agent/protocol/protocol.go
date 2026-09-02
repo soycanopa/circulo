@@ -21,6 +21,7 @@ const (
 	EventPermissionRequest  = "permission.request"
 	EventPermissionResolved = "permission.resolved"
 	EventSessionError       = "session.error"
+	EventTodoUpdated        = "todo.updated"
 )
 
 // Adapter states (EventAdapterStatus).
@@ -282,6 +283,23 @@ type SessionErrored struct {
 	ProjectID string     `json:"projectID"`
 	SessionID string     `json:"sessionID,omitempty"`
 	Error     AgentError `json:"error"`
+}
+
+// Task is one agent todo item. Status passes through the agent's vocabulary
+// (OpenCode: pending | in_progress | completed); the UI renders unknown
+// values as pending.
+type Task struct {
+	ID       string `json:"id,omitempty"`
+	Content  string `json:"content"`
+	Status   string `json:"status"`
+	Priority string `json:"priority,omitempty"`
+}
+
+// TodoUpdated replaces the session's task list (OpenCode sends the full list).
+type TodoUpdated struct {
+	ProjectID string `json:"projectID"`
+	SessionID string `json:"sessionID"`
+	Tasks     []Task `json:"tasks"`
 }
 
 // PromptRequest is what the UI sends (relay → adapter).

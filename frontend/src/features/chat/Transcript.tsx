@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { usePinnedScroll } from "./hooks/usePinnedScroll";
 import { AssistantMessage, Dot, UserMessage, visibleMessages } from "./Message";
 import { ErrorBlock } from "./parts/MiscParts";
+import { TaskList } from "./parts/TaskList";
 import type { SessionState } from "@/lib/agent/reducer";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +32,7 @@ const Transcript = memo(function Transcript({ session }: { session: SessionState
     partsLens,
     lastTextLens,
     session.permissions.length,
+    session.tasks.length,
   ]);
 
   // Turn timer: record when busy starts; reset on idle. 1 Hz tick (UX §5).
@@ -56,6 +58,7 @@ const Transcript = memo(function Transcript({ session }: { session: SessionState
               <AssistantMessage key={m.info.id} m={m} streaming={busy} />
             ),
           )}
+          {session.tasks.length > 0 && <TaskList tasks={session.tasks} />}
           {session.lastError && (
             <ErrorBlock name={session.lastError.name} message={session.lastError.message} />
           )}

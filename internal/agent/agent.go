@@ -56,7 +56,9 @@ type Adapter interface {
 }
 
 // HydratedMessage is one message with all its parts from history.
+// JSON tags matter: the relay marshals this straight to the webview, which
+// expects the protocol's camelCase contract.
 type HydratedMessage struct {
-	Info  protocol.MessageInfo
-	Parts []protocol.Part
+	Info  protocol.MessageInfo `json:"info"`
+	Parts []protocol.Part      `json:"parts"`
 }

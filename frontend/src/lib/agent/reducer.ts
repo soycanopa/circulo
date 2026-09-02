@@ -16,6 +16,8 @@ import type {
   SessionErroredEvent,
   SessionStatusEvent,
   SessionUpdatedEvent,
+  Task,
+  TodoUpdatedEvent,
 } from "./protocol";
 
 export interface MessageRecord {
@@ -30,6 +32,8 @@ export interface SessionState {
   messages: MessageRecord[];
   /** Unresolved permission requests, oldest first. */
   permissions: PermissionRequest[];
+  /** Agent task list (todo.updated replaces it wholesale). */
+  tasks: Task[];
   /** Last terminal turn error, cleared on the next user prompt. */
   lastError?: { name: string; message: string };
 }
@@ -48,6 +52,7 @@ function ensureSession(state: ChatState, session: Session): SessionState {
       status: "idle",
       messages: [],
       permissions: [],
+      tasks: [],
     };
     state.sessions[session.id] = s;
   } else {
@@ -199,6 +204,14 @@ export function applyEvent(state: ChatState, env: Envelope): ChatState {
         applyDeltaToPart(copy, p.field, p.delta);
         return copy;
       });
+      return { sessions: { ...state.sessions, [p.sessionID]: s } };
+    }
+
+    case "todo.updated": {
+      const p = env.payload as TodoUpdatedEvent;
+      const prevState = state.sessions[p.sessionID];
+      if (!prevState) return state;
+      const s: SessionState = { ...prevState, tasks: p.tasks };
       return { sessions: { ...state.sessions, [p.sessionID]: s } };
     }
 

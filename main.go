@@ -54,11 +54,15 @@ func main() {
 	// Binds 127.0.0.1 only, and only when CIRCULOGO_DEBUG_ADDR is set.
 	if addr := os.Getenv("CIRCULOGO_DEBUG_ADDR"); addr != "" {
 		go func() {
-			log.Printf("debug API listening on http://%s/agent", addr)
-			// The relay serves prefix-less paths (Wails strips the route);
-			// direct HTTP needs the same strip.
-			if err := http.ListenAndServe(addr, http.StripPrefix("/agent", api)); err != nil {
-				log.Printf("debug API stopped: %v", err)
+			// Same exposure shape as the remote design (docs/remote.md F1):
+			// one port serving the embedded UI next to the /agent relay.
+			mux := http.NewServeMux()
+			mux.Handle("/agent", http.StripPrefix("/agent", api))
+			mux.Handle("/agent/", http.StripPrefix("/agent", api))
+			mux.Handle("/", application.AssetFileServerFS(assets))
+			log.Printf("debug UI+API listening on http://%s", addr)
+			if err := http.ListenAndServe(addr, mux); err != nil {
+				log.Printf("debug listener stopped: %v", err)
 			}
 		}()
 	}

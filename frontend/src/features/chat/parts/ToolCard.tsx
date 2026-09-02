@@ -1,5 +1,8 @@
-/** Tool call card (docs/ux.md §4): one-line collapsed, expandable detail,
- * state chip; auto-expands while running. */
+/**
+ * Tool call card — replica of the Circulo design: full-width rounded card on
+ * the code surface, 22px circular state icon (indigo spinner / green check /
+ * red X / muted pending), 13px title + mono 12px subtitle, expandable detail.
+ */
 
 import { memo, useEffect, useState } from "react";
 import {
@@ -7,62 +10,53 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDashed,
-  FilePen,
-  FileText,
-  FolderTree,
-  GitBranch,
-  Globe,
   Loader2,
-  Search,
-  SquareTerminal,
-  Wrench,
   X,
 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { Part, ToolState } from "@/lib/agent/protocol";
+import { cn } from "@/lib/utils";
 
-function ToolIcon({ tool }: { tool?: string }) {
-  const t = tool ?? "";
-  const cls = "size-3.5 shrink-0";
-  if (/bash|shell|terminal|command/.test(t)) return <SquareTerminal className={cls} />;
-  if (/edit|write|patch|multiedit/.test(t)) return <FilePen className={cls} />;
-  if (/read|view|cat/.test(t)) return <FileText className={cls} />;
-  if (/grep|search|find/.test(t)) return <Search className={cls} />;
-  if (/glob|list|ls/.test(t)) return <FolderTree className={cls} />;
-  if (/web|fetch|http/.test(t)) return <Globe className={cls} />;
-  if (/task|agent|subtask/.test(t)) return <GitBranch className={cls} />;
-  return <Wrench className={cls} />;
-}
-
-function StateChip({ state }: { state: ToolState }) {
+function StateBadge({ state }: { state: ToolState }) {
+  const base = "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full";
   switch (state.status) {
     case "running":
       return (
-        <Badge variant="outline" className="gap-1 text-[11px]">
-          <Loader2 className="size-3 animate-spin" /> running
-        </Badge>
+        <div className={cn(base, "bg-accent-indigo")}>
+          <Loader2 className="size-3 animate-spin text-white" />
+        </div>
       );
     case "completed":
       return (
-        <Badge variant="outline" className="gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
-          <Check className="size-3" /> done
-        </Badge>
+        <div className={cn(base, "bg-success")}>
+          <Check className="size-3 text-white" strokeWidth={3} />
+        </div>
       );
     case "error":
       return (
-        <Badge variant="outline" className="gap-1 text-[11px] text-red-600 dark:text-red-400">
-          <X className="size-3" /> error
-        </Badge>
+        <div className={cn(base, "bg-destructive")}>
+          <X className="size-3 text-white" strokeWidth={3} />
+        </div>
       );
     default:
       return (
-        <Badge variant="outline" className="gap-1 text-[11px] text-muted-foreground">
-          <CircleDashed className="size-3" /> pending
-        </Badge>
+        <div className={cn(base, "bg-muted")}>
+          <CircleDashed className="size-3 text-text-tertiary" />
+        </div>
       );
   }
+}
+
+/** Mono subtitle from the tool input, per the design (path · command · pattern). */
+function subtitle(state: ToolState, tool?: string): string {
+  if (state.title) return state.title;
+  if (typeof state.input === "object" && state.input !== null) {
+    const i = state.input as Record<string, unknown>;
+    const raw = (i.file_path ?? i.path ?? i.command ?? i.pattern ?? i.query ?? "") as string;
+    if (raw) return String(raw);
+  }
+  return tool ?? "";
 }
 
 function formatInput(state: ToolState): string {
@@ -82,33 +76,32 @@ export const ToolCard = memo(function ToolCard({ part }: { part: Part }) {
     if (state.status === "running") setOpen(true);
   }, [state.status]);
 
-  const label =
-    state.title ||
-    (typeof state.input === "object" && state.input !== null
-      ? String(
-          (state.input as Record<string, unknown>).command ??
-            (state.input as Record<string, unknown>).file_path ??
-            (state.input as Record<string, unknown>).pattern ??
-            part.tool,
-        )
-      : (part.tool ?? "tool"));
+  const sub = subtitle(state, part.tool);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="group/tool">
-      <div className="rounded-lg border border-border bg-card/50">
-        <CollapsibleTrigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px]">
-          <ToolIcon tool={part.tool} />
-          <span className="font-medium text-foreground/90">{part.tool}</span>
-          <span className="min-w-0 flex-1 truncate text-muted-foreground">{label}</span>
-          <StateChip state={state} />
+      <div className="rounded-lg border border-border bg-bg-code">
+        <CollapsibleTrigger className="flex w-full items-center gap-[10px] px-3 py-[10px] text-left">
+          <StateBadge state={state} />
+          <span className="flex min-w-0 flex-col grow gap-px">
+            <span className="truncate text-[13px] font-medium leading-[18px] text-foreground">
+              {part.tool}
+              {state.status === "running" ? "…" : ""}
+            </span>
+            {sub && (
+              <span className="truncate font-mono text-[12px] leading-[14px] text-text-tertiary">
+                {sub}
+              </span>
+            )}
+          </span>
           {open ? (
-            <ChevronDown className="size-3.5 text-muted-foreground" />
+            <ChevronDown className="size-3.5 shrink-0 text-text-tertiary" />
           ) : (
-            <ChevronRight className="size-3.5 text-muted-foreground" />
+            <ChevronRight className="size-3.5 shrink-0 text-text-tertiary" />
           )}
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="space-y-2 border-t border-border/60 px-3 py-2">
+          <div className="space-y-2 border-t border-border px-3 py-2">
             {state.output && (
               <pre
                 data-selectable
@@ -118,7 +111,7 @@ export const ToolCard = memo(function ToolCard({ part }: { part: Part }) {
               </pre>
             )}
             {state.status === "error" && !state.output && state.error && (
-              <pre className="whitespace-pre-wrap break-words font-mono text-[12px] text-red-600 dark:text-red-400">
+              <pre className="whitespace-pre-wrap break-words font-mono text-[12px] text-destructive">
                 {state.error}
               </pre>
             )}
