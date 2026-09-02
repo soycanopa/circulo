@@ -52,6 +52,7 @@ interface AppStore {
   setActiveProject: (projectID: string | null) => void;
   newSession: (projectID: string, title?: string) => Promise<string | null>;
   openSession: (projectID: string, sessionID: string) => Promise<void>;
+  closeSession: () => void;
   deleteSession: (projectID: string, sessionID: string) => Promise<void>;
   loadMeta: (projectID: string) => Promise<void>;
   setSelectedAgent: (a: string) => void;
@@ -157,6 +158,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       console.error("hydrate failed", e);
     }
   },
+
+  closeSession: () => set({ activeSessionId: null }),
 
   deleteSession: async (projectID, sessionID) => {
     await api.deleteSession(projectID, sessionID);
