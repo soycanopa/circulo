@@ -263,3 +263,11 @@ type HealthResponse struct {
 	Healthy bool   `json:"healthy"`
 	Version string `json:"version"`
 }
+
+// PathResponse is GET /path. Directory is the resolved root the server is
+// scoped to (e.g. /tmp/x reported as /private/tmp/x on macOS) — the key used
+// to scope sessions to this project (Session.Directory matches its format).
+type PathResponse struct {
+	Worktree  string `json:"worktree,omitempty"`
+	Directory string `json:"directory"`
+}

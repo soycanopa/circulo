@@ -175,11 +175,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const meta = await api.meta(projectID);
       const primary = meta.agents.find((a) => a.mode === "primary") ?? meta.agents[0];
+      const defaultKey =
+        meta.defaultProvider && meta.defaultModel
+          ? `${meta.defaultProvider}:${meta.defaultModel}`
+          : "";
+      const fallbackKey = firstModelKey(meta.models);
+      const chosen =
+        defaultKey && meta.models.some((m) => `${m.provider}:${m.id}` === defaultKey)
+          ? defaultKey
+          : fallbackKey;
       set((s) => ({
         metaAgents: meta.agents,
         metaModels: meta.models,
         selectedAgent: s.selectedAgent || primary?.name || "build",
-        selectedModel: s.selectedModel || firstModelKey(meta.models),
+        selectedModel: s.selectedModel || chosen,
       }));
     } catch (e) {
       console.error("loadMeta failed", e);

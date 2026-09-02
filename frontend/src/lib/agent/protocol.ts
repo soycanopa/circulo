@@ -222,6 +222,9 @@ export interface AgentInfo {
 export interface Meta {
   agents: AgentInfo[];
   models: ModelInfo[];
+  /** Server-configured default (GET /config/providers -> default). */
+  defaultProvider?: string;
+  defaultModel?: string;
 }
 
 /** REST view from GET /agent/projects. */
