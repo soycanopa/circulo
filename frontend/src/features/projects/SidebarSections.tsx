@@ -1,9 +1,19 @@
-/** Sidebar sections (docs/ui.md §2): New chat, projects, sessions, footer. */
+/**
+ * Sidebar sections — replica of the Circulo Paper design: New chat (⌘N),
+ * project rows with adapter status dots, session items as cards, footer with
+ * Settings + server indicator.
+ */
 
 import { useState } from "react";
-import { Check, Circle, FolderOpen, Loader2, Plus, X } from "lucide-react";
+import {
+  Circle,
+  FolderOpen,
+  Loader2,
+  Plus,
+  Settings,
+  X,
+} from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PickFolder } from "@/bindings/circulogo/internal/appservice/dialog";
 import { useAppStore } from "@/lib/agent/store";
@@ -14,13 +24,18 @@ export function NewChatButton() {
   const activeProjectId = useAppStore((s) => s.activeProjectId);
   const newSession = useAppStore((s) => s.newSession);
   return (
-    <div className="px-3 pt-0 pb-1">
+    <div className="px-3 pt-0 pb-2">
       <Button
-        className="w-full justify-start gap-2"
+        className="w-full justify-between gap-2"
         disabled={!activeProjectId}
         onClick={() => activeProjectId && void newSession(activeProjectId)}
       >
-        <Plus className="size-4" /> New chat
+        <span className="flex items-center gap-2">
+          <Plus className="size-4" /> New chat
+        </span>
+        <kbd className="rounded-sm border border-primary/20 px-1 font-sans text-[11px] text-primary/60">
+          ⌘N
+        </kbd>
       </Button>
     </div>
   );
@@ -30,10 +45,10 @@ export function StatusDot({ status, detail }: { status: AdapterState; detail?: s
   const title = detail ? `${status}: ${detail}` : status;
   return (
     <span title={title} aria-label={status}>
-      {status === "running" && <Circle className="size-2 fill-emerald-500 text-emerald-500" />}
-      {status === "starting" && <Loader2 className="size-2.5 animate-spin text-amber-500" />}
-      {status === "error" && <Circle className="size-2 fill-red-500 text-red-500" />}
-      {status === "stopped" && <Circle className="size-2 fill-zinc-500 text-zinc-500" />}
+      {status === "running" && <Circle className="size-2 fill-success text-success" />}
+      {status === "starting" && <Loader2 className="size-2.5 animate-spin text-warning" />}
+      {status === "error" && <Circle className="size-2 fill-destructive text-destructive" />}
+      {status === "stopped" && <Circle className="size-2 fill-text-tertiary text-text-tertiary" />}
     </span>
   );
 }
@@ -62,7 +77,7 @@ export function ProjectsSection() {
 
   return (
     <div>
-      <div className="px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="px-2 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
         Projects
       </div>
       {projects.map((p) => {
@@ -71,18 +86,18 @@ export function ProjectsSection() {
           <button
             key={p.id}
             className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-muted/60",
+              "group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-muted/60",
               activeProjectId === p.id && "bg-muted",
             )}
             onClick={() => setActiveProject(p.id)}
           >
             <StatusDot status={p.status} detail={p.detail} />
             <span className="min-w-0 flex-1 truncate font-medium">{name}</span>
-            <span className="truncate text-[11px] text-muted-foreground">{p.mode}</span>
+            <span className="truncate text-[11px] text-text-tertiary">{p.mode}</span>
             <span
               role="button"
               aria-label="Remove project"
-              className="hidden rounded p-0.5 text-muted-foreground hover:text-red-500 group-hover:flex"
+              className="hidden rounded p-0.5 text-muted-foreground hover:text-destructive group-hover:flex"
               onClick={(e) => {
                 e.stopPropagation();
                 void useAppStore.getState().removeProject(p.id);
@@ -99,13 +114,13 @@ export function ProjectsSection() {
       >
         <FolderOpen className="size-3.5" /> Add project…
       </button>
-      {error && <div className="px-2 py-1 text-[11.5px] text-red-500">{error}</div>}
+      {error && <div className="px-2 py-1 text-[11.5px] text-destructive">{error}</div>}
       <label className="mt-1 flex items-center gap-2 px-2 text-[11.5px] text-muted-foreground">
         <input
           type="checkbox"
           checked={attachMode}
           onChange={(e) => setAttachMode(e.target.checked)}
-          className="accent-zinc-500"
+          className="accent-accent-indigo"
         />
         attach to running server
       </label>
@@ -115,7 +130,7 @@ export function ProjectsSection() {
           placeholder="http://127.0.0.1:4096"
           value={attachUrl}
           onChange={(e) => setAttachUrl(e.target.value)}
-          className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1 text-[12px] outline-none"
+          className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1 text-[12px] outline-none"
         />
       )}
     </div>
@@ -124,11 +139,18 @@ export function ProjectsSection() {
 
 export function SidebarFooter() {
   return (
-    <div className="border-t border-border p-3">
-      <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-        <Check className="size-3.5 text-emerald-500" />
-        local-only · no ACP
-        <Badge variant="outline" className="ml-auto text-[10px]">v0</Badge>
+    <div className="border-t border-border px-3 py-2">
+      <div className="flex items-center gap-2">
+        <button
+          className="flex items-center gap-2 rounded-md px-1.5 py-1 text-[12px] text-muted-foreground hover:bg-muted/60"
+          title="Settings — coming soon"
+        >
+          <Settings className="size-3.5" /> Settings
+        </button>
+        <span className="ml-auto flex items-center gap-[6px] text-[11px] text-text-tertiary">
+          <span className="size-2 rounded-full bg-success" />
+          circulo
+        </span>
       </div>
     </div>
   );
