@@ -1,0 +1,97 @@
+/**
+ * Transcript (docs/ux.md §5): single scroll column, pin-to-bottom with jump
+ * pill, parts in server order, working/retry indicator at 1 Hz.
+ */
+
+import { memo, useEffect, useState } from "react";
+import { ArrowDown } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { usePinnedScroll } from "./hooks/usePinnedScroll";
+import { AssistantMessage, Dot, UserMessage, visibleMessages } from "./Message";
+import { ErrorBlock } from "./parts/MiscParts";
+import type { SessionState } from "@/lib/agent/reducer";
+import { cn } from "@/lib/utils";
+
+const Transcript = memo(function Transcript({ session }: { session: SessionState }) {
+  const shown = visibleMessages(session.messages);
+  const messageIds = shown.map((m) => m.info.id).join(",");
+  const partsLens = shown.map((m) => m.parts.length).join(",");
+  const lastTextLens = shown
+    .map((m) => {
+      let len = 0;
+      for (const p of m.parts)
+        if (p.type === "text" || p.type === "reasoning") len = (p.text ?? "").length;
+      return len;
+    })
+    .join(",");
+  const busy = session.status === "busy" || session.status === "retry";
+  const { ref, pinned, jump } = usePinnedScroll([
+    messageIds,
+    partsLens,
+    lastTextLens,
+    session.permissions.length,
+  ]);
+
+  // Turn timer: record when busy starts; reset on idle. 1 Hz tick (UX §5).
+  const [now, setNow] = useState(Date.now());
+  const [busySince, setBusySince] = useState<number>(0);
+  useEffect(() => {
+    if (busy) {
+      setBusySince((prev) => prev || Date.now());
+      const t = setInterval(() => setNow(Date.now()), 1000);
+      return () => clearInterval(t);
+    }
+    setBusySince(0);
+  }, [busy]);
+
+  return (
+    <div className="relative min-h-0 flex-1">
+      <div ref={ref} className="h-full overflow-y-auto" role="log" aria-label="Chat transcript">
+        <div className="mx-auto flex max-w-3xl flex-col gap-4 px-6 py-6">
+          {shown.map((m) =>
+            m.info.role === "user" ? (
+              <UserMessage key={m.info.id} m={m} />
+            ) : (
+              <AssistantMessage key={m.info.id} m={m} streaming={busy} />
+            ),
+          )}
+          {session.lastError && (
+            <ErrorBlock name={session.lastError.name} message={session.lastError.message} />
+          )}
+          {busy && (
+            <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
+              <span className="inline-flex gap-1">
+                <Dot delay="0ms" />
+                <Dot delay="150ms" />
+                <Dot delay="300ms" />
+              </span>
+              {session.status === "retry" && session.retry ? (
+                <span>
+                  Provider retrying (attempt {session.retry.attempt}): {session.retry.message}
+                </span>
+              ) : (
+                <span>
+                  Working…
+                  {busySince ? ` ${Math.max(1, Math.round((now - busySince) / 1000))}s` : ""}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      {!pinned && (
+        <Button
+          size="sm"
+          variant="secondary"
+          className={cn("absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full shadow-sm")}
+          onClick={jump}
+        >
+          <ArrowDown className="size-3.5" /> Jump to latest
+        </Button>
+      )}
+    </div>
+  );
+});
+
+export default Transcript;
