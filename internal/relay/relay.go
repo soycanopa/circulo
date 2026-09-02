@@ -284,6 +284,12 @@ func (s *Server) writeErr(w http.ResponseWriter, err error) {
 		s.writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	var nr *orchestrator.NotReadyError
+	if errors.As(err, &nr) {
+		w.Header().Set("Retry-After", "1")
+		s.writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+		return
+	}
 	s.writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -85,6 +86,22 @@ type Adapter struct {
 
 // compile-time proof the adapter satisfies the contract (AGENTS.md rule).
 var _ agent.Adapter = (*Adapter)(nil)
+
+// ErrNotReady is returned by data methods called before Start finished
+// wiring the HTTP client.
+var ErrNotReady = fmt.Errorf("opencode: adapter not started")
+
+// clientOrErr returns the wired client, or ErrNotReady. Public methods must
+// not touch a.client directly: the orchestrator registers the adapter before
+// Start completes, so requests can legitimately arrive early.
+func (a *Adapter) clientOrErr() (*Client, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.client == nil {
+		return nil, ErrNotReady
+	}
+	return a.client, nil
+}
 
 // NewAdapter builds an adapter; call Start before using it.
 func NewAdapter(cfg AdapterConfig) *Adapter {
@@ -212,11 +229,18 @@ func (a *Adapter) Stop(_ context.Context) error {
 	return nil
 }
 
+// reconnectHysteresis: transient stream blips (server heartbeats timing out,
+// brief proxy hiccups) must NOT flip the project banner to error — the loop
+// reconnects and server.connected restores running within a second. Only
+// surface an error after this many consecutive failed attempts.
+const reconnectHysteresis = 3
+
 // sseLoop consumes /event with reconnect until ctx is cancelled. Reconnect is
 // safe because every message.part.updated carries the full part (self-healing,
 // docs/trd.md §3.3).
 func (a *Adapter) sseLoop(ctx context.Context) {
 	defer close(a.events)
+	consecutiveFailures := 0
 	for {
 		if ctx.Err() != nil {
 			return
@@ -226,8 +250,10 @@ func (a *Adapter) sseLoop(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			// The server may be restarting; surface and retry.
-			a.emitStatus(protocol.AdapterError, err.Error())
+			consecutiveFailures++
+			if consecutiveFailures >= reconnectHysteresis {
+				a.emitStatus(protocol.AdapterError, err.Error())
+			}
 			select {
 			case <-ctx.Done():
 				return
@@ -244,6 +270,7 @@ func (a *Adapter) sseLoop(ctx context.Context) {
 		for !done {
 			select {
 			case f := <-frames:
+				consecutiveFailures = 0
 				env, err := DecodeEvent(f)
 				if err != nil {
 					// One malformed frame must not kill the stream.
@@ -269,7 +296,10 @@ func (a *Adapter) sseLoop(ctx context.Context) {
 				if ctx.Err() != nil {
 					return
 				}
-				a.emitStatus(protocol.AdapterError, "event stream dropped: "+err.Error())
+				consecutiveFailures++
+				if consecutiveFailures >= reconnectHysteresis {
+					a.emitStatus(protocol.AdapterError, "event stream dropped: "+err.Error())
+				}
 				done = true
 			case <-ctx.Done():
 				body.Close()
@@ -331,7 +361,11 @@ func (a *Adapter) emit(typ string, payload any) {
 // --- agent.Adapter data methods ---
 
 func (a *Adapter) Sessions(ctx context.Context) ([]protocol.Session, error) {
-	ss, err := a.client.Sessions(ctx)
+	c, err := a.clientOrErr()
+	if err != nil {
+		return nil, err
+	}
+	ss, err := c.Sessions(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +380,11 @@ func (a *Adapter) Sessions(ctx context.Context) ([]protocol.Session, error) {
 }
 
 func (a *Adapter) CreateSession(ctx context.Context, title string) (protocol.Session, error) {
-	s, err := a.client.CreateSession(ctx, title)
+	c, err := a.clientOrErr()
+	if err != nil {
+		return protocol.Session{}, err
+	}
+	s, err := c.CreateSession(ctx, title)
 	if err != nil {
 		return protocol.Session{}, err
 	}
@@ -354,15 +392,27 @@ func (a *Adapter) CreateSession(ctx context.Context, title string) (protocol.Ses
 }
 
 func (a *Adapter) RenameSession(ctx context.Context, sessionID, title string) error {
-	return a.client.RenameSession(ctx, sessionID, title)
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.RenameSession(ctx, sessionID, title)
 }
 
 func (a *Adapter) DeleteSession(ctx context.Context, sessionID string) error {
-	return a.client.DeleteSession(ctx, sessionID)
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.DeleteSession(ctx, sessionID)
 }
 
 func (a *Adapter) Messages(ctx context.Context, sessionID string, limit int) ([]agent.HydratedMessage, error) {
-	pages, err := a.client.Messages(ctx, sessionID, limit)
+	c, err := a.clientOrErr()
+	if err != nil {
+		return nil, err
+	}
+	pages, err := c.Messages(ctx, sessionID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +432,11 @@ func (a *Adapter) Messages(ctx context.Context, sessionID string, limit int) ([]
 }
 
 func (a *Adapter) Prompt(ctx context.Context, sessionID string, req protocol.PromptRequest) error {
-	return a.client.Prompt(ctx, sessionID, PromptInput{
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.Prompt(ctx, sessionID, PromptInput{
 		Text:     req.Text,
 		Agent:    req.Agent,
 		Provider: req.Provider,
@@ -391,19 +445,31 @@ func (a *Adapter) Prompt(ctx context.Context, sessionID string, req protocol.Pro
 }
 
 func (a *Adapter) Abort(ctx context.Context, sessionID string) error {
-	return a.client.Abort(ctx, sessionID)
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.Abort(ctx, sessionID)
 }
 
 func (a *Adapter) ReplyPermission(ctx context.Context, sessionID, permissionID, response string) error {
-	return a.client.ReplyPermission(ctx, sessionID, permissionID, response)
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.ReplyPermission(ctx, sessionID, permissionID, response)
 }
 
 func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
-	agents, err := a.client.Agents(ctx)
+	c, err := a.clientOrErr()
 	if err != nil {
 		return protocol.Meta{}, err
 	}
-	providers, err := a.client.Providers(ctx)
+	agents, err := c.Agents(ctx)
+	if err != nil {
+		return protocol.Meta{}, err
+	}
+	providers, err := c.Providers(ctx)
 	if err != nil {
 		return protocol.Meta{}, err
 	}
@@ -428,11 +494,17 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 		}
 	}
 	// Surface the server's configured default model so the composer doesn't
-	// guess (the first list entry may be a plan-restricted variant).
-	for providerID, modelID := range providers.Default {
-		meta.DefaultProvider = providerID
-		meta.DefaultModel = modelID
-		break // one default pair is all the UI needs
+	// guess (the first list entry may be a plan-restricted variant). The
+	// default map has one entry per provider and Go map iteration is
+	// randomized — sort keys so every launch picks the same model.
+	keys := make([]string, 0, len(providers.Default))
+	for k := range providers.Default {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	if len(keys) > 0 {
+		meta.DefaultProvider = keys[0]
+		meta.DefaultModel = providers.Default[keys[0]]
 	}
 	return meta, nil
 }

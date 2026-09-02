@@ -17,11 +17,12 @@ import (
 
 // fakeAdapter is a scripted agent.Adapter for orchestrator tests.
 type fakeAdapter struct {
-	mu     sync.Mutex
-	starts int
-	stops  int
-	fail   error // if set, Start returns it
-	events chan protocol.Envelope
+	mu        sync.Mutex
+	starts    int
+	stops     int
+	fail      error // if set, Start returns it
+	startHook func()      // if set, Start blocks on it after signaling started
+	events    chan protocol.Envelope
 }
 
 func newFakeAdapter() *fakeAdapter {
@@ -30,11 +31,18 @@ func newFakeAdapter() *fakeAdapter {
 
 func (f *fakeAdapter) Start(_ context.Context) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.starts++
-	if f.fail != nil {
-		return f.fail
+	hook := f.startHook
+	fail := f.fail
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
 	}
+	if fail != nil {
+		return fail
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	env, _ := protocol.NewEnvelope(protocol.EventAdapterStatus, protocol.AdapterStatus{
 		ProjectID: "x", State: protocol.AdapterRunning,
 	})
@@ -283,3 +291,45 @@ func TestShutdownStopsAllAdapters(t *testing.T) {
 var errBackendDown = errors.New("fake: backend down")
 
 var _ = fmt.Sprintf
+
+// Regression: commands arriving while an adapter is still starting must get
+// NotReadyError (→ relay 503), not a nil-client panic that killed the app.
+func TestAdapterOfGatesUntilReady(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{})
+	o := New(store.New(t.TempDir()+"/settings.json"), func(cfg store.Project) (agent.Adapter, error) {
+		a := newFakeAdapter()
+		a.startHook = func() {
+			close(started)
+			<-release
+		}
+		return a, nil
+	})
+	dir := t.TempDir()
+	pv, err := o.AddProject(context.Background(), dir, "attach", "http://127.0.0.1:9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-started // adapter is registered but Start is blocked
+
+	if _, err := o.AdapterOf(pv.ID); err == nil {
+		t.Fatal("expected NotReadyError while Start is blocked")
+	} else {
+		var nr *NotReadyError
+		if !errorsAs(err, &nr) {
+			t.Fatalf("err = %v, want NotReadyError", err)
+		}
+	}
+
+	close(release)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := o.AdapterOf(pv.ID); err == nil {
+			return // ready
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("adapter never became ready")
+}
+
+func errorsAs(err error, target any) bool { return errors.As(err, target) }

@@ -1,8 +1,15 @@
 import { useEffect } from "react";
 
-import { Composer } from "@/components/chat/Composer";
-import { Transcript } from "@/components/chat/Transcript";
-import { Sidebar } from "@/components/sidebar/Sidebar";
+import { AppShell } from "@/components/layout/AppShell";
+import Transcript from "@/features/chat/Transcript";
+import { Composer } from "@/features/chat/Composer";
+import { ProjectBanner, ReconnectBar } from "@/features/connection/Banners";
+import {
+  NewChatButton,
+  ProjectsSection,
+  SidebarFooter,
+} from "@/features/projects/SidebarSections";
+import { SessionsSection } from "@/features/sessions/SessionsSection";
 import { Button } from "@/components/ui/button";
 import { connectSse, type SseHandle } from "@/lib/agent/sse";
 import { useAppStore } from "@/lib/agent/store";
@@ -19,7 +26,6 @@ function EmptyState() {
       <Button
         className="mt-2"
         onClick={() => {
-          // Same flow as the sidebar's Add project (native folder picker).
           void import("@/bindings/circulogo/internal/appservice/dialog").then(
             async ({ PickFolder }) => {
               const path = await PickFolder().catch(() => "");
@@ -33,16 +39,6 @@ function EmptyState() {
       <p className="mt-4 max-w-md text-center text-[12px] text-muted-foreground/70">
         Local-first: agents run on 127.0.0.1 over HTTP+SSE. No ACP, no cloud.
       </p>
-    </div>
-  );
-}
-
-function ReconnectBar() {
-  const connection = useAppStore((s) => s.connection);
-  if (connection !== "reconnecting") return null;
-  return (
-    <div className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-1 text-center text-[12px] text-amber-600 dark:text-amber-400">
-      Reconnecting… showing last known state
     </div>
   );
 }
@@ -68,45 +64,39 @@ export default function App() {
   const session = activeSessionId ? chat.sessions[activeSessionId] : undefined;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
-      <Sidebar />
-      <main className="flex min-w-0 flex-1 flex-col">
-        <div
-          className="h-11 shrink-0 select-none"
-          style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-        />
-        <ReconnectBar />
-        {!activeProject ? (
-          <EmptyState />
-        ) : activeProject.status === "error" ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
-            <div className="text-[15px] font-medium text-red-500">
-              Agent server failed
-            </div>
-            <div className="max-w-lg break-words text-center text-[13px] text-muted-foreground">
-              {activeProject.detail || "Unknown error"}
-            </div>
+    <AppShell
+      sidebar={
+        <>
+          <NewChatButton />
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+            <ProjectsSection />
+            <SessionsSection />
           </div>
-        ) : activeProject.status === "starting" ? (
-          <div className="flex min-h-0 flex-1 items-center justify-center text-[13px] text-muted-foreground">
-            Starting OpenCode…
-          </div>
-        ) : (
-          <>
+          <SidebarFooter />
+        </>
+      }
+    >
+      <ReconnectBar />
+      {!activeProject ? (
+        <EmptyState />
+      ) : (
+        <>
+          {/* Banners are informational strips: the chat stays mounted while
+              the adapter starts, retries or recovers (docs/flow.md §9). */}
+          <ProjectBanner project={activeProject} />
+          <div className="flex min-h-0 flex-1 flex-col">
             {session ? (
               <Transcript session={session} />
             ) : (
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1">
                 <div className="text-[15px] font-medium">New chat</div>
-                <div className="text-[13px] text-muted-foreground">
-                  {activeProject.path}
-                </div>
+                <div className="text-[13px] text-muted-foreground">{activeProject.path}</div>
               </div>
             )}
             <Composer />
-          </>
-        )}
-      </main>
-    </div>
+          </div>
+        </>
+      )}
+    </AppShell>
   );
 }

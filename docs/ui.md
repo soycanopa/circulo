@@ -2,9 +2,10 @@
 
 - **Status:** Draft v0.1 (2026-09-02)
 - **Related:** [UX](ux.md) (behavior) · [Flow](flow.md)
-- **Design language:** calm, terminal-adjacent, dark-first. Zinc neutrals, one accent
-  (violet-500 family), status colors reserved for meaning (green=running, amber=permission/
-  retry, red=error). No decorative gradients.
+- **Design language:** calm, terminal-adjacent, dark-first. Fully neutral zinc
+  palette — no accent hue (owner decision 2026-09-02: violet rejected); status
+  colors are reserved for meaning only (green=running, amber=permission/retry,
+  red=error). No decorative gradients.
 
 ## 1. Theme tokens (Tailwind v4 CSS variables, shadcn-compatible)
 
@@ -15,7 +16,7 @@
 | card / composer | `zinc-900` | `white` (border `zinc-200`) |
 | border | `zinc-800` | `zinc-200` |
 | foreground / muted-fg | `zinc-100` / `zinc-400` | `zinc-900` / `zinc-500` |
-| accent (primary) | `violet-500` | `violet-600` |
+| primary | `zinc-100` (dark) / `zinc-900` (light) | |
 | code block bg | `zinc-900/60` + border | `zinc-50` + border |
 | success / warning / danger | `emerald-500` / `amber-500` / `red-500` | same |
 | font | UI: system sans (`Inter` optional); code: `JetBrains Mono`/`SF Mono` stack | |

@@ -42,6 +42,11 @@ type project struct {
 	cfg     store.Project
 	adapter agent.Adapter
 	status  protocol.AdapterStatus
+	// ready is true only after adapter.Start succeeded. The adapter is
+	// registered before Start (so events flow) but its client is nil until
+	// then — calling it early crashed the app (panic in the asset server's
+	// request goroutine, which has no recover).
+	ready bool
 }
 
 type subscriber struct {
@@ -116,6 +121,9 @@ func (o *Orchestrator) startAdapter(_ context.Context, id string) {
 			o.setStatus(id, protocol.AdapterError, err.Error())
 			return
 		}
+		o.mu.Lock()
+		p.ready = true
+		o.mu.Unlock()
 		o.setStatus(id, protocol.AdapterRunning, p.cfg.URL)
 	}()
 }
@@ -344,10 +352,19 @@ func (o *Orchestrator) AdapterOf(id string) (agent.Adapter, error) {
 	if p == nil {
 		return nil, fmt.Errorf("orchestrator: unknown project %s", id)
 	}
-	if p.adapter == nil {
-		return nil, fmt.Errorf("orchestrator: project %s adapter not started", id)
+	if p.adapter == nil || !p.ready {
+		return nil, &NotReadyError{ProjectID: id}
 	}
 	return p.adapter, nil
+}
+
+// NotReadyError means the project's adapter exists but hasn't finished
+// starting yet; commands should be retried once adapter.status reports
+// running.
+type NotReadyError struct{ ProjectID string }
+
+func (e *NotReadyError) Error() string {
+	return fmt.Sprintf("orchestrator: project %s adapter is starting", e.ProjectID)
 }
 
 // Shutdown stops every adapter (app quit — NFR-4: no orphaned processes).
