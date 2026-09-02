@@ -287,3 +287,32 @@ describe("reducer: optimistic user message", () => {
     ]);
   });
 });
+
+describe("reducer: todo/tasks", () => {
+  it("replaces the task list wholesale and requires a known session", () => {
+    let s = playAll(emptyChatState, [sessionCreated("ses_1")]);
+    s = applyEvent(s, env("todo.updated", {
+      projectID: "p",
+      sessionID: "ses_1",
+      tasks: [
+        { id: "1", content: "Draft", status: "completed" },
+        { id: "2", content: "Save", status: "in_progress" },
+        { id: "3", content: "Suggest", status: "pending" },
+      ],
+    }));
+    expect(s.sessions["ses_1"].tasks).toHaveLength(3);
+    expect(s.sessions["ses_1"].tasks[1].status).toBe("in_progress");
+
+    // Unknown session: ignored.
+    const next = applyEvent(s, env("todo.updated", {
+      projectID: "p",
+      sessionID: "ses_ghost",
+      tasks: [{ content: "x", status: "pending" }],
+    }));
+    expect(next).toBe(s);
+
+    // Empty list clears.
+    s = applyEvent(s, env("todo.updated", { projectID: "p", sessionID: "ses_1", tasks: [] }));
+    expect(s.sessions["ses_1"].tasks).toHaveLength(0);
+  });
+});

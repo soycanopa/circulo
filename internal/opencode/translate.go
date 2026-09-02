@@ -141,6 +141,26 @@ func Translate(projectID string, env Envelope) ([]protocol.Envelope, error) {
 			Delta:     p.Delta,
 		})
 
+	case "todo.updated":
+		var p EventPropertiesTodoUpdated
+		if err := json.Unmarshal(env.Properties, &p); err != nil {
+			return nil, fmt.Errorf("opencode: todo.updated: %w", err)
+		}
+		tasks := make([]protocol.Task, 0, len(p.Todos))
+		for _, t := range p.Todos {
+			tasks = append(tasks, protocol.Task{
+				ID:       t.ID,
+				Content:  t.Content,
+				Status:   t.Status,
+				Priority: t.Priority,
+			})
+		}
+		return emit(protocol.EventTodoUpdated, protocol.TodoUpdated{
+			ProjectID: projectID,
+			SessionID: p.SessionID,
+			Tasks:     tasks,
+		})
+
 	case "permission.asked":
 		var p EventPropertiesPermissionAsked
 		if err := json.Unmarshal(env.Properties, &p); err != nil {

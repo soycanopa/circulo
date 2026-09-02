@@ -14,6 +14,7 @@ export const EventPartDelta = "part.delta";
 export const EventPermissionRequest = "permission.request";
 export const EventPermissionResolved = "permission.resolved";
 export const EventSessionError = "session.error";
+export const EventTodoUpdated = "todo.updated";
 
 // Adapter states.
 export type AdapterState = "starting" | "running" | "stopped" | "error";
@@ -241,6 +242,20 @@ export interface ProjectView {
 export interface HydratedMessage {
   info: MessageInfo;
   parts: Part[];
+}
+
+export interface Task {
+  id?: string;
+  content: string;
+  /** Agent vocabulary passthrough: pending | in_progress | completed. */
+  status: string;
+  priority?: string;
+}
+
+export interface TodoUpdatedEvent {
+  projectID: string;
+  sessionID: string;
+  tasks: Task[];
 }
 
 export function isKnownPartType(t: string): t is PartType {

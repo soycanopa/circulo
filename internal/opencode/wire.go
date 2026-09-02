@@ -231,6 +231,18 @@ type EventPropertiesSessionError struct {
 	} `json:"error"`
 }
 
+// EventPropertiesTodoUpdated is todo.updated properties. Status vocabulary:
+// pending | in_progress | completed (passed through to the UI).
+type EventPropertiesTodoUpdated struct {
+	SessionID string `json:"sessionID"`
+	Todos     []struct {
+		ID       string `json:"id"`
+		Content  string `json:"content"`
+		Status   string `json:"status"`
+		Priority string `json:"priority"`
+	} `json:"todos"`
+}
+
 // MessagesPage is one element of GET /session/{id}/message.
 type MessagesPage struct {
 	Info  Message `json:"info"`
