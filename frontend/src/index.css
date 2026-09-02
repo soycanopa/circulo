@@ -3,51 +3,69 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Theme tokens per docs/ui.md §1 — dark-first, fully neutral zinc palette.
-   Status colors (emerald/amber/red) are semantic only, never decorative. */
+/*
+ * Circulo palette — replicated from the owner's Paper design file
+ * (tokens are the contract; see the file's get_tokens output).
+ * Surfaces stack: app < sidebar < main. One indigo accent reserved for
+ * live states (streaming / generating / in-progress); buttons stay neutral.
+ * Status colors are semantic only.
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.21 0.006 285.885);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.552 0.016 285.938);
+  --background: #17171a;
+  --foreground: #ebebed;
+  --card: #212124;
+  --card-foreground: #ebebed;
+  --popover: #1f1f21;
+  --popover-foreground: #ebebed;
+  --primary: #ebebed;
+  --primary-foreground: #17171a;
+  --secondary: #2b2b30;
+  --secondary-foreground: #ebebed;
+  --muted: #2b2b30;
+  --muted-foreground: #9e9ea6;
+  --accent: #2b2b30;
+  --accent-foreground: #ebebed;
+  --destructive: #e66b6b;
+  --destructive-foreground: #17171a;
+  --border: #38383d;
+  --input: #47474d;
+  --ring: #7378f2;
   --radius: 0.5rem;
+
+  /* Circulo-specific (no shadcn equivalent) */
+  --bg-code: #141417;
+  --text-tertiary: #808087;
+  --border-strong: #47474d;
+  --accent-indigo: #7378f2;
+  --accent-indigo-hover: #8589f5;
+  --streaming: #a3a8f7;
+  --success: #73c78c;
+  --warning: #dca85e;
+  --diff-add: #386b47;
+  --diff-del: #73383d;
 }
 
 .dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.552 0.016 285.938);
+  /* Dark-first app: same palette for now; light theme is an open item. */
+  --background: #17171a;
+  --foreground: #ebebed;
+  --card: #212124;
+  --card-foreground: #ebebed;
+  --popover: #1f1f21;
+  --popover-foreground: #ebebed;
+  --primary: #ebebed;
+  --primary-foreground: #17171a;
+  --secondary: #2b2b30;
+  --secondary-foreground: #ebebed;
+  --muted: #2b2b30;
+  --muted-foreground: #9e9ea6;
+  --accent: #2b2b30;
+  --accent-foreground: #ebebed;
+  --destructive: #e66b6b;
+  --destructive-foreground: #17171a;
+  --border: #38383d;
+  --input: #47474d;
+  --ring: #7378f2;
 }
 
 @theme inline {
@@ -68,14 +86,23 @@
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-bg-code: var(--bg-code);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-accent-indigo: var(--accent-indigo);
+  --color-accent-indigo-hover: var(--accent-indigo-hover);
+  --color-streaming: var(--streaming);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-diff-add: var(--diff-add);
+  --color-diff-del: var(--diff-del);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular, Menlo,
-    monospace;
+  --font-mono: ui-monospace, Menlo, "SF Mono", SFMono-Regular, monospace;
 }
 
 @layer base {
@@ -88,6 +115,8 @@
       -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
       Arial, sans-serif;
     user-select: none;
+    /* Circulo type scale: 13px UI body (xs 11 / sm 12 / base 13 / md 14) */
+    font-size: 13px;
   }
   /* Chat transcript text is selectable; chrome is not (UX principle: chat is content). */
   pre,
