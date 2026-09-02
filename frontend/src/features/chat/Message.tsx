@@ -19,8 +19,8 @@ export const UserMessage = memo(function UserMessage({ m }: { m: MessageRecord }
     .map((p) => p.text ?? "")
     .join("\n");
   return (
-    <div className="flex justify-end">
-      <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-xl rounded-br-sm border border-border bg-card px-3.5 py-2.5 text-[15px] leading-relaxed">
+    <div className="flex flex-col items-end">
+      <div className="max-w-[560px] whitespace-pre-wrap break-words rounded-l-lg rounded-br-lg rounded-tr-xs bg-accent px-4 py-3 text-[14px] font-medium leading-relaxed text-foreground">
         {text}
       </div>
     </div>
