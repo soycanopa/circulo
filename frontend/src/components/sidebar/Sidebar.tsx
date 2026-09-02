@@ -193,7 +193,10 @@ export function Sidebar() {
 
   return (
     <aside className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-sidebar">
-      <div className="p-3">
+      {/* macOS traffic lights overlay the invisible titlebar strip (44px);
+          keep sidebar content below it for a full-width unified titlebar. */}
+      <div className="h-11 shrink-0" />
+      <div className="p-3 pt-0">
         <Button
           className="w-full justify-start gap-2"
           disabled={!activeProjectId}
