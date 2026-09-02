@@ -86,6 +86,22 @@ type Adapter struct {
 // compile-time proof the adapter satisfies the contract (AGENTS.md rule).
 var _ agent.Adapter = (*Adapter)(nil)
 
+// ErrNotReady is returned by data methods called before Start finished
+// wiring the HTTP client.
+var ErrNotReady = fmt.Errorf("opencode: adapter not started")
+
+// clientOrErr returns the wired client, or ErrNotReady. Public methods must
+// not touch a.client directly: the orchestrator registers the adapter before
+// Start completes, so requests can legitimately arrive early.
+func (a *Adapter) clientOrErr() (*Client, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.client == nil {
+		return nil, ErrNotReady
+	}
+	return a.client, nil
+}
+
 // NewAdapter builds an adapter; call Start before using it.
 func NewAdapter(cfg AdapterConfig) *Adapter {
 	return &Adapter{
@@ -331,7 +347,11 @@ func (a *Adapter) emit(typ string, payload any) {
 // --- agent.Adapter data methods ---
 
 func (a *Adapter) Sessions(ctx context.Context) ([]protocol.Session, error) {
-	ss, err := a.client.Sessions(ctx)
+	c, err := a.clientOrErr()
+	if err != nil {
+		return nil, err
+	}
+	ss, err := c.Sessions(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +366,11 @@ func (a *Adapter) Sessions(ctx context.Context) ([]protocol.Session, error) {
 }
 
 func (a *Adapter) CreateSession(ctx context.Context, title string) (protocol.Session, error) {
-	s, err := a.client.CreateSession(ctx, title)
+	c, err := a.clientOrErr()
+	if err != nil {
+		return protocol.Session{}, err
+	}
+	s, err := c.CreateSession(ctx, title)
 	if err != nil {
 		return protocol.Session{}, err
 	}
@@ -354,15 +378,27 @@ func (a *Adapter) CreateSession(ctx context.Context, title string) (protocol.Ses
 }
 
 func (a *Adapter) RenameSession(ctx context.Context, sessionID, title string) error {
-	return a.client.RenameSession(ctx, sessionID, title)
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.RenameSession(ctx, sessionID, title)
 }
 
 func (a *Adapter) DeleteSession(ctx context.Context, sessionID string) error {
-	return a.client.DeleteSession(ctx, sessionID)
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.DeleteSession(ctx, sessionID)
 }
 
 func (a *Adapter) Messages(ctx context.Context, sessionID string, limit int) ([]agent.HydratedMessage, error) {
-	pages, err := a.client.Messages(ctx, sessionID, limit)
+	c, err := a.clientOrErr()
+	if err != nil {
+		return nil, err
+	}
+	pages, err := c.Messages(ctx, sessionID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +418,11 @@ func (a *Adapter) Messages(ctx context.Context, sessionID string, limit int) ([]
 }
 
 func (a *Adapter) Prompt(ctx context.Context, sessionID string, req protocol.PromptRequest) error {
-	return a.client.Prompt(ctx, sessionID, PromptInput{
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.Prompt(ctx, sessionID, PromptInput{
 		Text:     req.Text,
 		Agent:    req.Agent,
 		Provider: req.Provider,
@@ -391,19 +431,31 @@ func (a *Adapter) Prompt(ctx context.Context, sessionID string, req protocol.Pro
 }
 
 func (a *Adapter) Abort(ctx context.Context, sessionID string) error {
-	return a.client.Abort(ctx, sessionID)
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.Abort(ctx, sessionID)
 }
 
 func (a *Adapter) ReplyPermission(ctx context.Context, sessionID, permissionID, response string) error {
-	return a.client.ReplyPermission(ctx, sessionID, permissionID, response)
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.ReplyPermission(ctx, sessionID, permissionID, response)
 }
 
 func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
-	agents, err := a.client.Agents(ctx)
+	c, err := a.clientOrErr()
 	if err != nil {
 		return protocol.Meta{}, err
 	}
-	providers, err := a.client.Providers(ctx)
+	agents, err := c.Agents(ctx)
+	if err != nil {
+		return protocol.Meta{}, err
+	}
+	providers, err := c.Providers(ctx)
 	if err != nil {
 		return protocol.Meta{}, err
 	}
