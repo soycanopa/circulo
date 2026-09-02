@@ -12,6 +12,15 @@ frontend/dist/
 node_modules/
 *.tsbuildinfo
 
+# Wails template artifacts
+.task
+build/linux/appimage/build
+build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
+build/ios/xcode/overlay.json
+build/ios/xcode/gen/
+build/android/overlay.json
+build/android/gen/
+
 # Local scratch (fixtures for tests live in internal/opencode/testdata, not here)
 /.scratch/
 
@@ -19,3 +28,4 @@ node_modules/
 .DS_Store
 .idea/
 .vscode/
+/.zcode/
