@@ -59,6 +59,13 @@ func (c *Client) Health(ctx context.Context) (HealthResponse, error) {
 	return out, err
 }
 
+// Path calls GET /path; Directory is the server's resolved scope root.
+func (c *Client) Path(ctx context.Context) (PathResponse, error) {
+	var out PathResponse
+	err := c.get(ctx, "/path", &out)
+	return out, err
+}
+
 // Sessions calls GET /session.
 func (c *Client) Sessions(ctx context.Context) ([]Session, error) {
 	var out []Session

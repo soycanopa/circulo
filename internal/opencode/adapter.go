@@ -2,13 +2,47 @@ package opencode
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"circulogo/internal/agent"
 	"circulogo/internal/agent/protocol"
 )
+
+// resolveDir returns the symlink-resolved absolute path of dir (empty in →
+// empty out). macOS temp dirs resolve /tmp → /private/tmp; the server
+// reports directories in resolved form, so comparisons need this.
+func resolveDir(dir string) (string, error) {
+	if dir == "" {
+		return "", nil
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved, nil
+	}
+	return abs, nil
+}
+
+// inScope reports whether a session directory belongs to this adapter's
+// project. The server reports directories in resolved form (it resolved the
+// symlink when creating the session), so a lexical comparison is correct and
+// never touches the filesystem — session dirs may no longer exist on disk.
+// Empty rootDir (root unresolved) disables filtering.
+func (a *Adapter) inScope(sessionDir string) bool {
+	if a.rootDir == "" {
+		return true
+	}
+	if sessionDir == "" {
+		return false // server always sets it; treat missing as foreign
+	}
+	return filepath.Clean(sessionDir) == filepath.Clean(a.rootDir)
+}
 
 // AdapterConfig configures one project's OpenCode adapter.
 type AdapterConfig struct {
@@ -34,6 +68,13 @@ type Adapter struct {
 	cfg    AdapterConfig
 	client *Client
 	events chan protocol.Envelope
+
+	// rootDir is the server's resolved scope root (GET /path → directory).
+	// The OpenCode session store is global on disk: GET /session and the
+	// event stream carry sessions from EVERY directory this user ever ran
+	// opencode in, so scoping happens here — the adapter only lets through
+	// sessions whose Directory equals this root.
+	rootDir string
 
 	mu      sync.Mutex
 	managed  *Managed
@@ -107,6 +148,19 @@ func (a *Adapter) Start(ctx context.Context) error {
 
 	default:
 		return fmt.Errorf("opencode: unknown adapter mode %q", a.cfg.Mode)
+	}
+
+	// Resolve the server's scope root. GET /path is the source of truth (its
+	// directory is symlink-resolved, e.g. /tmp/x → /private/tmp/x on macOS);
+	// fall back to the configured project dir resolved the same way.
+	a.rootDir = a.cfg.Dir
+	if pctx, pcancel := context.WithTimeout(context.Background(), 5*time.Second); pcancel != nil {
+		defer pcancel()
+		if p, err := a.client.Path(pctx); err == nil && p.Directory != "" {
+			a.rootDir = p.Directory
+		} else if resolved, rerr := resolveDir(a.cfg.Dir); rerr == nil {
+			a.rootDir = resolved
+		}
 	}
 
 	loopCtx, cancel := context.WithCancel(context.Background())
@@ -195,6 +249,9 @@ func (a *Adapter) sseLoop(ctx context.Context) {
 					// One malformed frame must not kill the stream.
 					continue
 				}
+				if a.foreignSessionEvent(env) {
+					continue
+				}
 				out, err := Translate(a.cfg.ProjectID, env)
 				if err != nil {
 					continue
@@ -229,6 +286,26 @@ func (a *Adapter) sseLoop(ctx context.Context) {
 	}
 }
 
+// foreignSessionEvent reports whether a raw OpenCode event carries a session
+// scoped to another directory (session.created/updated/deleted include the
+// full session). The event stream is user-global, so without this filter the
+// sidebar would fill with every session the user ever had anywhere.
+func (a *Adapter) foreignSessionEvent(env Envelope) bool {
+	if a.rootDir == "" {
+		return false
+	}
+	switch env.Type {
+	case "session.created", "session.updated", "session.deleted":
+	default:
+		return false
+	}
+	var p EventPropertiesSession
+	if err := json.Unmarshal(env.Properties, &p); err != nil {
+		return false // undecodable: let Translate decide
+	}
+	return !a.inScope(p.Info.Directory)
+}
+
 func (a *Adapter) emitStatus(state, detail string) {
 	a.emit(protocol.EventAdapterStatus, protocol.AdapterStatus{
 		ProjectID: a.cfg.ProjectID,
@@ -260,6 +337,9 @@ func (a *Adapter) Sessions(ctx context.Context) ([]protocol.Session, error) {
 	}
 	out := make([]protocol.Session, 0, len(ss))
 	for _, s := range ss {
+		if !a.inScope(s.Directory) {
+			continue // global store: drop sessions from other directories
+		}
 		out = append(out, sessionToNeutral(s))
 	}
 	return out, nil
@@ -346,6 +426,13 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 				Provider: p.ID,
 			})
 		}
+	}
+	// Surface the server's configured default model so the composer doesn't
+	// guess (the first list entry may be a plan-restricted variant).
+	for providerID, modelID := range providers.Default {
+		meta.DefaultProvider = providerID
+		meta.DefaultModel = modelID
+		break // one default pair is all the UI needs
 	}
 	return meta, nil
 }

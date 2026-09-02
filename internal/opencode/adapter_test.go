@@ -284,6 +284,71 @@ func TestAdapter_AttachFailsWhenUnreachable(t *testing.T) {
 	}
 }
 
+// The OpenCode session store is global: GET /session and the event stream
+// carry sessions from every directory. The adapter must scope them to the
+// server's root (GET /path → directory).
+func TestAdapter_SessionScoping(t *testing.T) {
+	root := "/private/tmp/proj"
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /global/health", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(HealthResponse{Healthy: true})
+	})
+	mux.HandleFunc("GET /path", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(PathResponse{Directory: root})
+	})
+	mux.HandleFunc("GET /session", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]Session{
+			{ID: "ses_in", Title: "in project", Directory: root},
+			{ID: "ses_tmp", Title: "via symlink", Directory: "/tmp/proj"}, // resolved == root
+			{ID: "ses_out", Title: "other project", Directory: "/Users/x/other"},
+		})
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	a := NewAdapter(AdapterConfig{ProjectID: "p", Mode: ModeAttach, URL: srv.URL})
+	if err := a.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	drain(t, a.Events(), func(e protocol.Envelope) bool { return e.Type == protocol.EventAdapterStatus })
+
+	ss, err := a.Sessions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Contract: the server reports resolved directories, so only ses_in
+	// matches the root; a raw "/tmp/proj" is a different path by contract.
+	if len(ss) != 1 || ss[0].ID != "ses_in" {
+		t.Errorf("scoped sessions = %+v, want ses_in only", ss)
+	}
+
+	// A live session.updated from a foreign directory must not reach Events().
+	foreign := map[string]any{"sessionID": "ses_out", "info": map[string]any{
+		"id": "ses_out", "title": "other", "directory": "/Users/x/other",
+		"time": map[string]any{"created": 1, "updated": 1}}}
+	raw, _ := json.Marshal(map[string]any{"type": "session.updated", "properties": foreign})
+	// Push through a mini fake stream: reuse the adapter's client is not
+	// possible here, so assert the filter function directly for the event path.
+	env, err := DecodeEvent(Frame(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !a.foreignSessionEvent(env) {
+		t.Error("foreign session.updated not detected")
+	}
+	ours := map[string]any{"sessionID": "ses_in", "info": map[string]any{
+		"id": "ses_in", "title": "in", "directory": root,
+		"time": map[string]any{"created": 1, "updated": 1}}}
+	raw, _ = json.Marshal(map[string]any{"type": "session.updated", "properties": ours})
+	env, _ = DecodeEvent(Frame(raw))
+	if a.foreignSessionEvent(env) {
+		t.Error("in-scope session.updated wrongly flagged foreign")
+	}
+
+	_ = a.Stop(context.Background())
+}
+
 func TestAdapter_AttachRequiresURL(t *testing.T) {
 	a := NewAdapter(AdapterConfig{ProjectID: "p", Mode: ModeAttach})
 	if err := a.Start(context.Background()); err == nil {
