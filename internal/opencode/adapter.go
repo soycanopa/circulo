@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -493,11 +494,17 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 		}
 	}
 	// Surface the server's configured default model so the composer doesn't
-	// guess (the first list entry may be a plan-restricted variant).
-	for providerID, modelID := range providers.Default {
-		meta.DefaultProvider = providerID
-		meta.DefaultModel = modelID
-		break // one default pair is all the UI needs
+	// guess (the first list entry may be a plan-restricted variant). The
+	// default map has one entry per provider and Go map iteration is
+	// randomized — sort keys so every launch picks the same model.
+	keys := make([]string, 0, len(providers.Default))
+	for k := range providers.Default {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	if len(keys) > 0 {
+		meta.DefaultProvider = keys[0]
+		meta.DefaultModel = providers.Default[keys[0]]
 	}
 	return meta, nil
 }
