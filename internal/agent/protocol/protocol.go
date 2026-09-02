@@ -311,4 +311,8 @@ type AgentInfo struct {
 type Meta struct {
 	Agents []AgentInfo `json:"agents"`
 	Models []ModelInfo `json:"models"`
+	// Server-configured defaults (GET /config/providers → default), so the
+	// composer lands on a model the user's plan actually allows.
+	DefaultProvider string `json:"defaultProvider,omitempty"`
+	DefaultModel    string `json:"defaultModel,omitempty"`
 }
