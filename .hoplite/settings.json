@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "ports": {"preview": 3000, "additional": {}},
+  "scripts": {
+    "setup": {
+      "enabled": true,
+      "command": "mise install rust@stable >/dev/null 2>&1 || true; mise use -g rust@stable >/dev/null 2>&1 || true; sudo apt-get update -qq >/dev/null 2>&1 || true; sudo apt-get install -y -qq libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev >/dev/null 2>&1 || true"
+    },
+    "run": {"enabled": true, "command": null},
+    "archive": {"enabled": true, "command": null},
+    "check": {"enabled": true, "command": null}
+  },
+  "mcpServers": []
+}
