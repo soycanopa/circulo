@@ -21,6 +21,9 @@ pub enum SessionOverlay {
     Rename {
         session_id: Uuid,
     },
+    DeleteConfirm {
+        session_id: Uuid,
+    },
 }
 
 pub fn session_overlay(
@@ -39,6 +42,9 @@ pub fn session_overlay(
             .into_any_element(),
         SessionOverlay::Rename { session_id } => {
             rename_overlay(session_id, rename_input, catalog, cx).into_any_element()
+        }
+        SessionOverlay::DeleteConfirm { session_id } => {
+            delete_confirm_overlay(session_id, catalog, cx).into_any_element()
         }
     }
 }
@@ -101,8 +107,8 @@ fn context_menu_overlay(
                                     menu_selected == 1,
                                     true,
                                     Some(icon_path::TRASH),
-                                    cx.listener(move |this, _, window, cx| {
-                                        this.delete_session(session_id, window, cx);
+                                    cx.listener(move |this, _, _, cx| {
+                                        this.request_delete_session(session_id, cx);
                                     }),
                                 ),
                             ),
@@ -209,6 +215,101 @@ fn rename_overlay(
 }
 
 const MENU_ITEM_COUNT: usize = 2;
+
+fn delete_confirm_overlay(
+    session_id: Uuid,
+    catalog: &Catalog,
+    cx: &mut Context<AppShell>,
+) -> impl IntoElement {
+    div()
+        .absolute()
+        .size_full()
+        .occlude()
+        .bg(gpui::Rgba {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.45,
+        })
+        .flex()
+        .items_center()
+        .justify_center()
+        .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
+            this.cancel_delete_session(cx);
+        }))
+        .child(
+            div()
+                .id("session-delete-confirm")
+                .w(px(420.))
+                .flex()
+                .flex_col()
+                .gap_4()
+                .p_4()
+                .rounded_lg()
+                .border_1()
+                .border_color(BORDER)
+                .bg(BG_SIDEBAR)
+                .shadow_lg()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_key_down(cx.listener(move |this, event: &KeyDownEvent, window, cx| {
+                    match event.keystroke.key.as_str() {
+                        "escape" => {
+                            this.cancel_delete_session(cx);
+                            cx.stop_propagation();
+                        }
+                        "enter" => {
+                            this.confirm_delete_session(session_id, window, cx);
+                            cx.stop_propagation();
+                        }
+                        _ => {}
+                    }
+                }))
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(TEXT)
+                        .child(catalog.get("session.delete_confirm").to_string()),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .justify_end()
+                        .gap_2()
+                        .child(
+                            div()
+                                .id("session-delete-cancel")
+                                .px_3()
+                                .py_1()
+                                .rounded_md()
+                                .text_sm()
+                                .text_color(TEXT_MUTED)
+                                .cursor_pointer()
+                                .hover(|style| style.bg(ACCENT_SURFACE))
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.cancel_delete_session(cx);
+                                }))
+                                .child(catalog.get("action.cancel").to_string()),
+                        )
+                        .child(
+                            div()
+                                .id("session-delete-confirm-button")
+                                .px_3()
+                                .py_1()
+                                .rounded_md()
+                                .text_sm()
+                                .text_color(TEXT)
+                                .bg(ACCENT)
+                                .cursor_pointer()
+                                .hover(|style| style.opacity(0.9))
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.confirm_delete_session(session_id, window, cx);
+                                }))
+                                .child(catalog.get("session.delete").to_string()),
+                        ),
+                ),
+        )
+}
 
 fn handle_menu_key(
     this: &mut AppShell,
