@@ -71,4 +71,14 @@ mod tests {
         let catalog = Catalog::english();
         assert_eq!(catalog.get("does.not.exist"), "does.not.exist");
     }
+
+    #[test]
+    fn papercut_copy_is_localized() {
+        let catalog = Catalog::english();
+        for key in ["messages.loading", "settings.projects.rename_empty"] {
+            let value = catalog.get(key);
+            assert!(!value.is_empty());
+            assert_ne!(value, key);
+        }
+    }
 }
