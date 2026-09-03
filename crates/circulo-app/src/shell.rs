@@ -118,6 +118,7 @@ pub struct AppShell {
     sessions: Vec<Session>,
     projects: Vec<Project>,
     messages: Vec<Message>,
+    messages_loading: bool,
     selected: Option<Uuid>,
     palette_open: bool,
     palette_query: String,
@@ -234,6 +235,7 @@ impl AppShell {
             sessions: Vec::new(),
             projects: Vec::new(),
             messages: Vec::new(),
+            messages_loading: false,
             selected: None,
             palette_open: false,
             palette_query: String::new(),
@@ -527,7 +529,7 @@ impl AppShell {
                         this.preferences.disabled_agents.insert(agent);
                     }
                     this.pending_provider_toggle = None;
-                    this.refresh();
+                    this.schedule_refresh(cx);
                 }
                 cx.notify();
             });
@@ -585,7 +587,7 @@ impl AppShell {
                     this.error = Some(err);
                 } else {
                     this.pending_delete_project = None;
-                    this.refresh();
+                    this.schedule_refresh(cx);
                     this.reconcile_selection_after_refresh(cx);
                     this.reload_archived_projects(cx);
                 }
@@ -606,7 +608,7 @@ impl AppShell {
                 if let Err(err) = result {
                     this.error = Some(err);
                 } else {
-                    this.refresh();
+                    this.schedule_refresh(cx);
                     this.reconcile_selection_after_refresh(cx);
                     this.reload_archived_projects(cx);
                 }
@@ -638,7 +640,7 @@ impl AppShell {
                     this.error = Some(err);
                 } else {
                     this.pending_delete_project = None;
-                    this.refresh();
+                    this.schedule_refresh(cx);
                     this.reconcile_selection_after_refresh(cx);
                     this.reload_archived_projects(cx);
                 }
@@ -684,7 +686,7 @@ impl AppShell {
     ) {
         let trimmed = name.trim().to_string();
         if trimmed.is_empty() {
-            self.error = Some("Project name cannot be empty.".to_string());
+            self.error = Some(self.catalog.get("settings.projects.rename_empty").to_string());
             cx.notify();
             return;
         }
@@ -699,7 +701,7 @@ impl AppShell {
                     this.error = Some(err);
                 } else {
                     this.pending_rename_project = None;
-                    this.refresh();
+                    this.schedule_refresh(cx);
                     this.reload_archived_projects(cx);
                 }
                 cx.notify();
@@ -1018,7 +1020,7 @@ impl AppShell {
                 .await;
             let _ = this.update(cx, |this, cx| {
                 if result.is_ok() {
-                    this.refresh();
+                    this.schedule_refresh(cx);
                     this.sync_composer(cx);
                 } else if let Err(err) = result {
                     this.error = Some(err);
@@ -1160,7 +1162,17 @@ impl AppShell {
                                 this.stream_gen,
                             ) {
                                 this.messages = messages;
+                                this.messages_loading = false;
                                 this.jump_to_latest_visible = false;
+                                // A session that is still streaming server-side
+                                // must keep the composer locked until a
+                                // terminal event arrives.
+                                if this.messages.iter().any(|message| message.is_streaming) {
+                                    this.generating = true;
+                                    this.composer.update(cx, |composer, cx| {
+                                        composer.set_generating(true, cx);
+                                    });
+                                }
                                 this.maybe_unlock_composer(cx);
                             }
                             if this.stream_session.is_some() || this.selected.is_none() {
@@ -1170,6 +1182,9 @@ impl AppShell {
                         }
                         Err(message) => {
                             this.error = Some(message);
+                            if this.selected == selected {
+                                this.messages_loading = false;
+                            }
                             false
                         }
                     }
@@ -1619,6 +1634,9 @@ impl AppShell {
         self.composer_pending_focus = false;
         self.composer
             .update(cx, |composer, cx| composer.focus_after_session_select(window, cx));
+        // Transcript and list refresh run in the background; the UI thread
+        // stays responsive while the daemon round trip is in flight.
+        self.schedule_refresh(cx);
     }
 
     fn clear_generating(&mut self, cx: &mut Context<Self>) {
@@ -1643,20 +1661,20 @@ impl AppShell {
     }
 
     fn activate_session(&mut self, id: Uuid, cx: &mut Context<Self>) {
+        let switching = self.selected != Some(id);
         self.selected = Some(id);
         self.close_palette(cx);
         self.close_session_overlay(cx);
         self.pending_permission = None;
         self.pending_question = None;
         self.clear_generating(cx);
-        self.messages = self.client.list_messages(id).unwrap_or_default();
-        self.jump_to_latest_visible = false;
-        if self.messages.iter().any(|message| message.is_streaming) {
-            self.generating = true;
-            self.composer.update(cx, |composer, cx| {
-                composer.set_generating(true, cx);
-            });
+        if switching {
+            // The transcript loads in the background via the refresh spawned
+            // by `select_session`; never block the UI thread on a sync fetch.
+            self.messages.clear();
+            self.messages_loading = true;
         }
+        self.jump_to_latest_visible = false;
         self.stream_attempts = 0;
         self.error = None;
         self.apply_session_composer_state();
@@ -1804,7 +1822,7 @@ impl AppShell {
         };
         match self.session_menu_selected {
             0 => self.start_rename_session(session_id, window, cx),
-            1 => self.delete_session(session_id, window, cx),
+            1 => self.request_delete_session(session_id, cx),
             _ => {}
         }
     }
@@ -1831,7 +1849,18 @@ impl AppShell {
         cx.notify();
     }
 
-    pub(crate) fn delete_session(
+    /// Stage a session delete behind an explicit confirmation overlay.
+    /// Nothing is sent to the daemon until the user confirms.
+    pub(crate) fn request_delete_session(&mut self, session_id: Uuid, cx: &mut Context<Self>) {
+        self.session_overlay = Some(SessionOverlay::DeleteConfirm { session_id });
+        cx.notify();
+    }
+
+    pub(crate) fn cancel_delete_session(&mut self, cx: &mut Context<Self>) {
+        self.close_session_overlay(cx);
+    }
+
+    pub(crate) fn confirm_delete_session(
         &mut self,
         session_id: Uuid,
         _window: &mut Window,
@@ -1952,11 +1981,7 @@ impl AppShell {
         };
         match item.kind {
             PaletteItemKind::NewSession => {
-                if let Ok(session) = self.client.create_session() {
-                    self.sessions.push(session.clone());
-                    self.select_session(session.id, window, cx);
-                    self.refresh();
-                }
+                self.create_new_session(window, cx);
                 self.close_palette(cx);
             }
             PaletteItemKind::ToggleSidebar => {
@@ -2121,37 +2146,6 @@ impl AppShell {
             .unwrap_or_else(|| self.catalog.get("session.none").to_string())
     }
 
-    fn refresh(&mut self) {
-        match ensure_daemon(&self.client) {
-            Ok(()) => self.error = None,
-            Err(err) => {
-                self.error = Some(format!("{} ({err})", self.catalog.get("sidebar.daemon_down")));
-                return;
-            }
-        }
-        match self.client.list_sessions() {
-            Ok(sessions) => self.sessions = sessions,
-            Err(err) => self.error = Some(err),
-        }
-        match self.client.list_projects() {
-            Ok(projects) => self.projects = projects,
-            Err(err) => self.error = Some(err),
-        }
-        if let Some(id) = self.selected {
-            match self.client.list_messages(id) {
-                Ok(messages) => self.messages = messages,
-                Err(err) => self.error = Some(err),
-            }
-            self.jump_to_latest_visible = false;
-        } else {
-            self.messages.clear();
-            self.jump_to_latest_visible = false;
-        }
-        // Best-effort refresh of the available agents. Failure here is
-        // non-fatal: the composer falls back to a single-entry list.
-        let _ = self.client.list_agents().map(|agents| self.available_agents = agents);
-    }
-
     /// Agents the user can pick in the AgentSelector: registered AND
     /// enabled. The AgentSelector chip renders when this list has more
     /// than one entry.
@@ -2187,7 +2181,7 @@ impl AppShell {
                 if let Err(err) = result {
                     this.error = Some(err);
                 } else {
-                    this.refresh();
+                    this.schedule_refresh(cx);
                 }
                 cx.notify();
             });
@@ -2888,12 +2882,7 @@ fn sidebar_body(state: &AppShell, catalog: &Catalog, cx: &mut Context<AppShell>)
             catalog.get("sidebar.new_session"),
             Some(icon_path::MESSAGE_CIRCLE_PLUS),
             cx.listener(|this, _, window, cx| {
-                if let Ok(session) = this.client.create_session() {
-                    this.sessions.push(session.clone());
-                    this.select_session(session.id, window, cx);
-                    this.refresh();
-                }
-                cx.notify();
+                this.create_new_session(window, cx);
             }),
         ))
         .child(
@@ -2937,9 +2926,10 @@ fn sidebar_body(state: &AppShell, catalog: &Catalog, cx: &mut Context<AppShell>)
                 .text_color(TEXT_MUTED)
                 .child(error.clone()),
         );
-    } else {
-        scroll_content = scroll_content.child(sidebar_session_sections(state, catalog, cx));
     }
+    // The session list stays visible under the error banner so transient
+    // failures never take navigation away from the user.
+    scroll_content = scroll_content.child(sidebar_session_sections(state, catalog, cx));
 
     div()
         .flex()
@@ -3624,12 +3614,17 @@ fn message_list(
             .text_color(TEXT_MUTED)
             .child(catalog.get("session.none").to_string());
     } else if state.messages.is_empty() {
+        let label = if state.messages_loading {
+            catalog.get("messages.loading")
+        } else {
+            catalog.get("session.empty")
+        };
         inner = inner
             .flex_1()
             .items_center()
             .justify_center()
             .text_color(TEXT_MUTED)
-            .child(catalog.get("session.empty").to_string());
+            .child(label.to_string());
     } else {
         for (index, message) in state.messages.iter().enumerate() {
             inner = inner.child(message_column(
@@ -4040,6 +4035,132 @@ mod catalog_fetch_tests {
                     let models = shell.filtered_composer_models();
                     assert_eq!(models.len(), 1);
                     assert_eq!(models[0].id, "zai-org/GLM-5.3");
+                })
+                .unwrap();
+        });
+    }
+}
+
+#[cfg(test)]
+mod ui_papercut_tests {
+    use super::{AppShell, DaemonClient, Duration, SessionOverlay};
+    use circulo_core::{AgentType, Session, SessionStatus};
+    use gpui::TestAppContext;
+    use time::OffsetDateTime;
+
+    fn shell_with_dead_daemon(cx: &mut TestAppContext) -> gpui::WindowHandle<AppShell> {
+        cx.add_window(|window, cx| {
+            AppShell::new_with_client(
+                DaemonClient::new_detached("http://127.0.0.1:1"),
+                window,
+                cx,
+            )
+        })
+    }
+
+    fn session(id: u128) -> Session {
+        let now = OffsetDateTime::from_unix_timestamp(1_700_000_000).expect("valid ts");
+        Session {
+            id: circulo_core::Uuid::from_u128(id),
+            project_id: None,
+            title: "New session".into(),
+            agent: AgentType::OpenCode,
+            status: SessionStatus::Active,
+            created_at: now,
+            updated_at: now,
+            last_message_at: None,
+            first_send_at: None,
+            composer_model_id: None,
+            composer_model_variant: None,
+            composer_permission_mode: None,
+            composer_interaction_mode: None,
+        }
+    }
+
+    #[gpui::test]
+    async fn activation_loads_transcript_in_background(cx: &mut TestAppContext) {
+        let window = shell_with_dead_daemon(cx);
+        cx.update(|cx| {
+            window
+                .update(cx, |shell, _, cx| {
+                    let id = circulo_core::Uuid::from_u128(7);
+                    shell.sessions.push(session(7));
+                    shell.activate_session(id, cx);
+                    assert!(
+                        shell.messages.is_empty(),
+                        "activation must not block the UI thread on a transcript fetch"
+                    );
+                    assert!(
+                        shell.messages_loading,
+                        "a loading state must be visible while the transcript is in flight"
+                    );
+                    assert_eq!(shell.selected, Some(id));
+                })
+                .unwrap();
+        });
+
+        // The background refresh settles against the unreachable daemon.
+        cx.dispatcher.advance_clock(Duration::from_secs(5));
+        cx.update(|cx| {
+            window
+                .update(cx, |shell, _, _| {
+                    assert!(
+                        !shell.messages_loading,
+                        "the loading flag must clear when the refresh settles"
+                    );
+                    assert!(
+                        shell.error.is_some(),
+                        "a transcript load failure must surface instead of a silently empty chat"
+                    );
+                })
+                .unwrap();
+        });
+    }
+
+    #[gpui::test]
+    async fn delete_is_staged_behind_confirmation(cx: &mut TestAppContext) {
+        let window = shell_with_dead_daemon(cx);
+        cx.update(|cx| {
+            window
+                .update(cx, |shell, _, cx| {
+                    shell.sessions.push(session(1));
+                    shell.sessions.push(session(2));
+                    shell.selected = Some(circulo_core::Uuid::from_u128(1));
+
+                    shell.request_delete_session(circulo_core::Uuid::from_u128(2), cx);
+                    assert!(
+                        matches!(
+                            shell.session_overlay,
+                            Some(SessionOverlay::DeleteConfirm { .. })
+                        ),
+                        "delete must be staged behind a confirmation overlay"
+                    );
+
+                    shell.cancel_delete_session(cx);
+                    assert!(shell.session_overlay.is_none());
+                    assert_eq!(shell.sessions.len(), 2, "cancel must leave the session intact");
+
+                    shell.request_delete_session(circulo_core::Uuid::from_u128(1), cx);
+                })
+                .unwrap();
+        });
+        cx.update(|cx| {
+            window
+                .update(cx, |shell, window, cx| {
+                    let selected = shell.selected;
+                    assert!(selected.is_some());
+                    shell.confirm_delete_session(selected.unwrap(), window, cx);
+                    assert_eq!(shell.sessions.len(), 1, "the confirmed session is removed");
+                    assert_eq!(
+                        shell.sessions[0].id,
+                        circulo_core::Uuid::from_u128(2),
+                        "the other session stays"
+                    );
+                    assert!(
+                        shell.selected.is_none(),
+                        "deleting the selected session clears the selection"
+                    );
+                    assert!(shell.messages.is_empty());
                 })
                 .unwrap();
         });
