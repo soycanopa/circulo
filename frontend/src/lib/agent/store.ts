@@ -167,6 +167,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return session.id;
     } catch (e) {
       console.error("newSession failed", e);
+      // Surface it: a silent null made the composer swallow the draft with
+      // no feedback when the server was still starting.
+      set((s) => {
+        const active = s.activeSessionId ? s.chat.sessions[s.activeSessionId] : undefined;
+        if (!active) return s;
+        return {
+          chat: applyEvent(s.chat, {
+            type: "session.error",
+            payload: {
+              projectID,
+              sessionID: active.session.id,
+              error: { name: "SessionCreateFailed", message: String(e) },
+            },
+          }),
+        };
+      });
       return null;
     }
   },
@@ -179,11 +195,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((s) => {
       if (s.chat.sessions[sessionID]) return s;
       const meta = (s.sessionsByProject[projectID] ?? []).find((x) => x.id === sessionID);
-      if (!meta) return s;
+      // Seed even without list metadata (boot fetch may have failed): the
+      // optimistic user bubble depends on the session entry existing.
+      const session =
+        meta ?? { id: sessionID, title: "", timeCreated: Date.now(), timeUpdated: Date.now() };
       return {
         chat: applyEvent(s.chat, {
           type: "session.updated",
-          payload: { projectID, session: meta },
+          payload: { projectID, session },
         }),
       };
     });

@@ -254,8 +254,18 @@ export function mergeHydrated(
   sessionID: string,
   history: { info: MessageInfo; parts: Part[] }[],
 ): ChatState {
-  const prev = state.sessions[sessionID];
-  if (!prev) return state;
+  let prev = state.sessions[sessionID];
+  if (!prev) {
+    // The session entry can be missing after a failed boot fetch — the user's
+    // message must always show, so seed a minimal session for it.
+    prev = {
+      session: { id: sessionID, title: "", timeCreated: Date.now(), timeUpdated: Date.now() },
+      status: "idle",
+      messages: [],
+      permissions: [],
+      tasks: [],
+    };
+  }
   const s: SessionState = { ...prev, messages: [...prev.messages] };
   for (const h of history) {
     const m = s.messages.find((x) => x.info.id === h.info.id);
@@ -282,8 +292,18 @@ export function addOptimisticUserMessage(
   clientID: string,
   text: string,
 ): ChatState {
-  const prev = state.sessions[sessionID];
-  if (!prev) return state;
+  let prev = state.sessions[sessionID];
+  if (!prev) {
+    // The session entry can be missing after a failed boot fetch — the user's
+    // message must always show, so seed a minimal session for it.
+    prev = {
+      session: { id: sessionID, title: "", timeCreated: Date.now(), timeUpdated: Date.now() },
+      status: "idle",
+      messages: [],
+      permissions: [],
+      tasks: [],
+    };
+  }
   const s: SessionState = { ...prev, messages: [...prev.messages] };
   s.messages.push({
     info: {
