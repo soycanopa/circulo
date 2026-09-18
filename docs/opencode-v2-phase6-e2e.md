@@ -11,9 +11,9 @@ SSE captures that could not be taken from a scratch server.
 
 ## 1. State at handoff
 
-- Branch stack (all local, none pushed, in merge order):
+- Branch stack (pushed to `origin` on 2026-09-18, in merge order):
   `fix/post-audit-gaps` → `feature/circulo-general-frame` → `feature/reasoning-and-mode`
-  → `feature/opencode-v2` (HEAD).
+  → `feature/opencode-v2` (HEAD). Canonical repo: `github.com/soycanopa/circulo`.
 - CI-lite green at HEAD (`go test ./...` + `pnpm vitest` 20/20 + tsc).
 - The app currently runs against **opencode v2.0.8** via
   `CIRCULOGO_OPENCODE_BIN=$HOME/.local/opencode-v2/node_modules/@opencode/cli-darwin-arm64/bin/opencode`.
