@@ -61,49 +61,69 @@ function ensureSession(state: ChatState, session: Session): SessionState {
   return s;
 }
 
-function ensureMessage(s: SessionState, info: MessageInfo): MessageRecord {
-  let m = s.messages.find((x) => x.info.id === info.id);
-  if (!m) {
-    m = { info, parts: [] };
-    s.messages.push(m);
+/**
+ * Message updates MUST replace the MessageRecord object (never mutate it):
+ * UserMessage/AssistantTurn are React.memo'd on the record, so an in-place
+ * mutation leaves the reference equal and the bubble never re-renders —
+ * that was the empty-user-bubble bug.
+ */
+
+function ensureMessage(s: SessionState, info: MessageInfo): void {
+  const idx = s.messages.findIndex((x) => x.info.id === info.id);
+  if (idx === -1) {
+    s.messages.push({ info, parts: [] });
   } else {
     // Metadata update; content lives in parts.
-    m.info = info;
+    s.messages[idx] = { ...s.messages[idx], info };
   }
-  return m;
 }
 
 /**
- * stubMessage finds a message by id or creates a metadata-stub. Stubs use
+ * Locates a message by id or creates a metadata-stub to update. Stubs use
  * created: 0 so mergeHydrated can detect and fill real metadata; they never
  * overwrite existing info (a part.updated for a user message must not flip
  * its role).
  */
-function stubMessage(s: SessionState, messageID: string, sessionID: string): MessageRecord {
-  let m = s.messages.find((x) => x.info.id === messageID);
-  if (!m) {
-    m = {
-      info: { id: messageID, sessionID, role: "assistant", created: 0, completed: 0 },
-      parts: [],
-    };
-    s.messages.push(m);
-  }
-  return m;
-}
-
-function upsertPart(m: MessageRecord, part: Part): void {
-  const idx = m.parts.findIndex((p) => p.id === part.id);
+function upsertMessagePart(
+  s: SessionState,
+  messageID: string,
+  sessionID: string,
+  part: Part,
+): void {
+  const idx = s.messages.findIndex((x) => x.info.id === messageID);
   if (idx === -1) {
-    m.parts.push(part);
-  } else {
-    m.parts[idx] = part;
+    s.messages.push({
+      info: { id: messageID, sessionID, role: "assistant", created: 0, completed: 0 },
+      parts: [part],
+    });
+    return;
   }
+  const m = s.messages[idx];
+  const parts = [...m.parts];
+  const pIdx = parts.findIndex((p) => p.id === part.id);
+  if (pIdx === -1) parts.push(part);
+  else parts[pIdx] = part;
+  s.messages[idx] = { ...m, parts };
 }
 
-function applyDeltaToPart(part: Part, field: string, delta: string): void {
+function applyDeltaToPart(
+  s: SessionState,
+  messageID: string,
+  partID: string,
+  field: string,
+  delta: string,
+): void {
   if (field !== "text" && field !== "reasoning") return;
-  if (part.type !== field) return;
-  part[field] = (part[field] ?? "") + delta;
+  const idx = s.messages.findIndex((x) => x.info.id === messageID);
+  if (idx === -1) return;
+  const m = s.messages[idx];
+  let touched = false;
+  const parts = m.parts.map((part) => {
+    if (part.id !== partID || part.type !== field) return part;
+    touched = true;
+    return { ...part, [field]: (part[field] ?? "") + delta };
+  });
+  if (touched) s.messages[idx] = { ...m, parts };
 }
 
 /** Reducer entry: returns a NEW ChatState (immutable update for React). */
@@ -189,15 +209,11 @@ export function applyEvent(state: ChatState, env: Envelope): ChatState {
           timeCreated: 0,
           timeUpdated: 0,
         });
-        const m = stubMessage(s, p.messageID, p.sessionID);
-        m.parts = [...m.parts];
-        upsertPart(m, p.part);
+        upsertMessagePart(s, p.messageID, p.sessionID, p.part);
         return next;
       }
       const s: SessionState = { ...prev, messages: [...prev.messages] };
-      const m = stubMessage(s, p.messageID, p.sessionID);
-      m.parts = [...m.parts];
-      upsertPart(m, p.part);
+      upsertMessagePart(s, p.messageID, p.sessionID, p.part);
       return { sessions: { ...state.sessions, [p.sessionID]: s } };
     }
 
@@ -206,14 +222,7 @@ export function applyEvent(state: ChatState, env: Envelope): ChatState {
       const prev = state.sessions[p.sessionID];
       if (!prev) return state;
       const s: SessionState = { ...prev, messages: [...prev.messages] };
-      const m = s.messages.find((x) => x.info.id === p.messageID);
-      if (!m) return state;
-      m.parts = m.parts.map((part) => {
-        if (part.id !== p.partID) return part;
-        const copy = { ...part };
-        applyDeltaToPart(copy, p.field, p.delta);
-        return copy;
-      });
+      applyDeltaToPart(s, p.messageID, p.partID, p.field, p.delta);
       return { sessions: { ...state.sessions, [p.sessionID]: s } };
     }
 
@@ -278,19 +287,18 @@ export function mergeHydrated(
   }
   const s: SessionState = { ...prev, messages: [...prev.messages] };
   for (const h of history) {
-    const m = s.messages.find((x) => x.info.id === h.info.id);
-    if (!m) {
+    const idx = s.messages.findIndex((x) => x.info.id === h.info.id);
+    if (idx === -1) {
       s.messages.push({ info: h.info, parts: [...h.parts] });
       continue;
     }
-    if (m.info.created === 0 && h.info.created) {
-      m.info = h.info; // fill stub metadata
-    }
+    const m = s.messages[idx];
+    const info = m.info.created === 0 && h.info.created ? h.info : m.info;
     const parts = [...m.parts];
     for (const p of h.parts) {
       if (!parts.some((x) => x.id === p.id)) parts.push(p);
     }
-    m.parts = parts;
+    s.messages[idx] = { ...m, info, parts };
   }
   return { sessions: { ...state.sessions, [sessionID]: s } };
 }
