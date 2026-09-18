@@ -12,7 +12,8 @@ phase plan and what is done/outstanding.
 
 - **Backend:** Go 1.25+ (`internal/…`), Wails **v3.0.0-beta.16** (pinned — beta APIs shift)
 - **Frontend:** React 18 + TypeScript + Vite + Tailwind v4 (shadcn/ui), zustand
-- **Agent:** OpenCode `1.18.25` (fixtures/pins recorded; re-verify on bump)
+- **Agent:** OpenCode **v2** (`2.0.x`, fixtures/pins recorded against 2.0.8;
+  see [docs/opencode-v2-migration.md](docs/opencode-v2-migration.md))
 - **Tests:** Go testing + httptest; vitest
 
 ## Getting started
