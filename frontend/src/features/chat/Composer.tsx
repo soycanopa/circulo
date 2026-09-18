@@ -9,6 +9,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  ChevronRight,
   Search,
   Square,
 } from "lucide-react";
@@ -22,7 +23,7 @@ import {
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { useAppStore } from "@/lib/agent/store";
 import { cn } from "@/lib/utils";
-import type { PermissionRequest } from "@/lib/agent/protocol";
+import type { ModelInfo, PermissionRequest } from "@/lib/agent/protocol";
 
 function PermissionCard({ perm }: { perm: PermissionRequest }) {
   const replyPermission = useAppStore((s) => s.replyPermission);
@@ -91,6 +92,8 @@ function ModelPicker() {
   const models = useAppStore((s) => s.metaModels);
   const selectedModel = useAppStore((s) => s.selectedModel);
   const setSelected = useAppStore((s) => s.setSelectedModel);
+  const selectedVariant = useAppStore((s) => s.selectedVariant);
+  const setVariant = useAppStore((s) => s.setSelectedVariant);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const selectedRef = useRef<HTMLButtonElement>(null);
@@ -130,10 +133,19 @@ function ModelPicker() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        {/* div (not button): the effort tag nested inside is its own trigger. */}
+        {/* div (not button): keeps layout; selection happens in the popover. */}
         <div className={cn("cursor-pointer select-none", chipBtn)} data-slot="model-chip">
           <span className="max-w-40 truncate">{current?.name || current?.id || "Model"}</span>
-          <VariantPicker />
+          {selectedVariant && (
+            <span
+              className={cn(
+                "rounded-full border px-1 py-px text-xs leading-[14px] font-medium",
+                variantTagClass(selectedVariant),
+              )}
+            >
+              {selectedVariant}
+            </span>
+          )}
           <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
         </div>
       </PopoverTrigger>
@@ -153,52 +165,66 @@ function ModelPicker() {
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="shrink-0 border-b border-border p-2">
-          <div className="flex items-center gap-2 rounded-md bg-bg-code px-2 py-1.5">
-            <Search className="size-3 shrink-0 text-text-tertiary" />
-            <input
-              data-selectable
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search models"
-              className="w-full bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
-            />
-          </div>
-        </div>
+              <div className="flex items-center gap-2 rounded-md bg-bg-code px-2 py-1.5">
+                <Search className="size-3 shrink-0 text-text-tertiary" />
+                <input
+                  data-selectable
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search models"
+                  className="w-full bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
+                />
+              </div>
+            </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
               {sections.map((g) => (
-            <div key={g.provider} className="mb-1">
-              <div className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-[11px] font-medium uppercase leading-[14px] tracking-wider text-text-tertiary">
-                <ProviderIcon provider={g.provider} size={10} />
-                {g.provider}
-              </div>
-              {g.models.map((m) => {
-                const key = `${m.provider}:${m.id}`;
-                const selected = key === selectedModel;
-                return (
-                  <button
-                    key={key}
-                    ref={selected ? selectedRef : undefined}
-                    type="button"
-                    onClick={() => {
-                      setSelected(key);
-                      setOpen(false);
-                    }}
-                    className={cn(
-                      "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm/tight",
-                      selected
-                        ? "bg-bg-hover text-text-primary"
-                        : "text-text-primary hover:bg-bg-hover/60",
-                    )}
-                  >
-                    <span className="min-w-0 truncate">{m.name || m.id}</span>
-                    {selected && (
-                      <Check className="size-3.5 shrink-0 text-accent-cir" strokeWidth={2} />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
+                <div key={g.provider} className="mb-1">
+                  <div className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-[11px] font-medium uppercase leading-[14px] tracking-wider text-text-tertiary">
+                    <ProviderIcon provider={g.provider} size={10} />
+                    {g.provider}
+                  </div>
+                  {g.models.map((m) => {
+                    const key = `${m.provider}:${m.id}`;
+                    const selected = key === selectedModel;
+                    const hasVariants = Boolean(m.reasoning && m.variants?.length);
+                    return (
+                      <div key={key} className="flex items-center gap-1">
+                        <button
+                          ref={selected ? selectedRef : undefined}
+                          type="button"
+                          onClick={() => {
+                            setSelected(key);
+                            setOpen(false);
+                          }}
+                          className={cn(
+                            "flex min-w-0 flex-1 items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm/tight",
+                            selected
+                              ? "bg-bg-hover text-text-primary"
+                              : "text-text-primary hover:bg-bg-hover/60",
+                          )}
+                        >
+                          <span className="min-w-0 truncate">{m.name || m.id}</span>
+                          {selected && (
+                            <Check className="size-3.5 shrink-0 text-accent-cir" strokeWidth={2} />
+                          )}
+                        </button>
+                        {hasVariants && (
+                          <ModelVariantsPopover
+                            model={m}
+                            selected={selected}
+                            selectedVariant={selectedVariant}
+                            onPick={(variant) => {
+                              setSelected(key);
+                              setVariant(variant);
+                              setOpen(false);
+                            }}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
               {sections.length === 0 && (
                 <div className="px-2 py-1.5 text-xs text-text-tertiary">No models found</div>
               )}
@@ -210,81 +236,58 @@ function ModelPicker() {
   );
 }
 
-/** Reasoning-effort selector: opens from the tag inside the model chip. */
-function VariantPicker() {
-  const models = useAppStore((s) => s.metaModels);
-  const selectedModel = useAppStore((s) => s.selectedModel);
-  const selectedVariant = useAppStore((s) => s.selectedVariant);
-  const setVariant = useAppStore((s) => s.setSelectedVariant);
+/** Side popover to pick a model's reasoning effort (Circulo subpopover). */
+function ModelVariantsPopover({
+  model,
+  selected,
+  selectedVariant,
+  onPick,
+}: {
+  model: ModelInfo;
+  selected: boolean;
+  selectedVariant: string;
+  onPick: (variant: string) => void;
+}) {
   const [open, setOpen] = useState(false);
-
-  const current = models.find((m) => `${m.provider}:${m.id}` === selectedModel);
-  if (!current?.reasoning || !current.variants?.length) return null;
-  // The tag is always rendered for capable models: it is the trigger (gray
-  // "none" per the design when no effort is set).
-  const tag = (
-    <span
-      className={cn(
-        "rounded-full border px-1 py-px text-xs leading-[14px] font-medium",
-        selectedVariant
-          ? variantTagClass(selectedVariant)
-          : "bg-bg-hover border-border text-text-secondary",
-      )}
-    >
-      {selectedVariant || "none"}
-    </span>
-  );
-
+  const option =
+    "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm/tight";
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label="Reasoning effort"
-          className="flex items-center"
-          // The tag lives inside the model chip's popover trigger: swallow
-          // every event phase so opening the effort menu never opens the
-          // model menu with it.
-          onPointerDown={(e) => e.stopPropagation()}
+          title="Reasoning effort"
+          aria-label={`Reasoning effort of ${model.name || model.id}`}
+          className={cn(
+            "shrink-0 rounded-md p-1 text-text-tertiary hover:bg-bg-hover/60",
+            open && "bg-bg-hover text-text-primary",
+          )}
           onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
         >
-          {tag}
+          <ChevronRight className="size-3.5" strokeWidth={2} />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" sideOffset={8} className="w-[164px] p-1.5">
+      <PopoverContent align="start" side="right" sideOffset={4} className="w-[164px] p-1.5">
         <div className="px-2 py-1 text-xs leading-[14px] text-text-tertiary">Reasoning effort</div>
         <button
           type="button"
-          onClick={() => {
-            setVariant("");
-            setOpen(false);
-          }}
-          className={cn(
-            "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm/tight",
-            !selectedVariant ? "bg-bg-hover text-text-primary" : "hover:bg-bg-hover/60",
-          )}
+          onClick={() => onPick("")}
+          className={cn(option, !selected || selectedVariant === "" ? "bg-bg-hover text-text-primary" : "hover:bg-bg-hover/60")}
         >
           None
-          {!selectedVariant && (
+          {(!selected || selectedVariant === "") && (
             <Check className="size-3.5 shrink-0 text-accent-cir" strokeWidth={2} />
           )}
         </button>
-        {current.variants.map((v) => (
+        {model.variants?.map((v) => (
           <button
             key={v}
             type="button"
-            onClick={() => {
-              setVariant(v);
-              setOpen(false);
-            }}
-            className={cn(
-              "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm/tight",
-              selectedVariant === v ? "bg-bg-hover text-text-primary" : "hover:bg-bg-hover/60",
-            )}
+            onClick={() => onPick(v)}
+            className={cn(option, selected && selectedVariant === v ? "bg-bg-hover text-text-primary" : "hover:bg-bg-hover/60")}
           >
             {v}
-            {selectedVariant === v && (
+            {selected && selectedVariant === v && (
               <Check className="size-3.5 shrink-0 text-accent-cir" strokeWidth={2} />
             )}
           </button>
