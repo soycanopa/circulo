@@ -219,6 +219,31 @@ func TestClientV2_ReplyPermissionUsesDecisionKey(t *testing.T) {
 	}
 }
 
+// Session instruction entries (experimental surface): PUT path + {value} body.
+func TestClientV2_PutInstructionEntry(t *testing.T) {
+	var gotBody map[string]any
+	var gotPath, gotMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotMethod = r.URL.Path, r.Method
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	if err := c.PutInstructionV2(context.Background(), "ses_1", "circulogo-format", "use markdown"); err != nil {
+		t.Fatal(err)
+	}
+	if gotMethod != http.MethodPut ||
+		gotPath != "/api/experimental/session/ses_1/instructions/entries/circulogo-format" {
+		t.Errorf("request = %s %s", gotMethod, gotPath)
+	}
+	if gotBody["value"] != "use markdown" {
+		t.Errorf("body = %+v", gotBody)
+	}
+}
+
 func TestClientV2_ServerInfoAndLocation(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

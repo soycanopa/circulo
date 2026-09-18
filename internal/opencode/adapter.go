@@ -384,6 +384,17 @@ func (a *Adapter) Sessions(ctx context.Context) ([]protocol.Session, error) {
 	return out, nil
 }
 
+// formatInstruction is attached to every session the app creates: v2 ignores
+// the config "instructions" field (docs: "use AGENTS.md"), and the app must
+// not write into the user's project — the session instructions-entries API is
+// the app-owned path (verified live: the entry rides the turn's instruction
+// assembly and reaches the model).
+const formatInstructionKey = "circulogo-format"
+const formatInstruction = "Format every response in GitHub-flavored Markdown: " +
+	"short paragraphs, bullet lists, numbered steps for procedures, tables for " +
+	"comparisons, and fenced code blocks with a language tag. Never reply with " +
+	"unstructured plain text."
+
 func (a *Adapter) CreateSession(ctx context.Context, title string) (protocol.Session, error) {
 	c, err := a.clientOrErr()
 	if err != nil {
@@ -393,6 +404,10 @@ func (a *Adapter) CreateSession(ctx context.Context, title string) (protocol.Ses
 	if err != nil {
 		return protocol.Session{}, err
 	}
+	// Best-effort guidance: the entries endpoint is experimental (spec
+	// /api/experimental/...), and an unformatted reply is degraded UX, not a
+	// failed session — dropping the error is deliberate here.
+	_ = c.PutInstructionV2(ctx, s.ID, formatInstructionKey, formatInstruction)
 	return sessionV2ToNeutral(s), nil
 }
 

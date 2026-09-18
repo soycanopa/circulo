@@ -184,3 +184,13 @@ func (c *Client) SetAgentV2(ctx context.Context, sessionID, agent string) error 
 	body := map[string]string{"agent": agent}
 	return c.post(ctx, "/api/session/"+sessionID+"/agent", body, nil)
 }
+
+// PutInstructionV2 attaches a session instruction entry
+// (PUT /api/experimental/session/{id}/instructions/entries/{key}, body
+// {value}). Verified live on 2.0.8: the entry appears in the turn's
+// session.instructions.updated assembly (key api/<key>) and reaches the
+// model. Experimental surface — callers must tolerate failures.
+func (c *Client) PutInstructionV2(ctx context.Context, sessionID, key, value string) error {
+	path := fmt.Sprintf("/api/experimental/session/%s/instructions/entries/%s", sessionID, key)
+	return c.do(ctx, http.MethodPut, path, map[string]string{"value": value}, nil)
+}
