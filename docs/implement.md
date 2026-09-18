@@ -103,12 +103,53 @@ Paper** design (`feature/circulo-design` + app-bar/polish branches, merged to
   in ui.md.
 - Behavior contracts ([ux.md](ux.md), [flow.md](flow.md)) are unaffected.
 
+## Amendment 2026-09-18 (II) — OpenCode v2 migration + post-pivot feature wave
+
+Recorded retroactively; both shipped on the branch stack now pushed to origin
+(canonical repo: `github.com/soycanopa/circulo` — the project that previously lived
+there is preserved under `legacy/*`).
+
+**OpenCode v1 → v2 migration — code-complete.** Phases 0–5 of
+[opencode-v2-migration.md](opencode-v2-migration.md): the adapter speaks only v2
+(Basic auth captured from `serve` output, `/openapi.json` as the spec source, new
+endpoint/event map) and the app runs against **2.0.8** via
+`CIRCULOGO_OPENCODE_BIN`. Handoff state and owner gates live in
+[opencode-v2-phase6-e2e.md](opencode-v2-phase6-e2e.md).
+
+**Feature wave on top of the Circulo replica** (details in the commit history of
+`feature/opencode-v2`):
+
+- PTY terminals per project — `internal/term` (creack/pty), one tabbed xterm.js
+  surface below the chat/composer cards; I/O over SSE + write/resize POSTs.
+- `question` tool → ApprovalCard: one question at a time, 1/N odometer, radio
+  auto-advance (v2 Forms events, not permissions).
+- Thinking trace: one collapsible per work type (Reasoning/Search/Coding/Tools)
+  with pixel-loader headers.
+- CodePanel: fenced code with line numbers + syntax coloring; unified `diff`
+  with old/new gutters and word-level pairing.
+- `circulogo-flow` blocks render as the dotted flowchart canvas.
+- AssistantText streams word-by-word (55ms reveal) and settles to copyable text.
+- Session targeting: always-visible strip; new-session mode selects project +
+  branch up front and the session materializes on the first message.
+- Resizable sidebar (200–480px, persisted), animated pixel-glow texture,
+  transcript edge fades, white Send/Stop pair.
+- Per-session markdown formatting instruction via the instructions-entries API
+  (`circulogo-format`); the v2 `instructions` config key is not read by the server.
+
+The ui.md re-sync debt from the pivot amendment still stands and now also covers
+the terminal surface and app-bar actions.
+
 ## Outstanding before Phase 7 (manual passes, consolidated)
 
-1. Phase 5 leftover: verify a live prompt **inside the webview** (streaming so
-   far verified only through the debug relay listener).
-2. Phase 6 leftover: full E2E manual checklist pass (below) — the project gate
-   in AGENTS.md for opening remote/adapter #2 work.
+1. v2 handoff: owner E2E checklist (§3 of
+   [opencode-v2-phase6-e2e.md](opencode-v2-phase6-e2e.md)) plus the §5 decisions
+   still awaiting the owner.
+2. Full E2E manual checklist pass (below) — the project gate in AGENTS.md for
+   opening remote/adapter #2 work. (The phase-5 leftover — prompt verified inside
+   the webview — is exercised in daily use; the formal checklist pass is what
+   remains.)
+3. Re-sync [ui.md](ui.md) with the shipped Circulo replica, terminals and app-bar
+   actions (debt recorded in both amendments above).
 
 ## Phase 7 — Polish + packaging (branch `feature/release-v0`)
 
