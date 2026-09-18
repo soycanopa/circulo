@@ -806,20 +806,20 @@ export function Composer() {
               <button
                 type="button"
                 aria-label="Stop"
-                className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-md bg-track-off hover:brightness-110"
+                className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-md bg-white hover:bg-white/90"
                 onClick={() => void abort()}
               >
-                <Square className="size-3 fill-current text-text-tertiary" />
+                <Square className="size-3 fill-current text-black" />
               </button>
             ) : (
               <button
                 type="button"
                 aria-label="Send"
                 disabled={!text.trim() || !activeProjectId}
-                className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-md bg-track-off hover:brightness-110 disabled:opacity-40"
+                className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-md bg-white hover:bg-white/90 disabled:opacity-40"
                 onClick={submit}
               >
-                <ArrowUp className="size-[13px] text-text-tertiary" strokeWidth={2.2} />
+                <ArrowUp className="size-[13px] text-black" strokeWidth={2.2} />
               </button>
             )}
           </div>
