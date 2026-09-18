@@ -273,6 +273,15 @@ type PermissionResolved struct {
 	Response     string `json:"response"`
 }
 
+// ProjectVcs is the git state of a project's directory: IsRepo gates the
+// branch picker; Branch is the checked-out branch.
+type ProjectVcs struct {
+	IsRepo        bool   `json:"isRepo"`
+	Provider      string `json:"provider,omitempty"`
+	Branch        string `json:"branch,omitempty"`
+	DefaultBranch string `json:"defaultBranch,omitempty"`
+}
+
 // FormOption is one choice of a select-style form field.
 type FormOption struct {
 	Value       string `json:"value"`

@@ -154,6 +154,38 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.writeJSONOrErr(w, map[string]bool{"ok": true}, a.Abort(r.Context(), sid))
 		})
 		return
+	case tail2 == "branch" && r.Method == http.MethodPost:
+		s.withAdapter(w, id, func(a agent.Adapter) {
+			var body struct {
+				Branch string `json:"branch"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+				s.writeErr(w, badRequest("branch body: %v", err))
+				return
+			}
+			if body.Branch == "" {
+				s.writeErr(w, badRequest("branch is required"))
+				return
+			}
+			s.writeJSONOrErr(w, map[string]bool{"ok": true},
+				a.SetBranch(r.Context(), sid, body.Branch))
+		})
+		return
+	}
+
+	// /projects/{id}/vcs — git state of the project (repo badge + branch).
+	if tail == "vcs" && r.Method == http.MethodGet {
+		s.withAdapter(w, id, func(a agent.Adapter) {
+			s.writeJSONOrErr(w, a.Vcs(r.Context()), nil)
+		})
+		return
+	}
+	// /projects/{id}/branches — branch list for the composer picker.
+	if tail == "branches" && r.Method == http.MethodGet {
+		s.withAdapter(w, id, func(a agent.Adapter) {
+			s.writeJSONOrErr(w, a.Branches(r.Context()), nil)
+		})
+		return
 	}
 
 	// /projects/{id}/sessions/{sid}/permissions/{pid}
@@ -245,7 +277,8 @@ func (s *Server) handleAddProject(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request, projectID string) {
 	var body struct {
-		Title string `json:"title"`
+		Title  string `json:"title"`
+		Branch string `json:"branch"`
 	}
 	// An absent body is fine (untitled session); a malformed one is ignored —
 	// there is nothing in it the API requires.
@@ -256,6 +289,11 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request, pro
 		return
 	}
 	sess, err := a.CreateSession(r.Context(), body.Title)
+	if err == nil && body.Branch != "" && sess.ID != "" {
+		// best-effort: the branch travels as a session instruction; a failed
+		// pin must not fail the session itself.
+		_ = a.SetBranch(r.Context(), sess.ID, body.Branch)
+	}
 	s.writeJSONOrErr(w, sess, err)
 }
 

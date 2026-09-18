@@ -81,6 +81,12 @@ func (f *fakeAdapter) ReplyPermission(_ context.Context, _, _, _ string) error {
 func (f *fakeAdapter) ReplyForm(_ context.Context, _, _ string, _ map[string]any) error {
 	return nil
 }
+func (f *fakeAdapter) Vcs(_ context.Context) protocol.ProjectVcs {
+	return protocol.ProjectVcs{IsRepo: true, Provider: "git", Branch: "main"}
+}
+func (f *fakeAdapter) Branches(_ context.Context) []string            { return []string{"main"} }
+func (f *fakeAdapter) SetBranch(_ context.Context, _, _ string) error { return nil }
+
 func (f *fakeAdapter) Meta(_ context.Context) (protocol.Meta, error) { panic("unexpected") }
 
 // fakeFactory wires new fakeAdapters and remembers them by project path.

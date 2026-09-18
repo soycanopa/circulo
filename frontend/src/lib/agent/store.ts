@@ -59,14 +59,14 @@ interface AppStore {
   addProject: (path: string, mode: "managed" | "attach", url?: string) => Promise<void>;
   removeProject: (projectID: string) => Promise<void>;
   setActiveProject: (projectID: string | null) => void;
-  newSession: (projectID: string, title?: string) => Promise<string | null>;
+  newSession: (projectID: string, title?: string, branch?: string) => Promise<string | null>;
   openSession: (projectID: string, sessionID: string) => Promise<void>;
   closeSession: () => void;
   deleteSession: (projectID: string, sessionID: string) => Promise<void>;
   loadMeta: (projectID: string) => Promise<void>;
   setSelectedAgent: (a: string) => void;
   setSelectedModel: (m: string) => void;
-  sendPrompt: (text: string) => Promise<void>;
+  sendPrompt: (text: string, target?: { projectID: string; branch?: string }) => Promise<void>;
   abort: () => Promise<void>;
   replyPermission: (permissionID: string, response: "once" | "always" | "reject") => Promise<void>;
   /** Answer a pending form (question tool): field key → value(s). */
@@ -161,9 +161,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  newSession: async (projectID, title) => {
+  newSession: async (projectID, title, branch) => {
     try {
-      const session = await api.createSession(projectID, title);
+      const session = await api.createSession(projectID, title, branch);
       await get().refreshSessions(projectID);
       await get().openSession(projectID, session.id);
       return session.id;
@@ -265,13 +265,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return { selectedModel, selectedVariant: keep ? s.selectedVariant : "" };
     }),
 
-  sendPrompt: async (text) => {
-    const { activeProjectId, activeSessionId, selectedAgent, selectedModel, selectedVariant } =
-      get();
+  sendPrompt: async (text, target) => {
+    let { activeProjectId, activeSessionId } = get();
+    const { selectedAgent, selectedModel, selectedVariant } = get();
     if (!activeProjectId || !text.trim()) return;
+    // A new session may target a different project (composer picker): the
+    // active project follows so the sidebar and context stay coherent.
+    if (!activeSessionId && target?.projectID && target.projectID !== activeProjectId) {
+      activeProjectId = target.projectID;
+      set({ activeProjectId });
+    }
     let sessionID = activeSessionId;
     if (!sessionID) {
-      sessionID = await get().newSession(activeProjectId);
+      sessionID = await get().newSession(activeProjectId, undefined, target?.branch);
       if (!sessionID) return;
     }
     const clientID = `client_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;

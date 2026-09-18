@@ -115,6 +115,21 @@ func (c *Client) ReplyPermissionV2(ctx context.Context, sessionID, requestID, de
 	return c.post(ctx, path, map[string]string{"decision": decision}, nil)
 }
 
+// VcsInfoV2 returns the git state of the server's directory (the project
+// root for managed servers): provider + current/default branch.
+func (c *Client) VcsInfoV2(ctx context.Context) (VcsInfo, error) {
+	var out VcsInfo
+	err := c.get(ctx, "/api/vcs", &out)
+	return out, err
+}
+
+// BranchesV2 lists every branch of the server's repository.
+func (c *Client) BranchesV2(ctx context.Context) ([]string, error) {
+	var out []string
+	err := c.get(ctx, "/api/vcs/branch", &out)
+	return out, err
+}
+
 // ReplyFormV2 answers a pending form (the question tool's blocking surface):
 // POST /api/session/{id}/form/{formID}/reply with {answer: {key: value}}.
 // Verified live on 2.0.8 — 204, then form.replied broadcasts and the tool

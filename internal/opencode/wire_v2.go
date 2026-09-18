@@ -203,6 +203,15 @@ func rawErrorText(raw json.RawMessage) string {
 	return ""
 }
 
+// VcsInfo is GET /api/vcs — git provider and branch state of the project.
+type VcsInfo struct {
+	Provider string `json:"provider,omitempty"`
+	Branch   struct {
+		Current string `json:"current"`
+		Default string `json:"default,omitempty"`
+	} `json:"branch"`
+}
+
 // V2Event is one frame of GET /api/event. The event name travels in `type`
 // and the payload is the raw JSON in `data` (parsed per type by translate).
 type V2Event struct {

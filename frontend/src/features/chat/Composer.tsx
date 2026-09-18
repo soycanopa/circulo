@@ -10,6 +10,9 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  FolderGit2,
+  Folder,
+  GitBranch,
   Pencil,
   Search,
   Square,
@@ -28,7 +31,9 @@ import type {
   FormInfo,
   ModelInfo,
   PermissionRequest,
+  ProjectVcs,
 } from "@/lib/agent/protocol";
+import { api } from "@/lib/agent/api";
 
 /** Shared floating-card elevation (matches the composer box shadow). */
 const cardFloat =
@@ -735,6 +740,124 @@ function AgentPicker() {
   );
 }
 
+/** Project/branch strip shown under the composer while creating a session
+ *  (owner call): pick the target folder among linked projects, see whether
+ *  it is a local git repo, and pin the branch the agent should work on. */
+function NewSessionTarget({
+  selectedId,
+  onSelect,
+  branch,
+  onBranch,
+}: {
+  selectedId: string;
+  onSelect: (projectID: string) => void;
+  branch: string;
+  onBranch: (branch: string) => void;
+}) {
+  const projects = useAppStore((s) => s.projects);
+  const [vcs, setVcs] = useState<ProjectVcs | null | undefined>(undefined);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [projOpen, setProjOpen] = useState(false);
+  const [branchOpen, setBranchOpen] = useState(false);
+
+  const selected = projects.find((p) => p.id === selectedId);
+
+  useEffect(() => {
+    let alive = true;
+    setVcs(undefined);
+    setBranches([]);
+    api
+      .vcs(selectedId)
+      .then((v) => {
+        if (!alive) return;
+        setVcs(v);
+        if (v.isRepo) api.branches(selectedId).then((b) => alive && setBranches(b)).catch(() => undefined);
+      })
+      .catch(() => alive && setVcs(null));
+    return () => {
+      alive = false;
+    };
+  }, [selectedId]);
+
+  const chip =
+    "inline-flex h-6 min-w-0 items-center gap-1 rounded-[6px] px-1.5 text-[12px] font-medium text-text-primary transition-colors duration-100 bg-bg-code hover:bg-bg-hover";
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <Popover open={projOpen} onOpenChange={setProjOpen}>
+        <PopoverTrigger asChild>
+          <button type="button" aria-expanded={projOpen} className={chip}>
+            <Folder className="size-3 shrink-0 text-text-tertiary" />
+            <span className="max-w-48 truncate">{selected ? selected.path.split("/").filter(Boolean).pop() : "Project"}</span>
+            <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" side="top" sideOffset={8} className="w-[320px] p-1">
+          {projects.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => {
+                onSelect(p.id);
+                setProjOpen(false);
+              }}
+              className="relative z-10 flex w-full items-center gap-2 rounded-[6px] px-2 py-1.5 text-left transition-colors duration-100 hover:bg-bg-hover"
+            >
+              <FolderGit2 className="size-3.5 shrink-0 text-text-tertiary" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[12.5px] font-medium text-text-primary">
+                  {p.path.split("/").filter(Boolean).pop()}
+                </span>
+                <span className="block truncate text-[11px] text-text-tertiary">{p.path}</span>
+              </span>
+              {p.id === selectedId && <Check className="size-3.5 shrink-0 text-text-primary" />}
+            </button>
+          ))}
+        </PopoverContent>
+      </Popover>
+
+      {vcs === undefined ? null : vcs?.isRepo ? (
+        <>
+          <span
+            className="inline-flex h-6 items-center gap-1 rounded-[6px] bg-bg-code px-1.5 text-[12px] font-medium text-text-secondary"
+            title="Local git repository"
+          >
+            <GitBranch className="size-3 shrink-0 text-success" />
+            Local repo
+          </span>
+          <Popover open={branchOpen} onOpenChange={setBranchOpen}>
+            <PopoverTrigger asChild>
+              <button type="button" aria-expanded={branchOpen} className={chip}>
+                <span className="max-w-40 truncate">branch: {branch || vcs.branch || "default"}</span>
+                <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" side="top" sideOffset={8} className="max-h-[280px] w-[240px] overflow-y-auto p-1">
+              {branches.map((b) => (
+                <button
+                  key={b}
+                  type="button"
+                  onClick={() => {
+                    onBranch(b);
+                    setBranchOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-[6px] px-2 py-1.5 text-left transition-colors duration-100 hover:bg-bg-hover"
+                >
+                  <GitBranch className="size-3 shrink-0 text-text-tertiary" />
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-text-primary">{b}</span>
+                  {(branch || vcs.branch) === b && <Check className="size-3.5 shrink-0 text-text-primary" />}
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
+        </>
+      ) : (
+        <span className="text-[12px] text-text-tertiary">No git repository</span>
+      )}
+    </div>
+  );
+}
+
 export function Composer() {
   const [text, setText] = useState("");
   const send = useAppStore((s) => s.sendPrompt);
@@ -748,6 +871,12 @@ export function Composer() {
     activeProjectId && activeSessionId ? chat.sessions[activeSessionId] : undefined;
   const busy = session?.status === "busy" || session?.status === "retry";
 
+  // New-session targeting (owner call): with multiple linked projects, the
+  // composer picks which folder — and which branch — the session lands in.
+  const isNewSession = !activeSessionId;
+  const [targetProjectId, setTargetProjectId] = useState(activeProjectId ?? "");
+  const [targetBranch, setTargetBranch] = useState("");
+
   // Auto-grow up to ~6 lines.
   useEffect(() => {
     const el = taRef.current;
@@ -760,7 +889,11 @@ export function Composer() {
     const t = text.trim();
     if (!t || !activeProjectId) return;
     setText("");
-    void send(t);
+    const targeting =
+      isNewSession && ((targetProjectId && targetProjectId !== activeProjectId) || targetBranch)
+        ? { projectID: targetProjectId || activeProjectId, branch: targetBranch || undefined }
+        : undefined;
+    void send(t, targeting);
   };
 
   return (
@@ -824,6 +957,16 @@ export function Composer() {
             )}
           </div>
         </div>
+        {isNewSession && activeProjectId && (
+          <div className="pt-2">
+            <NewSessionTarget
+              selectedId={targetProjectId || activeProjectId}
+              onSelect={setTargetProjectId}
+              branch={targetBranch}
+              onBranch={setTargetBranch}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -3,6 +3,7 @@
 import type {
   HydratedMessage,
   Meta,
+  ProjectVcs,
   ProjectView,
   PromptRequest,
   Session,
@@ -41,11 +42,21 @@ export const api = {
   listSessions: (projectID: string) =>
     request<Session[]>(`/projects/${projectID}/sessions`),
 
-  createSession: (projectID: string, title?: string) =>
+  createSession: (projectID: string, title?: string, branch?: string) =>
     request<Session>(`/projects/${projectID}/sessions`, {
       method: "POST",
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, branch }),
     }),
+
+  vcs: (projectID: string) => request<ProjectVcs>(`/projects/${projectID}/vcs`),
+
+  branches: (projectID: string) => request<string[]>(`/projects/${projectID}/branches`),
+
+  setBranch: (projectID: string, sessionID: string, branch: string) =>
+    request<{ ok: boolean }>(
+      `/projects/${projectID}/sessions/${sessionID}/branch`,
+      { method: "POST", body: JSON.stringify({ branch }) },
+    ),
 
   renameSession: (projectID: string, sessionID: string, title: string) =>
     request<{ ok: boolean }>(`/projects/${projectID}/sessions/${sessionID}`, {

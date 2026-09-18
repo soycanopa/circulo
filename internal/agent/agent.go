@@ -55,6 +55,12 @@ type Adapter interface {
 	// answer maps field keys to submitted values.
 	ReplyForm(ctx context.Context, sessionID, formID string, answer map[string]any) error
 
+	// Vcs reports the project's git state; Branches lists its branches.
+	Vcs(ctx context.Context) protocol.ProjectVcs
+	Branches(ctx context.Context) []string
+	// SetBranch pins the branch the agent should work on for the session.
+	SetBranch(ctx context.Context, sessionID, branch string) error
+
 	// Meta returns composer picker data (agents, models).
 	Meta(ctx context.Context) (protocol.Meta, error)
 }

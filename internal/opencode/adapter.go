@@ -483,6 +483,51 @@ func (a *Adapter) ReplyPermission(ctx context.Context, sessionID, permissionID, 
 	return c.ReplyPermissionV2(ctx, sessionID, permissionID, response)
 }
 
+// Vcs reports the project's git state (isRepo gates the composer's branch
+// picker). Any failure degrades to "not a repo" — never blocks a session.
+func (a *Adapter) Vcs(ctx context.Context) protocol.ProjectVcs {
+	c, err := a.clientOrErr()
+	if err != nil {
+		return protocol.ProjectVcs{}
+	}
+	info, err := c.VcsInfoV2(ctx)
+	if err != nil || info.Provider == "" {
+		return protocol.ProjectVcs{}
+	}
+	return protocol.ProjectVcs{
+		IsRepo:        true,
+		Provider:      info.Provider,
+		Branch:        info.Branch.Current,
+		DefaultBranch: info.Branch.Default,
+	}
+}
+
+// Branches lists the project repository's branches (empty when not a repo).
+func (a *Adapter) Branches(ctx context.Context) []string {
+	c, err := a.clientOrErr()
+	if err != nil {
+		return nil
+	}
+	out, err := c.BranchesV2(ctx)
+	if err != nil {
+		return nil
+	}
+	return out
+}
+
+// SetBranch pins the branch the agent should work on for this session — v2
+// has no checkout endpoint, so it travels as a session instruction the model
+// follows (same verified path as the format instruction).
+func (a *Adapter) SetBranch(ctx context.Context, sessionID, branch string) error {
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.PutInstructionV2(ctx, sessionID, "circulogo-branch",
+		"Work on the git branch \""+branch+"\" for this whole session: switch to "+
+			"it first if needed (git switch "+branch+"), and keep every change on it.")
+}
+
 // ReplyForm answers a pending form (question tool) via the form reply API.
 func (a *Adapter) ReplyForm(ctx context.Context, sessionID, formID string, answer map[string]any) error {
 	c, err := a.clientOrErr()

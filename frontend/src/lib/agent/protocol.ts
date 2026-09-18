@@ -199,6 +199,14 @@ export interface PermissionResolvedEvent {
   response: string;
 }
 
+/** Git state of a project's folder (gates the branch picker). */
+export interface ProjectVcs {
+  isRepo: boolean;
+  provider?: string;
+  branch?: string;
+  defaultBranch?: string;
+}
+
 /** One choice of a select-style form field (question tool). */
 export interface FormOption {
   value: string;
