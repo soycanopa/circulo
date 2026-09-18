@@ -91,6 +91,15 @@
 - **`session.execution.failed` (live, `testdata/v2-execution-failed.sse`)**: data is
   `{sessionID, error:{type, message}}` (`status` absent for non-HTTP errors — e.g.
   `provider.no-route` from a bad model pin); fires promptly on a fresh session.
+- **Session instructions (live 2.0.8)**: the config `"instructions"` field is accepted
+  but **not loaded** (v2 docs: "use AGENTS.md"), and there is no config env/flag on
+  `serve`. The working app-owned path is the experimental session instructions-entries
+  API — `PUT /api/experimental/session/{id}/instructions/entries/{key}` body `{value}`,
+  listed under GET …/entries. Verified live: an attached entry appears in the turn's
+  `session.instructions.updated` assembly (`api/<key>` next to the `core/*` entries)
+  and reaches the model; a control session without it answered unstructured. The
+  adapter attaches a markdown-format entry (`circulogo-format`) on every session it
+  creates, best-effort (experimental surface — degraded UX, not a failed session).
 - Noise filter for translate: mcp/integration/instructions/shell/websearch/command/
   skill/provider/model `*.updated`, `mcp.status.changed`, `session.model.selected`.
 - Fixtures captured: `testdata/v2-session-lifecycle.sse`, `testdata/v2-turn-basic.sse`,
