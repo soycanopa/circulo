@@ -156,6 +156,8 @@ export interface PartDeltaEvent {
   delta: string;
 }
 
+/** v2 note: updates may be partial patches (session.renamed carries only
+ * id+title); reducers merge them and never create from an empty patch. */
 export interface SessionUpdatedEvent {
   projectID: string;
   session: Session;

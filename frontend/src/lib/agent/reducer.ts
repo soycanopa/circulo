@@ -111,14 +111,24 @@ export function applyEvent(state: ChatState, env: Envelope): ChatState {
   switch (env.type) {
     case "session.updated": {
       const p = env.payload as SessionUpdatedEvent;
-      if (!state.sessions[p.session.id]) {
+      const prev = state.sessions[p.session.id];
+      if (!prev) {
+        // v2 partial patches (session.renamed carries only the title) must
+        // not create sessions with empty metadata: ignore them until the
+        // full session arrives (created event or hydration).
+        if (!p.session.timeCreated) return state;
         const next = { sessions: { ...state.sessions } };
         ensureSession(next, p.session);
         return next;
       }
-      // Existing session: update in place (new object for referential equality).
-      const prev = state.sessions[p.session.id];
-      const s: SessionState = { ...prev, session: p.session };
+      // Existing session: merge-patch — v2 patches (renamed) carry only the
+      // changed fields; empty strings and zero times keep existing values.
+      const session = { ...prev.session };
+      if (p.session.title) session.title = p.session.title;
+      if (p.session.timeCreated) session.timeCreated = p.session.timeCreated;
+      if (p.session.timeUpdated) session.timeUpdated = p.session.timeUpdated;
+      if (p.session.directory) session.directory = p.session.directory;
+      const s: SessionState = { ...prev, session };
       return { sessions: { ...state.sessions, [p.session.id]: s } };
     }
 

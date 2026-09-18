@@ -341,10 +341,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
         set((s) => {
           const list = s.sessionsByProject[p.projectID] ?? [];
           const idx = list.findIndex((x) => x.id === p.session.id);
-          const next =
-            idx === -1
-              ? [p.session, ...list]
-              : list.map((x, i) => (i === idx ? p.session : x));
+          if (idx === -1) {
+            // v2 partial patches never create list entries: wait for the
+            // authoritative session (created event or list refresh).
+            if (!p.session.timeCreated) return s;
+            return {
+              sessionsByProject: {
+                ...s.sessionsByProject,
+                [p.projectID]: [p.session, ...list],
+              },
+            };
+          }
+          // Merge-patch: keep fields the patch does not carry.
+          const prev = list[idx];
+          const merged = {
+            ...prev,
+            title: p.session.title || prev.title,
+            timeCreated: p.session.timeCreated || prev.timeCreated,
+            timeUpdated: p.session.timeUpdated || prev.timeUpdated,
+          };
+          const next = list.map((x, i) => (i === idx ? merged : x));
           return { sessionsByProject: { ...s.sessionsByProject, [p.projectID]: next } };
         });
         break;
