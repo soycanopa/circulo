@@ -9,6 +9,7 @@ import { SidebarHeader, SidebarFooter } from "@/features/projects/SidebarSection
 import { SessionsSection } from "@/features/sessions/SessionsSection";
 import { Button } from "@/components/ui/button";
 import { TerminalPanel } from "@/features/terminal/TerminalPanel";
+import { GlowPixels } from "@/components/layout/GlowPixels";
 import { connectSse, type SseHandle } from "@/lib/agent/sse";
 import { useAppStore } from "@/lib/agent/store";
 import { useShortcuts } from "@/lib/useShortcuts";
@@ -124,14 +125,16 @@ export default function App() {
           informational strips only — the chat stays mounted while the
           adapter starts, retries or recovers (docs/flow.md §9). */}
       {activeProject && <ProjectBanner project={activeProject} />}
-      <div className="flex min-h-0 flex-1 flex-col">
-        {session ? (
-          <Transcript session={session} />
-        ) : (
-          <GeneralEmptyState hasProjects={projects.length > 0} />
-        )}
-        {/* Terminal zone: below the chat area, ABOVE the composer (owner
-            call). Grows/shrinks with a grid-rows animation. */}
+      {/* Three stacked surfaces: chat card, terminal card, composer card —
+          the terminal lives OUTSIDE the chat card (owner call). */}
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[18px] bg-bg-main">
+          {session ? (
+            <Transcript session={session} />
+          ) : (
+            <GeneralEmptyState hasProjects={projects.length > 0} />
+          )}
+        </div>
         {activeProject && (
           <div
             className={cn(
@@ -147,7 +150,10 @@ export default function App() {
             </div>
           </div>
         )}
-        <Composer />
+        <div className="circulo-glow relative shrink-0 overflow-hidden rounded-[18px] bg-bg-main">
+          <GlowPixels />
+          <Composer />
+        </div>
       </div>
     </AppShell>
   );
