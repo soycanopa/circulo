@@ -93,7 +93,7 @@
 | 2+3 | `translate_v2.go` → neutral protocol; adapter swapped to the v2 client; `WaitReady` (boot password → Basic auth → /api/info); v1 code deleted | ✅ — neutral contract unchanged, `protocol.ts` needed no field changes |
 | 4 | Reducer/store merge-patch for partial `session.updated` (v2 renamed patches) + tests | ✅ |
 | 5 | Docs: TRD pin → 2.0.x, this doc status, fixture headers | ✅ |
-| 6 | CI-lite ✅ + owner E2E manual pass (incl. permission + execution-failed captures) | gate |
+| 6 | CI-lite ✅ + owner E2E manual pass (incl. permission + execution-failed captures) | gate — **handoff: [opencode-v2-phase6-e2e.md](opencode-v2-phase6-e2e.md)** |
 
 ## 3. Decisions already taken by the owner
 - Update everything to v2 (2026-09-18). v1 CLI stays installed for daily use until the
