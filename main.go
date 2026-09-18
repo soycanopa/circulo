@@ -20,6 +20,26 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// lifecycle implements the Wails service hooks for app-wide teardown. The
+// deferred orch.Shutdown only runs if app.Run() returns normally; Wails
+// guarantees ServiceShutdown on window close / Cmd+Q paths once ServiceStartup
+// ran (services are notified in reverse registration order). Both funnel into
+// orchestrator.Shutdown, which is idempotent.
+type lifecycle struct {
+	orch *orchestrator.Orchestrator
+}
+
+func (l *lifecycle) ServiceStartup(context.Context, application.ServiceOptions) error {
+	return nil
+}
+
+// ServiceShutdown takes no context parameter — Wails silently skips the hook
+// otherwise (AGENTS.md Wails v3 traps).
+func (l *lifecycle) ServiceShutdown() error {
+	l.orch.Shutdown()
+	return nil
+}
+
 func main() {
 	// Composition root: the only place that wires concrete adapters to the
 	// orchestrator (AGENTS.md architecture invariants).
@@ -76,6 +96,9 @@ func main() {
 				// Same-origin streaming API for the webview (docs/trd.md §4).
 				Route: "/agent",
 			}),
+			// Registered last → shut down first: adapters (and their managed
+			// opencode serve processes) die before the transports unwind.
+			application.NewService(&lifecycle{orch: orch}),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

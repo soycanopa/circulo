@@ -279,10 +279,12 @@ func TestShutdownStopsAllAdapters(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+	// Shutdown is idempotent (main defers it AND Wails ServiceShutdown calls
+	// it): a second invocation must not stop the adapters again.
 	o.Shutdown()
 	for p, a := range ff.adapters {
-		if a.stops == 0 {
-			t.Errorf("adapter for %s was not stopped", p)
+		if a.stops != 1 {
+			t.Errorf("adapter for %s was stopped %d times, want exactly 1", p, a.stops)
 		}
 	}
 }

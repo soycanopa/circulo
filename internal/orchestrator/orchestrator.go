@@ -29,13 +29,14 @@ type Orchestrator struct {
 	store    *store.Store
 	factory  AdapterFactory
 
-	mu         sync.RWMutex
-	projects   map[string]*project
-	order      []string
-	subs       map[int]*subscriber
-	nextSubID  int
-	replay     []protocol.Envelope // ring of recent events for late subscribers
-	startSeq   []string            // projects pending Start, in settings order
+	mu           sync.RWMutex
+	projects     map[string]*project
+	order        []string
+	subs         map[int]*subscriber
+	nextSubID    int
+	replay       []protocol.Envelope // ring of recent events for late subscribers
+	startSeq     []string            // projects pending Start, in settings order
+	shutdownOnce sync.Once
 }
 
 type project struct {
@@ -368,16 +369,20 @@ func (e *NotReadyError) Error() string {
 }
 
 // Shutdown stops every adapter (app quit — NFR-4: no orphaned processes).
+// Idempotent: both the Wails ServiceShutdown hook and main's defer invoke it,
+// whichever path the app exit takes.
 func (o *Orchestrator) Shutdown() {
-	o.mu.RLock()
-	adapters := make([]agent.Adapter, 0, len(o.projects))
-	for _, p := range o.projects {
-		if p.adapter != nil {
-			adapters = append(adapters, p.adapter)
+	o.shutdownOnce.Do(func() {
+		o.mu.RLock()
+		adapters := make([]agent.Adapter, 0, len(o.projects))
+		for _, p := range o.projects {
+			if p.adapter != nil {
+				adapters = append(adapters, p.adapter)
+			}
 		}
-	}
-	o.mu.RUnlock()
-	for _, a := range adapters {
-		_ = a.Stop(context.Background())
-	}
+		o.mu.RUnlock()
+		for _, a := range adapters {
+			_ = a.Stop(context.Background())
+		}
+	})
 }
