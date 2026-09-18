@@ -74,4 +74,27 @@ describe("user bubble reproduction", () => {
     for (const e of userEcho) chat = applyEvent(chat, e);
     expect(userTexts(chat.sessions[SID].messages)).toEqual(["Hola"]);
   });
+
+  it("hydration replaces a stale running tool part (lost success frame)", () => {
+    let chat = applyEvent(emptyChatState, sessionUp);
+    chat = applyEvent(chat, env("part.updated", {
+      projectID: "probe",
+      sessionID: SID,
+      messageID: "msg_a",
+      part: {
+        id: "call_1", type: "tool", callID: "call_1", tool: "webfetch",
+        state: { status: "running", input: { url: "https://x.io" } },
+      },
+    }));
+    // the idle history refetch carries the server's authoritative state
+    chat = mergeHydrated(chat, SID, [{
+      info: { id: "msg_a", sessionID: SID, role: "assistant", created: 1, completed: 2 },
+      parts: [{
+        id: "call_1", type: "tool", callID: "call_1", tool: "webfetch",
+        state: { status: "completed", input: { url: "https://x.io" }, output: "done" },
+      }],
+    }]);
+    const assistant = chat.sessions[SID].messages.find((m) => m.info.id === "msg_a");
+    expect(assistant?.parts[0].state?.status).toBe("completed");
+  });
 });

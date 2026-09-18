@@ -129,7 +129,10 @@ export default function ThinkingState({
   liveReasoningId?: string;
 }) {
   const rows = buildRows(parts, streaming, liveReasoningId ?? "");
-  const working = rows.some((r) => r.status === "running" || r.status === "pending");
+  // Working requires the turn to still be streaming: a settled turn must
+  // never keep the loader header spinning over a stale running row (a lost
+  // tool frame heals via the idle history refetch instead).
+  const working = streaming && rows.some((r) => r.status === "running" || r.status === "pending");
   const toolCount = rows.filter((r) => r.kind !== "reasoning").length;
   const searching = rows.some((r) => r.kind === "search" && (r.status === "running" || r.status === "pending"));
   const coding = !searching && rows.some((r) => r.kind === "code" && (r.status === "running" || r.status === "pending"));

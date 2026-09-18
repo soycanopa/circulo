@@ -294,11 +294,12 @@ export function mergeHydrated(
     }
     const m = s.messages[idx];
     const info = m.info.created === 0 && h.info.created ? h.info : m.info;
-    const parts = [...m.parts];
-    for (const p of h.parts) {
-      if (!parts.some((x) => x.id === p.id)) parts.push(p);
-    }
-    s.messages[idx] = { ...m, info, parts };
+    // Hydration is server truth: REPLACE parts we already hold (heals a
+    // live tool row stuck on running after a lost success frame) and keep
+    // live-only parts the server has not persisted yet.
+    const byId = new Map(m.parts.map((p) => [p.id, p]));
+    for (const p of h.parts) byId.set(p.id, p);
+    s.messages[idx] = { ...m, info, parts: [...byId.values()] };
   }
   return { sessions: { ...state.sessions, [sessionID]: s } };
 }
