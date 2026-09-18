@@ -1,11 +1,12 @@
 /**
- * Session list — replica of the Circulo Paper design: two-row cards
- * (title + folder/relative-time), selected = bg-accent, busy spinner,
- * hover actions (rename / delete), date-grouped.
+ * Session list — 1:1 replica of the Circulo Paper sidebar: one flat list
+ * across all projects grouped Today / Earlier (collapsible), two-line rows
+ * (title, then folder + project name · relative time), busy spinner on the
+ * running session, hover rename/delete (FR-7).
  */
 
 import { useMemo, useState } from "react";
-import { Loader2, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, FolderPlus, Folder, Loader2, Pencil, Trash2 } from "lucide-react";
 
 import {
   AlertDialog,
@@ -19,36 +20,93 @@ import {
 } from "@/components/ui/alert-dialog";
 import { api } from "@/lib/agent/api";
 import { useAppStore } from "@/lib/agent/store";
-import { groupByDate } from "./groupByDate";
+import { groupByDate, type SessionGroup } from "./groupByDate";
 import { timeAgo } from "./timeAgo";
-import type { Session } from "@/lib/agent/protocol";
 import { cn } from "@/lib/utils";
+import type { Session } from "@/lib/agent/protocol";
+
+/** One row = a session plus the project it belongs to. */
+interface Row extends Session {
+  projectID: string;
+  projectName: string;
+}
+
+function basename(path: string): string {
+  return path.split("/").filter(Boolean).pop() ?? path;
+}
+
+function SectionHeader({
+  group,
+  collapsed,
+  onToggle,
+  onNewSession,
+}: {
+  group: SessionGroup<Row>;
+  collapsed: boolean;
+  onToggle: () => void;
+  onNewSession?: () => void;
+}) {
+  return (
+    <div className="flex w-full items-center py-2">
+      <button
+        type="button"
+        className="flex items-center gap-1 rounded-md text-left"
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+      >
+        <div className="text-xs font-medium leading-[14px] text-text-secondary">{group.label}</div>
+        <ChevronDown
+          className={cn(
+            "size-3 shrink-0 text-text-secondary transition-transform",
+            collapsed && "-rotate-90",
+          )}
+          strokeWidth={2}
+        />
+      </button>
+      <div className="grow" />
+      {group.key === "today" && onNewSession && (
+        <button
+          type="button"
+          aria-label="New session"
+          title="New session"
+          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-xs text-text-secondary hover:bg-bg-hover"
+          onClick={onNewSession}
+        >
+          <FolderPlus className="size-3.5" strokeWidth={2} />
+        </button>
+      )}
+    </div>
+  );
+}
 
 function SessionRow({
-  projectId,
-  projectName,
-  session,
+  row,
+  active,
+  busy,
 }: {
-  projectId: string;
-  projectName: string;
-  session: Session;
+  row: Row;
+  active: boolean;
+  busy: boolean;
 }) {
-  const activeSessionId = useAppStore((s) => s.activeSessionId);
   const openSession = useAppStore((s) => s.openSession);
-  const chat = useAppStore((s) => s.chat);
+  const setActiveProject = useAppStore((s) => s.setActiveProject);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(session.title);
+  const [draft, setDraft] = useState(row.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const state = chat.sessions[session.id];
-  const busy = state?.status === "busy" || state?.status === "retry";
-  const active = activeSessionId === session.id;
 
   const saveTitle = async () => {
     setEditing(false);
-    if (draft.trim() && draft !== session.title) {
-      await api.renameSession(projectId, session.id, draft.trim()).catch(() => undefined);
-      await useAppStore.getState().refreshSessions(projectId);
+    if (draft.trim() && draft !== row.title) {
+      await api.renameSession(row.projectID, row.id, draft.trim()).catch(() => undefined);
+      await useAppStore.getState().refreshSessions(row.projectID);
     }
+  };
+
+  const open = () => {
+    // Cross-project row: switching project clears the active session, then
+    // openSession hydrates the target one.
+    setActiveProject(row.projectID);
+    void openSession(row.projectID, row.id);
   };
 
   return (
@@ -56,12 +114,12 @@ function SessionRow({
       role="button"
       tabIndex={0}
       className={cn(
-        "group flex w-full cursor-pointer flex-col gap-[2px] rounded-md px-[10px] py-2 text-left outline-none hover:bg-muted/60 focus-visible:ring-1 focus-visible:ring-ring",
+        "group flex cursor-pointer flex-col gap-[2px] rounded-md px-2 py-1 text-left outline-none",
         active && "bg-bg-hover",
       )}
-      onClick={() => void openSession(projectId, session.id)}
+      onClick={() => void open()}
       onKeyDown={(e) => {
-        if (e.key === "Enter") void openSession(projectId, session.id);
+        if (e.key === "Enter") void open();
       }}
     >
       {editing ? (
@@ -82,18 +140,15 @@ function SessionRow({
         <>
           <div className="flex items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-base font-medium leading-[18px] text-text-primary line-clamp-1">
-              {session.title || "Untitled"}
+              {row.title || "Untitled"}
             </span>
-            <span className="shrink-0 text-xs text-text-tertiary">
-          {timeAgo(session.timeUpdated || session.timeCreated)}
-        </span>
-        <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+            <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
               <button
                 aria-label="Rename session"
                 className="rounded p-0.5 text-muted-foreground hover:text-foreground"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setDraft(session.title);
+                  setDraft(row.title);
                   setEditing(true);
                 }}
               >
@@ -110,11 +165,19 @@ function SessionRow({
                 <Trash2 className="size-3" />
               </button>
             </span>
-            {busy && <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />}
+            {busy && (
+              <Loader2 className="size-3 shrink-0 animate-spin text-text-secondary" />
+            )}
           </div>
-          <div className="flex items-center gap-[6px]">
-            <span className="min-w-0 flex-1 truncate text-sm text-text-tertiary">
-              {projectName}
+          <div className="flex items-center justify-between gap-[6px]">
+            <span className="flex min-w-0 items-center gap-[6px]">
+              <Folder className="size-3 shrink-0 text-text-tertiary" />
+              <span className="min-w-0 truncate text-sm/tight text-text-tertiary">
+                {row.projectName}
+              </span>
+            </span>
+            <span className="shrink-0 text-xs leading-[14px] text-text-tertiary">
+              {timeAgo(row.timeUpdated || row.timeCreated)}
             </span>
           </div>
         </>
@@ -124,7 +187,7 @@ function SessionRow({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete session?</AlertDialogTitle>
             <AlertDialogDescription>
-              “{session.title}” and its history on the agent server will be removed.
+              “{row.title}” and its history on the agent server will be removed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -133,7 +196,7 @@ function SessionRow({
               onClick={(e) => {
                 e.stopPropagation();
                 setConfirmDelete(false);
-                void useAppStore.getState().deleteSession(projectId, session.id);
+                void useAppStore.getState().deleteSession(row.projectID, row.id);
               }}
             >
               Delete
@@ -146,43 +209,71 @@ function SessionRow({
 }
 
 export function SessionsSection() {
-  const activeProjectId = useAppStore((s) => s.activeProjectId);
   const sessionsByProject = useAppStore((s) => s.sessionsByProject);
+  const projects = useAppStore((s) => s.projects);
+  const activeProjectId = useAppStore((s) => s.activeProjectId);
+  const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const chat = useAppStore((s) => s.chat);
   const search = useAppStore((s) => s.sessionSearch);
-  const activeSessions = useMemo(() => {
-    const list = activeProjectId ? sessionsByProject[activeProjectId] ?? [] : [];
-    const q = search.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter((x) => (x.title || "").toLowerCase().includes(q));
-  }, [activeProjectId, sessionsByProject, search]);
-  const groups = useMemo(() => groupByDate(activeSessions), [activeSessions]);
-  const activeProject = useAppStore((s) => s.projects.find((p) => p.id === activeProjectId));
-  const activeProjectName = activeProject
-    ? activeProject.path.split("/").filter(Boolean).pop() ?? activeProject.path
-    : "";
+  const newSession = useAppStore((s) => s.newSession);
+  const [collapsed, setCollapsed] = useState<Record<"today" | "earlier", boolean>>({
+    today: false,
+    earlier: false,
+  });
 
-  if (!activeProjectId) return null;
+  // One flat list across every project (Circulo sidebar has no project
+  // switcher: each row carries its project name).
+  const rows = useMemo(() => {
+    const nameOf = new Map(projects.map((p) => [p.id, basename(p.path)]));
+    const out: Row[] = [];
+    for (const [pid, list] of Object.entries(sessionsByProject)) {
+      const projectName = nameOf.get(pid) ?? pid;
+      for (const session of list) {
+        out.push({ ...session, projectID: pid, projectName });
+      }
+    }
+    const q = search.trim().toLowerCase();
+    return out
+      .filter((r) => !q || (r.title || "").toLowerCase().includes(q))
+      .sort((a, b) => (b.timeUpdated || b.timeCreated) - (a.timeUpdated || a.timeCreated));
+  }, [sessionsByProject, projects, search]);
+
+  const groups = useMemo(() => groupByDate(rows), [rows]);
+
+  const newChat = () => {
+    const pid = activeProjectId ?? projects[0]?.id;
+    if (pid) void newSession(pid);
+  };
+
+  if (!activeProjectId && projects.length === 0) return null;
+
   return (
-    <div>
-      <div className="px-2 pb-1 pt-4 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
-        Sessions
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3">
       {groups.length === 0 && (
-        <div className="px-2 py-2 text-[12.5px] text-muted-foreground">
+        <div className="px-2 py-2 text-sm/tight text-text-tertiary">
           No sessions yet — start a chat.
         </div>
       )}
       {groups.map((g) => (
-        <div key={g.label}>
-          <div className="px-2 pb-0.5 pt-2 text-[11px] text-text-tertiary">{g.label}</div>
-          {g.items.map((s) => (
-            <SessionRow
-              key={s.id}
-              projectId={activeProjectId}
-              projectName={activeProjectName}
-              session={s}
-            />
-          ))}
+        <div key={g.key} className="flex flex-col">
+          <SectionHeader
+            group={g}
+            collapsed={collapsed[g.key]}
+            onToggle={() => setCollapsed((c) => ({ ...c, [g.key]: !c[g.key] }))}
+            onNewSession={newChat}
+          />
+          {!collapsed[g.key] &&
+            g.items.map((row) => (
+              <SessionRow
+                key={row.id}
+                row={row}
+                active={activeSessionId === row.id}
+                busy={
+                  chat.sessions[row.id]?.status === "busy" ||
+                  chat.sessions[row.id]?.status === "retry"
+                }
+              />
+            ))}
         </div>
       ))}
     </div>

@@ -11,7 +11,6 @@ import {
   Square,
 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -21,7 +20,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/lib/agent/store";
-import { cn } from "@/lib/utils";
 import type { PermissionRequest } from "@/lib/agent/protocol";
 
 function PermissionCard({ perm }: { perm: PermissionRequest }) {
@@ -69,19 +67,17 @@ function PermissionCard({ perm }: { perm: PermissionRequest }) {
 
 function ModelPicker() {
   const models = useAppStore((s) => s.metaModels);
-  const selected = useAppStore((s) => s.selectedModel);
   const setSelected = useAppStore((s) => s.setSelectedModel);
-  const current = models.find((m) => `${m.provider}:${m.id}` === selected);
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex h-[28px] items-center gap-[6px] rounded-md border border-border bg-bg-code px-[10px] text-sm text-text-primary hover:bg-muted"
+          className="flex items-center gap-[6px] rounded-md px-2 py-1 text-sm/tight text-text-secondary hover:bg-muted"
         >
-          {current?.name || current?.id || "model"}
-          <ChevronDown className="size-3 text-text-tertiary" />
+          Model
+          <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-80 overflow-auto">
@@ -102,7 +98,6 @@ function ModelPicker() {
 
 function AgentPicker() {
   const agents = useAppStore((s) => s.metaAgents);
-  const selected = useAppStore((s) => s.selectedAgent);
   const setSelected = useAppStore((s) => s.setSelectedAgent);
 
   return (
@@ -110,14 +105,14 @@ function AgentPicker() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] text-muted-foreground hover:bg-muted"
+          className="flex items-center gap-[6px] rounded-md px-2 py-1 text-sm/tight text-text-secondary hover:bg-muted"
         >
-          agent: {selected || "build"}
-          <ChevronDown className="size-3" />
+          Mode
+          <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
-        <DropdownMenuLabel>Agent</DropdownMenuLabel>
+        <DropdownMenuLabel>Mode</DropdownMenuLabel>
         {agents.map((a) => (
           <DropdownMenuItem key={a.name} onClick={() => setSelected(a.name)}>
             <span>{a.name}</span>
@@ -133,6 +128,16 @@ function AgentPicker() {
   );
 }
 
+/** Design chip only: the protocol does not carry a reasoning-effort yet. */
+function ReasoningChip() {
+  return (
+    <div className="flex items-center gap-[6px] rounded-md px-2 py-1 text-sm/tight text-text-secondary">
+      Rasoning
+      <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
+    </div>
+  );
+}
+
 export function Composer() {
   const [text, setText] = useState("");
   const send = useAppStore((s) => s.sendPrompt);
@@ -142,8 +147,6 @@ export function Composer() {
   const chat = useAppStore((s) => s.chat);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
-  const projects = useAppStore((s) => s.projects);
-  const activeProject = projects.find((p) => p.id === activeProjectId);
   const session =
     activeProjectId && activeSessionId ? chat.sessions[activeSessionId] : undefined;
   const busy = session?.status === "busy" || session?.status === "retry";
@@ -163,12 +166,8 @@ export function Composer() {
     void send(t);
   };
 
-  const models = useAppStore((s) => s.metaModels);
-  const selectedModel = useAppStore((s) => s.selectedModel);
-  const currentModel = models.find((m) => `${m.provider}:${m.id}` === selectedModel);
-
   return (
-    <div className="bg-background/80 px-6 pb-3 pt-2 backdrop-blur">
+    <div className="shrink-0 px-6 pb-8 pt-2">
       <div className="mx-auto max-w-3xl space-y-2">
         {session && session.permissions.length > 0 && (
           <div className="space-y-2">
@@ -177,7 +176,7 @@ export function Composer() {
             ))}
           </div>
         )}
-        <div className="mx-auto flex w-full max-w-[768px] flex-col rounded-xl border border-border-strong bg-bg-main shadow-[#00000059_0px_8px_24px] focus-within:border-ring">
+        <div className="mx-auto flex w-full max-w-[768px] flex-col rounded-xl border border-border-strong bg-bg-main [box-shadow:#0E0E0E59_0px_8px_24px] focus-within:border-ring">
           <textarea
             ref={taRef}
             id="composer"
@@ -190,7 +189,7 @@ export function Composer() {
                 : "Write anything — Circulo does the rest"
             }
             disabled={!activeProjectId}
-            className="w-full resize-none bg-transparent px-4 pt-4 pb-2 text-md text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed"
+            className="w-full resize-none bg-transparent px-4 pt-4 pb-2 text-md/relaxed text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed"
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -199,50 +198,33 @@ export function Composer() {
               }
             }}
           />
-          <div className="flex items-center gap-1.5 px-3 pb-[10px] pt-2">
+          <div className="flex items-end px-[10px] pb-[10px] pt-2">
             <ModelPicker />
             <AgentPicker />
+            <ReasoningChip />
             <span className="flex-1" />
             {busy ? (
-              <Button size="icon-sm" variant="secondary" aria-label="Stop" onClick={() => void abort()}>
-                <Square className="size-3.5 fill-current" />
-              </Button>
+              <button
+                type="button"
+                aria-label="Stop"
+                className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-md bg-track-off hover:brightness-110"
+                onClick={() => void abort()}
+              >
+                <Square className="size-3 fill-current text-text-tertiary" />
+              </button>
             ) : (
-              <Button
-                size="icon-sm"
+              <button
+                type="button"
                 aria-label="Send"
                 disabled={!text.trim() || !activeProjectId}
+                className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-md bg-track-off hover:brightness-110 disabled:opacity-40"
                 onClick={submit}
               >
-                <ArrowUp className="size-4" />
-              </Button>
+                <ArrowUp className="size-[13px] text-text-tertiary" strokeWidth={2.2} />
+              </button>
             )}
           </div>
         </div>
-        <div className="mx-auto mt-2 flex max-w-[768px] items-center gap-3 text-xs text-text-tertiary">
-          <span className="flex items-center gap-[6px]">
-            <span
-              className={cn(
-                "size-1.5 rounded-full",
-                activeProject && activeProject.status === "running" ? "bg-success" : "bg-text-tertiary",
-              )}
-            />
-            {activeProject
-              ? activeProject.path.split("/").filter(Boolean).pop()
-              : "no project"}
-          </span>
-          <span>•</span>
-          <span>Local environment</span>
-          <span>•</span>
-          <span className="truncate">
-            {currentModel ? `${currentModel.provider}/${currentModel.id}` : ""}
-          </span>
-        </div>
-        {session?.status === "retry" && session.retry && (
-          <Badge variant="outline" className="text-warning">
-            retrying (attempt {session.retry.attempt})
-          </Badge>
-        )}
       </div>
     </div>
   );

@@ -1,17 +1,11 @@
 import { useEffect } from "react";
-import { Sparkles } from "lucide-react";
 
 import { AppShell } from "@/components/layout/AppShell";
 import Transcript from "@/features/chat/Transcript";
 import { ChatAppBar } from "@/features/chat/ChatAppBar";
 import { Composer } from "@/features/chat/Composer";
 import { ProjectBanner, ReconnectBar } from "@/features/connection/Banners";
-import {
-  NewSessionButton,
-  ProjectsSection,
-  SearchInput,
-  SidebarFooter,
-} from "@/features/projects/SidebarSections";
+import { SidebarHeader, SidebarFooter } from "@/features/projects/SidebarSections";
 import { SessionsSection } from "@/features/sessions/SessionsSection";
 import { Button } from "@/components/ui/button";
 import { connectSse, type SseHandle } from "@/lib/agent/sse";
@@ -19,30 +13,48 @@ import { useAppStore } from "@/lib/agent/store";
 import { useShortcuts } from "@/lib/useShortcuts";
 import type { Envelope } from "@/lib/agent/protocol";
 
-function EmptyState() {
+/**
+ * Empty-state per the Circulo Paper frame: sparkle chip, title and subtext.
+ * With zero projects an Add project CTA is appended (the design assumes a
+ * project exists).
+ */
+function GeneralEmptyState({ hasProjects }: { hasProjects: boolean }) {
   const addProject = useAppStore((s) => s.addProject);
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
-      <h1 className="text-2xl font-semibold tracking-tight">circuloGo</h1>
-      <p className="text-sm text-muted-foreground">
-        One window for your coding agents — projects, live sessions, permissions.
-      </p>
-      <Button
-        className="mt-2"
-        onClick={() => {
-          void import("@/bindings/circulogo/internal/appservice/dialog").then(
-            async ({ PickFolder }) => {
-              const path = await PickFolder().catch(() => "");
-              if (path) await addProject(path, "managed");
-            },
-          );
-        }}
-      >
-        Add project
-      </Button>
-      <p className="mt-4 max-w-md text-center text-[12px] text-muted-foreground/70">
-        Local-first: agents run on 127.0.0.1 over HTTP+SSE. No ACP, no cloud.
-      </p>
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 pb-6">
+      <div className="flex size-[44px] items-center justify-center rounded-[14px] border border-border-strong bg-bg-code">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"
+            stroke="var(--color-text-secondary)"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+      <div className="text-xl/loose font-semibold tracking-tight text-text-primary">
+        What are we making today?
+      </div>
+      <div className="text-md/relaxed text-text-tertiary">
+        Describe it in your own words — Circulo handles the rest.
+      </div>
+      {!hasProjects && (
+        <Button
+          variant="secondary"
+          className="mt-2"
+          onClick={() => {
+            void import("@/bindings/circulogo/internal/appservice/dialog").then(
+              async ({ PickFolder }) => {
+                const path = await PickFolder().catch(() => "");
+                if (path) await addProject(path, "managed");
+              },
+            );
+          }}
+        >
+          Add project
+        </Button>
+      )}
     </div>
   );
 }
@@ -72,46 +84,32 @@ export default function App() {
     <AppShell
       sidebar={
         <>
-          <NewSessionButton />
-          <SearchInput />
-          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-            <ProjectsSection />
-            <SessionsSection />
-          </div>
+          <SidebarHeader />
+          <SessionsSection />
           <SidebarFooter />
         </>
       }
+      title={
+        session ? (
+          <ChatAppBar project={activeProject!} session={session} />
+        ) : (
+          <span className="text-xs leading-[14px] text-text-secondary">Settings</span>
+        )
+      }
     >
       <ReconnectBar />
-      {!activeProject ? (
-        <EmptyState />
-      ) : (
-        <>
-          {/* The app bar carries session context; banners below it are
-              informational strips only — the chat stays mounted while the
-              adapter starts, retries or recovers (docs/flow.md §9). */}
-          <ChatAppBar project={activeProject} session={session} />
-          <ProjectBanner project={activeProject} />
-          <div className="flex min-h-0 flex-1 flex-col">
-            {session ? (
-              <Transcript session={session} />
-            ) : (
-              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 pb-6">
-                <div className="flex size-[44px] items-center justify-center rounded-[14px] border border-border-strong bg-bg-code">
-                  <Sparkles className="size-4 text-accent-cir" />
-                </div>
-                <div className="text-xl font-semibold tracking-tight text-text-primary">
-                  What are we making today?
-                </div>
-                <div className="text-md text-text-tertiary">
-                  Describe it in your own words — Circulo handles the rest.
-                </div>
-              </div>
-            )}
-            <Composer />
-          </div>
-        </>
-      )}
+      {/* The app bar carries session context; banners below it are
+          informational strips only — the chat stays mounted while the
+          adapter starts, retries or recovers (docs/flow.md §9). */}
+      {activeProject && <ProjectBanner project={activeProject} />}
+      <div className="flex min-h-0 flex-1 flex-col">
+        {session ? (
+          <Transcript session={session} />
+        ) : (
+          <GeneralEmptyState hasProjects={projects.length > 0} />
+        )}
+        <Composer />
+      </div>
     </AppShell>
   );
 }
