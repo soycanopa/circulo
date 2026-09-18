@@ -130,11 +130,7 @@ export function AppShell({
             </div>
           </>
         )}
-        <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[18px] bg-bg-main">
-          <GlowPixels />
-          <div aria-hidden className="circulo-glow absolute inset-0" />
-          <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>
-        </main>
+        <main className="flex min-w-0 flex-1 flex-col gap-2">{children}</main>
       </div>
     </div>
   );
