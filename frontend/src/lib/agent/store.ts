@@ -299,6 +299,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
             x.id === p.projectID ? { ...x, status: p.state, detail: p.detail } : x,
           ),
         }));
+        // The boot requests (sessions/meta) can 503 while a managed server is
+        // still starting; when it comes up, resync the active project.
+        if (p.state === "running" && p.projectID === get().activeProjectId) {
+          void get().refreshSessions(p.projectID).catch(() => undefined);
+          if (get().metaModels.length === 0) {
+            void get().loadMeta(p.projectID).catch(() => undefined);
+          }
+        }
         break;
       }
       case "session.updated": {
