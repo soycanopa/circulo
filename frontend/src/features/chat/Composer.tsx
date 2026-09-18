@@ -896,12 +896,22 @@ export function Composer() {
 
   // New-session targeting (owner call): with multiple linked projects, the
   // composer picks which folder — and which branch — the session lands in.
+  const projects = useAppStore((s) => s.projects);
   const isNewSession = !activeSessionId;
   const [targetProjectId, setTargetProjectId] = useState(activeProjectId ?? "");
   const [targetBranch, setTargetBranch] = useState("");
   useEffect(() => {
     setTargetBranch("");
   }, [activeSessionId]);
+  // Entering new-session mode defaults the target to the last-added project
+  // (owner call); the user re-picks from the unlocked strip.
+  useEffect(() => {
+    if (isNewSession) {
+      const last = projects[projects.length - 1];
+      setTargetProjectId(last?.id ?? activeProjectId ?? "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNewSession]);
 
   // Auto-grow up to ~6 lines.
   useEffect(() => {

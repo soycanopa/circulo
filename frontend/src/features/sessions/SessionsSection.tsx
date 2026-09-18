@@ -215,7 +215,7 @@ export function SessionsSection() {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const chat = useAppStore((s) => s.chat);
   const search = useAppStore((s) => s.sessionSearch);
-  const newSession = useAppStore((s) => s.newSession);
+  const closeSession = useAppStore((s) => s.closeSession);
   const [collapsed, setCollapsed] = useState<Record<"today" | "earlier", boolean>>({
     today: false,
     earlier: false,
@@ -240,10 +240,9 @@ export function SessionsSection() {
 
   const groups = useMemo(() => groupByDate(rows), [rows]);
 
-  const newChat = () => {
-    const pid = activeProjectId ?? projects[0]?.id;
-    if (pid) void newSession(pid);
-  };
+  // New-session mode (owner call): close the session so the composer's
+  // project/branch target strip unlocks and the user picks the destination.
+  const newChat = () => closeSession();
 
   if (!activeProjectId && projects.length === 0) return null;
 

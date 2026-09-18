@@ -5,13 +5,14 @@
  */
 
 import { useState } from "react";
-import { FolderPlus, Search, Settings } from "lucide-react";
+import { FolderPlus, MessageSquarePlus, Search, Settings } from "lucide-react";
 
 import { PickFolder } from "@/bindings/circulogo/internal/appservice/dialog";
 import { useAppStore } from "@/lib/agent/store";
 
 export function SidebarHeader() {
   const addProject = useAppStore((s) => s.addProject);
+  const closeSession = useAppStore((s) => s.closeSession);
   const setSearch = useAppStore((s) => s.setSessionSearch);
   const sessionSearch = useAppStore((s) => s.sessionSearch);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -35,6 +36,16 @@ export function SidebarHeader() {
 
   return (
     <div className="flex shrink-0 flex-col gap-2 px-3 py-4">
+      {/* Enters new-session mode: closes the session, unlocks the composer's
+          project/branch target strip (owner call). */}
+      <button
+        type="button"
+        className="flex items-center gap-1 rounded-md py-1 text-left hover:bg-bg-hover"
+        onClick={closeSession}
+      >
+        <MessageSquarePlus className="size-3.5 shrink-0 text-text-primary" strokeWidth={2} />
+        <span className="text-sm/tight text-text-primary">New session</span>
+      </button>
       <button
         type="button"
         className="flex items-center gap-1 rounded-md py-1 text-left hover:bg-bg-hover"
