@@ -47,6 +47,9 @@ interface AppStore {
   setSessionSearch: (q: string) => void;
 
   setConnection: (s: ConnectionState) => void;
+  /** Sidebar visibility (Cmd+B, ux.md §6). */
+  sidebarOpen: boolean;
+  toggleSidebar: () => void;
   refreshProjects: () => Promise<void>;
   refreshSessions: (projectID: string) => Promise<void>;
   addProject: (path: string, mode: "managed" | "attach", url?: string) => Promise<void>;
@@ -83,6 +86,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setSessionSearch: (sessionSearch) => set({ sessionSearch }),
 
   setConnection: (connection) => set({ connection }),
+
+  sidebarOpen: true,
+  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
 
   refreshProjects: async () => {
     const projects = await api.listProjects();

@@ -16,6 +16,7 @@ import { SessionsSection } from "@/features/sessions/SessionsSection";
 import { Button } from "@/components/ui/button";
 import { connectSse, type SseHandle } from "@/lib/agent/sse";
 import { useAppStore } from "@/lib/agent/store";
+import { useShortcuts } from "@/lib/useShortcuts";
 import type { Envelope } from "@/lib/agent/protocol";
 
 function EmptyState() {
@@ -51,6 +52,7 @@ export default function App() {
   const activeProjectId = useAppStore((s) => s.activeProjectId);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const chat = useAppStore((s) => s.chat);
+  useShortcuts();
 
   useEffect(() => {
     const store = useAppStore.getState();

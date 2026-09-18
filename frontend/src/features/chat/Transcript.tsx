@@ -47,6 +47,12 @@ const Transcript = memo(function Transcript({ session }: { session: SessionState
     setBusySince(0);
   }, [busy]);
 
+  // Cmd+↓ (ux.md §6) lands here via the global shortcut hook.
+  useEffect(() => {
+    window.addEventListener("circulogo:jump-to-latest", jump);
+    return () => window.removeEventListener("circulogo:jump-to-latest", jump);
+  }, [jump]);
+
   return (
     <div className="relative min-h-0 flex-1">
       <div ref={ref} className="h-full overflow-y-auto" role="log" aria-label="Chat transcript">

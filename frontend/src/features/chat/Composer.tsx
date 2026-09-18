@@ -180,6 +180,7 @@ export function Composer() {
         <div className="mx-auto flex w-full max-w-[768px] flex-col rounded-xl border border-border-strong bg-bg-main shadow-[#00000059_0px_8px_24px] focus-within:border-ring">
           <textarea
             ref={taRef}
+            id="composer"
             data-selectable
             rows={1}
             value={text}
