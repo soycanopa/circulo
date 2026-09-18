@@ -13,7 +13,8 @@
   /* surfaces */
   --bg-app: #17171a;
   --bg-sidebar: #1c1c1f;
-  --bg-main: #212124;
+  /* Owner call: main uses the sidebar tone (design token says #212124). */
+  --bg-main: #1c1c1f;
   --bg-code: #141417;
   --bg-popover: #1f1f21;
   --bg-hover: #2b2b30;
