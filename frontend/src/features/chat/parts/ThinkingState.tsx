@@ -118,12 +118,39 @@ function buildRows(parts: Part[], streaming: boolean, liveReasoningId: string): 
 
 const TONES = ["bg-accent-cir", "bg-warning", "bg-success"];
 
+/** Trace categories (owner call): one collapsible per kind of agent work. */
+export type TraceVariant = "Reasoning" | "Search" | "Coding" | "Tools";
+
+const PHRASE_SETS: Record<TraceVariant, string[]> = {
+  Reasoning: DEFAULT_LABELS,
+  Search: ["Searching the web", "Reading results", "Comparing sources"],
+  Coding: ["Working on files", "Reading files", "Applying edits"],
+  Tools: ["Running tools", "Making calls", "Gathering context"],
+};
+
+function doneLabel(variant: TraceVariant, rows: Row[], thought: string | null): string {
+  const n = rows.filter((r) => r.kind !== "reasoning").length;
+  const calls = `${n} call${n === 1 ? "" : "s"}`;
+  switch (variant) {
+    case "Reasoning":
+      return thought ?? "Thought";
+    case "Search":
+      return n > 0 ? `Searched the web · ${calls}` : "Searched the web";
+    case "Coding":
+      return n > 0 ? `Ran ${n} file op${n === 1 ? "" : "s"}` : "Worked on files";
+    case "Tools":
+      return n > 0 ? calls : "No tool calls";
+  }
+}
+
 export default function ThinkingState({
   parts,
+  variant,
   streaming,
   liveReasoningId,
 }: {
   parts: Part[];
+  variant: TraceVariant;
   streaming: boolean;
   /** id of the reasoning part currently streaming (drives its spinner) */
   liveReasoningId?: string;
@@ -133,29 +160,23 @@ export default function ThinkingState({
   // never keep the loader header spinning over a stale running row (a lost
   // tool frame heals via the idle history refetch instead).
   const working = streaming && rows.some((r) => r.status === "running" || r.status === "pending");
-  const toolCount = rows.filter((r) => r.kind !== "reasoning").length;
-  const searching = rows.some((r) => r.kind === "search" && (r.status === "running" || r.status === "pending"));
-  const coding = !searching && rows.some((r) => r.kind === "code" && (r.status === "running" || r.status === "pending"));
   const query = rows.find((r) => r.query)?.query;
 
   // Reasoning duration only when the wire carried start+end (hydrated
   // history rarely does — honest fallback is no duration).
   let thought: string | null = null;
-  for (const p of parts) {
-    if (p.type === "reasoning" && p.time && p.time.end && p.time.end > p.time.start) {
-      thought = `Thought for ${Math.max(1, Math.round((p.time.end - p.time.start) / 1000))} seconds`;
+  if (variant === "Reasoning") {
+    for (const p of parts) {
+      if (p.type === "reasoning" && p.time && p.time.end && p.time.end > p.time.start) {
+        thought = `Thought for ${Math.max(1, Math.round((p.time.end - p.time.start) / 1000))} seconds`;
+      }
     }
   }
-  const done = thought ?? (toolCount > 0 ? `Ran ${toolCount} tool${toolCount === 1 ? "" : "s"}` : "Thought");
+  const done = doneLabel(variant, rows, thought);
 
   // While the turn works, the header is the pixel-grid loader with rotating
-  // phrases (owner design) — the phrase set follows what the trace is doing.
-  const phraseSet = searching
-    ? ["Searching the web", "Reading results", "Comparing sources"]
-    : coding
-      ? ["Running tools", "Reading files", "Applying edits"]
-      : DEFAULT_LABELS;
-  const phrase = useRotatingLabel(phraseSet);
+  // phrases (owner design) for this category.
+  const phrase = useRotatingLabel(PHRASE_SETS[variant]);
   const elapsed = useElapsed();
 
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);

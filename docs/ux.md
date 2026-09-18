@@ -80,15 +80,17 @@ Order inside an assistant turn is strictly the server's part order.
   citation markers or suggestion producer. Code blocks: header (language + copy
   button, turns to ✓ for 2 s), wrapped lines, no horizontal scroll. Lists/tables/
   links styled by the typography preset.
-- **tool** — one ThinkingState trace per turn groups reasoning + tools (owner design,
-  `parts/ThinkingState.tsx`): vertical line, rows in server order. Web search/fetch
-  rows carry colored dots + query/source links; read/write/edit/patch/shell rows show
-  a ring spinner → muted check (red ✕ on error), mono path/command, ±diff counts when
-  the metadata carries them. **Always starts folded** — while the turn works the
-  header is the pixel-grid loader with rotating phrases and elapsed timer, and after
-  it settles the summary ("Ran 3 tools"); clicking toggles the trace open, clicking a
-  tool row toggles its output/error/input detail (mono, max-h scroll). Driven by real
-  part state — no staged timers.
+- **tool** — the agent's work renders as **one collapsible per category** (owner
+  call), each a ThinkingState block (`parts/ThinkingState.tsx`) that starts folded
+  and groups every occurrence across the whole turn: **Reasoning** (prose rows),
+  **Search** (websearch/webfetch: colored dots, query line, source links),
+  **Coding** (read/write/edit/patch/shell/grep/glob/list: ring spinner → muted
+  check, red ✕ on error, mono path/command, ±counts when metadata carries them)
+  and **Tools** (any other tool call). Headers carry the pixel-grid loader with
+  rotating phrases + elapsed timer while that category works, settling to a
+  summary ("Thought", "Searched the web · 2 calls", "Ran 4 file ops"); clicking
+  toggles the rows, clicking a tool row toggles its output/error/input detail.
+  Driven by real part state — no staged timers.
 - **step-start / step-finish** — not rendered directly; `step-finish` aggregates into
   the turn footer: `Worked for 42s · 17.5k tok · $0.03` (sum tokens/cost of the message).
 - **patch** — "Changed files" card: file list with +adds/−dels counts; expand → per-file

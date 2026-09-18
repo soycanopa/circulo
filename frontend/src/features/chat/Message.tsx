@@ -7,10 +7,32 @@
 
 import { memo, useMemo } from "react";
 
-import ThinkingState from "./parts/ThinkingState";
+import ThinkingState, { type TraceVariant } from "./parts/ThinkingState";
 import { AssistantText, sourcesFromParts } from "./parts/AssistantText";
 import { PatchCard, SubtaskPill, TurnFooter } from "./parts/MiscParts";
+import type { Part } from "@/lib/agent/protocol";
 import type { MessageRecord } from "@/lib/agent/reducer";
+
+/** Tools that count as coding / file work (v2 names; shell is v2's bash). */
+const CODING_TOOLS = new Set([
+  "read", "write", "edit", "patch", "shell", "grep", "glob", "list",
+]);
+
+/** One collapsible per kind of agent work (owner call): reasoning, web
+ *  searches, file/shell coding, and any other tool calls. */
+function groupByVariant(parts: Part[]): Record<TraceVariant, Part[]> {
+  const g: Record<TraceVariant, Part[]> = { Reasoning: [], Search: [], Coding: [], Tools: [] };
+  for (const p of parts) {
+    if (p.type === "reasoning") g.Reasoning.push(p);
+    else if (p.type === "tool") {
+      const tool = (p.tool ?? "").toLowerCase();
+      if (tool === "websearch" || tool === "webfetch") g.Search.push(p);
+      else if (CODING_TOOLS.has(tool)) g.Coding.push(p);
+      else g.Tools.push(p);
+    }
+  }
+  return g;
+}
 
 export const UserMessage = memo(function UserMessage({ m }: { m: MessageRecord }) {
   const text = m.parts
@@ -58,14 +80,10 @@ export const AssistantTurn = memo(function AssistantTurn({
   messages: MessageRecord[];
   streaming: boolean;
 }) {
-  // One collapsible per TURN: reasoning + tool parts of every step collapse
-  // into a single ThinkingState; texts and cards follow in server order, and
-  // the usage footer covers the whole turn once it settles.
+  // One collapsible per category (owner call): reasoning, searches, coding
+  // and other tool calls each group their own parts of every step.
   const allParts = useMemo(() => messages.flatMap((m) => m.parts), [messages]);
-  const traceParts = useMemo(
-    () => allParts.filter((p) => p.type === "reasoning" || p.type === "tool"),
-    [allParts],
-  );
+  const groups = useMemo(() => groupByVariant(allParts), [allParts]);
   const sources = useMemo(() => sourcesFromParts(allParts), [allParts]);
   const lastTextId = useMemo(() => {
     let id = "";
@@ -93,12 +111,23 @@ export const AssistantTurn = memo(function AssistantTurn({
   );
   return (
     <div className="flex w-full flex-col gap-2">
-      {traceParts.length > 0 && (
-        <ThinkingState
-          parts={traceParts}
-          streaming={streaming}
-          liveReasoningId={lastReasoningIdOf(allParts)}
-        />
+      {(
+        [
+          ["Reasoning", groups.Reasoning],
+          ["Search", groups.Search],
+          ["Coding", groups.Coding],
+          ["Tools", groups.Tools],
+        ] as [TraceVariant, Part[]][]
+      ).map(([variant, groupParts]) =>
+        groupParts.length > 0 ? (
+          <ThinkingState
+            key={variant}
+            variant={variant}
+            parts={groupParts}
+            streaming={streaming}
+            liveReasoningId={lastReasoningIdOf(allParts)}
+          />
+        ) : null,
       )}
       {messages.map((m) =>
         m.parts.map((p) => {
