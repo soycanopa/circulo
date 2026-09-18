@@ -19,13 +19,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/lib/agent/store";
 import { cn } from "@/lib/utils";
 import type { PermissionRequest } from "@/lib/agent/protocol";
@@ -73,6 +66,26 @@ function PermissionCard({ perm }: { perm: PermissionRequest }) {
   );
 }
 
+/** Tag pill per the Circulo reasoning-tags spec (color keyed by effort). */
+function variantTagClass(v: string): string {
+  switch (v) {
+    case "low":
+      return "bg-[#243D2E] border-diff-add text-success";
+    case "medium":
+      return "bg-[#47381A] border-[#8C661F] text-[#EBB847]";
+    case "high":
+      return "bg-[#522014] border-[#9E5214] text-[#FA9E47]";
+    case "max":
+    case "xhigh":
+      return "bg-[#472438] border-[#733366] text-danger";
+    default:
+      return "bg-bg-hover border-border text-text-secondary";
+  }
+}
+
+const chipBtn =
+  "flex items-center gap-[6px] rounded-md px-2 py-1 text-sm/tight text-text-secondary hover:bg-muted";
+
 function ModelPicker() {
   const models = useAppStore((s) => s.metaModels);
   const selectedModel = useAppStore((s) => s.selectedModel);
@@ -80,6 +93,7 @@ function ModelPicker() {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const current = models.find((m) => `${m.provider}:${m.id}` === selectedModel);
 
   // Provider tabs; "opencode" first (owner spec), then alphabetical.
   const providers = useMemo(() => {
@@ -102,13 +116,12 @@ function ModelPicker() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex items-center gap-[6px] rounded-md px-2 py-1 text-sm/tight text-text-secondary hover:bg-muted"
-        >
-          Model
+        {/* div (not button): the effort tag nested inside is its own trigger. */}
+        <div className={cn("cursor-pointer select-none", chipBtn)} data-slot="model-chip">
+          <span className="max-w-40 truncate">{current?.name || current?.id || "Model"}</span>
+          <VariantPicker />
           <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
-        </button>
+        </div>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" sideOffset={8} className="h-[280px] w-[380px]">
         <div className="flex min-h-0 flex-1">
@@ -181,45 +194,131 @@ function ModelPicker() {
   );
 }
 
-function AgentPicker() {
-  const agents = useAppStore((s) => s.metaAgents);
-  const setSelected = useAppStore((s) => s.setSelectedAgent);
+/** Reasoning-effort selector: opens from the tag inside the model chip. */
+function VariantPicker() {
+  const models = useAppStore((s) => s.metaModels);
+  const selectedModel = useAppStore((s) => s.selectedModel);
+  const selectedVariant = useAppStore((s) => s.selectedVariant);
+  const setVariant = useAppStore((s) => s.setSelectedVariant);
+  const [open, setOpen] = useState(false);
+
+  const current = models.find((m) => `${m.provider}:${m.id}` === selectedModel);
+  if (!current?.reasoning || !current.variants?.length) return null;
+  // The tag is always rendered for capable models: it is the trigger (gray
+  // "none" per the design when no effort is set).
+  const tag = (
+    <span
+      className={cn(
+        "rounded-full border px-1 py-px text-xs leading-[14px] font-medium",
+        selectedVariant
+          ? variantTagClass(selectedVariant)
+          : "bg-bg-hover border-border text-text-secondary",
+      )}
+    >
+      {selectedVariant || "none"}
+    </span>
+  );
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-[6px] rounded-md px-2 py-1 text-sm/tight text-text-secondary hover:bg-muted"
+          aria-label="Reasoning effort"
+          className="flex items-center"
+          onClick={(e) => e.stopPropagation()}
         >
-          Mode
-          <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
+          {tag}
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        <DropdownMenuLabel>Mode</DropdownMenuLabel>
-        {agents.map((a) => (
-          <DropdownMenuItem key={a.name} onClick={() => setSelected(a.name)}>
-            <span>{a.name}</span>
-            {a.description && (
-              <span className="ml-auto max-w-48 truncate text-muted-foreground">
-                {a.description}
-              </span>
+      </PopoverTrigger>
+      <PopoverContent align="start" side="top" sideOffset={8} className="w-[164px] p-1.5">
+        <div className="px-2 py-1 text-xs leading-[14px] text-text-tertiary">Reasoning effort</div>
+        <button
+          type="button"
+          onClick={() => {
+            setVariant("");
+            setOpen(false);
+          }}
+          className={cn(
+            "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm/tight",
+            !selectedVariant ? "bg-bg-hover text-text-primary" : "hover:bg-bg-hover/60",
+          )}
+        >
+          None
+          {!selectedVariant && (
+            <Check className="size-3.5 shrink-0 text-accent-cir" strokeWidth={2} />
+          )}
+        </button>
+        {current.variants.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => {
+              setVariant(v);
+              setOpen(false);
+            }}
+            className={cn(
+              "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm/tight",
+              selectedVariant === v ? "bg-bg-hover text-text-primary" : "hover:bg-bg-hover/60",
             )}
-          </DropdownMenuItem>
+          >
+            {v}
+            {selectedVariant === v && (
+              <Check className="size-3.5 shrink-0 text-accent-cir" strokeWidth={2} />
+            )}
+          </button>
         ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </PopoverContent>
+    </Popover>
   );
 }
 
-/** Design chip only: the protocol does not carry a reasoning-effort yet. */
-function ReasoningChip() {
+function AgentPicker() {
+  const agents = useAppStore((s) => s.metaAgents);
+  const selected = useAppStore((s) => s.selectedAgent);
+  const setSelected = useAppStore((s) => s.setSelectedAgent);
+  const [open, setOpen] = useState(false);
+
   return (
-    <div className="flex items-center gap-[6px] rounded-md px-2 py-1 text-sm/tight text-text-secondary">
-      Rasoning
-      <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
-    </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button type="button" className={chipBtn}>
+          Mode
+          {selected && (
+            <span className="max-w-24 truncate text-text-primary">{selected}</span>
+          )}
+          <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" side="top" sideOffset={8} className="w-[240px] p-1.5">
+        <div className="px-2 py-1 text-xs leading-[14px] text-text-tertiary">Mode</div>
+        {agents.map((a) => (
+          <button
+            key={a.name}
+            type="button"
+            onClick={() => {
+              setSelected(a.name);
+              setOpen(false);
+            }}
+            className={cn(
+              "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm/tight",
+              selected === a.name ? "bg-bg-hover text-text-primary" : "hover:bg-bg-hover/60",
+            )}
+          >
+            <span className="min-w-0 flex-1 truncate">{a.name}</span>
+            {a.mode === "subagent" && (
+              <span className="shrink-0 text-[11px] text-text-tertiary">subagent</span>
+            )}
+            {selected === a.name && (
+              <Check className="size-3.5 shrink-0 text-accent-cir" strokeWidth={2} />
+            )}
+          </button>
+        ))}
+        {agents.length === 0 && (
+          <div className="px-2 py-1.5 text-xs text-text-tertiary">No modes available</div>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -286,7 +385,6 @@ export function Composer() {
           <div className="flex items-end px-[10px] pb-[10px] pt-2">
             <ModelPicker />
             <AgentPicker />
-            <ReasoningChip />
             <span className="flex-1" />
             {busy ? (
               <button
