@@ -60,7 +60,8 @@
 | Streaming | transcript | Live reasoning tail, tool cards updating, pixel-grid loader: rotating phrase + elapsed timer |
 | Retrying | status strip in transcript | "Provider retrying (attempt 2/…): <reason> · next in 3s" |
 | Session error | transcript inline | Red-bordered block: error name + message (FR-21) |
-| Permission pending | card above composer | Card + composer stays enabled (can type next prompt) |
+| Permission pending | card floating above composer | Elevated card + composer stays enabled (can type next prompt) |
+| Agent question | card floating above composer | QuestionCard: question text, option chips + custom answer, one Answer action |
 | Reconnecting (app↔backend) | thin top bar | "Reconnecting… showing last known state" |
 
 ## 4. Parts rendering rules

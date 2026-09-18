@@ -100,6 +100,14 @@
   and reaches the model; a control session without it answered unstructured. The
   adapter attaches a markdown-format entry (`circulogo-format`) on every session it
   creates, best-effort (experimental surface — degraded UX, not a failed session).
+- **Question tool = forms (live 2.0.8)**: the blocking `question` tool does NOT
+  ride permissions — it creates a form. `form.created`
+  (`{form:{id,title,metadata:{kind:"question",tool:{messageID,id}},fields:[{key,
+  title,description,type,options[{value,label,description}],custom}]}}`), answered
+  via `POST /api/session/{id}/form/{fid}/reply` body `{answer:{key:value}}` (204),
+  followed by `form.replied` `{id,sessionID,answer}`; the tool completes and the
+  turn continues. Surfaces as the neutral form.updated/form.resolved contract and
+  the floating QuestionCard above the composer.
 - Noise filter for translate: mcp/integration/instructions/shell/websearch/command/
   skill/provider/model `*.updated`, `mcp.status.changed`, `session.model.selected`.
 - Fixtures captured: `testdata/v2-session-lifecycle.sse`, `testdata/v2-turn-basic.sse`,
@@ -122,3 +130,6 @@
 ## 3. Decisions already taken by the owner
 - Update everything to v2 (2026-09-18). v1 CLI stays installed for daily use until the
   app's pin moves.
+- Start clean (2026-09-18): NO v1 session import — v1-era sessions are abandoned, not
+  migrated via /api/experimental/migration/v1.
+- No merge yet (2026-09-18): the branch stack stays unmerged while phase 6 wraps.
