@@ -93,7 +93,7 @@ export default function App() {
         session ? (
           <ChatAppBar project={activeProject!} session={session} />
         ) : (
-          <span className="text-xs leading-[14px] text-text-secondary">Settings</span>
+          <span className="text-xs leading-[14px] text-text-secondary">Circulo</span>
         )
       }
     >
