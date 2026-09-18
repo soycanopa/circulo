@@ -3,15 +3,22 @@
  * stacked directly above, model/agent pickers, Send ↔ Stop swap.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowUp,
+  Check,
   ChevronDown,
+  Search,
   Square,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/lib/agent/store";
+import { cn } from "@/lib/utils";
 import type { PermissionRequest } from "@/lib/agent/protocol";
 
 function PermissionCard({ perm }: { perm: PermissionRequest }) {
@@ -67,11 +75,33 @@ function PermissionCard({ perm }: { perm: PermissionRequest }) {
 
 function ModelPicker() {
   const models = useAppStore((s) => s.metaModels);
+  const selectedModel = useAppStore((s) => s.selectedModel);
   const setSelected = useAppStore((s) => s.setSelectedModel);
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+
+  // Provider tabs; "opencode" first (owner spec), then alphabetical.
+  const providers = useMemo(() => {
+    const seen = new Set(models.map((m) => m.provider));
+    return [...seen].sort((a, b) => {
+      if (a === "opencode") return -1;
+      if (b === "opencode") return 1;
+      return a.localeCompare(b);
+    });
+  }, [models]);
+
+  const active = tab ?? providers[0] ?? "";
+  const q = query.trim().toLowerCase();
+  const filtered = models.filter(
+    (m) =>
+      m.provider === active &&
+      (!q || (m.name || m.id).toLowerCase().includes(q) || m.id.toLowerCase().includes(q)),
+  );
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
         <button
           type="button"
           className="flex items-center gap-[6px] rounded-md px-2 py-1 text-sm/tight text-text-secondary hover:bg-muted"
@@ -79,20 +109,75 @@ function ModelPicker() {
           Model
           <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="max-h-80 overflow-auto">
-        <DropdownMenuLabel>Model</DropdownMenuLabel>
-        {models.map((m) => (
-          <DropdownMenuItem
-            key={`${m.provider}:${m.id}`}
-            onClick={() => setSelected(`${m.provider}:${m.id}`)}
-          >
-            <span>{m.name || m.id}</span>
-            <span className="ml-auto text-muted-foreground">{m.provider}</span>
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </PopoverTrigger>
+      <PopoverContent align="start" side="top" sideOffset={8} className="h-[280px] w-[380px]">
+        <div className="flex min-h-0 flex-1">
+          {/* Provider tabs — left rail */}
+          <div className="flex w-[108px] shrink-0 flex-col gap-0.5 border-r border-border p-1.5">
+            {providers.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setTab(p)}
+                className={cn(
+                  "truncate rounded-md px-2 py-1.5 text-left text-sm/tight",
+                  active === p
+                    ? "bg-bg-hover text-text-primary"
+                    : "text-text-secondary hover:bg-bg-hover/60",
+                )}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+          {/* Models — right column with search */}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="shrink-0 border-b border-border p-2">
+              <div className="flex items-center gap-2 rounded-md bg-bg-code px-2 py-1.5">
+                <Search className="size-3 shrink-0 text-text-tertiary" />
+                <input
+                  data-selectable
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search models"
+                  className="w-full bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
+                />
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+              {filtered.map((m) => {
+                const key = `${m.provider}:${m.id}`;
+                const selected = key === selectedModel;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => {
+                      setSelected(key);
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm/tight",
+                      selected
+                        ? "bg-bg-hover text-text-primary"
+                        : "text-text-primary hover:bg-bg-hover/60",
+                    )}
+                  >
+                    <span className="min-w-0 truncate">{m.name || m.id}</span>
+                    {selected && (
+                      <Check className="size-3.5 shrink-0 text-accent-cir" strokeWidth={2} />
+                    )}
+                  </button>
+                );
+              })}
+              {filtered.length === 0 && (
+                <div className="px-2 py-1.5 text-xs text-text-tertiary">No models found</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
