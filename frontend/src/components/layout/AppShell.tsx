@@ -103,7 +103,7 @@ export function AppShell({
               role="separator"
               aria-orientation="vertical"
               className={cn(
-                "group relative z-20 -mx-1 w-2 shrink-0 cursor-col-resize",
+                "group relative z-20 -mx-3 w-4 shrink-0 cursor-col-resize",
                 dragging && "cursor-col-resizing",
               )}
               onPointerDown={onHandleDown}
