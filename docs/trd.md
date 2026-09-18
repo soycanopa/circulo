@@ -193,7 +193,7 @@ Unknown `type` values are skipped by both Go and TS decoders (NFR-3).
 | `message.updated` `{info}` | `message.updated` (map AssistantMessage fields) |
 | `message.part.updated` `{part}` | `part.updated` (map part, table below) |
 | `message.part.delta` `{…,field,delta}` | `part.delta` |
-| `permission.updated` (Permission object) | `permission.request` |
+| `permission.asked` (Permission object, nested `data`) | `permission.request` |
 | `permission.replied` | `permission.resolved` |
 | `session.error` `{error:{name,data:{message,…}}}` | `session.error` |
 | `session.idle` | folds into `session.status{idle}` (UI uses it as turn-end) |

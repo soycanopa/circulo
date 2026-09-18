@@ -1,6 +1,6 @@
 # circuloGo — Implementation Plan
 
-- **Status:** Draft v0.1 (2026-09-02)
+- **Status:** Draft v0.1 (2026-09-02); amended 2026-09-18 (Circulo pivot + outstanding list, below)
 - **Related:** [TRD](trd.md) · [PRD](prd.md)
 - **Workflow:** every phase = one branch `feature/<phase>` off `main`, granular commits
   (one logical change each), tests land with the code they cover. Never commit to `main`
@@ -26,7 +26,7 @@ contains the adjusted rule set.
 | # | Commit | Content |
 |---|---|---|
 | 2.1 | `feat(protocol): neutral events + parts` | `internal/agent/protocol`: envelope, event types, Part union, JSON camelCase tags, decode-and-skip-unknown helpers |
-| 2.2 | `test(opencode): captured SSE fixtures` | `internal/opencode/testdata/*.sse` (real events from 1.18.25 smoke test: server.connected, session.created/updated/status busy+retry, message.updated, part.updated for text/reasoning/tool ×4 states/step-start/step-finish/patch, message.part.delta, permission.updated/replied, session.error) |
+| 2.2 | `test(opencode): captured SSE fixtures` | `internal/opencode/testdata/*.sse` (real events from 1.18.25 smoke test: server.connected, session.created/updated/status busy+retry, message.updated, part.updated for text/reasoning/tool ×4 states/step-start/step-finish/patch, message.part.delta, permission.asked/replied, session.error) |
 | 2.3 | `feat(opencode): SSE frame parser` | frame reader (data-only lines, comments, multi-line safety) + tests |
 | 2.4 | `feat(opencode): wire types + decoder` | OC event/message/part structs (from `GET /doc` of 1.18.25), unknown-tolerant decoding + fixture tests |
 | 2.5 | `feat(opencode): translate to neutral` | translation table (TRD §5.1) + table-driven tests |
@@ -88,6 +88,27 @@ identically to live; usage footer correct.
 | 6.4 | `feat(sessions): session switch race safety` | hydration/live interleave tests (Flow §5) |
 
 **DoD Phase 6:** full PRD functional checklist passes (below).
+
+## Amendment 2026-09-18 — Circulo design pivot (recorded retroactively)
+
+After Phases 5–6 merged, the visual layer pivoted to replicate the **Circulo
+Paper** design (`feature/circulo-design` + app-bar/polish branches, merged to
+`main`): theme tokens, sidebar geometry, an app bar, and chat metrics.
+
+- [ui.md](ui.md) is **partially superseded**: the layout skeleton and component
+  inventory still apply, but palette/geometry follow the Circulo replica.
+  Re-sync ui.md before starting Phase 7 (it still says "neutral zinc, violet
+  rejected" — no longer true of the code).
+- `AppBar` (session breadcrumb + close action) exists but was never specified
+  in ui.md.
+- Behavior contracts ([ux.md](ux.md), [flow.md](flow.md)) are unaffected.
+
+## Outstanding before Phase 7 (manual passes, consolidated)
+
+1. Phase 5 leftover: verify a live prompt **inside the webview** (streaming so
+   far verified only through the debug relay listener).
+2. Phase 6 leftover: full E2E manual checklist pass (below) — the project gate
+   in AGENTS.md for opening remote/adapter #2 work.
 
 ## Phase 7 — Polish + packaging (branch `feature/release-v0`)
 

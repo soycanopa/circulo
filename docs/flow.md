@@ -71,7 +71,7 @@ Invariants:
 ## 4. Permission flow
 
 ```
-OC ── permission.updated {id, type, title, metadata} ──▶ adapter ──▶ SSE permission.request ──▶ UI
+OC ── permission.asked {id, type, title, metadata} ──▶ adapter ──▶ SSE permission.request ──▶ UI
 UI: card above composer [Allow once | Always | Deny]
 UI ── POST …/permissions/:pid {response:"once"|"always"|"reject"} ─▶ RELAY ─▶ adapter ─▶ OC
 OC ── permission.replied ─▶ adapter ─▶ SSE permission.resolved ─▶ UI removes card
