@@ -295,7 +295,7 @@ function QuestionCard({ form }: { form: FormInfo }) {
 
   if (sent) {
     return (
-      <div className="flex w-full max-w-[320px] items-center gap-3" style={{ animation: "pop-in 260ms cubic-bezier(0.23,1,0.32,1) both" }}>
+      <div className="flex w-full items-center gap-3" style={{ animation: "pop-in 260ms cubic-bezier(0.23,1,0.32,1) both" }}>
         <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 py-1 pr-2.5 pl-1 text-[12.5px] font-medium text-success">
           <span className="flex size-4 items-center justify-center rounded-full bg-success text-white">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
@@ -307,7 +307,7 @@ function QuestionCard({ form }: { form: FormInfo }) {
   }
 
   return (
-    <div className="w-full max-w-[320px]">
+    <div className="w-full">
       <div
         className="relative overflow-hidden rounded-xl border border-border bg-bg-popover [box-shadow:#0E0E0E59_0px_8px_24px]"
         style={{ animation: "fade-up 380ms cubic-bezier(0.23,1,0.32,1) both" }}
