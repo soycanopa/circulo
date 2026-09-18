@@ -543,6 +543,7 @@ func TranslateV2(projectID string, env V2Event) ([]protocol.Envelope, error) {
 			// variants degrade to text (the question tool emits strings).
 			field := protocol.FormField{
 				Key:         f.Key,
+				Type:        f.Type,
 				Title:       f.Title,
 				Description: f.Description,
 				Custom:      f.Custom,

@@ -209,6 +209,8 @@ export interface FormOption {
 /** A form field; v0 covers select-style and free-text (custom) strings. */
 export interface FormField {
   key: string;
+  /** string|multiselect|… — multiselect renders as multi-answer */
+  type?: string;
   title?: string;
   description?: string;
   options?: FormOption[];

@@ -69,8 +69,8 @@ interface AppStore {
   sendPrompt: (text: string) => Promise<void>;
   abort: () => Promise<void>;
   replyPermission: (permissionID: string, response: "once" | "always" | "reject") => Promise<void>;
-  /** Answer a pending form (question tool): field key → value. */
-  replyForm: (formID: string, answer: Record<string, string>) => Promise<void>;
+  /** Answer a pending form (question tool): field key → value(s). */
+  replyForm: (formID: string, answer: Record<string, string | string[]>) => Promise<void>;
   /** Feed one neutral envelope into the store (SSE or tests). */
   dispatch: (env: Envelope) => void;
   /** Full resync after (re)connect (flow.md §7). */

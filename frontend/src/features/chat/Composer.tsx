@@ -4,13 +4,12 @@
  * swap.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowUp,
   Check,
   ChevronDown,
-  HelpCircle,
   Pencil,
   Search,
   Square,
@@ -27,7 +26,6 @@ import { useAppStore } from "@/lib/agent/store";
 import { cn } from "@/lib/utils";
 import type {
   FormInfo,
-  FormField,
   ModelInfo,
   PermissionRequest,
 } from "@/lib/agent/protocol";
@@ -79,94 +77,387 @@ function PermissionCard({ perm }: { perm: PermissionRequest }) {
   );
 }
 
-/** Floating card for a pending form (question tool): option chips plus an
- *  optional custom answer per field; one Answer action submits them all. */
+/** One question of the approval flow, mapped from a wire form field. */
+type ApprovalQuestion = {
+  key: string;
+  q: string;
+  sub?: string;
+  check: boolean;
+  options: { label: string; value: string }[];
+  custom: boolean;
+};
+
+/* ─────────────────────────────────────────────────────────
+ * QUESTION CARD (owner's ApprovalCard design)
+ * One wire field at a time; the stack slides vertically and the
+ * card height animates; the step counter rolls like an odometer;
+ * radio choices auto-advance, multi-select waits. Custom answers
+ * ride the same reply ({key: value | values}).
+ * ───────────────────────────────────────────────────────── */
+
+const ROLL_MS = 400;
+const SLIDE = "360ms cubic-bezier(0.22, 1, 0.36, 1)";
+
+function RollingDigits({ value }: { value: string }) {
+  const prevRef = useRef(value);
+  const [oldVal, setOldVal] = useState(value);
+  const [chars, setChars] = useState(value);
+  const [rolling, setRolling] = useState(false);
+  const [shifted, setShifted] = useState(false);
+  const [dir, setDir] = useState<"up" | "down">("up");
+
+  useEffect(() => {
+    if (prevRef.current === value) return;
+    const from = prevRef.current;
+    prevRef.current = value;
+    const fromN = parseInt(from, 10);
+    const toN = parseInt(value, 10);
+    setDir(Number.isFinite(fromN) && Number.isFinite(toN) && toN < fromN ? "down" : "up");
+    setOldVal(from);
+    setChars(value);
+    setRolling(true);
+    setShifted(false);
+
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setShifted(true));
+    });
+    const done = setTimeout(() => {
+      setRolling(false);
+      setOldVal(value);
+      setShifted(false);
+    }, ROLL_MS);
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+      clearTimeout(done);
+    };
+  }, [value]);
+
+  const shown = rolling ? chars : oldVal;
+
+  return (
+    <>
+      {Array.from({ length: shown.length }, (_, i) => {
+        const o = oldVal[i] ?? "";
+        const n = shown[i] ?? "";
+        if (!rolling || o === n) {
+          return <span key={`${i}-${n}`}>{n}</span>;
+        }
+        const top = dir === "down" ? n : o;
+        const bottom = dir === "down" ? o : n;
+        const restY = dir === "down" ? "0" : "-1em";
+        const startY = dir === "down" ? "-1em" : "0";
+        return (
+          <span
+            key={`${i}-${o}-${n}-${dir}`}
+            style={{ display: "inline-block", position: "relative", overflow: "hidden", height: "1em", lineHeight: "1em", verticalAlign: "-0.05em" }}
+          >
+            <span
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                transition: "transform 350ms cubic-bezier(0.4, 0, 0.2, 1)",
+                transform: `translateY(${shifted ? restY : startY})`,
+              }}
+            >
+              <span style={{ height: "1em", lineHeight: "1em" }}>{top}</span>
+              <span style={{ height: "1em", lineHeight: "1em" }}>{bottom}</span>
+            </span>
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 function QuestionCard({ form }: { form: FormInfo }) {
   const replyForm = useAppStore((s) => s.replyForm);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const complete = form.fields.every((f) => (answers[f.key] ?? "").trim() !== "");
-  const set = (key: string, value: string) =>
-    setAnswers((prev) => ({ ...prev, [key]: value }));
+  const questions: ApprovalQuestion[] = useMemo(
+    () =>
+      form.fields.map((f) => ({
+        key: f.key,
+        q: f.description || f.title || "Question",
+        sub: f.title && f.title !== f.description ? f.title : undefined,
+        check: f.type === "multiselect",
+        options: (f.options ?? []).map((o) => ({ label: o.label, value: o.value })),
+        custom: f.custom ?? !f.options?.length,
+      })),
+    [form],
+  );
+
+  const [qi, setQi] = useState(0);
+  const [answers, setAnswers] = useState<Record<number, number[]>>({});
+  const [custom, setCustom] = useState<Record<number, string>>({});
+  const [sent, setSent] = useState(false);
+  const [open, setOpen] = useState(true);
+
+  const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const questionRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const measured = useRef(false);
+  const [viewportH, setViewportH] = useState<number | undefined>(undefined);
+  const [trackY, setTrackY] = useState(0);
+  const [animate, setAnimate] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  const last = qi === questions.length - 1;
+  const selected = answers[qi] ?? [];
+  const hasAnswer = selected.length > 0 || Boolean(custom[qi]?.trim());
+
+  const sync = (withAnim: boolean) => {
+    const item = questionRefs.current[qi];
+    if (!item) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setViewportH(item.offsetHeight);
+    setTrackY(item.offsetTop);
+    setAnimate(withAnim && !reduce);
+  };
+
+  useLayoutEffect(() => {
+    const withAnim = measured.current;
+    measured.current = true;
+    sync(withAnim);
+    setReady(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qi, answers, custom, open, sent]);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => sync(measured.current));
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qi]);
+
+  useEffect(() => () => { if (advanceTimer.current) clearTimeout(advanceTimer.current); }, []);
+
+  const goTo = (next: number) => {
+    if (advanceTimer.current) clearTimeout(advanceTimer.current);
+    setQi(Math.min(Math.max(next, 0), questions.length - 1));
+  };
+
+  const send = () => {
+    if (advanceTimer.current) clearTimeout(advanceTimer.current);
+    setSent(true);
+    // Map UI picks onto the wire answer: radio → value or custom text;
+    // check → selected values. Unanswered fields are simply omitted.
+    const answer: Record<string, string | string[]> = {};
+    questions.forEach((question, qIdx) => {
+      const picked = answers[qIdx] ?? [];
+      const text = custom[qIdx]?.trim();
+      if (question.check) {
+        if (picked.length > 0) answer[question.key] = picked.map((i) => question.options[i].value);
+      } else if (picked.length > 0 && !text) {
+        answer[question.key] = question.options[picked[0]]?.value ?? text ?? "";
+      } else if (text) {
+        answer[question.key] = text;
+      }
+    });
+    void replyForm(form.id, answer);
+  };
+
+  const advance = () => {
+    if (last) send();
+    else goTo(qi + 1);
+  };
+
+  const toggle = (index: number) => {
+    const check = questions[qi].check;
+    setAnswers((current) => {
+      const picked = current[qi] ?? [];
+      const next = check
+        ? picked.includes(index)
+          ? picked.filter((item) => item !== index)
+          : [...picked, index]
+        : [index];
+      return { ...current, [qi]: next };
+    });
+    if (!check) {
+      setCustom((current) => ({ ...current, [qi]: "" }));
+      if (advanceTimer.current) clearTimeout(advanceTimer.current);
+      advanceTimer.current = setTimeout(() => {
+        if (last) send();
+        else setQi((current) => Math.min(questions.length - 1, current + 1));
+      }, 480);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={cn(cardFloat, "w-fit border-border text-[12.5px] font-medium text-text-primary transition-colors duration-150 hover:bg-bg-hover")}
+      >
+        Answer question
+      </button>
+    );
+  }
+
+  if (sent) {
+    return (
+      <div className="flex w-full max-w-[320px] items-center gap-3" style={{ animation: "pop-in 260ms cubic-bezier(0.23,1,0.32,1) both" }}>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 py-1 pr-2.5 pl-1 text-[12.5px] font-medium text-success">
+          <span className="flex size-4 items-center justify-center rounded-full bg-success text-white">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+          </span>
+          Answers sent
+        </span>
+      </div>
+    );
+  }
 
   return (
-    <div className={cn(cardFloat, "border-accent-cir/50")}>
-      <div className="flex items-center gap-2 font-medium">
-        <HelpCircle className="size-4 text-accent-cir" />
-        <span>{form.title || "Question"}</span>
-      </div>
-      {form.fields.map((field) => (
-        <QuestionField
-          key={field.key}
-          field={field}
-          value={answers[field.key] ?? ""}
-          onChange={(v) => set(field.key, v)}
-        />
-      ))}
-      <div className="mt-2.5 flex justify-end">
-        <Button
-          size="sm"
-          disabled={!complete}
-          onClick={() => void replyForm(form.id, answers)}
+    <div className="w-full max-w-[320px]">
+      <div
+        className="relative overflow-hidden rounded-xl border border-border bg-bg-popover [box-shadow:#0E0E0E59_0px_8px_24px]"
+        style={{ animation: "fade-up 380ms cubic-bezier(0.23,1,0.32,1) both" }}
+      >
+        <button
+          type="button"
+          aria-label="Dismiss"
+          onClick={() => setOpen(false)}
+          className="absolute right-2.5 top-2.5 z-10 flex size-6 items-center justify-center rounded-md text-text-tertiary transition-colors duration-100 hover:bg-bg-hover hover:text-text-primary"
         >
-          Answer
-        </Button>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M18 6L6 18M6 6l12 12" /></svg>
+        </button>
+        <div className="p-3.5">
+          {/* the question itself is the heading */}
+          <div
+            className="overflow-hidden"
+            style={{ height: viewportH, transition: animate ? `height ${SLIDE}` : undefined }}
+            aria-live="polite"
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 26,
+                transform: `translate3d(0, ${-trackY}px, 0)`,
+                transition: animate ? `transform ${SLIDE}` : undefined,
+                willChange: "transform",
+              }}
+            >
+              {questions.map((question, qIdx) => {
+                const active = qIdx === qi;
+                // Before the first measure, mount only the active question so
+                // the card opens at its real height, not the full stack.
+                if (!ready && !active) return null;
+                const picked = answers[qIdx] ?? [];
+                const questionStyle = {
+                  opacity: active ? 1 : 0,
+                  transition: animate ? `opacity ${SLIDE}` : undefined,
+                  pointerEvents: active ? undefined : "none" as const,
+                };
+                return (
+                  <div
+                    key={question.key}
+                    ref={(el) => { questionRefs.current[qIdx] = el; }}
+                    aria-hidden={active ? undefined : true}
+                    style={questionStyle}
+                  >
+                    <div className="pr-7 text-[14px] font-medium text-text-primary">{question.q}</div>
+                    {question.sub && (
+                      <div className="mt-0.5 text-[11.5px] text-text-tertiary">{question.sub}</div>
+                    )}
+                    <div className="mt-2.5 flex flex-col gap-1">
+                      {question.options.map((option, i) => {
+                        const on = picked.includes(i);
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            aria-pressed={on}
+                            tabIndex={active ? 0 : -1}
+                            onClick={() => { if (active) toggle(i); }}
+                            className="relative z-10 flex items-center gap-1.5 rounded-md pl-1 pr-2 py-1 text-left transition-colors duration-100 hover:bg-bg-hover"
+                          >
+                            <span
+                              className={`flex size-4 shrink-0 items-center justify-center transition-colors duration-200
+                                ${question.check ? "rounded-[5px]" : "rounded-full"}
+                                ${on ? "bg-text-primary text-bg-popover" : "text-transparent [box-shadow:inset_0_0_0_1.5px_var(--border-strong)]"}`}
+                            >
+                              {question.check ? (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                              ) : (
+                                <span className="size-1.5 rounded-full bg-bg-popover transition-transform duration-200" style={{ transform: on ? "scale(1)" : "scale(0)" }} />
+                              )}
+                            </span>
+                            <span className={`text-[13px] leading-none transition-colors duration-200 ${on ? "text-text-primary" : "text-text-secondary"}`}>
+                              {option.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                      {question.custom && (
+                        <label className="relative z-10 flex items-center gap-1.5 rounded-md pl-1 pr-2 py-1 transition-colors duration-100 hover:bg-bg-hover">
+                          <input
+                            value={custom[qi] ?? ""}
+                            tabIndex={active ? 0 : -1}
+                            onChange={(event) => {
+                              if (!active) return;
+                              setCustom((current) => ({ ...current, [qIdx]: event.target.value }));
+                              if (!question.check) setAnswers((current) => ({ ...current, [qIdx]: [] }));
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" && hasAnswer) {
+                                event.preventDefault();
+                                advance();
+                              }
+                            }}
+                            placeholder="Something else…"
+                            aria-label="Custom answer"
+                            className="min-w-0 flex-1 bg-transparent pl-1.5 text-[13px] text-text-primary outline-none placeholder:text-text-tertiary"
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* footer — step nav (rolling counter) + pill actions */}
+        <div className="flex items-center justify-between gap-3 border-t border-border px-3.5 py-2">
+          <div className="flex items-center gap-1 text-text-tertiary">
+            <button
+              type="button"
+              aria-label="Previous question"
+              disabled={qi <= 0}
+              onClick={() => goTo(qi - 1)}
+              className="flex size-[18px] items-center justify-center rounded-[5px] transition-colors duration-100 enabled:hover:text-text-primary disabled:opacity-30"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M18 15l-6-6-6 6" /></svg>
+            </button>
+            <span className="inline-flex items-center text-[12px] font-medium tabular-nums text-text-tertiary" style={{ letterSpacing: "-0.1px", lineHeight: 1 }}>
+              <RollingDigits value={`${qi + 1} / ${questions.length}`} />
+            </span>
+            <button
+              type="button"
+              aria-label="Next question"
+              disabled={last}
+              onClick={() => goTo(qi + 1)}
+              className="flex size-[18px] items-center justify-center rounded-[5px] transition-colors duration-100 enabled:hover:text-text-primary disabled:opacity-30"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M6 9l6 6 6-6" /></svg>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <Button variant="ghost" size="sm" onClick={() => (last ? setOpen(false) : goTo(qi + 1))}>
+              Skip
+            </Button>
+            <Button size="sm" disabled={!hasAnswer} onClick={advance}>
+              {last ? "Send" : "Continue"}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function QuestionField({
-  field,
-  value,
-  onChange,
-}: {
-  field: FormField;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="mt-2.5 first:mt-2">
-      {field.description && (
-        <div data-selectable className="break-words text-[13px]">
-          {field.description}
-        </div>
-      )}
-      {field.title && field.title !== field.description && (
-        <div className="mt-0.5 text-[11.5px] text-text-tertiary">{field.title}</div>
-      )}
-      {field.options && field.options.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          {field.options.map((o) => (
-            <button
-              key={o.value}
-              type="button"
-              title={o.description}
-              onClick={() => onChange(o.value)}
-              className={cn(
-                "rounded-full border px-2.5 py-1 text-[12px] transition-colors duration-150",
-                value === o.value
-                  ? "border-accent-cir bg-accent-cir/15 text-text-primary"
-                  : "border-border text-text-secondary hover:border-border-strong hover:bg-bg-hover",
-              )}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {(field.custom || !field.options || field.options.length === 0) && (
-        <input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={field.options?.length ? "Custom answer…" : "Your answer…"}
-          className="mt-1.5 w-full rounded-md border border-border bg-bg-code px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-text-tertiary focus:border-ring"
-        />
-      )}
-    </div>
-  );
-}
-
-/** Tag pill per the Circulo reasoning-tags spec (color keyed by effort). */
 function variantTagClass(v: string): string {
   switch (v) {
     case "low":

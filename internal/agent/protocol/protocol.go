@@ -284,6 +284,7 @@ type FormOption struct {
 // a string field with options; Custom allows free text instead of a choice.
 type FormField struct {
 	Key         string       `json:"key"`
+	Type        string       `json:"type,omitempty"` // string|multiselect|…
 	Title       string       `json:"title,omitempty"`
 	Description string       `json:"description,omitempty"`
 	Options     []FormOption `json:"options,omitempty"`
