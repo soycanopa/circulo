@@ -130,7 +130,7 @@ function ModelPicker() {
       <PopoverContent align="start" side="top" sideOffset={8} className="h-[280px] w-[380px]">
         <div className="flex min-h-0 flex-1">
           {/* Provider tabs — left rail, icon only (owner spec) */}
-          <div className="flex w-[56px] shrink-0 flex-col gap-0.5 border-r border-border p-1.5">
+          <div className="flex w-[44px] shrink-0 flex-col gap-0.5 border-r border-border p-1">
             {providers.map((p) => (
               <button
                 key={p}
