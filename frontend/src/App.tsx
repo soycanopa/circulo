@@ -125,8 +125,8 @@ export default function App() {
           informational strips only — the chat stays mounted while the
           adapter starts, retries or recovers (docs/flow.md §9). */}
       {activeProject && <ProjectBanner project={activeProject} />}
-      {/* Three stacked surfaces: chat card, terminal card, composer card —
-          the terminal lives OUTSIDE the chat card (owner call). */}
+      {/* Terminal sits OUTSIDE and BELOW the chat + composer cards (owner
+          call): its own surface at the bottom of the window. */}
       <div className="flex min-h-0 flex-1 flex-col gap-2">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[18px] bg-bg-main">
           {session ? (
@@ -135,26 +135,26 @@ export default function App() {
             <GeneralEmptyState hasProjects={projects.length > 0} />
           )}
         </div>
-        {activeProject && (
-          <div
-            className={cn(
-              "grid shrink-0 transition-[grid-template-rows] duration-300 ease-out",
-              !terminalOpen && "invisible",
-            )}
-            style={{
-              gridTemplateRows: terminalOpen ? "minmax(0, 1fr)" : "0fr",
-            }}
-          >
-            <div className="min-h-0 overflow-hidden">
-              <TerminalPanel projectID={activeProject.id} />
-            </div>
-          </div>
-        )}
         <div className="circulo-glow relative shrink-0 overflow-hidden rounded-[18px] bg-bg-main">
           <GlowPixels />
           <Composer />
         </div>
       </div>
+      {activeProject && (
+        <div
+          className={cn(
+            "grid shrink-0 transition-[grid-template-rows] duration-300 ease-out",
+            !terminalOpen && "invisible",
+          )}
+          style={{
+            gridTemplateRows: terminalOpen ? "minmax(0, 1fr)" : "0fr",
+          }}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <TerminalPanel projectID={activeProject.id} />
+          </div>
+        </div>
+      )}
     </AppShell>
   );
 }
