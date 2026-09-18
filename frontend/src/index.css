@@ -22,6 +22,7 @@
   /* lines */
   --border: #38383d;
   --border-strong: #47474d;
+  --track-off: #47474d;
 
   /* text */
   --text-primary: #ebebed;
@@ -95,6 +96,7 @@
   --color-bg-hover: var(--bg-hover);
   --color-bg-danger: var(--bg-danger);
   --color-border-strong: var(--border-strong);
+  --color-track-off: var(--track-off);
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-text-tertiary: var(--text-tertiary);
@@ -143,4 +145,22 @@
   [data-selectable] {
     user-select: text;
   }
+}
+
+/* Circulo Paper bottom glow — verbatim from the file's computed style
+   (oklab easing keeps it tight at the very bottom, under the composer).
+   The sRGB line is the fallback for older webviews. */
+@utility circulo-glow {
+  background-image: linear-gradient(
+    180deg,
+    rgb(115 120 242 / 0%) 0%,
+    rgb(115 120 242 / 11%) 96.4%,
+    rgb(115 120 242 / 22%) 100%
+  );
+  background-image: linear-gradient(
+      in oklab 180deg,
+      oklab(100% 0 0 / 0%) 0%,
+      96.4%,
+      oklab(59.4% 0.052 -0.22 / 22%) 100%
+    );
 }
