@@ -67,33 +67,48 @@
   delivery?, resume?}` — **no model/agent/variant**. Model is set on the session via
   `POST /api/session/{id}/model` with `{model: {id, providerID}}` (Model.Ref); agent via
   `/agent`. Wrong shapes 400 with `{"_tag":"InvalidRequestError", …}`.
-- Turn event names (live turn): `user`, `session.execution.started/.succeeded`,
+- Turn event names (live turn): `user`, `session.execution.started/.succeeded/.failed`,
   `session.inbox.enqueued/.delivered`, `session.text.started/.delta/.ended`,
   `session.reasoning.started/.delta/.ended`,
   `session.tool.input.started/.ended`, `session.tool.called/.progress/.success`,
   `session.step.started/.streamed/.ended` (ended carries `finish`, `cost`,
   `tokens{input,output,reasoning,cache{read,write}}`),
-  `session.usage.updated`, `session.renamed` (auto-title),
+  `session.usage.updated`, `session.renamed` (auto-title), `session.model.selected`,
   plus config noise: `model/provider/command/skill/websearch.updated`,
   `mcp.status.changed`, `session.instructions.updated`, `shell.created/.exited`.
-  `session.execution.failed` **not yet captured** (see phase 0 notes).
+- **Permission roundtrip (live 2.0.8, `testdata/v2-permission-roundtrip.sse`)**: the ask
+  rides `permission.asked` with the spec's `Permission.Request` as data
+  (`{id, sessionID, action, resources, save, metadata, source{type,messageID,id}}` — for
+  edits `metadata.files[].patch` carries a unified diff); the reply POST (body
+  `{"decision":"once|always|reject"}`, 204) is followed by a broadcast `permission.replied`
+  `{sessionID, requestID, reply}`. Event names are capture-only: neither the spec nor
+  opencode.ai/v2/docs names SSE events. Config: v2 takes a `permissions` **ruleset**
+  (`[{action, resource, effect}]`, action `shell` replaces v1 `bash`; legacy
+  `permission:{edit,bash}` objects still load — `/api/config` shows them normalized).
+  Docs (opencode.ai/v2/docs/permissions): unmatched tools default to `ask`; `reject`
+  cascades to the session's other pending asks; `always` saves a durable project-scoped
+  allow rule.
+- **`session.execution.failed` (live, `testdata/v2-execution-failed.sse`)**: data is
+  `{sessionID, error:{type, message}}` (`status` absent for non-HTTP errors — e.g.
+  `provider.no-route` from a bad model pin); fires promptly on a fresh session.
 - Noise filter for translate: mcp/integration/instructions/shell/websearch/command/
-  skill/provider/model `*.updated`, `mcp.status.changed`.
-- Fixtures captured: `testdata/v2-session-lifecycle.sse`, `testdata/v2-turn-basic.sse`
-  (real, 2.0.8). **Pending live capture:** permission ask/reply and execution failure —
-  a scratch server auto-approves edits and a stuck session swallowed the failure; both
-  must be captured during the owner E2E pass (v1 precedent: synthetic then replaced).
+  skill/provider/model `*.updated`, `mcp.status.changed`, `session.model.selected`.
+- Fixtures captured: `testdata/v2-session-lifecycle.sse`, `testdata/v2-turn-basic.sse`,
+  `testdata/v2-permission-roundtrip.sse`, `testdata/v2-execution-failed.sse` (all real,
+  2.0.8). Permission and execution-failure shapes are no longer pending — the phase 0
+  "auto-approve" repro was a config placement issue: a project `opencode.json` with the
+  `permissions` ruleset asks as documented.
 
 ## 2. Phases
 
 | # | Work | Status |
 |---|---|---|
-| 0 | `CIRCULOGO_OPENCODE_BIN` wired; real v2 fixtures captured (lifecycle + turn) | ✅ — permission/execution-failed captures pending owner E2E |
+| 0 | `CIRCULOGO_OPENCODE_BIN` wired; real v2 fixtures captured (lifecycle + turn + permission + execution-failed) | ✅ |
 | 1 | `wire_v2.go` + `client_v2.go` (+ `client_v2_test.go` shape tests) | ✅ |
 | 2+3 | `translate_v2.go` → neutral protocol; adapter swapped to the v2 client; `WaitReady` (boot password → Basic auth → /api/info); v1 code deleted | ✅ — neutral contract unchanged, `protocol.ts` needed no field changes |
 | 4 | Reducer/store merge-patch for partial `session.updated` (v2 renamed patches) + tests | ✅ |
 | 5 | Docs: TRD pin → 2.0.x, this doc status, fixture headers | ✅ |
-| 6 | CI-lite ✅ + owner E2E manual pass (incl. permission + execution-failed captures) | gate — **handoff: [opencode-v2-phase6-e2e.md](opencode-v2-phase6-e2e.md)** |
+| 6 | CI-lite ✅ + owner E2E manual pass (incl. permission + execution-failed captures) | captures ✅ (d24917f) — **owner checklist pending: [opencode-v2-phase6-e2e.md](opencode-v2-phase6-e2e.md)** |
 
 ## 3. Decisions already taken by the owner
 - Update everything to v2 (2026-09-18). v1 CLI stays installed for daily use until the

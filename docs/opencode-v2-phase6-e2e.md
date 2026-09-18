@@ -4,7 +4,8 @@ Start-here doc for a fresh session. The migration itself (phases 0–5) is code-
 on branch `feature/opencode-v2`; what remains is the owner-gated E2E pass and the two
 SSE captures that could not be taken from a scratch server.
 
-- **Status:** ready to run (2026-09-18)
+- **Status:** captures done (2026-09-18, commit d24917f); owner E2E checklist §3 remains
+  the gate. §5 decisions still awaiting the owner.
 - **Related:** [opencode-v2-migration.md](opencode-v2-migration.md) (verified endpoint/event
   map — read §1.1 first) · [../../AGENTS.md](../AGENTS.md)
 
@@ -50,35 +51,29 @@ port; both live only in the app process (in-memory ring buffer), see §4 for cap
 Record every deviation; the translator has best-effort handling for permission and
 execution-failure events that still needs live confirmation.
 
-## 4. Pending SSE captures (phase 0 leftovers)
+## 4. Pending SSE captures — RESOLVED (2026-09-18)
 
-Two event shapes are still unverified against a live server — the translator handles them
-best-effort and the fixtures are placeholders:
+Both shapes were captured from a standalone 2.0.8 server and are now real fixtures with
+translator coverage (commit d24917f):
 
-1. **Permission ask/reply** — expected event name unknown (candidates: `session.permission.…`).
-2. **`session.execution.failed`** — data payload unverified (spec: `StructuredError
-   {type, message, status}`).
+1. **Permission ask/reply** → event name is `permission.asked` (data = the spec's
+   `Permission.Request`: `{id, sessionID, action, resources, save, metadata, source}`),
+   and after the reply POST the server broadcasts `permission.replied`
+   (`{sessionID, requestID, reply}`). Fixture:
+   `internal/opencode/testdata/v2-permission-roundtrip.sse`; translator emits the
+   existing neutral `permission.request` / `permission.resolved` events, so
+   `protocol.ts` needed no changes.
+2. **`session.execution.failed`** → data `{sessionID, error:{type, message}}`
+   (`status` only for HTTP-backed errors; live example: `provider.no-route` from a bad
+   model pin, fires promptly on a fresh session). Fixture:
+   `internal/opencode/testdata/v2-execution-failed.sse`.
 
-Capture procedure (standalone server, known password — the app's port/password are
-in-memory only):
-
-```sh
-V2=~/.local/opencode-v2/node_modules/@opencode/cli-darwin-arm64/bin/opencode
-mkdir -p /tmp/e2e-capture && cd /tmp/e2e-capture && git init   # git repo may matter for permissions
-$V2 serve --hostname 127.0.0.1 --port 5999 2>&1 | tee /tmp/v2-serve.log &
-P=$(grep -o 'server password .*' /tmp/v2-serve.log | awk '{print $3}')
-curl -s -N -u "opencode:$P" --max-time 90 http://127.0.0.1:5999/api/event > capture.sse
-# in another shell: create a session, set a model, send the trigger prompt
-```
-
-- **Phase 0 findings to resolve first**: a scratch dir auto-approved edits even with
-  `opencode.json` `permission:{edit:"ask",bash:"ask"}` (config placement/merge needs
-  investigating — check `GET /api/config` after writing the file), and an invalid-model
-  turn hung instead of emitting `execution.failed` (session may need to be fresh).
-- Permission event candidate names to watch: anything with `permission` in the `type`.
-- After capture: add fixtures under `internal/opencode/testdata/v2-*.sse` (version
-  header), extend `translate_v2_test.go`, adjust `TranslateV2` if the real shapes differ,
-  and update this doc + the migration doc.
+Phase 0 finding closed: the "auto-approve" repro was config placement — a project
+`opencode.json` with the v2 `permissions` ruleset asks as documented
+(opencode.ai/v2/docs/permissions: rules `{action, resource, effect}`, action `shell`
+replaces v1 `bash`, unmatched tools default to `ask`, `reject` cascades to the session's
+pending asks). The legacy `permission:{edit,bash}` object still loads (server normalizes
+it to the ruleset — verified via `GET /api/config`).
 
 ## 5. Decisions awaiting the owner (do NOT act without approval)
 
@@ -93,6 +88,8 @@ curl -s -N -u "opencode:$P" --max-time 90 http://127.0.0.1:5999/api/event > capt
 
 ## 6. Definition of done
 
-- E2E checklist §3 passes with no translator deviations.
-- Both captures taken, fixtures + translator + tests updated, CI-lite green.
+- E2E checklist §3 passes with no translator deviations. ← pending (owner)
+- Both captures taken, fixtures + translator + tests updated, CI-lite green. ← ✅ done
+  (d24917f)
 - Docs updated (TRD already pinned to 2.0.8; implement.md E2E note; this doc closed).
+  ← migration doc + this doc updated; implement.md note pending the checklist result.
