@@ -38,8 +38,8 @@ function GlowPixels() {
     if (!ctx) return;
 
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const PITCH = 12;
-    const SIZE = 3;
+    const PITCH = 9;
+    const SIZE = 2;
     const BASE = 0.35;
     let dots: { x: number; y: number; phase: number; cycle: number }[] = [];
     let w = 0;
