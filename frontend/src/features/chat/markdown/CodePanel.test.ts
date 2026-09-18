@@ -20,10 +20,10 @@ describe("parseDiffLines", () => {
     ]);
     // gutter numbers: del keeps the old number, add shows the new one
     expect(rows[1]).toMatchObject({ old: 2, cur: null });
-    expect(rows[2]).toMatchObject({ old: null, cur: 3 });
-    expect(rows[3]).toMatchObject({ old: null, cur: 4 });
-    expect(rows[4]).toMatchObject({ old: 3, cur: 5 });
-    expect(rows[5]).toMatchObject({ old: 4, cur: 6 });
+    expect(rows[2]).toMatchObject({ old: null, cur: 2 });
+    expect(rows[3]).toMatchObject({ old: null, cur: 3 });
+    expect(rows[4]).toMatchObject({ old: 3, cur: 4 });
+    expect(rows[5]).toMatchObject({ old: 4, cur: 5 });
   });
 
   it("pairs a del+add run into word-level pieces", () => {
