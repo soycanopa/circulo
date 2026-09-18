@@ -65,7 +65,9 @@
 
 ## 4. Parts rendering rules
 
-Order inside an assistant turn is strictly the server's part order.
+Order inside an assistant turn is strictly the server's part order. Alignment rule
+(owner call): every assistant element — text, trace blocks, loaders — sits on the
+LEFT edge of the column; only user bubbles ride the right.
 
 - **reasoning** — folds into the turn's ThinkingState trace: prose rows that expand
   while streaming and settle muted; header "Thinking" (shimmer) → "Thought for Ns"
