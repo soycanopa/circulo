@@ -12,7 +12,9 @@ import { TerminalPanel } from "@/features/terminal/TerminalPanel";
 import { connectSse, type SseHandle } from "@/lib/agent/sse";
 import { useAppStore } from "@/lib/agent/store";
 import { useShortcuts } from "@/lib/useShortcuts";
+import { SquareTerminal } from "lucide-react";
 import type { Envelope } from "@/lib/agent/protocol";
+import { cn } from "@/lib/utils";
 
 /**
  * Empty-state per the Circulo Paper frame: sparkle chip, title and subtext.
@@ -81,6 +83,7 @@ export default function App() {
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const session = activeSessionId ? chat.sessions[activeSessionId] : undefined;
   const terminalOpen = useAppStore((s) => s.terminalOpen);
+  const toggleTerminal = useAppStore((s) => s.toggleTerminal);
 
   return (
     <AppShell
@@ -98,6 +101,23 @@ export default function App() {
           <span className="text-xs leading-[14px] text-text-secondary">Circulo</span>
         )
       }
+      actions={
+        activeProject ? (
+          <button
+            aria-label="Toggle terminal"
+            title="Terminal"
+            className={cn(
+              "flex size-7 shrink-0 items-center justify-center rounded-full border text-muted-foreground hover:text-foreground",
+              terminalOpen
+                ? "border-accent-cir/60 bg-accent-cir/15 text-text-primary"
+                : "border-border-strong bg-bg-code",
+            )}
+            onClick={toggleTerminal}
+          >
+            <SquareTerminal className="size-3.5" />
+          </button>
+        ) : undefined
+      }
     >
       <ReconnectBar />
       {/* The app bar carries session context; banners below it are
@@ -114,12 +134,15 @@ export default function App() {
             call). Grows/shrinks with a grid-rows animation. */}
         {activeProject && (
           <div
-            className="grid shrink-0 transition-[grid-template-rows] duration-300 ease-out"
+            className={cn(
+              "grid shrink-0 transition-[grid-template-rows] duration-300 ease-out",
+              !terminalOpen && "invisible",
+            )}
             style={{
               gridTemplateRows: terminalOpen ? "minmax(0, 1fr)" : "0fr",
             }}
           >
-            <div className="min-h-0 overflow-hidden px-0 pb-2">
+            <div className="min-h-0 overflow-hidden">
               <TerminalPanel projectID={activeProject.id} />
             </div>
           </div>

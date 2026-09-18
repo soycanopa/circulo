@@ -5,10 +5,9 @@
  */
 
 import { memo } from "react";
-import { Folder, Loader2, SquareTerminal, X } from "lucide-react";
+import { Folder, Loader2, X } from "lucide-react";
 
 import { useAppStore } from "@/lib/agent/store";
-import { cn } from "@/lib/utils";
 import type { ProjectView } from "@/lib/agent/protocol";
 import type { SessionState } from "@/lib/agent/reducer";
 
@@ -20,8 +19,6 @@ export const ChatAppBar = memo(function ChatAppBar({
   session?: SessionState;
 }) {
   const closeSession = useAppStore((s) => s.closeSession);
-  const terminalOpen = useAppStore((s) => s.terminalOpen);
-  const toggleTerminal = useAppStore((s) => s.toggleTerminal);
   const title = session?.session.title || "New chat";
   const busy = session?.status === "busy";
   const retrying = session?.status === "retry";
@@ -46,19 +43,6 @@ export const ChatAppBar = memo(function ChatAppBar({
             retrying{session?.retry ? ` (attempt ${session.retry.attempt})` : ""}
           </span>
         )}
-        <button
-          aria-label="Toggle terminal"
-          title="Terminal"
-          className={cn(
-            "flex size-7 shrink-0 items-center justify-center rounded-full border text-muted-foreground hover:text-foreground",
-            terminalOpen
-              ? "border-accent-cir/60 bg-accent-cir/15 text-text-primary"
-              : "border-border-strong bg-bg-code",
-          )}
-          onClick={toggleTerminal}
-        >
-          <SquareTerminal className="size-3.5" />
-        </button>
         {session && (
           <button
             aria-label="Close session"

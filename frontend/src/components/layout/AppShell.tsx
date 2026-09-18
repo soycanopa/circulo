@@ -104,10 +104,13 @@ function GlowPixels() {
 export function AppShell({
   sidebar,
   title,
+  actions,
   children,
 }: {
   sidebar: ReactNode;
   title?: ReactNode;
+  /** right side of the app bar — always visible (terminal toggle etc.) */
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
@@ -163,6 +166,7 @@ export function AppShell({
           </button>
         </div>
         <div className="flex h-10 min-w-0 flex-1 items-center px-4">{title}</div>
+        <div className="flex h-10 shrink-0 items-center gap-2 pr-3">{actions}</div>
       </div>
       <div className="flex min-h-0 flex-1 gap-2">
         {sidebarOpen && (
