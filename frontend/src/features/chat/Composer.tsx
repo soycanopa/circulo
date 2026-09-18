@@ -19,6 +19,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { ProviderIcon } from "@/components/ProviderIcon";
 import { useAppStore } from "@/lib/agent/store";
 import { cn } from "@/lib/utils";
 import type { PermissionRequest } from "@/lib/agent/protocol";
@@ -125,21 +126,21 @@ function ModelPicker() {
       </PopoverTrigger>
       <PopoverContent align="start" side="top" sideOffset={8} className="h-[280px] w-[380px]">
         <div className="flex min-h-0 flex-1">
-          {/* Provider tabs — left rail */}
-          <div className="flex w-[108px] shrink-0 flex-col gap-0.5 border-r border-border p-1.5">
+          {/* Provider tabs — left rail, icon only (owner spec) */}
+          <div className="flex w-[56px] shrink-0 flex-col gap-0.5 border-r border-border p-1.5">
             {providers.map((p) => (
               <button
                 key={p}
                 type="button"
+                title={p}
+                aria-label={p}
                 onClick={() => setTab(p)}
                 className={cn(
-                  "truncate rounded-md px-2 py-1.5 text-left text-sm/tight",
-                  active === p
-                    ? "bg-bg-hover text-text-primary"
-                    : "text-text-secondary hover:bg-bg-hover/60",
+                  "flex items-center justify-center rounded-md py-2",
+                  active === p ? "bg-bg-hover" : "opacity-60 hover:bg-bg-hover/60 hover:opacity-100",
                 )}
               >
-                {p}
+                <ProviderIcon provider={p} size={16} />
               </button>
             ))}
           </div>
@@ -176,7 +177,10 @@ function ModelPicker() {
                         : "text-text-primary hover:bg-bg-hover/60",
                     )}
                   >
-                    <span className="min-w-0 truncate">{m.name || m.id}</span>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <ProviderIcon provider={active} size={12} />
+                      <span className="min-w-0 truncate">{m.name || m.id}</span>
+                    </span>
                     {selected && (
                       <Check className="size-3.5 shrink-0 text-accent-cir" strokeWidth={2} />
                     )}
