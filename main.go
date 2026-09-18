@@ -55,6 +55,9 @@ func main() {
 			Mode:      cfg.Mode,
 			Dir:       cfg.Path,
 			URL:       cfg.URL,
+			// lets the opencode v1/v2 migration run both binaries
+			// side-by-side (docs/opencode-v2-migration.md §binary).
+			Binary: os.Getenv("CIRCULOGO_OPENCODE_BIN"),
 		}), nil
 	})
 
