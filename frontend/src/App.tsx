@@ -143,16 +143,12 @@ export default function App() {
       {activeProject && (
         <div
           className={cn(
-            "grid shrink-0 transition-[grid-template-rows] duration-300 ease-out",
+            "shrink-0 overflow-hidden transition-[max-height,opacity] duration-300 ease-out",
             !terminalOpen && "invisible",
           )}
-          style={{
-            gridTemplateRows: terminalOpen ? "minmax(0, 1fr)" : "0fr",
-          }}
+          style={{ maxHeight: terminalOpen ? 240 : 0, opacity: terminalOpen ? 1 : 0 }}
         >
-          <div className="min-h-0 overflow-hidden">
-            <TerminalPanel projectID={activeProject.id} />
-          </div>
+          <TerminalPanel projectID={activeProject.id} />
         </div>
       )}
     </AppShell>
