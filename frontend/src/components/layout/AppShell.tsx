@@ -93,19 +93,24 @@ export function AppShell({
         <div className="flex h-10 shrink-0 items-center gap-2 pr-3">{actions}</div>
       </div>
       <div className="flex min-h-0 flex-1 gap-2">
-        {sidebarOpen && (
+        {(
           <>
             <aside
-              className="relative flex shrink-0 flex-col overflow-hidden rounded-[18px] bg-bg-sidebar"
-              style={{ width: sidebarWidth }}
+              className="relative flex min-w-0 shrink-0 flex-col overflow-hidden rounded-[18px] bg-bg-sidebar transition-[width] duration-300 ease-out"
+              style={{ width: sidebarOpen ? sidebarWidth : 0 }}
             >
-              {/* layer order: surface → pixels → glow gradient → content */}
-              <GlowPixels />
-              <div aria-hidden className="circulo-glow absolute inset-0" />
-              <div className="relative flex min-h-0 flex-1 flex-col">{sidebar}</div>
+              {/* layer order: surface → pixels → glow gradient → content;
+                  the inner column keeps its width so text never reflows
+                  during the slide */}
+              <div className="flex min-h-0 flex-1 flex-col" style={{ width: sidebarWidth }}>
+                <GlowPixels />
+                <div aria-hidden className="circulo-glow absolute inset-0" />
+                <div className="relative flex min-h-0 flex-1 flex-col">{sidebar}</div>
+              </div>
             </aside>
             {/* invisible drag handle living in the 8px gap; double-click
                 resets to the default width */}
+            sidebarOpen && (
             <div
               role="separator"
               aria-orientation="vertical"
@@ -128,6 +133,7 @@ export function AppShell({
                 )}
               />
             </div>
+            )}
           </>
         )}
         <main className="flex min-w-0 flex-1 flex-col gap-2">{children}</main>

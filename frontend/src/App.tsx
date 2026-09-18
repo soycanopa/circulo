@@ -127,16 +127,17 @@ export default function App() {
       {activeProject && <ProjectBanner project={activeProject} />}
       {/* Terminal sits OUTSIDE and BELOW the chat + composer cards (owner
           call): its own surface at the bottom of the window. */}
-      <div className="flex min-h-0 flex-1 flex-col gap-2">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[18px] bg-bg-main">
+      {/* Chat + composer share ONE surface; the terminal card lives outside
+          and below it (owner call). */}
+      <div className="circulo-glow relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[18px] bg-bg-main">
+        <GlowPixels />
+        <div aria-hidden className="circulo-glow absolute inset-0" />
+        <div className="relative flex min-h-0 flex-1 flex-col">
           {session ? (
             <Transcript session={session} />
           ) : (
             <GeneralEmptyState hasProjects={projects.length > 0} />
           )}
-        </div>
-        <div className="circulo-glow relative shrink-0 overflow-hidden rounded-[18px] bg-bg-main">
-          <GlowPixels />
           <Composer />
         </div>
       </div>
