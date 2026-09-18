@@ -115,6 +115,39 @@ func TestClientV2_MessagesCarryInlineContent(t *testing.T) {
 	}
 }
 
+// Regression: the real 2.0.8 REST history carries tool errors as
+// Session.StructuredError objects and results as content[] — a rigid string
+// decode failed the WHOLE messages call, killing history hydration
+// (docs/opencode-v2-migration.md; owner session "Saludo", 2026-09-18).
+func TestClientV2_MessagesTolerateStructuredToolErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"msg_a","time":{"created":1},"type":"assistant",
+			 "content":[
+			   {"type":"tool","id":"call_1","name":"shell",
+			    "state":{"status":"error","input":{"command":"boom"},
+			     "error":{"type":"provider.no-route","message":"Model unavailable: x/y","status":0}}},
+			   {"type":"tool","id":"call_2","name":"read",
+			    "state":{"status":"completed","input":{"file_path":"a.ts"},
+			     "content":[{"type":"text","text":"line one"},{"type":"text","text":"line two"}]}}]}]}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	msgs, err := c.MessagesV2(context.Background(), "ses_1", 0)
+	if err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	toolErr := msgs[0].Content[0].stateError()
+	if toolErr != "Model unavailable: x/y" {
+		t.Errorf("stateError = %q", toolErr)
+	}
+	out := msgs[0].Content[1].stateOutput()
+	if out != "line one\nline two" {
+		t.Errorf("stateOutput = %q", out)
+	}
+}
+
 func TestClientV2_PromptBodyIsTextOnly(t *testing.T) {
 	var gotBody map[string]any
 	var gotPath, gotMethod string

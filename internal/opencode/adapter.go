@@ -533,10 +533,10 @@ func messagesV2ToNeutral(sessionID string, msgs []V2Message) []agent.HydratedMes
 		case "user":
 			out = append(out, agent.HydratedMessage{
 				Info: protocol.MessageInfo{
-					ID:      m.ID,
+					ID:        m.ID,
 					SessionID: sessionID,
-					Role:    protocol.RoleUser,
-					Created: m.Time.Created,
+					Role:      protocol.RoleUser,
+					Created:   m.Time.Created,
 				},
 				Parts: []protocol.Part{{
 					ID:   m.ID + ":text",
@@ -590,8 +590,8 @@ func messagesV2ToNeutral(sessionID string, msgs []V2Message) []agent.HydratedMes
 						State: &protocol.ToolState{
 							Status: toolStatusV2(c.State.Status),
 							Input:  c.State.Input,
-							Output: c.State.Output,
-							Error:  c.State.Error,
+							Output: c.stateOutput(),
+							Error:  c.stateError(),
 						},
 					})
 				}

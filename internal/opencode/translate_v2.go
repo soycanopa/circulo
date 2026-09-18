@@ -138,9 +138,9 @@ func TranslateV2(projectID string, env V2Event) ([]protocol.Envelope, error) {
 		// text. Emitting it as message.updated + text part lets the reducer's
 		// optimistic dedupe replace the client_ bubble with the server echo.
 		var p struct {
-			InboxID  string `json:"inboxID"`
+			InboxID   string `json:"inboxID"`
 			SessionID string `json:"sessionID"`
-			Item     struct {
+			Item      struct {
 				Type    string `json:"type"`
 				Payload struct {
 					Text string `json:"text"`
@@ -329,9 +329,9 @@ func TranslateV2(projectID string, env V2Event) ([]protocol.Envelope, error) {
 
 	case "session.tool.called":
 		var p struct {
-			SessionID          string `json:"sessionID"`
-			AssistantMessageID string `json:"assistantMessageID"`
-			ID                 string `json:"id"`
+			SessionID          string          `json:"sessionID"`
+			AssistantMessageID string          `json:"assistantMessageID"`
+			ID                 string          `json:"id"`
 			Input              json.RawMessage `json:"input"`
 		}
 		if err := json.Unmarshal(env.Data, &p); err != nil {
@@ -353,9 +353,9 @@ func TranslateV2(projectID string, env V2Event) ([]protocol.Envelope, error) {
 
 	case "session.tool.progress":
 		var p struct {
-			SessionID          string `json:"sessionID"`
-			AssistantMessageID string `json:"assistantMessageID"`
-			ID                 string `json:"id"`
+			SessionID          string          `json:"sessionID"`
+			AssistantMessageID string          `json:"assistantMessageID"`
+			ID                 string          `json:"id"`
 			Metadata           json.RawMessage `json:"metadata"`
 		}
 		if err := json.Unmarshal(env.Data, &p); err != nil {
@@ -412,13 +412,14 @@ func TranslateV2(projectID string, env V2Event) ([]protocol.Envelope, error) {
 		})
 
 	case "session.tool.error":
-		// Event name not yet captured live (phase 0 note); shape follows the
-		// success frame with an error payload. Harmless if never emitted.
+		// Event name not yet captured live; the error rides either as a
+		// string or the StructuredError object the REST states use — accept
+		// both, a rigid decode would silently drop the frame.
 		var p struct {
-			SessionID          string `json:"sessionID"`
-			AssistantMessageID string `json:"assistantMessageID"`
-			ID                 string `json:"id"`
-			Error              string `json:"error"`
+			SessionID          string          `json:"sessionID"`
+			AssistantMessageID string          `json:"assistantMessageID"`
+			ID                 string          `json:"id"`
+			Error              json.RawMessage `json:"error"`
 		}
 		if err := json.Unmarshal(env.Data, &p); err != nil {
 			return nil, fmt.Errorf("opencode: session.tool.error: %w", err)
@@ -432,7 +433,7 @@ func TranslateV2(projectID string, env V2Event) ([]protocol.Envelope, error) {
 				Type: protocol.PartTool,
 				State: &protocol.ToolState{
 					Status: protocol.ToolError,
-					Error:  p.Error,
+					Error:  rawErrorText(p.Error),
 				},
 			},
 		})
@@ -545,10 +546,10 @@ func TranslateV2(projectID string, env V2Event) ([]protocol.Envelope, error) {
 			return nil, fmt.Errorf("opencode: session.step.ended: %w", err)
 		}
 		part := protocol.Part{
-			ID:    p.AssistantMessageID + ":finish",
-			Type:  protocol.PartStepFinish,
+			ID:     p.AssistantMessageID + ":finish",
+			Type:   protocol.PartStepFinish,
 			Reason: p.Finish,
-			Cost:  p.Cost,
+			Cost:   p.Cost,
 		}
 		if p.Tokens != nil {
 			part.Tokens = &protocol.TokenUsage{

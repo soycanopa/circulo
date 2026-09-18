@@ -383,11 +383,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
         const p = env.payload as SessionStatusEvent;
         // Surface turn-end by refreshing the session list order (title/updated).
         if (p.status === "idle") {
-          const { activeProjectId } = get();
+          const { activeProjectId, activeSessionId } = get();
           if (activeProjectId) {
             get()
               .refreshSessions(activeProjectId)
               .catch(() => undefined);
+            // Heal any live event drops at turn end: the user echo is a
+            // single part.updated (no replace frames to repair it), so the
+            // transcript refetches history once the turn settles.
+            if (activeSessionId) {
+              api
+                .messages(activeProjectId, activeSessionId, 0)
+                .then((history) =>
+                  set((s) => ({ chat: mergeHydrated(s.chat, activeSessionId, history) })),
+                )
+                .catch(() => undefined);
+            }
           }
         }
         break;
