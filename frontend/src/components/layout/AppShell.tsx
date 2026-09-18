@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { PanelLeft } from "lucide-react";
 
 import { useAppStore } from "@/lib/agent/store";
+import { cn } from "@/lib/utils";
 
 export function AppShell({
   sidebar,
@@ -26,8 +27,15 @@ export function AppShell({
     <div className="flex h-screen w-screen flex-col gap-2 overflow-hidden bg-bg-app p-2 text-foreground">
       <div className="flex h-10 shrink-0 items-center">
         {/* Slot aligned with the sidebar width; the system traffic lights
-            overlay its start, so the toggle button clears them. */}
-        <div className="flex h-10 w-[252px] shrink-0 items-center pl-[74px]">
+            overlay its start, so the toggle button clears them. Collapses to
+            the button when the sidebar is hidden so the title slides next to
+            it (owner: ~16px gap). */}
+        <div
+          className={cn(
+            "flex h-10 shrink-0 items-center pl-[74px]",
+            sidebarOpen && "w-[252px]",
+          )}
+        >
           <button
             type="button"
             aria-label="Toggle sidebar"
