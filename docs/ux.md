@@ -71,9 +71,15 @@ Order inside an assistant turn is strictly the server's part order.
   while streaming and settle muted; header "Thinking" (shimmer) → "Thought for Ns"
   when the wire carried a duration, else "Ran N tools". Click toggles. Never renders
   raw inside the answer flow.
-- **text (assistant)** — GFM markdown. Code blocks: header (language + copy button,
-  turns to ✓ for 2 s), wrapped lines, no horizontal scroll. Lists/tables/links styled
-  by the typography preset.
+- **text (assistant)** — GFM markdown, streamed word-by-word behind a caret
+  (owner's StreamingText design; ~55 ms per word with catch-up on token bursts,
+  `prefers-reduced-motion` renders instantly). When the turn settles, an actions
+  row appears under the last text part: working copy button, plus (when the turn
+  used web tools) a sources avatar-stack toggle expanding to the visited URLs.
+  No inline citation chips or follow-up prompts yet — the wire carries no
+  citation markers or suggestion producer. Code blocks: header (language + copy
+  button, turns to ✓ for 2 s), wrapped lines, no horizontal scroll. Lists/tables/
+  links styled by the typography preset.
 - **tool** — one ThinkingState trace per turn groups reasoning + tools (owner design,
   `parts/ThinkingState.tsx`): vertical line, rows in server order. Web search/fetch
   rows carry colored dots + query/source links; read/write/edit/patch/shell rows show
@@ -95,9 +101,9 @@ User messages: plain bubble, right-aligned accent border, editable later (v1).
 - **Pin-to-bottom:** if the user is at the bottom (< 24 px), new content keeps the view
   pinned; any manual scroll up releases the pin and shows a `↓ Jump to latest` pill
   (with count of new lines while away, optional).
-- **Stream smoothing:** transcript re-renders capped ~15 Hz (TRD §6); text parts may
-  reveal with a 100 ms trailing fade. Respect `prefers-reduced-motion` (no reveal
-  animation, instant text).
+- **Stream smoothing:** transcript re-renders capped ~15 Hz (TRD §6); the streaming
+  text part reveals word-by-word (~55 ms, catch-up on bursts — see §4). Respect
+  `prefers-reduced-motion` (no reveal animation, instant text).
 - **Working loader:** the 3×3 pixel-grid LoadingState replaces the old "Working… Ns"
   line — rotating phrase every 2.4 s, shimmer label, elapsed timer in mono tabular
   figures; `prefers-reduced-motion` freezes grid and shimmer (timer still ticks).

@@ -5,10 +5,10 @@
  * (flow.md §3).
  */
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 
-import { MarkdownView } from "./markdown/MarkdownView";
 import ThinkingState from "./parts/ThinkingState";
+import { AssistantText, sourcesFromParts } from "./parts/AssistantText";
 import { PatchCard, SubtaskPill, TurnFooter } from "./parts/MiscParts";
 import type { MessageRecord } from "@/lib/agent/reducer";
 
@@ -60,6 +60,12 @@ export const AssistantMessage = memo(function AssistantMessage({
   // Reasoning + tool parts collapse into one ThinkingState trace (ux.md §4);
   // it renders at the position of the first of them, in server part order.
   const traceParts = m.parts.filter((p) => p.type === "reasoning" || p.type === "tool");
+  const sources = useMemo(() => sourcesFromParts(m.parts), [m.parts]);
+  const lastTextId = useMemo(() => {
+    let id = "";
+    for (const p of m.parts) if (p.type === "text") id = p.id;
+    return id;
+  }, [m.parts]);
   let traceRendered = false;
   return (
     <div className="flex w-full flex-col gap-2">
@@ -83,7 +89,16 @@ export const AssistantMessage = memo(function AssistantMessage({
           case "subtask":
             return <SubtaskPill key={p.id} part={p} />;
           case "text":
-            return <MarkdownView key={p.id} text={p.text ?? ""} />;
+            return (
+              <AssistantText
+                key={p.id}
+                partKey={p.id}
+                text={p.text ?? ""}
+                streaming={streaming && p.id === lastTextId}
+                sources={sources}
+                showActions={p.id === lastTextId}
+              />
+            );
           case "step-start":
           case "step-finish":
           case "file":
