@@ -206,12 +206,18 @@ export interface PromptRequest {
   agent?: string;
   provider?: string;
   model?: string;
+  /** Reasoning-effort variant (OpenCode prompt "variant"); empty = default. */
+  variant?: string;
 }
 
 export interface ModelInfo {
   id: string;
   name?: string;
   provider: string;
+  /** capabilities.reasoning from the agent server. */
+  reasoning?: boolean;
+  /** Reasoning-effort options the model accepts (e.g. low/high/max). */
+  variants?: string[];
 }
 
 export interface AgentInfo {

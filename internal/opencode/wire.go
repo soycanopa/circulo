@@ -262,9 +262,15 @@ type ProvidersResponse struct {
 	Providers []struct {
 		ID     string `json:"id"`
 		Name   string `json:"name,omitempty"`
-		Models map[string]struct {
+			Models map[string]struct {
 			ID   string `json:"id"`
 			Name string `json:"name,omitempty"`
+			Capabilities struct {
+				Reasoning bool `json:"reasoning"`
+			} `json:"capabilities"`
+			Variants map[string]struct {
+				Disabled bool `json:"disabled"`
+			} `json:"variants"`
 		} `json:"models"`
 	} `json:"providers"`
 	Default map[string]string `json:"default,omitempty"`

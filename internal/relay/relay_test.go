@@ -245,7 +245,7 @@ func TestPromptProxiesToAdapter(t *testing.T) {
 	waitRunning(t, srv, id)
 
 	resp, err := http.Post(srv.URL+"/agent/projects/"+id+"/sessions/ses_1/prompt",
-		"application/json", strings.NewReader(`{"text":"do it","agent":"build","provider":"p","model":"m"}`))
+		"application/json", strings.NewReader(`{"text":"do it","agent":"build","provider":"p","model":"m","variant":"high"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +256,7 @@ func TestPromptProxiesToAdapter(t *testing.T) {
 	a := ff.made[dir]
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.prompt.Text != "do it" || a.prompt.Agent != "build" {
+	if a.prompt.Text != "do it" || a.prompt.Agent != "build" || a.prompt.Variant != "high" {
 		t.Errorf("adapter got %+v", a.prompt)
 	}
 }

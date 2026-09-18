@@ -309,6 +309,9 @@ type PromptRequest struct {
 	// Provider/Model as the agent server expects them, e.g. "anthropic"/"claude-…".
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
+	// Variant selects a model's reasoning-effort variant (OpenCode prompt
+	// body "variant"); empty = the model's default.
+	Variant string `json:"variant,omitempty"`
 }
 
 // ModelInfo is one selectable model.
@@ -316,6 +319,12 @@ type ModelInfo struct {
 	ID       string `json:"id"`
 	Name     string `json:"name,omitempty"`
 	Provider string `json:"provider"`
+	// Reasoning reports capabilities.reasoning from the agent server; only
+	// then does the UI offer the effort selector.
+	Reasoning bool `json:"reasoning,omitempty"`
+	// Variants lists the reasoning-effort options the model accepts
+	// (e.g. low/high/max), sorted.
+	Variants []string `json:"variants,omitempty"`
 }
 
 // AgentInfo is one selectable agent (build/plan/…).

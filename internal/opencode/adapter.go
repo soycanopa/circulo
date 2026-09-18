@@ -486,10 +486,17 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 	}
 	for _, p := range providers.Providers {
 		for _, m := range p.Models {
+			variants := make([]string, 0, len(m.Variants))
+			for name := range m.Variants {
+				variants = append(variants, name)
+			}
+			sort.Strings(variants)
 			meta.Models = append(meta.Models, protocol.ModelInfo{
-				ID:       m.ID,
-				Name:     m.Name,
-				Provider: p.ID,
+				ID:        m.ID,
+				Name:      m.Name,
+				Provider:  p.ID,
+				Reasoning: m.Capabilities.Reasoning,
+				Variants:  variants,
 			})
 		}
 	}

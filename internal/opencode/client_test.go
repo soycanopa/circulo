@@ -51,6 +51,7 @@ func TestClient_PromptAsyncShape(t *testing.T) {
 	c := NewClient(srv.URL)
 	err := c.Prompt(context.Background(), "ses_1", PromptInput{
 		Text: "hi", Agent: "build", Provider: "zai-coding-plan", Model: "glm-5.3",
+		Variant: "high",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +62,9 @@ func TestClient_PromptAsyncShape(t *testing.T) {
 	}
 	if gotBody["agent"] != "build" {
 		t.Errorf("agent = %+v", gotBody["agent"])
+	}
+	if gotBody["variant"] != "high" {
+		t.Errorf("variant = %+v", gotBody["variant"])
 	}
 	parts, _ := gotBody["parts"].([]any)
 	if len(parts) != 1 || parts[0].(map[string]any)["text"] != "hi" {
@@ -171,5 +175,37 @@ func TestClient_DefaultTimeout(t *testing.T) {
 	defer cancel()
 	if _, err := c.Health(ctx); err == nil {
 		t.Fatal("expected connection error")
+	}
+}
+
+
+func TestClient_ProvidersShape(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/config/providers" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"providers":[{"id":"zai-coding-plan","name":"Z.ai","models":{
+			"glm-5.3":{"id":"glm-5.3","name":"GLM-5.3","capabilities":{"reasoning":true},
+				"variants":{"low":{},"high":{},"max":{}}},
+			"grok-imagine-image":{"id":"grok-imagine-image","name":"Imagine","capabilities":{"reasoning":false}}
+		}}],"default":{"zai-coding-plan":"glm-5.3"}}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	out, err := c.Providers(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := out.Providers[0]
+	reasoning, ok := p.Models["glm-5.3"]
+	if !ok || !reasoning.Capabilities.Reasoning {
+		t.Fatalf("glm-5.3 capabilities = %+v", reasoning)
+	}
+	if len(reasoning.Variants) != 3 {
+		t.Errorf("glm-5.3 variants = %+v", reasoning.Variants)
+	}
+	if img := p.Models["grok-imagine-image"]; img.Capabilities.Reasoning {
+		t.Errorf("imagine model must not report reasoning")
 	}
 }

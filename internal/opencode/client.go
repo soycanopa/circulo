@@ -117,6 +117,9 @@ func (c *Client) Prompt(ctx context.Context, sessionID string, req PromptInput) 
 	if req.Agent != "" {
 		body["agent"] = req.Agent
 	}
+	if req.Variant != "" {
+		body["variant"] = req.Variant
+	}
 	return c.post(ctx, "/session/"+sessionID+"/prompt_async", body, nil)
 }
 
@@ -126,6 +129,7 @@ type PromptInput struct {
 	Agent    string
 	Provider string
 	Model    string
+	Variant  string
 }
 
 // Abort calls POST /session/{id}/abort.

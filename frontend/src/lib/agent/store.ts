@@ -16,6 +16,7 @@ import {
 import type {
   AdapterStatus,
   Envelope,
+  ModelInfo,
   ProjectView,
   Session,
   SessionRemovedEvent,
@@ -40,9 +41,12 @@ interface AppStore {
 
   // Composer picker data
   metaAgents: { name: string; description?: string; mode?: string }[];
-  metaModels: { id: string; name?: string; provider: string }[];
+  metaModels: ModelInfo[];
   selectedAgent: string;
   selectedModel: string; // "provider:model"
+  /** Reasoning-effort variant for the selected model ("" = default). */
+  selectedVariant: string;
+  setSelectedVariant: (v: string) => void;
   sessionSearch: string;
   setSessionSearch: (q: string) => void;
 
@@ -82,6 +86,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   metaModels: [],
   selectedAgent: "build",
   selectedModel: "",
+  selectedVariant: "",
+  setSelectedVariant: (selectedVariant) => set({ selectedVariant }),
   sessionSearch: "",
   setSessionSearch: (sessionSearch) => set({ sessionSearch }),
 
@@ -230,10 +236,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setSelectedAgent: (selectedAgent) => set({ selectedAgent }),
-  setSelectedModel: (selectedModel) => set({ selectedModel }),
+  setSelectedModel: (selectedModel) =>
+    set((s) => {
+      // Drop the effort variant unless the new model offers it.
+      const model = s.metaModels.find((m) => `${m.provider}:${m.id}` === selectedModel);
+      const keep = model?.variants?.includes(s.selectedVariant) ?? false;
+      return { selectedModel, selectedVariant: keep ? s.selectedVariant : "" };
+    }),
 
   sendPrompt: async (text) => {
-    const { activeProjectId, activeSessionId, selectedAgent, selectedModel } = get();
+    const { activeProjectId, activeSessionId, selectedAgent, selectedModel, selectedVariant } =
+      get();
     if (!activeProjectId || !text.trim()) return;
     let sessionID = activeSessionId;
     if (!sessionID) {
@@ -251,6 +264,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         agent: selectedAgent,
         provider: provider || undefined,
         model: model || undefined,
+        variant: selectedVariant || undefined,
       })
       .catch((e) => console.error("prompt failed", e));
   },
