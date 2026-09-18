@@ -110,7 +110,7 @@ export function AppShell({
             </aside>
             {/* invisible drag handle living in the 8px gap; double-click
                 resets to the default width */}
-            sidebarOpen && (
+            {sidebarOpen && (
             <div
               role="separator"
               aria-orientation="vertical"
