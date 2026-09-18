@@ -3,7 +3,6 @@ package opencode
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"os/exec"
@@ -64,9 +63,6 @@ func StartManaged(ctx context.Context, binary, dir string, port int) (*Managed, 
 	go func() { m.done <- cmd.Wait() }()
 	return m, nil
 }
-
-// Done reports process exit (crash or Stop).
-func (m *Managed) Done() <-chan error { return m.done }
 
 // ErrTail returns the last bytes of the server's output — the user-visible
 // cause when startup or health fails (FR-19).
@@ -149,6 +145,3 @@ func (r *ringBuffer) String() string {
 	}
 	return s
 }
-
-// ErrProcessUnsupported is returned by attach adapters that have no process.
-var ErrProcessUnsupported = errors.New("opencode: attach mode has no managed process")
