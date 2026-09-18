@@ -96,12 +96,23 @@ const Transcript = memo(function Transcript({ session }: { session: SessionState
         <Button
           size="sm"
           variant="secondary"
-          className={cn("absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full shadow-sm")}
+          className={cn("absolute bottom-4 left-1/2 -translate-x-1/2 z-20 rounded-full shadow-sm")}
           onClick={jump}
         >
           <ArrowDown className="size-3.5" /> Jump to latest
         </Button>
       )}
+      {/* Edge fades (owner call): content dissolves instead of clipping hard
+          at the viewport top and where the composer takes over. Purely
+          visual — pointer-events keep the transcript interactive. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 z-10 h-7 bg-gradient-to-b from-bg-main to-transparent"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-12 bg-gradient-to-t from-bg-main via-bg-main/70 to-transparent"
+      />
     </div>
   );
 });
