@@ -106,7 +106,10 @@ function ModelPicker() {
     });
   }, [models]);
 
-  const active = tab ?? providers[0] ?? "";
+  // Open on the selected model's provider tab; opencode-first order only
+  // applies when nothing is selected yet.
+  const currentProvider = current?.provider;
+  const active = tab ?? (currentProvider && providers.includes(currentProvider) ? currentProvider : providers[0]) ?? "";
   const q = query.trim().toLowerCase();
   const filtered = models.filter(
     (m) =>
@@ -140,7 +143,7 @@ function ModelPicker() {
                   active === p ? "bg-bg-hover" : "opacity-60 hover:bg-bg-hover/60 hover:opacity-100",
                 )}
               >
-                <ProviderIcon provider={p} size={16} />
+                <ProviderIcon provider={p} size={12} />
               </button>
             ))}
           </div>
@@ -178,7 +181,7 @@ function ModelPicker() {
                     )}
                   >
                     <span className="flex min-w-0 items-center gap-2">
-                      <ProviderIcon provider={active} size={12} />
+                      <ProviderIcon provider={active} size={10} />
                       <span className="min-w-0 truncate">{m.name || m.id}</span>
                     </span>
                     {selected && (
