@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-func TestReadFrames_FixtureTurnBasic(t *testing.T) {
-	raw, err := os.ReadFile("testdata/turn-basic.sse")
+func TestReadFrames_V2FixtureTurn(t *testing.T) {
+	raw, err := os.ReadFile("testdata/v2-turn-basic.sse")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,20 +18,21 @@ func TestReadFrames_FixtureTurnBasic(t *testing.T) {
 	}
 	types := make([]string, 0, len(frames))
 	for _, f := range frames {
-		env, err := DecodeEvent(f)
+		env, err := parseV2Event(f)
 		if err != nil {
 			t.Fatalf("decode frame: %v\nframe: %.120s", err, f)
 		}
 		types = append(types, env.Type)
 	}
 	// First frame must be server.connected (protocol invariant: first event on
-	// a fresh /event connection).
+	// a fresh /api/event connection).
 	if types[0] != "server.connected" {
 		t.Errorf("first event = %q, want server.connected", types[0])
 	}
 	for _, want := range []string{
-		"session.updated", "session.status", "message.updated",
-		"message.part.updated", "message.part.delta", "session.idle",
+		"session.inbox.enqueued", "session.execution.started", "session.text.started",
+		"session.text.delta", "session.text.ended", "session.tool.success",
+		"session.step.ended", "session.execution.succeeded",
 	} {
 		found := false
 		for _, ty := range types {
@@ -49,14 +50,14 @@ func TestReadFrames_FixtureTurnBasic(t *testing.T) {
 func TestReadFrames_SkipCommentsAndKeepalives(t *testing.T) {
 	// Comments terminated by a blank line (proxy keep-alives) produce no frame.
 	stream := ": keep-alive\n\n" +
-		"data: {\"type\":\"server.connected\",\"properties\":{}}\n\n" +
-		": ping\n\n" +
-		"data: {\"type\":\"server.heartbeat\",\"properties\":{}}\n\n"
+		"data: {\"id\":\"evt_1\",\"type\":\"server.connected\",\"data\":{}}\n\n" +
+		": heartbeat\n\n" +
+		"data: {\"id\":\"evt_2\",\"type\":\"server.connected\",\"data\":{}}\n\n"
 	frames := collect(t, strings.NewReader(stream))
 	if len(frames) != 2 {
 		t.Fatalf("got %d frames, want 2: %q", len(frames), frames)
 	}
-	if !strings.Contains(frames[1].String(), "heartbeat") {
+	if !strings.Contains(frames[1].String(), "evt_2") {
 		t.Errorf("second frame = %s", frames[1])
 	}
 }
