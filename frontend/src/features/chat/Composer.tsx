@@ -9,7 +9,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
-  ChevronRight,
+  Pencil,
   Search,
   Square,
 } from "lucide-react";
@@ -264,7 +264,7 @@ function ModelVariantsPopover({
           )}
           onClick={(e) => e.stopPropagation()}
         >
-          <ChevronRight className="size-3.5" strokeWidth={2} />
+          <Pencil className="size-3" strokeWidth={2} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="right" sideOffset={4} className="w-[164px] p-1.5">
