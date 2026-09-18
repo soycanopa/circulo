@@ -92,30 +92,39 @@ function ModelPicker() {
   const selectedModel = useAppStore((s) => s.selectedModel);
   const setSelected = useAppStore((s) => s.setSelectedModel);
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const current = models.find((m) => `${m.provider}:${m.id}` === selectedModel);
+  const selectedRef = useRef<HTMLButtonElement>(null);
 
-  // Provider tabs; "opencode" first (owner spec), then alphabetical.
-  const providers = useMemo(() => {
+  const current = models.find((m) => `${m.provider}:${m.id}` === selectedModel);
+  const q = query.trim().toLowerCase();
+
+  // One flat list sectioned by provider (owner spec: no provider tabs);
+  // opencode first, then alphabetical.
+  const sections = useMemo(() => {
     const seen = new Set(models.map((m) => m.provider));
-    return [...seen].sort((a, b) => {
+    const order = [...seen].sort((a, b) => {
       if (a === "opencode") return -1;
       if (b === "opencode") return 1;
       return a.localeCompare(b);
     });
-  }, [models]);
+    return order
+      .map((provider) => ({
+        provider,
+        models: models.filter(
+          (m) =>
+            m.provider === provider &&
+            (!q ||
+              (m.name || m.id).toLowerCase().includes(q) ||
+              m.id.toLowerCase().includes(q)),
+        ),
+      }))
+      .filter((g) => g.models.length > 0);
+  }, [models, q]);
 
-  // Open on the selected model's provider tab; opencode-first order only
-  // applies when nothing is selected yet.
-  const currentProvider = current?.provider;
-  const active = tab ?? (currentProvider && providers.includes(currentProvider) ? currentProvider : providers[0]) ?? "";
-  const q = query.trim().toLowerCase();
-  const filtered = models.filter(
-    (m) =>
-      m.provider === active &&
-      (!q || (m.name || m.id).toLowerCase().includes(q) || m.id.toLowerCase().includes(q)),
-  );
+  // Opening lands on the selected model's section.
+  useEffect(() => {
+    if (open) queueMicrotask(() => selectedRef.current?.scrollIntoView({ block: "nearest" }));
+  }, [open]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -127,47 +136,33 @@ function ModelPicker() {
           <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
         </div>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" sideOffset={8} className="h-[280px] w-[380px]">
-        <div className="flex min-h-0 flex-1">
-          {/* Provider tabs — left rail, icon only (owner spec) */}
-          <div className="flex w-[44px] shrink-0 flex-col gap-0.5 border-r border-border p-1">
-            {providers.map((p) => (
-              <button
-                key={p}
-                type="button"
-                title={p}
-                aria-label={p}
-                onClick={() => setTab(p)}
-                className={cn(
-                  "flex items-center justify-center rounded-md py-2",
-                  active === p ? "bg-bg-hover" : "opacity-60 hover:bg-bg-hover/60 hover:opacity-100",
-                )}
-              >
-                <ProviderIcon provider={p} size={12} />
-              </button>
-            ))}
+      <PopoverContent align="start" side="top" sideOffset={8} className="h-[320px] w-[300px]">
+        <div className="shrink-0 border-b border-border p-2">
+          <div className="flex items-center gap-2 rounded-md bg-bg-code px-2 py-1.5">
+            <Search className="size-3 shrink-0 text-text-tertiary" />
+            <input
+              data-selectable
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search models"
+              className="w-full bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
+            />
           </div>
-          {/* Models — right column with search */}
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="shrink-0 border-b border-border p-2">
-              <div className="flex items-center gap-2 rounded-md bg-bg-code px-2 py-1.5">
-                <Search className="size-3 shrink-0 text-text-tertiary" />
-                <input
-                  data-selectable
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search models"
-                  className="w-full bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
-                />
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+          {sections.map((g) => (
+            <div key={g.provider} className="mb-1">
+              <div className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-[11px] font-medium uppercase leading-[14px] tracking-wider text-text-tertiary">
+                <ProviderIcon provider={g.provider} size={10} />
+                {g.provider}
               </div>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
-              {filtered.map((m) => {
+              {g.models.map((m) => {
                 const key = `${m.provider}:${m.id}`;
                 const selected = key === selectedModel;
                 return (
                   <button
                     key={key}
+                    ref={selected ? selectedRef : undefined}
                     type="button"
                     onClick={() => {
                       setSelected(key);
@@ -180,21 +175,18 @@ function ModelPicker() {
                         : "text-text-primary hover:bg-bg-hover/60",
                     )}
                   >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <ProviderIcon provider={active} size={10} />
-                      <span className="min-w-0 truncate">{m.name || m.id}</span>
-                    </span>
+                    <span className="min-w-0 truncate">{m.name || m.id}</span>
                     {selected && (
                       <Check className="size-3.5 shrink-0 text-accent-cir" strokeWidth={2} />
                     )}
                   </button>
                 );
               })}
-              {filtered.length === 0 && (
-                <div className="px-2 py-1.5 text-xs text-text-tertiary">No models found</div>
-              )}
             </div>
-          </div>
+          ))}
+          {sections.length === 0 && (
+            <div className="px-2 py-1.5 text-xs text-text-tertiary">No models found</div>
+          )}
         </div>
       </PopoverContent>
     </Popover>
