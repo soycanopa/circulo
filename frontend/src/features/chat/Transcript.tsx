@@ -1,16 +1,17 @@
 /**
  * Transcript (docs/ux.md §5): single scroll column, pin-to-bottom with jump
- * pill, parts in server order, working/retry indicator at 1 Hz.
+ * pill, parts in server order, pixel-grid loader while the agent works.
  */
 
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect } from "react";
 import { ArrowDown } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { usePinnedScroll } from "./hooks/usePinnedScroll";
-import { AssistantMessage, Dot, UserMessage, visibleMessages } from "./Message";
+import { AssistantMessage, UserMessage, visibleMessages } from "./Message";
 import { ErrorBlock } from "./parts/MiscParts";
 import { TaskList } from "./parts/TaskList";
+import LoadingState from "./parts/LoadingState";
 import type { SessionState } from "@/lib/agent/reducer";
 import { cn } from "@/lib/utils";
 
@@ -35,18 +36,6 @@ const Transcript = memo(function Transcript({ session }: { session: SessionState
     session.tasks.length,
   ]);
 
-  // Turn timer: record when busy starts; reset on idle. 1 Hz tick (UX §5).
-  const [now, setNow] = useState(Date.now());
-  const [busySince, setBusySince] = useState<number>(0);
-  useEffect(() => {
-    if (busy) {
-      setBusySince((prev) => prev || Date.now());
-      const t = setInterval(() => setNow(Date.now()), 1000);
-      return () => clearInterval(t);
-    }
-    setBusySince(0);
-  }, [busy]);
-
   // Cmd+↓ (ux.md §6) lands here via the global shortcut hook.
   useEffect(() => {
     window.addEventListener("circulogo:jump-to-latest", jump);
@@ -70,25 +59,14 @@ const Transcript = memo(function Transcript({ session }: { session: SessionState
           {session.lastError && (
             <ErrorBlock name={session.lastError.name} message={session.lastError.message} />
           )}
-          {busy && (
-            <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-              <span className="inline-flex gap-1">
-                <Dot delay="0ms" />
-                <Dot delay="150ms" />
-                <Dot delay="300ms" />
-              </span>
-              {session.status === "retry" && session.retry ? (
-                <span>
-                  Provider retrying (attempt {session.retry.attempt}): {session.retry.message}
-                </span>
-              ) : (
-                <span>
-                  Working…
-                  {busySince ? ` ${Math.max(1, Math.round((now - busySince) / 1000))}s` : ""}
-                </span>
-              )}
-            </div>
-          )}
+          {busy &&
+            (session.status === "retry" && session.retry ? (
+              <div className="text-[13px] text-muted-foreground">
+                Provider retrying (attempt {session.retry.attempt}): {session.retry.message}
+              </div>
+            ) : (
+              <LoadingState />
+            ))}
         </div>
       </div>
       {!pinned && (

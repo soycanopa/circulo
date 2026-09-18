@@ -57,7 +57,7 @@
 | Project starting | sidebar dot + transcript banner | "Starting OpenCode…" with spinner; composer disabled |
 | Adapter error | sidebar dot + banner | "OpenCode failed: <detail>" + `[Retry]` `[Show logs]` |
 | Empty session | transcript | Centered composer hint: agent name + model, "Ask anything" |
-| Streaming | transcript | Live reasoning tail, tool cards updating, pulsing "Working… 12s" |
+| Streaming | transcript | Live reasoning tail, tool cards updating, pixel-grid loader: rotating phrase + elapsed timer |
 | Retrying | status strip in transcript | "Provider retrying (attempt 2/…): <reason> · next in 3s" |
 | Session error | transcript inline | Red-bordered block: error name + message (FR-21) |
 | Permission pending | card above composer | Card + composer stays enabled (can type next prompt) |
@@ -96,7 +96,9 @@ User messages: plain bubble, right-aligned accent border, editable later (v1).
 - **Stream smoothing:** transcript re-renders capped ~15 Hz (TRD §6); text parts may
   reveal with a 100 ms trailing fade. Respect `prefers-reduced-motion` (no reveal
   animation, instant text).
-- **Throttle status timer:** "Working… Ns" ticks at 1 Hz, not per frame.
+- **Working loader:** the 3×3 pixel-grid LoadingState replaces the old "Working… Ns"
+  line — rotating phrase every 2.4 s, shimmer label, elapsed timer in mono tabular
+  figures; `prefers-reduced-motion` freezes grid and shimmer (timer still ticks).
 - **Never scroll-jack:** opening history does not force-scroll if the user is reading.
 
 ## 6. Interactions & shortcuts

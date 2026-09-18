@@ -5,7 +5,7 @@
  * (flow.md §3).
  */
 
-import { memo, useMemo } from "react";
+import { memo } from "react";
 
 import { MarkdownView } from "./markdown/MarkdownView";
 import { ReasoningPart } from "./parts/ReasoningPart";
@@ -58,12 +58,6 @@ export const AssistantMessage = memo(function AssistantMessage({
   m: MessageRecord;
   streaming: boolean;
 }) {
-  const lastTextId = useMemo(() => {
-    let id = "";
-    for (const p of m.parts) if (p.type === "text") id = p.id;
-    return id;
-  }, [m.parts]);
-
   return (
     <div className="flex w-full flex-col gap-2">
       {m.parts.map((p) => {
@@ -92,30 +86,14 @@ export const AssistantMessage = memo(function AssistantMessage({
             return null; // step markers fold into the footer
         }
       })}
-      {streaming && lastTextId === "" && (
-        <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-          <span className="inline-flex gap-1">
-            <Dot delay="0ms" />
-            <Dot delay="150ms" />
-            <Dot delay="300ms" />
-          </span>
-        </div>
-      )}
+      {/* Nothing streamed yet: the transcript-level LoadingState below is the
+          single busy indicator — keep the bubble clean. */}
       {!streaming && (
         <TurnFooter tokens={aggregateTokens(m)} cost={m.info.cost || aggregateCost(m)} />
       )}
     </div>
   );
 });
-
-export function Dot({ delay }: { delay: string }) {
-  return (
-    <span
-      className="size-1.5 animate-bounce rounded-full bg-muted-foreground/70"
-      style={{ animationDelay: delay }}
-    />
-  );
-}
 
 /** Optimistic rows (client_*) are hidden once the server echo of the same
  * text exists — otherwise every prompt renders as two bubbles. */

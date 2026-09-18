@@ -165,3 +165,53 @@
       oklab(59.4% 0.052 -0.22 / 22%) 100%
     );
 }
+
+/* Pixel-grid loader (features/chat/parts/LoadingState.tsx). Cells rest dim
+   and a per-cell animation-delay lights them in sequence (chevron wavefront,
+   or an orbiting comet). The shimmer sweeps a highlight band across the
+   label text; phrase-in eases each rotating label into place. Reduced
+   motion freezes grid and shimmer to their dim state — the elapsed timer
+   keeps ticking (JS interval, not CSS). */
+@keyframes pixel-on {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+@keyframes shimmer-text {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes phrase-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-pixel,
+  .loading-shimmer {
+    animation: none !important;
+  }
+}
