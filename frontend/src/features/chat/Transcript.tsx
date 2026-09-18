@@ -28,6 +28,11 @@ const Transcript = memo(function Transcript({ session }: { session: SessionState
     })
     .join(",");
   const busy = session.status === "busy" || session.status === "retry";
+  // The trace (reasoning/tools) carries its own working header — the pixel
+  // loader below is only for turns with nothing to trace yet.
+  const last = shown[shown.length - 1];
+  const hasTrace =
+    !!last && last.info.role === "assistant" && last.parts.some((p) => p.type === "reasoning" || p.type === "tool");
   const { ref, pinned, jump } = usePinnedScroll([
     messageIds,
     partsLens,
@@ -59,7 +64,7 @@ const Transcript = memo(function Transcript({ session }: { session: SessionState
           {session.lastError && (
             <ErrorBlock name={session.lastError.name} message={session.lastError.message} />
           )}
-          {busy &&
+          {busy && !hasTrace &&
             (session.status === "retry" && session.retry ? (
               <div className="text-[13px] text-muted-foreground">
                 Provider retrying (attempt {session.retry.attempt}): {session.retry.message}

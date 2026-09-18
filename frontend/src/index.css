@@ -209,6 +209,43 @@
     transform: translateY(0);
   }
 }
+
+/* ThinkingState trace (features/chat/parts/ThinkingState.tsx): rows and the
+   settled summary ease in; the active row carries a ring spinner. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@layer utilities {
+  .animated-underline {
+    text-decoration-line: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 3px;
+    transition: text-decoration-color 150ms ease;
+  }
+  .animated-underline:hover {
+    text-decoration-color: currentColor;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .loading-pixel,
   .loading-shimmer {

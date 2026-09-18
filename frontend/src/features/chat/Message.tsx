@@ -8,8 +8,7 @@
 import { memo } from "react";
 
 import { MarkdownView } from "./markdown/MarkdownView";
-import { ReasoningPart } from "./parts/ReasoningPart";
-import { ToolCard } from "./parts/ToolCard";
+import ThinkingState from "./parts/ThinkingState";
 import { PatchCard, SubtaskPill, TurnFooter } from "./parts/MiscParts";
 import type { MessageRecord } from "@/lib/agent/reducer";
 
@@ -58,20 +57,26 @@ export const AssistantMessage = memo(function AssistantMessage({
   m: MessageRecord;
   streaming: boolean;
 }) {
+  // Reasoning + tool parts collapse into one ThinkingState trace (ux.md §4);
+  // it renders at the position of the first of them, in server part order.
+  const traceParts = m.parts.filter((p) => p.type === "reasoning" || p.type === "tool");
+  let traceRendered = false;
   return (
     <div className="flex w-full flex-col gap-2">
       {m.parts.map((p) => {
+        if (p.type === "reasoning" || p.type === "tool") {
+          if (traceRendered) return null;
+          traceRendered = true;
+          return (
+            <ThinkingState
+              key="trace"
+              parts={traceParts}
+              streaming={streaming}
+              liveReasoningId={lastReasoningId(m)}
+            />
+          );
+        }
         switch (p.type) {
-          case "reasoning":
-            return (
-              <ReasoningPart
-                key={p.id}
-                part={p}
-                streaming={streaming && p.id === lastReasoningId(m)}
-              />
-            );
-          case "tool":
-            return <ToolCard key={p.id} part={p} />;
           case "patch":
             return <PatchCard key={p.id} part={p} />;
           case "agent":
