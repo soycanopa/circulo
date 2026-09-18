@@ -400,8 +400,8 @@ const formatInstruction = "Format every response in GitHub-flavored Markdown: " 
 	`"edges":[{"from":"a","to":"b"}]}. ` +
 	"row = depth from top starting at 0; x = horizontal center from 0 to 1; " +
 	"hue: purple|amber|blue|green|red; a decision node uses kind \"If / Else\" " +
-	`and adds "condition":[["order.flavor","is","Rocky Road"]] (read-only rows). " +
-	"Keep the JSON strictly valid, no comments."
+	`and adds "condition":[["order.flavor","is","Rocky Road"]] ` +
+	"(read-only rows). Keep the JSON strictly valid, no comments."
 
 func (a *Adapter) CreateSession(ctx context.Context, title string) (protocol.Session, error) {
 	c, err := a.clientOrErr()
