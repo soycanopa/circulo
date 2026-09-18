@@ -103,4 +103,25 @@ export const api = {
     ),
 
   meta: (projectID: string) => request<Meta>(`/projects/${projectID}/meta`),
+
+  openTerminal: (projectID: string) =>
+    request<{ id: string }>(`/projects/${projectID}/terminals`, { method: "POST" }),
+
+  closeTerminal: (projectID: string, termId: string) =>
+    request<{ ok: boolean }>(
+      `/projects/${projectID}/terminals/${termId}`,
+      { method: "DELETE" },
+    ),
+
+  writeTerminal: (projectID: string, termId: string, data: string) =>
+    request<{ ok: boolean }>(
+      `/projects/${projectID}/terminals/${termId}/write`,
+      { method: "POST", body: JSON.stringify({ data }) },
+    ),
+
+  resizeTerminal: (projectID: string, termId: string, cols: number, rows: number) =>
+    request<{ ok: boolean }>(
+      `/projects/${projectID}/terminals/${termId}/resize`,
+      { method: "POST", body: JSON.stringify({ cols, rows }) },
+    ),
 };

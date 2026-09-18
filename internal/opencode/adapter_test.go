@@ -232,7 +232,7 @@ func TestAdapter_Attach_LifecycleAndTurn(t *testing.T) {
 	// Wait for the authoritative ended part; the stub + delta precede it.
 	var texts []protocol.Part
 	deadline := time.After(5 * time.Second)
- collecting:
+collecting:
 	for {
 		select {
 		case e := <-a.Events():

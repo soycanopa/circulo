@@ -4,6 +4,7 @@
 package relay
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"circulogo/internal/agent"
 	"circulogo/internal/agent/protocol"
 	"circulogo/internal/orchestrator"
+	"circulogo/internal/term"
 )
 
 // Server implements http.Handler for the agent API. Wails mounts it at route
@@ -88,6 +90,53 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case rest == "sessions" && r.Method == http.MethodPost:
 		s.handleCreateSession(w, r, id)
 		return
+	case rest == "terminals" && r.Method == http.MethodPost:
+		t, err := s.orch.OpenTerminal(id)
+		if err != nil {
+			s.writeErr(w, err)
+			return
+		}
+		s.writeJSON(w, http.StatusOK, map[string]string{"id": t.ID})
+		return
+	}
+
+	// /projects/{id}/terminals/{tid}/…
+	if tpath, ok := cutPrefix(rest, "terminals/"); ok {
+		tid, action := take(tpath)
+		t, err := s.orch.Terms().Get(tid)
+		if err != nil {
+			s.writeErr(w, err)
+			return
+		}
+		switch {
+		case action == "stream" && r.Method == http.MethodGet:
+			s.handleTermStream(w, r, t)
+			return
+		case action == "write" && r.Method == http.MethodPost:
+			var body struct {
+				Data string `json:"data"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024)).Decode(&body); err != nil {
+				s.writeErr(w, badRequest("term write: %v", err))
+				return
+			}
+			s.writeJSONOrErr(w, map[string]bool{"ok": true}, t.Write([]byte(body.Data)))
+			return
+		case action == "resize" && r.Method == http.MethodPost:
+			var body struct {
+				Cols uint16 `json:"cols"`
+				Rows uint16 `json:"rows"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+				s.writeErr(w, badRequest("term resize: %v", err))
+				return
+			}
+			s.writeJSONOrErr(w, map[string]bool{"ok": true}, t.Resize(body.Cols, body.Rows))
+			return
+		case action == "" && r.Method == http.MethodDelete:
+			s.writeJSONOrErr(w, map[string]bool{"ok": true}, s.orch.Terms().Close(tid))
+			return
+		}
 	}
 
 	// /projects/{id}/sessions/{sid}/…
@@ -295,6 +344,40 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request, pro
 		_ = a.SetBranch(r.Context(), sess.ID, body.Branch)
 	}
 	s.writeJSONOrErr(w, sess, err)
+}
+
+// handleTermStream streams one terminal's output as SSE: each frame is a
+// base64 PTY chunk; a final `closed` frame marks the shell's exit.
+func (s *Server) handleTermStream(w http.ResponseWriter, r *http.Request, t *term.Terminal) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, ": connected\n\n")
+	flusher.Flush()
+
+	ch, unsubscribe := t.Subscribe()
+	defer unsubscribe()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case chunk, ok := <-ch:
+			if !ok || chunk == nil {
+				fmt.Fprint(w, "data: closed\n\n")
+				flusher.Flush()
+				return
+			}
+			fmt.Fprintf(w, "data: %s\n\n", base64.StdEncoding.EncodeToString(chunk))
+			flusher.Flush()
+		}
+	}
 }
 
 // handleSSE streams neutral events to one webview client: replay ring first,

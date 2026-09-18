@@ -54,6 +54,9 @@ interface AppStore {
   /** Sidebar visibility (Cmd+B, ux.md §6). */
   sidebarOpen: boolean;
   toggleSidebar: () => void;
+  /** composer-adjacent terminal panel (project-scoped shells). */
+  terminalOpen: boolean;
+  toggleTerminal: () => void;
   refreshProjects: () => Promise<void>;
   refreshSessions: (projectID: string) => Promise<void>;
   addProject: (path: string, mode: "managed" | "attach", url?: string) => Promise<void>;
@@ -97,6 +100,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   sidebarOpen: true,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  terminalOpen: false,
+  toggleTerminal: () => set((s) => ({ terminalOpen: !s.terminalOpen })),
 
   refreshProjects: async () => {
     const projects = await api.listProjects();

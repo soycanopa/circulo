@@ -8,6 +8,7 @@ import { ProjectBanner, ReconnectBar } from "@/features/connection/Banners";
 import { SidebarHeader, SidebarFooter } from "@/features/projects/SidebarSections";
 import { SessionsSection } from "@/features/sessions/SessionsSection";
 import { Button } from "@/components/ui/button";
+import { TerminalPanel } from "@/features/terminal/TerminalPanel";
 import { connectSse, type SseHandle } from "@/lib/agent/sse";
 import { useAppStore } from "@/lib/agent/store";
 import { useShortcuts } from "@/lib/useShortcuts";
@@ -79,6 +80,7 @@ export default function App() {
 
   const activeProject = projects.find((p) => p.id === activeProjectId);
   const session = activeSessionId ? chat.sessions[activeSessionId] : undefined;
+  const terminalOpen = useAppStore((s) => s.terminalOpen);
 
   return (
     <AppShell
@@ -107,6 +109,20 @@ export default function App() {
           <Transcript session={session} />
         ) : (
           <GeneralEmptyState hasProjects={projects.length > 0} />
+        )}
+        {/* Terminal zone: below the chat area, ABOVE the composer (owner
+            call). Grows/shrinks with a grid-rows animation. */}
+        {activeProject && (
+          <div
+            className="grid shrink-0 transition-[grid-template-rows] duration-300 ease-out"
+            style={{
+              gridTemplateRows: terminalOpen ? "minmax(0, 1fr)" : "0fr",
+            }}
+          >
+            <div className="min-h-0 overflow-hidden px-0 pb-2">
+              <TerminalPanel projectID={activeProject.id} />
+            </div>
+          </div>
         )}
         <Composer />
       </div>
