@@ -1,0 +1,71 @@
+# REAL capture — opencode 2.0.8 (npm @opencode/cli), 2026-09-18
+# Scenario: permission roundtrip — project opencode.json with v2 `permissions`
+# ruleset ({action:"edit"|"shell",resource:"*",effect:"ask"}); prompt 'Create a
+# file named notes.txt containing exactly: hi' (deepseek provider). Includes:
+# permission.asked (edit, resources+save+metadata.files patch, source tool
+# callID), permission.replied after POST …/permission/{id}/reply {"decision":
+# "once"} (HTTP 204), then the turn continues to completion (tool.success,
+# step.ended tokens+cost, execution.succeeded).
+# See docs/opencode-v2-migration.md
+data: {"id":"evt_0b5dc2ce3001WGwJFe1gNHDmyC","type":"server.connected","data":{}}
+
+: heartbeat
+
+data: {"id":"evt_0b5dc30fe001R04Mhieb1741PK","created":1789757501694,"type":"session.created","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","slug":"misty-forest","version":"2.0.8","projectID":"global","location":{"directory":"/private/tmp/e2e-capture"},"subpath":"","title":"perm capture"},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":0,"version":1}}
+
+data: {"id":"evt_0b5dc4865001dpXebt5dESNIIn","created":1789757507685,"type":"session.model.selected","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","model":{"id":"deepseek-v4-flash-vision-exp","providerID":"deepseek"}},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":1,"version":1}}
+
+data: {"id":"evt_0b5dc48750012R80RlAX3nD3s3","created":1789757507701,"type":"session.inbox.enqueued","location":{"directory":"/private/tmp/e2e-capture"},"data":{"inboxID":"msg_0b5dc4874001F8Tclf0MxFmyy1","sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","item":{"type":"user","payload":{"text":"Create a file named notes.txt containing exactly: hi"},"delivery":"steer"}},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":2,"version":1}}
+
+data: {"id":"evt_0b5dc4878001mcq8jLhcMg3e70","created":1789757507704,"type":"session.execution.started","data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX"},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":3,"version":1}}
+
+data: {"id":"evt_0b5dc488c001lOe212Dg2zIhvH","created":1789757507724,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","delta":{"core/environment":"c1c8c8ffef802bbb502fe49232d12335e71c565d4e22bb2308423b3e03c10091","core/date":"290b6c1a8a21439b57131a50ca0658de4d5288647fec9b888eaac10cda464a61","core/codemode":"beda1dadf0cfe59efa08fc6152deed8ac53f59cb2980dafb2a5124fbe7e0d806","core/skill-guidance":"fe41cf255a7a51e5eb42c7338286ec6f8fdc0f03daaf2689747ebd3a7f9602a0","core/mcp-guidance":"ccf61559f406ce64e150d5a584fcc9a2133e93aba91d7308730a1b34fd086d3e"}},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":4,"version":2}}
+
+data: {"id":"evt_0b5dc488e0011SaAarIidYjM2F","created":1789757507726,"type":"session.inbox.delivered","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","inboxID":"msg_0b5dc4874001F8Tclf0MxFmyy1"},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":5,"version":1}}
+
+data: {"id":"evt_0b5dc4de8001F0k3Eaa5gfzhGK","created":1789757509096,"type":"session.step.started","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","agent":"build","model":{"id":"deepseek-v4-flash-vision-exp","providerID":"deepseek","variant":"default"},"assistantMessageID":"msg_0b5dc4895001je8hwHI7DbCeaK","snapshot":"dcc456e8ee8cc1c418515a3a5eff989d80b4f142","started":1789757507822},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":6,"version":1}}
+
+data: {"id":"evt_0b5dc4deb001mNrouJlmLNF9iC","created":1789757509099,"type":"session.reasoning.started","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","assistantMessageID":"msg_0b5dc4895001je8hwHI7DbCeaK","ordinal":0,"state":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":7,"version":1}}
+
+data: {"id":"evt_0b5dc4e41001ovVPeT08Ed6rRQ","created":1789757509185,"type":"session.tool.input.started","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","assistantMessageID":"msg_0b5dc4895001je8hwHI7DbCeaK","id":"call_00_EEORc4SxiGAvEieYNdVY9907","name":"write"},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":8,"version":1}}
+
+data: {"id":"evt_0b5dc4e52001eNX9VmNQt8lcSL","created":1789757509202,"type":"session.reasoning.delta","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","assistantMessageID":"msg_0b5dc4895001je8hwHI7DbCeaK","ordinal":0,"delta":"Simple task. Create notes.txt with exactly \"hi\"."}}
+
+data: {"id":"evt_0b5dc4ebb001uG2sYo8mrEKLf4","created":1789757509307,"type":"session.reasoning.ended","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","assistantMessageID":"msg_0b5dc4895001je8hwHI7DbCeaK","ordinal":0,"text":"Simple task. Create notes.txt with exactly \"hi\".","state":{"reasoningField":"reasoning_content"}},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":9,"version":1}}
+
+data: {"id":"evt_0b5dc4ebd001rew0OlLaf3dq82","created":1789757509309,"type":"session.tool.input.ended","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","assistantMessageID":"msg_0b5dc4895001je8hwHI7DbCeaK","id":"call_00_EEORc4SxiGAvEieYNdVY9907","text":"{\"path\": \"/private/tmp/e2e-capture/notes.txt\", \"content\": \"hi\"}"},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":10,"version":1}}
+
+data: {"id":"evt_0b5dc4ebf0018EGEKugX5dn23c","created":1789757509311,"type":"session.tool.called","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","assistantMessageID":"msg_0b5dc4895001je8hwHI7DbCeaK","id":"call_00_EEORc4SxiGAvEieYNdVY9907","input":{"path":"/private/tmp/e2e-capture/notes.txt","content":"hi"},"executed":false},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":11,"version":1}}
+
+data: {"id":"evt_0b5dc4ec1001r8n6L6ON003EbD","created":1789757509313,"type":"session.step.streamed","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","assistantMessageID":"msg_0b5dc4895001je8hwHI7DbCeaK"},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":12,"version":1}}
+
+data: {"id":"evt_0b5dc4ec4002wDcdATKCHkjAHk","created":1789757509316,"type":"permission.asked","location":{"directory":"/private/tmp/e2e-capture"},"data":{"id":"per_0b5dc4ec4001nJIDWc8MarHiyB","sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","action":"edit","resources":["notes.txt"],"save":["*"],"metadata":{"files":[{"file":"notes.txt","patch":"Index: notes.txt\n===================================================================\n--- notes.txt\n+++ notes.txt\n@@ -0,0 +1,1 @@\n+hi\n\\ No newline at end of file\n","status":"added","additions":1,"deletions":0}]},"source":{"type":"tool","messageID":"msg_0b5dc4895001je8hwHI7DbCeaK","id":"call_00_EEORc4SxiGAvEieYNdVY9907"}}}
+
+: heartbeat
+
+: heartbeat
+
+data: {"id":"evt_0b5dcc3f7001Un8OwvCDP2wjZI","created":1789757539319,"type":"permission.replied","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","requestID":"per_0b5dc4ec4001nJIDWc8MarHiyB","reply":"once"}}
+
+data: {"id":"evt_0b5dcc3fa001de9P0J8LBbrbB3","created":1789757539322,"type":"session.tool.success","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","assistantMessageID":"msg_0b5dc4895001je8hwHI7DbCeaK","id":"call_00_EEORc4SxiGAvEieYNdVY9907","content":[{"type":"text","text":"Created file successfully: notes.txt"}],"metadata":{"truncated":false},"executed":false},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":13,"version":2}}
+
+data: {"id":"evt_0b5dcc44c001mLulWHlbbqocKG","created":1789757539404,"type":"session.step.ended","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","assistantMessageID":"msg_0b5dc4895001je8hwHI7DbCeaK","finish":"tool-calls","rawFinish":"tool_calls","cost":0.0010639679999999998,"tokens":{"input":6788,"output":64,"reasoning":11,"cache":{"read":256,"write":0}},"snapshot":"69b3ac895dbbd0f46c3db6009f24c032bfdfa1b3","files":["notes.txt"]},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":14,"version":1}}
+
+data: {"id":"evt_0b5dcc44f001QMo4qlKYbzVUQX","created":1789757539407,"type":"session.usage.updated","data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","cost":0.0010639679999999998,"tokens":{"input":6788,"output":64,"reasoning":11,"cache":{"read":256,"write":0}}}}
+
+data: {"id":"evt_0b5dcc886001WY2m0tevtiMTtl","created":1789757540486,"type":"session.step.started","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","agent":"build","model":{"id":"deepseek-v4-flash-vision-exp","providerID":"deepseek","variant":"default"},"assistantMessageID":"msg_0b5dcc454001V71cBFlw7gHfoa","snapshot":"69b3ac895dbbd0f46c3db6009f24c032bfdfa1b3","started":1789757539447},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":15,"version":1}}
+
+data: {"id":"evt_0b5dcc88a001YyGE034fRIBjHH","created":1789757540490,"type":"session.text.started","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","assistantMessageID":"msg_0b5dcc454001V71cBFlw7gHfoa","ordinal":0},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":16,"version":1}}
+
+data: {"id":"evt_0b5dcc88e001DHBtoyaHmmx7Pt","created":1789757540494,"type":"session.text.delta","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","assistantMessageID":"msg_0b5dcc454001V71cBFlw7gHfoa","ordinal":0,"delta":"Created `notes.txt` containing `hi`."}}
+
+data: {"id":"evt_0b5dcc88e0028cM2ge2yoE2wfO","created":1789757540494,"type":"session.text.ended","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","assistantMessageID":"msg_0b5dcc454001V71cBFlw7gHfoa","ordinal":0,"text":"Created `notes.txt` containing `hi`."},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":17,"version":1}}
+
+data: {"id":"evt_0b5dcc89100177jNlJXJIJ37si","created":1789757540497,"type":"session.step.streamed","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","assistantMessageID":"msg_0b5dcc454001V71cBFlw7gHfoa"},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":18,"version":1}}
+
+data: {"id":"evt_0b5dcc8b3001yGyOhxlUufePk7","created":1789757540531,"type":"session.step.ended","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","assistantMessageID":"msg_0b5dcc454001V71cBFlw7gHfoa","finish":"stop","rawFinish":"stop","cost":0.000060486,"tokens":{"input":225,"output":10,"reasoning":0,"cache":{"read":6912,"write":0}},"snapshot":"69b3ac895dbbd0f46c3db6009f24c032bfdfa1b3","files":[]},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":19,"version":1}}
+
+data: {"id":"evt_0b5dcc8b4001BOroreUJJJu09J","created":1789757540532,"type":"session.usage.updated","data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX","cost":0.0011244539999999998,"tokens":{"input":7013,"output":74,"reasoning":11,"cache":{"read":7168,"write":0}}}}
+
+data: {"id":"evt_0b5dcc8b5001tAq7RtGzwCiBdV","created":1789757540533,"type":"session.execution.succeeded","data":{"sessionID":"ses_f4a23cf2affeQb4z18CwGP3HjX"},"durable":{"aggregateID":"ses_f4a23cf2affeQb4z18CwGP3HjX","seq":20,"version":1}}
+

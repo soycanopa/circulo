@@ -1,0 +1,25 @@
+# REAL capture — opencode 2.0.8 (npm @opencode/cli), 2026-09-18
+# Scenario: execution failure — fresh session pinned to a nonexistent model
+# (deepseek/no-such-model-xyz), prompt 'reply DONE'. Server emits
+# session.execution.failed with {sessionID, error:{type:"provider.no-route",
+# message}} (no `status`; spec shape StructuredError). The user message stays,
+# an idle marker with outcome:"failed" lands in history (dropped on hydration).
+# See docs/opencode-v2-migration.md
+data: {"id":"evt_0b5dde2e10012sK5EZdwDntub4","created":1789757612769,"type":"session.created","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a221d48ffebrLAC7xXx38llS","slug":"proud-engine","version":"2.0.8","projectID":"global","location":{"directory":"/private/tmp/e2e-capture"},"subpath":"","title":"fail capture"},"durable":{"aggregateID":"ses_f4a221d48ffebrLAC7xXx38llS","seq":0,"version":1}}
+
+data: {"id":"evt_0b5dde313001bh7SqA4OPAmybD","created":1789757612819,"type":"session.model.selected","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a221d48ffebrLAC7xXx38llS","model":{"id":"no-such-model-xyz","providerID":"deepseek"}},"durable":{"aggregateID":"ses_f4a221d48ffebrLAC7xXx38llS","seq":1,"version":1}}
+
+: heartbeat
+
+: heartbeat
+
+data: {"id":"evt_0b5de5cb80018FVroS0o3EqL6d","created":1789757643960,"type":"session.inbox.enqueued","location":{"directory":"/private/tmp/e2e-capture"},"data":{"inboxID":"msg_0b5de5cb7001gD8ComaBx0AjyC","sessionID":"ses_f4a221d48ffebrLAC7xXx38llS","item":{"type":"user","payload":{"text":"reply DONE"},"delivery":"steer"}},"durable":{"aggregateID":"ses_f4a221d48ffebrLAC7xXx38llS","seq":2,"version":1}}
+
+data: {"id":"evt_0b5de5cba001y20m9qP5cobNNs","created":1789757643962,"type":"session.execution.started","data":{"sessionID":"ses_f4a221d48ffebrLAC7xXx38llS"},"durable":{"aggregateID":"ses_f4a221d48ffebrLAC7xXx38llS","seq":3,"version":1}}
+
+data: {"id":"evt_0b5de5cc3001l7kei5ejv17eVS","created":1789757643971,"metadata":{"instructions":{"initial":true}},"type":"session.instructions.updated","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a221d48ffebrLAC7xXx38llS","delta":{"core/environment":"34475a43a105e4e319a73f6abf784d1090855b698be42fdf0ed71a2bb122c3c6","core/date":"290b6c1a8a21439b57131a50ca0658de4d5288647fec9b888eaac10cda464a61","core/codemode":"beda1dadf0cfe59efa08fc6152deed8ac53f59cb2980dafb2a5124fbe7e0d806","core/skill-guidance":"fe41cf255a7a51e5eb42c7338286ec6f8fdc0f03daaf2689747ebd3a7f9602a0","core/mcp-guidance":"ccf61559f406ce64e150d5a584fcc9a2133e93aba91d7308730a1b34fd086d3e"}},"durable":{"aggregateID":"ses_f4a221d48ffebrLAC7xXx38llS","seq":4,"version":2}}
+
+data: {"id":"evt_0b5de5cc4001xjM7uxRQ6M5XRZ","created":1789757643972,"type":"session.inbox.delivered","location":{"directory":"/private/tmp/e2e-capture"},"data":{"sessionID":"ses_f4a221d48ffebrLAC7xXx38llS","inboxID":"msg_0b5de5cb7001gD8ComaBx0AjyC"},"durable":{"aggregateID":"ses_f4a221d48ffebrLAC7xXx38llS","seq":5,"version":1}}
+
+data: {"id":"evt_0b5de5cc8001ikEgfPt6R6IifP","created":1789757643976,"type":"session.execution.failed","data":{"sessionID":"ses_f4a221d48ffebrLAC7xXx38llS","error":{"type":"provider.no-route","message":"Model unavailable: deepseek/no-such-model-xyz"}},"durable":{"aggregateID":"ses_f4a221d48ffebrLAC7xXx38llS","seq":6,"version":1}}
+

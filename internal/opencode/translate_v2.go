@@ -94,9 +94,8 @@ func TranslateV2(projectID string, env V2Event) ([]protocol.Envelope, error) {
 		})
 
 	case "session.execution.failed":
-		// Shape pending live verification (phase 0 note): the failed turn
-		// swallowed the event in the scratch server. Best-effort parse of the
-		// StructuredError shape from the spec.
+		// Live shape (v2-execution-failed.sse): {sessionID, error:{type,
+		// message}} — `status` only appears for HTTP-backed errors.
 		var p struct {
 			SessionID string `json:"sessionID"`
 			Error     *struct {
@@ -436,6 +435,67 @@ func TranslateV2(projectID string, env V2Event) ([]protocol.Envelope, error) {
 					Error:  p.Error,
 				},
 			},
+		})
+
+	case "permission.asked":
+		// Event name is capture-only (spec/docs don't name SSE events); data
+		// shape matches the spec's Permission.Request: {id, sessionID,
+		// action, resources, save, metadata, source} (v2-permission-
+		// roundtrip.sse). Docs default unmatched tools to ask; the reply
+		// vocabulary is once|always|reject.
+		var p struct {
+			ID        string          `json:"id"`
+			SessionID string          `json:"sessionID"`
+			Action    string          `json:"action"`
+			Resources []string        `json:"resources"`
+			Metadata  json.RawMessage `json:"metadata"`
+			Source    *struct {
+				ID string `json:"id"`
+			} `json:"source"`
+		}
+		if err := json.Unmarshal(env.Data, &p); err != nil {
+			return nil, fmt.Errorf("opencode: permission.asked: %w", err)
+		}
+		perm := protocol.PermissionRequest{
+			ID:        p.ID,
+			Kind:      p.Action,
+			Metadata:  p.Metadata,
+			CreatedAt: orNow(env.Created),
+		}
+		if p.Source != nil {
+			perm.CallID = p.Source.ID
+		}
+		if len(p.Resources) > 0 {
+			// Human-readable title from wire data (action + resources); the
+			// resource list rides Pattern, the neutral opaque slot.
+			perm.Title = p.Action + " " + strings.Join(p.Resources, ", ")
+			if raw, err := json.Marshal(p.Resources); err == nil {
+				perm.Pattern = raw
+			}
+		}
+		return emit(protocol.EventPermissionRequest, protocol.PermissionRequested{
+			ProjectID:  projectID,
+			SessionID:  p.SessionID,
+			Permission: perm,
+		})
+
+	case "permission.replied":
+		// Broadcast after the reply POST resolves; the reducer clears the
+		// card by permissionID. `reject` cascades to the session's other
+		// pending asks (docs/permissions), each with its own replied event.
+		var p struct {
+			SessionID string `json:"sessionID"`
+			RequestID string `json:"requestID"`
+			Reply     string `json:"reply"`
+		}
+		if err := json.Unmarshal(env.Data, &p); err != nil {
+			return nil, fmt.Errorf("opencode: permission.replied: %w", err)
+		}
+		return emit(protocol.EventPermissionResolved, protocol.PermissionResolved{
+			ProjectID:    projectID,
+			SessionID:    p.SessionID,
+			PermissionID: p.RequestID,
+			Response:     p.Reply,
 		})
 
 	case "session.step.started":
