@@ -97,4 +97,22 @@ describe("user bubble reproduction", () => {
     const assistant = chat.sessions[SID].messages.find((m) => m.info.id === "msg_a");
     expect(assistant?.parts[0].state?.status).toBe("completed");
   });
+
+  it("hydration re-orders a healed late echo (user bubble back on top)", () => {
+    let chat = applyEvent(emptyChatState, sessionUp);
+    // live: the assistant reply landed but the user echo was shed
+    chat = applyEvent(chat, env("message.updated", {
+      projectID: "probe",
+      sessionID: SID,
+      message: { id: "msg_asst", sessionID: SID, role: "assistant", created: 200, completed: 0 },
+    }));
+    // idle refetch brings the user message from history
+    chat = mergeHydrated(chat, SID, [
+      { info: { id: "msg_u", sessionID: SID, role: "user", created: 100, completed: 0 },
+        parts: [{ id: "msg_u:text", type: "text", text: "Hola" }] },
+      { info: { id: "msg_asst", sessionID: SID, role: "assistant", created: 200, completed: 300 },
+        parts: [] },
+    ]);
+    expect(chat.sessions[SID].messages.map((m) => m.info.id)).toEqual(["msg_u", "msg_asst"]);
+  });
 });

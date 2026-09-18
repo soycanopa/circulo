@@ -198,7 +198,8 @@ describe("reducer: hydration + live overlap", () => {
       },
     ]);
     const msgs = merged.sessions["ses_1"].messages;
-    expect(msgs.map((m) => m.info.id)).toEqual(["msg_a", "msg_u"]);
+    // Hydration restores server order (created ascending): user first.
+    expect(msgs.map((m) => m.info.id)).toEqual(["msg_u", "msg_a"]);
     const msgA = msgs.find((m) => m.info.id === "msg_a")!;
     expect(msgA.parts).toHaveLength(2); // step-start added, text not duplicated
     expect(msgA.parts.find((p) => p.id === "prt_t")!.text).toBe("OK");

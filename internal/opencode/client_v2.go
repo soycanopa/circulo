@@ -115,6 +115,15 @@ func (c *Client) ReplyPermissionV2(ctx context.Context, sessionID, requestID, de
 	return c.post(ctx, path, map[string]string{"decision": decision}, nil)
 }
 
+// ReplyFormV2 answers a pending form (the question tool's blocking surface):
+// POST /api/session/{id}/form/{formID}/reply with {answer: {key: value}}.
+// Verified live on 2.0.8 — 204, then form.replied broadcasts and the tool
+// completes.
+func (c *Client) ReplyFormV2(ctx context.Context, sessionID, formID string, answer map[string]any) error {
+	path := fmt.Sprintf("/api/session/%s/form/%s/reply", sessionID, formID)
+	return c.post(ctx, path, map[string]any{"answer": answer}, nil)
+}
+
 // AgentsV2 calls GET /api/agent (hidden agents included; caller filters).
 func (c *Client) AgentsV2(ctx context.Context) ([]V2Agent, error) {
 	var out []V2Agent

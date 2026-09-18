@@ -51,6 +51,10 @@ type Adapter interface {
 	// ReplyPermission answers a permission request (once|always|reject).
 	ReplyPermission(ctx context.Context, sessionID, permissionID, response string) error
 
+	// ReplyForm answers a pending form (opencode v2 question tool): the
+	// answer maps field keys to submitted values.
+	ReplyForm(ctx context.Context, sessionID, formID string, answer map[string]any) error
+
 	// Meta returns composer picker data (agents, models).
 	Meta(ctx context.Context) (protocol.Meta, error)
 }

@@ -18,6 +18,9 @@ import type {
   SessionUpdatedEvent,
   Task,
   TodoUpdatedEvent,
+  FormInfo,
+  FormUpdatedEvent,
+  FormResolvedEvent,
 } from "./protocol";
 
 export interface MessageRecord {
@@ -32,6 +35,8 @@ export interface SessionState {
   messages: MessageRecord[];
   /** Unresolved permission requests, oldest first. */
   permissions: PermissionRequest[];
+  /** Pending forms (question tool), newest last; keyed by id. */
+  forms: FormInfo[];
   /** Agent task list (todo.updated replaces it wholesale). */
   tasks: Task[];
   /** Last terminal turn error, cleared on the next user prompt. */
@@ -52,11 +57,14 @@ function ensureSession(state: ChatState, session: Session): SessionState {
       status: "idle",
       messages: [],
       permissions: [],
+      forms: [],
       tasks: [],
     };
     state.sessions[session.id] = s;
   } else {
-    s.session = session;
+    // Same memo rule as messages: replace the session record, never mutate.
+    state.sessions[session.id] = { ...s, session };
+    s = state.sessions[session.id];
   }
   return s;
 }
@@ -257,6 +265,27 @@ export function applyEvent(state: ChatState, env: Envelope): ChatState {
       return { sessions: { ...state.sessions, [p.sessionID]: s } };
     }
 
+    case "form.updated": {
+      const p = env.payload as FormUpdatedEvent;
+      const prevState = state.sessions[p.sessionID];
+      if (!prevState) return state;
+      if (prevState.forms.some((f) => f.id === p.form.id)) return state;
+      const s: SessionState = { ...prevState, forms: [...prevState.forms, p.form] };
+      return { sessions: { ...state.sessions, [p.sessionID]: s } };
+    }
+
+    case "form.resolved": {
+      const p = env.payload as FormResolvedEvent;
+      const prevState = state.sessions[p.sessionID];
+      if (!prevState) return state;
+      if (!prevState.forms.some((f) => f.id === p.formID)) return state;
+      const s: SessionState = {
+        ...prevState,
+        forms: prevState.forms.filter((f) => f.id !== p.formID),
+      };
+      return { sessions: { ...state.sessions, [p.sessionID]: s } };
+    }
+
     default:
       // Unknown event types are ignored by design (NFR-3).
       return state;
@@ -282,6 +311,7 @@ export function mergeHydrated(
       status: "idle",
       messages: [],
       permissions: [],
+      forms: [],
       tasks: [],
     };
   }
@@ -301,6 +331,14 @@ export function mergeHydrated(
     for (const p of h.parts) byId.set(p.id, p);
     s.messages[idx] = { ...m, info, parts: [...byId.values()] };
   }
+  // Healed messages may have been appended out of order (a live echo shed
+  // by the event pipe only re-enters via hydration): restore server order.
+  // Stable sort; stubs without a timestamp sink to the end.
+  s.messages.sort((a, b) => {
+    const at = a.info.created || Number.MAX_SAFE_INTEGER;
+    const bt = b.info.created || Number.MAX_SAFE_INTEGER;
+    return at - bt;
+  });
   return { sessions: { ...state.sessions, [sessionID]: s } };
 }
 
@@ -320,6 +358,7 @@ export function addOptimisticUserMessage(
       status: "idle",
       messages: [],
       permissions: [],
+      forms: [],
       tasks: [],
     };
   }

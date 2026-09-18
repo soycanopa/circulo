@@ -58,7 +58,7 @@ func (f *fakeAdapter) RenameSession(_ context.Context, sessionID, title string) 
 	f.mu.Unlock()
 	return nil
 }
-func (f *fakeAdapter) DeleteSession(_ context.Context, _ string) error    { return nil }
+func (f *fakeAdapter) DeleteSession(_ context.Context, _ string) error { return nil }
 func (f *fakeAdapter) Messages(_ context.Context, _ string, _ int) ([]agent.HydratedMessage, error) {
 	return []agent.HydratedMessage{{
 		Info:  protocol.MessageInfo{ID: "msg_1", Role: protocol.RoleUser},
@@ -78,6 +78,10 @@ func (f *fakeAdapter) ReplyPermission(_ context.Context, _, _, response string) 
 	f.mu.Unlock()
 	return nil
 }
+func (f *fakeAdapter) ReplyForm(_ context.Context, _, _ string, _ map[string]any) error {
+	return nil
+}
+
 func (f *fakeAdapter) Meta(_ context.Context) (protocol.Meta, error) {
 	return protocol.Meta{
 		Agents: []protocol.AgentInfo{{Name: "build", Mode: "primary"}},

@@ -20,6 +20,8 @@ const (
 	EventPartDelta          = "part.delta"
 	EventPermissionRequest  = "permission.request"
 	EventPermissionResolved = "permission.resolved"
+	EventFormUpdated        = "form.updated"
+	EventFormResolved       = "form.resolved"
 	EventSessionError       = "session.error"
 	EventTodoUpdated        = "todo.updated"
 )
@@ -269,6 +271,47 @@ type PermissionResolved struct {
 	SessionID    string `json:"sessionID"`
 	PermissionID string `json:"permissionID"`
 	Response     string `json:"response"`
+}
+
+// FormOption is one choice of a select-style form field.
+type FormOption struct {
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+// FormField is one question of a form. V0 covers the question tool's shape:
+// a string field with options; Custom allows free text instead of a choice.
+type FormField struct {
+	Key         string       `json:"key"`
+	Title       string       `json:"title,omitempty"`
+	Description string       `json:"description,omitempty"`
+	Options     []FormOption `json:"options,omitempty"`
+	Custom      bool         `json:"custom,omitempty"`
+}
+
+// Form is a pending form to answer (opencode v2 question tool). Kind is the
+// server metadata.kind ("question"); CallID links the originating tool call.
+type Form struct {
+	ID        string       `json:"id"`
+	Title     string       `json:"title,omitempty"`
+	Kind      string       `json:"kind,omitempty"`
+	CallID    string       `json:"callID,omitempty"`
+	Fields    []FormField  `json:"fields"`
+}
+
+// FormUpdated upserts a pending form (reducer keys by Form.ID).
+type FormUpdated struct {
+	ProjectID string `json:"projectID"`
+	SessionID string `json:"sessionID"`
+	Form      Form   `json:"form"`
+}
+
+// FormResolved closes a form: answered via ReplyForm or cancelled elsewhere.
+type FormResolved struct {
+	ProjectID string `json:"projectID"`
+	SessionID string `json:"sessionID"`
+	FormID    string `json:"formID"`
 }
 
 // AgentError is a normalized, user-presentable error.

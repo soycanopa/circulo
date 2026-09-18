@@ -499,6 +499,83 @@ func TranslateV2(projectID string, env V2Event) ([]protocol.Envelope, error) {
 			Response:     p.Reply,
 		})
 
+	case "form.created":
+		// Live shape (q-probe capture, 2.0.8): the question tool blocks by
+		// creating a form — {form: {id, sessionID, title, metadata:{kind,
+		// tool:{messageID,id}}, fields:[{key,title,description,type,options,
+		// custom}]}}. Surfaces as a neutral pending form for the composer.
+		var p struct {
+			Form struct {
+				ID        string `json:"id"`
+				SessionID string `json:"sessionID"`
+				Title     string `json:"title"`
+				Metadata  struct {
+					Kind string `json:"kind"`
+					Tool struct {
+						ID string `json:"id"`
+					} `json:"tool"`
+				} `json:"metadata"`
+				Fields []struct {
+					Key         string `json:"key"`
+					Title       string `json:"title"`
+					Description string `json:"description"`
+					Type        string `json:"type"`
+					Custom      bool   `json:"custom"`
+					Options     []struct {
+						Value       string `json:"value"`
+						Label       string `json:"label"`
+						Description string `json:"description"`
+					} `json:"options"`
+				} `json:"fields"`
+			} `json:"form"`
+		}
+		if err := json.Unmarshal(env.Data, &p); err != nil {
+			return nil, fmt.Errorf("opencode: form.created: %w", err)
+		}
+		form := protocol.Form{
+			ID:     p.Form.ID,
+			Title:  p.Form.Title,
+			Kind:   p.Form.Metadata.Kind,
+			CallID: p.Form.Metadata.Tool.ID,
+		}
+		for _, f := range p.Form.Fields {
+			// V0 renders select-style and free-text fields; numeric/bool
+			// variants degrade to text (the question tool emits strings).
+			field := protocol.FormField{
+				Key:         f.Key,
+				Title:       f.Title,
+				Description: f.Description,
+				Custom:      f.Custom,
+			}
+			for _, o := range f.Options {
+				field.Options = append(field.Options, protocol.FormOption{
+					Value: o.Value, Label: o.Label, Description: o.Description,
+				})
+			}
+			form.Fields = append(form.Fields, field)
+		}
+		return emit(protocol.EventFormUpdated, protocol.FormUpdated{
+			ProjectID: projectID,
+			SessionID: p.Form.SessionID,
+			Form:      form,
+		})
+
+	case "form.replied":
+		// {id, sessionID, answer} — the answer is visible in the transcript
+		// (tool output); the card just needs to close.
+		var p struct {
+			ID        string `json:"id"`
+			SessionID string `json:"sessionID"`
+		}
+		if err := json.Unmarshal(env.Data, &p); err != nil {
+			return nil, fmt.Errorf("opencode: form.replied: %w", err)
+		}
+		return emit(protocol.EventFormResolved, protocol.FormResolved{
+			ProjectID: projectID,
+			SessionID: p.SessionID,
+			FormID:    p.ID,
+		})
+
 	case "session.step.started":
 		var p struct {
 			SessionID          string `json:"sessionID"`

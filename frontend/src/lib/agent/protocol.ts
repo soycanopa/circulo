@@ -13,6 +13,8 @@ export const EventPartUpdated = "part.updated";
 export const EventPartDelta = "part.delta";
 export const EventPermissionRequest = "permission.request";
 export const EventPermissionResolved = "permission.resolved";
+export const EventFormUpdated = "form.updated";
+export const EventFormResolved = "form.resolved";
 export const EventSessionError = "session.error";
 export const EventTodoUpdated = "todo.updated";
 
@@ -195,6 +197,43 @@ export interface PermissionResolvedEvent {
   sessionID: string;
   permissionID: string;
   response: string;
+}
+
+/** One choice of a select-style form field (question tool). */
+export interface FormOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+/** A form field; v0 covers select-style and free-text (custom) strings. */
+export interface FormField {
+  key: string;
+  title?: string;
+  description?: string;
+  options?: FormOption[];
+  custom?: boolean;
+}
+
+/** A pending form to answer (opencode v2 question tool). */
+export interface FormInfo {
+  id: string;
+  title?: string;
+  kind?: string;
+  callID?: string;
+  fields: FormField[];
+}
+
+export interface FormUpdatedEvent {
+  projectID: string;
+  sessionID: string;
+  form: FormInfo;
+}
+
+export interface FormResolvedEvent {
+  projectID: string;
+  sessionID: string;
+  formID: string;
 }
 
 export interface SessionErroredEvent {

@@ -20,8 +20,8 @@ type fakeAdapter struct {
 	mu        sync.Mutex
 	starts    int
 	stops     int
-	fail      error // if set, Start returns it
-	startHook func()      // if set, Start blocks on it after signaling started
+	fail      error  // if set, Start returns it
+	startHook func() // if set, Start blocks on it after signaling started
 	events    chan protocol.Envelope
 }
 
@@ -77,6 +77,9 @@ func (f *fakeAdapter) Prompt(_ context.Context, _ string, _ protocol.PromptReque
 func (f *fakeAdapter) Abort(_ context.Context, _ string) error { panic("unexpected") }
 func (f *fakeAdapter) ReplyPermission(_ context.Context, _, _, _ string) error {
 	panic("unexpected")
+}
+func (f *fakeAdapter) ReplyForm(_ context.Context, _, _ string, _ map[string]any) error {
+	return nil
 }
 func (f *fakeAdapter) Meta(_ context.Context) (protocol.Meta, error) { panic("unexpected") }
 
@@ -288,7 +291,6 @@ func TestShutdownStopsAllAdapters(t *testing.T) {
 		}
 	}
 }
-
 
 var errBackendDown = errors.New("fake: backend down")
 

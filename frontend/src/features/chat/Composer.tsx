@@ -1,6 +1,7 @@
 /**
- * Composer per docs/ux.md §7: pinned bottom, auto-grow, permission cards
- * stacked directly above, model/agent pickers, Send ↔ Stop swap.
+ * Composer per docs/ux.md §7: pinned bottom, auto-grow, permission and
+ * question cards floating directly above, model/agent pickers, Send ↔ Stop
+ * swap.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -9,6 +10,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  HelpCircle,
   Pencil,
   Search,
   Square,
@@ -23,7 +25,16 @@ import {
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { useAppStore } from "@/lib/agent/store";
 import { cn } from "@/lib/utils";
-import type { ModelInfo, PermissionRequest } from "@/lib/agent/protocol";
+import type {
+  FormInfo,
+  FormField,
+  ModelInfo,
+  PermissionRequest,
+} from "@/lib/agent/protocol";
+
+/** Shared floating-card elevation (matches the composer box shadow). */
+const cardFloat =
+  "rounded-xl border bg-bg-popover p-3 text-[13px] [box-shadow:#0E0E0E59_0px_8px_24px]";
 
 function PermissionCard({ perm }: { perm: PermissionRequest }) {
   const replyPermission = useAppStore((s) => s.replyPermission);
@@ -33,9 +44,9 @@ function PermissionCard({ perm }: { perm: PermissionRequest }) {
       : "";
 
   return (
-    <div className="rounded-xl border border-amber-500/50 bg-amber-500/5 p-3 text-[13px]">
+    <div className={cn(cardFloat, "border-warning/50")}>
       <div className="flex items-center gap-2 font-medium">
-        <AlertTriangle className="size-4 text-amber-500" />
+        <AlertTriangle className="size-4 text-warning" />
         <span>Permission · {perm.kind ?? "action"}</span>
       </div>
       <div data-selectable className="mt-1 break-words font-mono text-[12px] text-muted-foreground">
@@ -64,6 +75,93 @@ function PermissionCard({ perm }: { perm: PermissionRequest }) {
           Deny
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** Floating card for a pending form (question tool): option chips plus an
+ *  optional custom answer per field; one Answer action submits them all. */
+function QuestionCard({ form }: { form: FormInfo }) {
+  const replyForm = useAppStore((s) => s.replyForm);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const complete = form.fields.every((f) => (answers[f.key] ?? "").trim() !== "");
+  const set = (key: string, value: string) =>
+    setAnswers((prev) => ({ ...prev, [key]: value }));
+
+  return (
+    <div className={cn(cardFloat, "border-accent-cir/50")}>
+      <div className="flex items-center gap-2 font-medium">
+        <HelpCircle className="size-4 text-accent-cir" />
+        <span>{form.title || "Question"}</span>
+      </div>
+      {form.fields.map((field) => (
+        <QuestionField
+          key={field.key}
+          field={field}
+          value={answers[field.key] ?? ""}
+          onChange={(v) => set(field.key, v)}
+        />
+      ))}
+      <div className="mt-2.5 flex justify-end">
+        <Button
+          size="sm"
+          disabled={!complete}
+          onClick={() => void replyForm(form.id, answers)}
+        >
+          Answer
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function QuestionField({
+  field,
+  value,
+  onChange,
+}: {
+  field: FormField;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="mt-2.5 first:mt-2">
+      {field.description && (
+        <div data-selectable className="break-words text-[13px]">
+          {field.description}
+        </div>
+      )}
+      {field.title && field.title !== field.description && (
+        <div className="mt-0.5 text-[11.5px] text-text-tertiary">{field.title}</div>
+      )}
+      {field.options && field.options.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {field.options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              title={o.description}
+              onClick={() => onChange(o.value)}
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-[12px] transition-colors duration-150",
+                value === o.value
+                  ? "border-accent-cir bg-accent-cir/15 text-text-primary"
+                  : "border-border text-text-secondary hover:border-border-strong hover:bg-bg-hover",
+              )}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {(field.custom || !field.options || field.options.length === 0) && (
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={field.options?.length ? "Custom answer…" : "Your answer…"}
+          className="mt-1.5 w-full rounded-md border border-border bg-bg-code px-2.5 py-1.5 text-[12.5px] outline-none placeholder:text-text-tertiary focus:border-ring"
+        />
+      )}
     </div>
   );
 }
@@ -377,10 +475,13 @@ export function Composer() {
   return (
     <div className="shrink-0 px-6 pb-8 pt-2">
       <div className="mx-auto max-w-3xl space-y-2">
-        {session && session.permissions.length > 0 && (
+        {session && (session.permissions.length > 0 || session.forms.length > 0) && (
           <div className="space-y-2">
             {session.permissions.map((p) => (
               <PermissionCard key={p.id} perm={p} />
+            ))}
+            {session.forms.map((f) => (
+              <QuestionCard key={f.id} form={f} />
             ))}
           </div>
         )}

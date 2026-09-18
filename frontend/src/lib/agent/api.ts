@@ -85,5 +85,11 @@ export const api = {
       { method: "POST", body: JSON.stringify({ response }) },
     ),
 
+  replyForm: (projectID: string, sessionID: string, formID: string, answer: Record<string, string>) =>
+    request<{ ok: boolean }>(
+      `/projects/${projectID}/sessions/${sessionID}/forms/${formID}`,
+      { method: "POST", body: JSON.stringify({ answer }) },
+    ),
+
   meta: (projectID: string) => request<Meta>(`/projects/${projectID}/meta`),
 };

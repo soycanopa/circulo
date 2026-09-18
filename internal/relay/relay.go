@@ -178,6 +178,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// /projects/{id}/sessions/{sid}/forms/{fid} — answer a pending form
+	// (question tool): body {"answer": {"<fieldKey>": "<value>"}}.
+	if fid, has := cutPrefix(tail2, "forms/"); has && fid != "" && r.Method == http.MethodPost {
+		s.withAdapter(w, id, func(a agent.Adapter) {
+			var body struct {
+				Answer map[string]any `json:"answer"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024)).Decode(&body); err != nil {
+				s.writeErr(w, badRequest("form body: %v", err))
+				return
+			}
+			if len(body.Answer) == 0 {
+				s.writeErr(w, badRequest("answer must not be empty"))
+				return
+			}
+			s.writeJSONOrErr(w, map[string]bool{"ok": true},
+				a.ReplyForm(r.Context(), sid, fid, body.Answer))
+		})
+		return
+	}
+
 	http.NotFound(w, r)
 }
 

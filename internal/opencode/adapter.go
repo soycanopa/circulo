@@ -475,6 +475,15 @@ func (a *Adapter) ReplyPermission(ctx context.Context, sessionID, permissionID, 
 	return c.ReplyPermissionV2(ctx, sessionID, permissionID, response)
 }
 
+// ReplyForm answers a pending form (question tool) via the form reply API.
+func (a *Adapter) ReplyForm(ctx context.Context, sessionID, formID string, answer map[string]any) error {
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.ReplyFormV2(ctx, sessionID, formID, answer)
+}
+
 func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 	c, err := a.clientOrErr()
 	if err != nil {

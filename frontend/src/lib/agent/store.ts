@@ -69,6 +69,8 @@ interface AppStore {
   sendPrompt: (text: string) => Promise<void>;
   abort: () => Promise<void>;
   replyPermission: (permissionID: string, response: "once" | "always" | "reject") => Promise<void>;
+  /** Answer a pending form (question tool): field key → value. */
+  replyForm: (formID: string, answer: Record<string, string>) => Promise<void>;
   /** Feed one neutral envelope into the store (SSE or tests). */
   dispatch: (env: Envelope) => void;
   /** Full resync after (re)connect (flow.md §7). */
@@ -299,6 +301,24 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (!activeProjectId || !activeSessionId) return;
     await api
       .replyPermission(activeProjectId, activeSessionId, permissionID, response)
+      .catch((e) => console.error(e));
+  },
+
+  replyForm: async (formID, answer) => {
+    const { activeProjectId, activeSessionId } = get();
+    if (!activeProjectId || !activeSessionId) return;
+    await api
+      .replyForm(activeProjectId, activeSessionId, formID, answer)
+      .then(() => {
+        // Close the card immediately; the form.replied echo is idempotent
+        // (reducer drops unknown ids) if it arrives.
+        set((s) => ({
+          chat: applyEvent(s.chat, {
+            type: "form.resolved",
+            payload: { projectID: activeProjectId, sessionID: activeSessionId, formID },
+          }),
+        }));
+      })
       .catch((e) => console.error(e));
   },
 
