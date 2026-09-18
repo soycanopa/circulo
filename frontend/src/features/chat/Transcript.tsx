@@ -8,15 +8,29 @@ import { ArrowDown } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { usePinnedScroll } from "./hooks/usePinnedScroll";
-import { AssistantMessage, UserMessage, visibleMessages } from "./Message";
+import { AssistantTurn, UserMessage, visibleMessages } from "./Message";
 import { ErrorBlock } from "./parts/MiscParts";
 import { TaskList } from "./parts/TaskList";
 import LoadingState from "./parts/LoadingState";
-import type { SessionState } from "@/lib/agent/reducer";
+import type { MessageRecord, SessionState } from "@/lib/agent/reducer";
 import { cn } from "@/lib/utils";
 
 const Transcript = memo(function Transcript({ session }: { session: SessionState }) {
   const shown = visibleMessages(session.messages);
+  // Consecutive assistant messages form one turn: one collapsible trace, one
+  // usage footer (ux.md §4).
+  type Item = { kind: "user"; m: MessageRecord } | { kind: "turn"; msgs: MessageRecord[] };
+  const items: Item[] = [];
+  for (const m of shown) {
+    const last = items[items.length - 1];
+    if (m.info.role === "assistant") {
+      if (last?.kind === "turn") last.msgs.push(m);
+      else items.push({ kind: "turn", msgs: [m] });
+    } else {
+      items.push({ kind: "user", m });
+    }
+  }
+  const lastItem = items[items.length - 1];
   const messageIds = shown.map((m) => m.info.id).join(",");
   const partsLens = shown.map((m) => m.parts.length).join(",");
   const lastTextLens = shown
@@ -28,11 +42,11 @@ const Transcript = memo(function Transcript({ session }: { session: SessionState
     })
     .join(",");
   const busy = session.status === "busy" || session.status === "retry";
-  // The trace (reasoning/tools) carries its own working header — the pixel
-  // loader below is only for turns with nothing to trace yet.
-  const last = shown[shown.length - 1];
+  // The turn trace carries its own working header — the pixel loader below is
+  // only for turns with nothing to trace yet.
   const hasTrace =
-    !!last && last.info.role === "assistant" && last.parts.some((p) => p.type === "reasoning" || p.type === "tool");
+    lastItem?.kind === "turn" &&
+    lastItem.msgs.some((m) => m.parts.some((p) => p.type === "reasoning" || p.type === "tool"));
   const { ref, pinned, jump } = usePinnedScroll([
     messageIds,
     partsLens,
@@ -51,13 +65,17 @@ const Transcript = memo(function Transcript({ session }: { session: SessionState
     <div className="relative min-h-0 flex-1">
       <div ref={ref} className="h-full overflow-y-auto" role="log" aria-label="Chat transcript">
         <div className="mx-auto flex w-full max-w-[768px] flex-col items-center gap-6 px-0 pt-6 pb-2">
-          {shown.map((m) =>
-            m.info.role === "user" ? (
-              <div key={m.info.id} className="flex w-full flex-col items-end">
-                <UserMessage m={m} />
+          {items.map((item) =>
+            item.kind === "user" ? (
+              <div key={item.m.info.id} className="flex w-full flex-col items-end">
+                <UserMessage m={item.m} />
               </div>
             ) : (
-              <AssistantMessage key={m.info.id} m={m} streaming={busy} />
+              <AssistantTurn
+                key={item.msgs[0].info.id}
+                messages={item.msgs}
+                streaming={busy && item === lastItem}
+              />
             ),
           )}
           {session.tasks.length > 0 && <TaskList tasks={session.tasks} />}

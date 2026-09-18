@@ -26,9 +26,9 @@ export const UserMessage = memo(function UserMessage({ m }: { m: MessageRecord }
   );
 });
 
-function lastReasoningId(m: MessageRecord): string {
-  for (let i = m.parts.length - 1; i >= 0; i--) {
-    if (m.parts[i].type === "reasoning") return m.parts[i].id;
+function lastReasoningIdOf(parts: MessageRecord["parts"]): string {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (parts[i].type === "reasoning") return parts[i].id;
   }
   return "";
 }
@@ -50,67 +50,86 @@ function aggregateCost(m: MessageRecord): number {
   return cost;
 }
 
-export const AssistantMessage = memo(function AssistantMessage({
-  m,
+export const AssistantTurn = memo(function AssistantTurn({
+  messages,
   streaming,
 }: {
-  m: MessageRecord;
+  /** every assistant message of one turn (consecutive server messages) */
+  messages: MessageRecord[];
   streaming: boolean;
 }) {
-  // Reasoning + tool parts collapse into one ThinkingState trace (ux.md §4);
-  // it renders at the position of the first of them, in server part order.
-  const traceParts = m.parts.filter((p) => p.type === "reasoning" || p.type === "tool");
-  const sources = useMemo(() => sourcesFromParts(m.parts), [m.parts]);
+  // One collapsible per TURN: reasoning + tool parts of every step collapse
+  // into a single ThinkingState; texts and cards follow in server order, and
+  // the usage footer covers the whole turn once it settles.
+  const allParts = useMemo(() => messages.flatMap((m) => m.parts), [messages]);
+  const traceParts = useMemo(
+    () => allParts.filter((p) => p.type === "reasoning" || p.type === "tool"),
+    [allParts],
+  );
+  const sources = useMemo(() => sourcesFromParts(allParts), [allParts]);
   const lastTextId = useMemo(() => {
     let id = "";
-    for (const p of m.parts) if (p.type === "text") id = p.id;
+    for (const p of allParts) if (p.type === "text") id = p.id;
     return id;
-  }, [m.parts]);
-  let traceRendered = false;
+  }, [allParts]);
+  const tokens = useMemo(() => {
+    const sum = { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 };
+    let any = false;
+    for (const m of messages) {
+      const t = aggregateTokens(m);
+      if (!t) continue;
+      any = true;
+      sum.input += t.input;
+      sum.output += t.output;
+      sum.reasoning += t.reasoning;
+      sum.cacheRead += t.cacheRead;
+      sum.cacheWrite += t.cacheWrite;
+    }
+    return any ? sum : undefined;
+  }, [messages]);
+  const cost = useMemo(
+    () => messages.reduce((acc, m) => acc + (m.info.cost || aggregateCost(m)), 0),
+    [messages],
+  );
   return (
     <div className="flex w-full flex-col gap-2">
-      {m.parts.map((p) => {
-        if (p.type === "reasoning" || p.type === "tool") {
-          if (traceRendered) return null;
-          traceRendered = true;
-          return (
-            <ThinkingState
-              key="trace"
-              parts={traceParts}
-              streaming={streaming}
-              liveReasoningId={lastReasoningId(m)}
-            />
-          );
-        }
-        switch (p.type) {
-          case "patch":
-            return <PatchCard key={p.id} part={p} />;
-          case "agent":
-          case "subtask":
-            return <SubtaskPill key={p.id} part={p} />;
-          case "text":
-            return (
-              <AssistantText
-                key={p.id}
-                partKey={p.id}
-                text={p.text ?? ""}
-                streaming={streaming && p.id === lastTextId}
-                sources={sources}
-                showActions={p.id === lastTextId}
-              />
-            );
-          case "step-start":
-          case "step-finish":
-          case "file":
-          default:
-            return null; // step markers fold into the footer
-        }
-      })}
-      {/* Nothing streamed yet: the transcript-level LoadingState below is the
-          single busy indicator — keep the bubble clean. */}
-      {!streaming && (
-        <TurnFooter tokens={aggregateTokens(m)} cost={m.info.cost || aggregateCost(m)} />
+      {traceParts.length > 0 && (
+        <ThinkingState
+          parts={traceParts}
+          streaming={streaming}
+          liveReasoningId={lastReasoningIdOf(allParts)}
+        />
       )}
+      {messages.map((m) =>
+        m.parts.map((p) => {
+          switch (p.type) {
+            case "patch":
+              return <PatchCard key={p.id} part={p} />;
+            case "agent":
+            case "subtask":
+              return <SubtaskPill key={p.id} part={p} />;
+            case "text":
+              return (
+                <AssistantText
+                  key={p.id}
+                  partKey={p.id}
+                  text={p.text ?? ""}
+                  streaming={streaming && p.id === lastTextId}
+                  sources={sources}
+                  showActions={p.id === lastTextId}
+                />
+              );
+            case "step-start":
+            case "step-finish":
+            case "file":
+            default:
+              return null; // step markers fold into the footer
+          }
+        }),
+      )}
+      {/* Nothing streamed yet: the transcript-level LoadingState below is the
+          single busy indicator — keep the turn clean. */}
+      {!streaming && <TurnFooter tokens={tokens} cost={cost} />}
     </div>
   );
 });
