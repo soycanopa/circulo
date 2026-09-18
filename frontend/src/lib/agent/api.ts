@@ -48,7 +48,7 @@ export const api = {
     }),
 
   renameSession: (projectID: string, sessionID: string, title: string) =>
-    request<Session>(`/projects/${projectID}/sessions/${sessionID}`, {
+    request<{ ok: boolean }>(`/projects/${projectID}/sessions/${sessionID}`, {
       method: "PATCH",
       body: JSON.stringify({ title }),
     }),

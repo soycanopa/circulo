@@ -108,6 +108,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.writeJSONOrErr(w, map[string]bool{"ok": true}, a.DeleteSession(r.Context(), sid))
 		})
 		return
+	case tail2 == "" && r.Method == http.MethodPatch:
+		s.withAdapter(w, id, func(a agent.Adapter) {
+			var body struct {
+				Title string `json:"title"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+				s.writeErr(w, badRequest("rename body: %v", err))
+				return
+			}
+			title := strings.TrimSpace(body.Title)
+			if title == "" {
+				s.writeErr(w, badRequest("title is required"))
+				return
+			}
+			s.writeJSONOrErr(w, map[string]bool{"ok": true}, a.RenameSession(r.Context(), sid, title))
+		})
+		return
 	case tail2 == "messages" && r.Method == http.MethodGet:
 		limit := 0
 		if v := r.URL.Query().Get("limit"); v != "" {
