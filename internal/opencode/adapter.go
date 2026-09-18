@@ -393,7 +393,15 @@ const formatInstructionKey = "circulogo-format"
 const formatInstruction = "Format every response in GitHub-flavored Markdown: " +
 	"short paragraphs, bullet lists, numbered steps for procedures, tables for " +
 	"comparisons, and fenced code blocks with a language tag. Never reply with " +
-	"unstructured plain text."
+	"unstructured plain text. When you need to show a flowchart or workflow, " +
+	"emit one fenced block labeled circulogo-flow whose body is valid JSON: " +
+	`{"nodes":[{"id":"a","row":0,"x":0.5,"w":300,"kind":"Trigger","hue":"purple",` +
+	`"title":"New order","caption":"Trigger when an order is created"}],` +
+	`"edges":[{"from":"a","to":"b"}]}. ` +
+	"row = depth from top starting at 0; x = horizontal center from 0 to 1; " +
+	"hue: purple|amber|blue|green|red; a decision node uses kind \"If / Else\" " +
+	`and adds "condition":[["order.flavor","is","Rocky Road"]] (read-only rows). " +
+	"Keep the JSON strictly valid, no comments."
 
 func (a *Adapter) CreateSession(ctx context.Context, title string) (protocol.Session, error) {
 	c, err := a.clientOrErr()
