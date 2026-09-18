@@ -86,15 +86,14 @@
 
 ## 2. Phases
 
-| # | Work | Tests |
+| # | Work | Status |
 |---|---|---|
-| 0 | Wire `CIRCULOGO_OPENCODE_BIN`; capture v2 fixtures (boot, sessions, real turn with tool, permission ask/reply, error) | fixtures header-record 2.0.8 |
-| 1 | `wire.go` v2 types + `client.go` endpoints + Basic auth from captured password | httptest shape tests |
-| 2 | `translate.go` v2 events → neutral protocol (neutral contract changes land with `protocol.ts` in the same commit) | table tests per event |
-| 3 | `process.go`: read server password from output; `WaitHealthy` with auth; managed attach of the password to the client | process tests |
-| 4 | UI: permission reply shape, model/variant mapping (`variants` array), any event renames in `protocol.ts` | reducer goldens |
-| 5 | Docs: TRD pin → 2.0.x, this doc status, fixture headers | — |
-| 6 | CI-lite + owner E2E manual pass | gate |
+| 0 | `CIRCULOGO_OPENCODE_BIN` wired; real v2 fixtures captured (lifecycle + turn) | ✅ — permission/execution-failed captures pending owner E2E |
+| 1 | `wire_v2.go` + `client_v2.go` (+ `client_v2_test.go` shape tests) | ✅ |
+| 2+3 | `translate_v2.go` → neutral protocol; adapter swapped to the v2 client; `WaitReady` (boot password → Basic auth → /api/info); v1 code deleted | ✅ — neutral contract unchanged, `protocol.ts` needed no field changes |
+| 4 | Reducer/store merge-patch for partial `session.updated` (v2 renamed patches) + tests | ✅ |
+| 5 | Docs: TRD pin → 2.0.x, this doc status, fixture headers | pending |
+| 6 | CI-lite ✅ + owner E2E manual pass (incl. permission + execution-failed captures) | gate |
 
 ## 3. Decisions already taken by the owner
 - Update everything to v2 (2026-09-18). v1 CLI stays installed for daily use until the
