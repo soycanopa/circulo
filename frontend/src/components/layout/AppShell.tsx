@@ -62,7 +62,9 @@ function GlowPixels() {
     const paint = (twinkle: boolean, now: number) => {
       ctx.clearRect(0, 0, w, h);
       for (const d of dots) {
-        const fade = 1 - d.y / h; // dissolve upward into the surface
+        // canvas y grows downward: full presence at the glow (bottom),
+        // dissolving to nothing at the strip's top edge
+        const fade = d.y / h;
         const a = BASE * fade * (twinkle ? Math.sin(((now / d.cycle + d.phase) % 1) * Math.PI) ** 2 : 1);
         if (a < 0.02) continue;
         ctx.fillStyle = `rgba(115, 120, 242, ${a})`;
