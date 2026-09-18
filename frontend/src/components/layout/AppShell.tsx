@@ -38,7 +38,8 @@ function GlowPixels() {
     if (!ctx) return;
 
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const PITCH = 9;
+    const PITCH = 12;
+    const SIZE = 3;
     const BASE = 0.35;
     let dots: { x: number; y: number; phase: number; cycle: number }[] = [];
     let w = 0;
@@ -68,7 +69,7 @@ function GlowPixels() {
         const a = BASE * fade * (twinkle ? Math.sin(((now / d.cycle + d.phase) % 1) * Math.PI) ** 2 : 1);
         if (a < 0.02) continue;
         ctx.fillStyle = `rgba(115, 120, 242, ${a})`;
-        ctx.fillRect(d.x - 1, d.y - 1, 2, 2);
+        ctx.fillRect(d.x - SIZE / 2, d.y - SIZE / 2, SIZE, SIZE);
       }
     };
 
