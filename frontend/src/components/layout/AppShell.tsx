@@ -91,10 +91,11 @@ export function AppShell({
         {sidebarOpen && (
           <>
             <aside
-              className="circulo-glow flex shrink-0 flex-col overflow-hidden rounded-[18px] bg-bg-sidebar"
+              className="circulo-glow relative flex shrink-0 flex-col overflow-hidden rounded-[18px] bg-bg-sidebar"
               style={{ width: sidebarWidth }}
             >
-              {sidebar}
+              <div aria-hidden className="glow-pixels" />
+              <div className="relative flex min-h-0 flex-1 flex-col">{sidebar}</div>
             </aside>
             {/* invisible drag handle living in the 8px gap; double-click
                 resets to the default width */}
@@ -122,8 +123,9 @@ export function AppShell({
             </div>
           </>
         )}
-        <main className="circulo-glow flex min-w-0 flex-1 flex-col overflow-hidden rounded-[18px] bg-bg-main">
-          {children}
+        <main className="circulo-glow relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[18px] bg-bg-main">
+          <div aria-hidden className="glow-pixels" />
+          <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>
         </main>
       </div>
     </div>

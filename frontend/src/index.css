@@ -166,6 +166,24 @@
     );
 }
 
+/* Pixel texture living inside the bottom glow (owner call): a dot grid
+   anchored to the bottom edge that dissolves upward into the surface —
+   masked so it only reads inside the glow, never over the content. */
+.glow-pixels {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 150px;
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle,
+    rgb(115 120 242 / 0.35) 1px,
+    transparent 1.3px
+  );
+  background-size: 9px 9px;
+  -webkit-mask-image: linear-gradient(to top, black, transparent);
+  mask-image: linear-gradient(to top, black, transparent);
+}
+
 /* Pixel-grid loader (features/chat/parts/LoadingState.tsx). Cells rest dim
    and a per-cell animation-delay lights them in sequence (chevron wavefront,
    or an orbiting comet). The shimmer sweeps a highlight band across the
