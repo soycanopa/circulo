@@ -5,7 +5,7 @@
  */
 
 import { memo } from "react";
-import { Loader2, X } from "lucide-react";
+import { Folder, Loader2, X } from "lucide-react";
 
 import { useAppStore } from "@/lib/agent/store";
 import type { ProjectView } from "@/lib/agent/protocol";
@@ -19,15 +19,17 @@ export const ChatAppBar = memo(function ChatAppBar({
   session?: SessionState;
 }) {
   const closeSession = useAppStore((s) => s.closeSession);
-  const projectName = project.path.split("/").filter(Boolean).pop() ?? project.path;
   const title = session?.session.title || "New chat";
   const busy = session?.status === "busy";
   const retrying = session?.status === "retry";
 
   return (
     <div className="flex w-full min-w-0 items-center justify-between gap-3">
-      <span className="truncate text-xs font-medium leading-[14px] text-text-secondary">
-        {session ? `${title} · ${projectName}` : `New session · ${projectName}`}
+      <span className="flex min-w-0 items-center gap-1.5">
+        <Folder className="size-3.5 shrink-0 text-text-tertiary" strokeWidth={2} />
+        <span className="truncate text-xs font-medium leading-[14px] text-text-secondary">
+          {title}
+        </span>
       </span>
       <div className="flex shrink-0 items-center gap-2">
         {busy && (
