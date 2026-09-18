@@ -99,7 +99,11 @@ export const AssistantText = memo(function AssistantText({
 
   return (
     <div className="w-full">
-      <MarkdownView text={body + (streaming && body ? " ▍" : "")} />
+      {/* the streaming caret is a styled ::after bar (2.5x12) on the last
+          markdown block — smaller than the old block glyph */}
+      <div className={streaming && body ? "caret-stream" : undefined}>
+        <MarkdownView text={body} />
+      </div>
 
       {/* actions row — appears when the text settles */}
       {showActions && done && (

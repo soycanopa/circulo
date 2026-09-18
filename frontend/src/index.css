@@ -166,6 +166,20 @@
     );
 }
 
+/* Streaming text caret (AssistantText): a small rounded bar appended to
+   the last block of the streamed markdown — sized in px, independent of
+   the text font. */
+.caret-stream > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2.5px;
+  height: 12px;
+  margin-left: 3px;
+  border-radius: 1.25px;
+  background: var(--text-primary);
+  vertical-align: -1.5px;
+}
+
 /* Pixel-grid loader (features/chat/parts/LoadingState.tsx). Cells rest dim
    and a per-cell animation-delay lights them in sequence (chevron wavefront,
    or an orbiting comet). The shimmer sweeps a highlight band across the
