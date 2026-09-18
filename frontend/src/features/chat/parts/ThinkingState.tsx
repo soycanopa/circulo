@@ -170,7 +170,9 @@ export default function ThinkingState({
   }, [parts[0]?.id]);
 
   return (
-    <div className="flex w-full flex-col">
+    <div className="flex w-full flex-col items-center">
+      {/* centered cluster: header, trace and detail travel together */}
+      <div className="flex w-fit max-w-full flex-col items-start">
       {/* header — shared across variants */}
       <button
         type="button"
@@ -360,6 +362,7 @@ export default function ThinkingState({
           </div>
         );
       })()}
+      </div>
     </div>
   );
 }
