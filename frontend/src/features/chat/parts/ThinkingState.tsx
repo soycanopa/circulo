@@ -197,9 +197,9 @@ export default function ThinkingState({
   }, [parts[0]?.id]);
 
   return (
-    <div className="flex w-full flex-col items-center">
-      {/* centered cluster: header, trace and detail travel together */}
-      <div className="flex w-fit max-w-full flex-col items-start">
+    // Left-aligned, always: trace blocks sit on the assistant column edge
+    // like the response text — never centered (owner rule).
+    <div className="flex w-full flex-col">
       {/* header — pixel-grid loader with rotating phrases while working,
           sparkle + settled summary after */}
       <button
@@ -402,7 +402,6 @@ export default function ThinkingState({
           </div>
         );
       })()}
-      </div>
     </div>
   );
 }

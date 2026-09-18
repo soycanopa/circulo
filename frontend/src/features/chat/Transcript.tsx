@@ -88,7 +88,9 @@ const Transcript = memo(function Transcript({ session }: { session: SessionState
                 Provider retrying (attempt {session.retry.attempt}): {session.retry.message}
               </div>
             ) : (
-              <LoadingState />
+              <div className="w-full">
+                <LoadingState />
+              </div>
             ))}
         </div>
       </div>
