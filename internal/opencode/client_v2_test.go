@@ -151,14 +151,14 @@ func TestClientV2_SetModelShape(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL)
-	if err := c.SetModelV2(context.Background(), "ses_1", "zai-coding-plan", "glm-5.3"); err != nil {
+	if err := c.SetModelV2(context.Background(), "ses_1", "zai-coding-plan", "glm-5.3", "high"); err != nil {
 		t.Fatal(err)
 	}
 	if gotPath != "/api/session/ses_1/model" {
 		t.Errorf("path = %s", gotPath)
 	}
 	model, _ := gotBody["model"].(map[string]any)
-	if model["id"] != "glm-5.3" || model["providerID"] != "zai-coding-plan" {
+	if model["id"] != "glm-5.3" || model["providerID"] != "zai-coding-plan" || model["variant"] != "high" {
 		t.Errorf("model = %+v", model)
 	}
 }

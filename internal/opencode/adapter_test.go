@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"os/exec"
+	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,67 +16,95 @@ import (
 	"circulogo/internal/agent/protocol"
 )
 
-// fakeOC is a minimal OpenCode server: serves /global/health, a scripted SSE
-// /event stream, and records the commands the adapter issues.
+// fakeOC is a minimal OpenCode v2 server: /api/info readiness, a scripted
+// SSE /api/event stream, and request recording for the command endpoints.
 type fakeOC struct {
 	t         *testing.T
 	mu        sync.Mutex
-	requests  []string
+	requests  []string // "METHOD path"
+	bodies    map[string]string
 	stream    chan string
 	url       string
 	closeOnce sync.Once
 }
 
 func newFakeOC(t *testing.T) *fakeOC {
-	return &fakeOC{t: t, stream: make(chan string, 64)}
+	return &fakeOC{t: t, stream: make(chan string, 64), bodies: map[string]string{}}
 }
 
 func (f *fakeOC) handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /global/health", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(HealthResponse{Healthy: true, Version: "test"})
+	mux.HandleFunc("GET /api/info", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(V2ServerInfo{Version: "test", PID: 1})
 	})
-	mux.HandleFunc("GET /session", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/location", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"directory":"/private/tmp/proj","project":{"id":"prj","directory":"/private/tmp/proj"}}`))
+	})
+	mux.HandleFunc("GET /api/session", func(w http.ResponseWriter, r *http.Request) {
 		f.record(r)
-		_ = json.NewEncoder(w).Encode([]Session{{ID: "ses_a", Title: "one"}, {ID: "ses_b", Title: "two"}})
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"ses_a","projectID":"prj","title":"one","time":{"created":1,"updated":2},"location":{"directory":"/private/tmp/proj"}},
+			{"id":"ses_b","projectID":"prj","title":"two","time":{"created":1,"updated":2},"location":{"directory":"/private/tmp/proj"}}]}`))
 	})
-	mux.HandleFunc("POST /session", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/session", func(w http.ResponseWriter, r *http.Request) {
 		f.record(r)
-		_ = json.NewEncoder(w).Encode(Session{ID: "ses_new", Title: "made"})
+		_, _ = w.Write([]byte(`{"data":{"id":"ses_new","projectID":"prj","title":"made","time":{"created":1,"updated":1},"location":{"directory":"/private/tmp/proj"}}}`))
 	})
-	mux.HandleFunc("GET /session/ses_h/message", func(w http.ResponseWriter, r *http.Request) {
-		f.record(r)
-		_ = json.NewEncoder(w).Encode([]MessagesPage{{
-			Info: messageUser("ses_h"),
-			Parts: []Part{
-				{ID: "prt_u", Type: "text", Text: "hello", SessionID: "ses_h", MessageID: "msg_u"},
-				{ID: "prt_drop", Type: "snapshot"},
-			},
-		}, {
-			Info: messageAssistant("ses_h"),
-			Parts: []Part{
-				{ID: "prt_ss", Type: "step-start", SessionID: "ses_h", MessageID: "msg_a"},
-				{ID: "prt_t", Type: "text", Text: "OK", SessionID: "ses_h", MessageID: "msg_a"},
-			},
-		}})
-	})
-	mux.HandleFunc("POST /session/ses_new/prompt_async", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("PATCH /api/session/ses_new", func(w http.ResponseWriter, r *http.Request) {
 		f.record(r)
 		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.HandleFunc("POST /session/ses_new/abort", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("DELETE /api/session/ses_del", func(w http.ResponseWriter, r *http.Request) {
 		f.record(r)
-		_ = json.NewEncoder(w).Encode(true)
+		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.HandleFunc("POST /session/ses_new/permissions/per_1", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/session/ses_h/message", func(w http.ResponseWriter, r *http.Request) {
 		f.record(r)
-		_ = json.NewEncoder(w).Encode(true)
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"msg_a","time":{"created":100,"completed":200},"type":"assistant","agent":"build",
+			 "model":{"id":"m1","providerID":"p1"},"finish":"stop","cost":0.01,
+			 "tokens":{"input":10,"output":2,"reasoning":0,"cache":{"read":0,"write":0}},
+			 "content":[
+			   {"type":"reasoning","text":"thinking"},
+			   {"type":"tool","id":"call_1","name":"shell",
+			    "state":{"status":"completed","input":{"command":"ls"},"output":"x"}},
+			   {"type":"text","text":"OK"}]},
+			{"id":"msg_u","time":{"created":50},"type":"user","text":"hello"},
+			{"id":"msg_idle","time":{"created":300},"type":"idle","outcome":"succeeded"}]}`))
 	})
-	mux.HandleFunc("GET /event", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/session/ses_new/prompt", func(w http.ResponseWriter, r *http.Request) {
+		f.record(r)
+		raw, _ := io.ReadAll(r.Body)
+		f.mu.Lock()
+		f.bodies["prompt"] = string(raw)
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("POST /api/session/ses_new/model", func(w http.ResponseWriter, r *http.Request) {
+		f.record(r)
+		raw, _ := io.ReadAll(r.Body)
+		f.mu.Lock()
+		f.bodies["model"] = string(raw)
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("POST /api/session/ses_new/agent", func(w http.ResponseWriter, r *http.Request) {
+		f.record(r)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("POST /api/session/ses_new/interrupt", func(w http.ResponseWriter, r *http.Request) {
+		f.record(r)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("POST /api/session/ses_new/permission/per_1/reply", func(w http.ResponseWriter, r *http.Request) {
+		f.record(r)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("GET /api/event", func(w http.ResponseWriter, r *http.Request) {
 		f.record(r)
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
-		_, _ = fmt.Fprint(w, "data: {\"type\":\"server.connected\",\"properties\":{}}\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"id\":\"evt_0\",\"type\":\"server.connected\",\"data\":{}}\n\n")
 		flusher.Flush()
 		for {
 			select {
@@ -106,11 +136,17 @@ func (f *fakeOC) hasRequest(method, path string) bool {
 	return false
 }
 
-func (f *fakeOC) pushEvent(typ string, props map[string]any) {
+func (f *fakeOC) body(key string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.bodies[key]
+}
+
+// pushEvent queues a raw v2 envelope (as the SSE data line) to stream.
+func (f *fakeOC) pushEvent(raw string) {
 	f.t.Helper()
-	raw, _ := json.Marshal(map[string]any{"type": typ, "properties": props})
 	select {
-	case f.stream <- string(raw):
+	case f.stream <- raw:
 	case <-time.After(2 * time.Second):
 		f.t.Fatal("fake server stream backlog full")
 	}
@@ -143,6 +179,14 @@ func drain(t *testing.T, ch <-chan protocol.Envelope, stop func(protocol.Envelop
 	}
 }
 
+func envelopeTypes(out []protocol.Envelope) []string {
+	types := make([]string, 0, len(out))
+	for _, e := range out {
+		types = append(types, e.Type)
+	}
+	return types
+}
+
 func payloadAs(t *testing.T, e protocol.Envelope, dst any) {
 	t.Helper()
 	if err := json.Unmarshal(e.Payload, dst); err != nil {
@@ -150,21 +194,9 @@ func payloadAs(t *testing.T, e protocol.Envelope, dst any) {
 	}
 }
 
-func messageUser(sessionID string) Message {
-	var m Message
-	m.ID, m.SessionID, m.Role = "msg_u", sessionID, "user"
-	m.Time.Created = 1788350998816
-	return m
-}
-
-func messageAssistant(sessionID string) Message {
-	var m Message
-	m.ID, m.SessionID, m.Role = "msg_a", sessionID, "assistant"
-	m.Time.Created = 1788350999000
-	m.Time.Completed = 1788351001000
-	m.Cost = 0.01
-	m.Finish = "stop"
-	return m
+func v2Event(typ string, data map[string]any) string {
+	raw, _ := json.Marshal(map[string]any{"id": "evt_x", "type": typ, "data": data})
+	return string(raw)
 }
 
 func TestAdapter_Attach_LifecycleAndTurn(t *testing.T) {
@@ -176,7 +208,7 @@ func TestAdapter_Attach_LifecycleAndTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// First event must be adapter.status running.
+	// First event must be adapter.status running (from server.connected).
 	evts := drain(t, a.Events(), func(e protocol.Envelope) bool {
 		return e.Type == protocol.EventAdapterStatus
 	})
@@ -186,55 +218,92 @@ func TestAdapter_Attach_LifecycleAndTurn(t *testing.T) {
 		t.Errorf("status = %+v", st)
 	}
 
-	// Stream a turn through the fake server.
-	f.pushEvent("session.updated", map[string]any{"sessionID": "ses_new", "info": map[string]any{
-		"id": "ses_new", "title": "made", "time": map[string]any{"created": 1, "updated": 2}}})
-	f.pushEvent("message.part.updated", map[string]any{"part": map[string]any{
-		"id": "prt_1", "type": "text", "text": "OK", "messageID": "msg_1", "sessionID": "ses_new"},
-		"delta": "OK"})
-	f.pushEvent("message.part.updated", map[string]any{"part": map[string]any{
-		"id": "prt_2", "type": "future.part", "messageID": "msg_1", "sessionID": "ses_new"}})
+	// Stream a v2 turn: session created in-scope, then text started→delta→ended.
+	f.pushEvent(v2Event("session.created", map[string]any{
+		"sessionID": "ses_new", "projectID": "prj",
+		"location": map[string]any{"directory": "/private/tmp/proj"}}))
+	f.pushEvent(v2Event("session.text.started", map[string]any{
+		"sessionID": "ses_new", "assistantMessageID": "msg_1"}))
+	f.pushEvent(v2Event("session.text.delta", map[string]any{
+		"sessionID": "ses_new", "assistantMessageID": "msg_1", "delta": "OK"}))
+	f.pushEvent(v2Event("session.text.ended", map[string]any{
+		"sessionID": "ses_new", "assistantMessageID": "msg_1", "text": "OK"}))
 
-	evts = drain(t, a.Events(), func(e protocol.Envelope) bool {
-		return e.Type == protocol.EventPartUpdated
-	})
-	var pu protocol.PartUpdated
-	payloadAs(t, evts[len(evts)-1], &pu)
-	if pu.Part.Text != "OK" || pu.Part.Type != protocol.PartText || pu.SessionID != "ses_new" {
-		t.Errorf("part = %+v", pu)
+	// Wait for the authoritative ended part; the stub + delta precede it.
+	var texts []protocol.Part
+	deadline := time.After(5 * time.Second)
+ collecting:
+	for {
+		select {
+		case e := <-a.Events():
+			if e.Type == protocol.EventPartUpdated {
+				var pu protocol.PartUpdated
+				payloadAs(t, e, &pu)
+				if pu.Part.Type == protocol.PartText {
+					texts = append(texts, pu.Part)
+					if pu.Part.Text == "OK" {
+						break collecting
+					}
+				}
+			}
+		case <-deadline:
+			t.Fatalf("never got the full text part; got %v", texts)
+		}
 	}
-	// The delta hint follows the full part.
-	select {
-	case e := <-a.Events():
-		if e.Type != protocol.EventPartDelta {
-			t.Fatalf("expected part.delta, got %s", e.Type)
+	// Ended replaces: first paint is empty, last is authoritative.
+	if texts[0].Text != "" || texts[len(texts)-1].Text != "OK" {
+		t.Errorf("text parts = %+v", texts)
+	}
+	// Part ids are stable across started/delta/ended.
+	for _, p := range texts {
+		if p.ID != "msg_1:text" {
+			t.Errorf("part id = %s", p.ID)
 		}
-		var pd protocol.PartDelta
-		payloadAs(t, e, &pd)
-		if pd.Delta != "OK" || pd.PartID != "prt_1" {
-			t.Errorf("delta = %+v", pd)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("no delta event")
 	}
 
-	// Commands proxy through the client.
-	if err := a.Prompt(ctx, "ses_new", protocol.PromptRequest{Text: "hi", Agent: "build"}); err != nil {
+	// Commands proxy through the v2 client: model pinned, then text prompt.
+	if err := a.Prompt(ctx, "ses_new", protocol.PromptRequest{
+		Text: "hi", Agent: "build", Provider: "zai-coding-plan", Model: "glm-5.3", Variant: "high",
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if !f.hasRequest("POST", "/session/ses_new/prompt_async") {
-		t.Error("prompt_async not called")
+	if !f.hasRequest("POST", "/api/session/ses_new/model") {
+		t.Error("model pin not called")
+	}
+	var modelBody struct {
+		Model map[string]string `json:"model"`
+	}
+	if err := json.Unmarshal([]byte(f.body("model")), &modelBody); err != nil {
+		t.Fatal(err)
+	}
+	if modelBody.Model["id"] != "glm-5.3" || modelBody.Model["providerID"] != "zai-coding-plan" || modelBody.Model["variant"] != "high" {
+		t.Errorf("model body = %+v", modelBody.Model)
+	}
+	if !f.hasRequest("POST", "/api/session/ses_new/agent") {
+		t.Error("agent pin not called")
+	}
+	if !f.hasRequest("POST", "/api/session/ses_new/prompt") {
+		t.Error("prompt not called")
+	}
+	var promptBody struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(f.body("prompt")), &promptBody); err != nil {
+		t.Fatal(err)
+	}
+	if promptBody.Text != "hi" {
+		t.Errorf("prompt body = %+v", promptBody)
 	}
 	if err := a.Abort(ctx, "ses_new"); err != nil {
 		t.Fatal(err)
 	}
-	if !f.hasRequest("POST", "/session/ses_new/abort") {
-		t.Error("abort not called")
+	if !f.hasRequest("POST", "/api/session/ses_new/interrupt") {
+		t.Error("interrupt not called")
 	}
 	if err := a.ReplyPermission(ctx, "ses_new", "per_1", protocol.PermissionOnce); err != nil {
 		t.Fatal(err)
 	}
-	if !f.hasRequest("POST", "/session/ses_new/permissions/per_1") {
+	if !f.hasRequest("POST", "/api/session/ses_new/permission/per_1/reply") {
 		t.Error("permission reply not called")
 	}
 
@@ -243,20 +312,36 @@ func TestAdapter_Attach_LifecycleAndTurn(t *testing.T) {
 		t.Errorf("sessions = %+v err=%v", ss, err)
 	}
 
-	// Hydration drops non-renderable parts.
+	// Hydration: user/assistant inline content, idle markers dropped, finish
+	// part synthesized, tool state mapped.
 	msgs, err := a.Messages(ctx, "ses_h", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(msgs) != 2 {
-		t.Fatalf("messages = %d, want 2", len(msgs))
+		t.Fatalf("messages = %d, want 2 (idle marker dropped)", len(msgs))
 	}
-	var types []string
-	for _, p := range msgs[1].Parts {
-		types = append(types, p.Type)
+	// Oldest first: user, then assistant.
+	if msgs[0].Info.Role != protocol.RoleUser || msgs[0].Parts[0].Text != "hello" {
+		t.Errorf("user message = %+v", msgs[0])
 	}
-	if len(types) != 2 || types[0] != protocol.PartStepStart || types[1] != protocol.PartText {
-		t.Errorf("hydrated parts = %v (snapshot must be dropped)", types)
+	aMsg := msgs[1]
+	if aMsg.Info.Role != protocol.RoleAssistant || aMsg.Info.Finish != "stop" {
+		t.Errorf("assistant info = %+v", aMsg.Info)
+	}
+	var ptypes []string
+	for _, p := range aMsg.Parts {
+		ptypes = append(ptypes, p.Type)
+	}
+	want := []string{protocol.PartReasoning, protocol.PartTool, protocol.PartText, protocol.PartStepFinish}
+	if strings.Join(ptypes, ",") != strings.Join(want, ",") {
+		t.Errorf("hydrated parts = %v, want %v", ptypes, want)
+	}
+	if aMsg.Parts[1].State == nil || aMsg.Parts[1].State.Status != protocol.ToolCompleted {
+		t.Errorf("tool state = %+v", aMsg.Parts[1].State)
+	}
+	if aMsg.Parts[3].Tokens == nil || aMsg.Parts[3].Tokens.Output != 2 {
+		t.Errorf("finish tokens = %+v", aMsg.Parts[3].Tokens)
 	}
 
 	if err := a.Stop(ctx); err != nil {
@@ -284,25 +369,24 @@ func TestAdapter_AttachFailsWhenUnreachable(t *testing.T) {
 	}
 }
 
-// The OpenCode session store is global: GET /session and the event stream
-// carry sessions from every directory. The adapter must scope them to the
-// server's root (GET /path → directory).
+// The OpenCode session store is global: the session list and the event
+// stream carry sessions from every directory. The adapter must scope them
+// to the server's root (GET /api/location → directory).
 func TestAdapter_SessionScoping(t *testing.T) {
 	root := "/private/tmp/proj"
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /global/health", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(HealthResponse{Healthy: true})
+	mux.HandleFunc("GET /api/info", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(V2ServerInfo{Version: "test"})
 	})
-	mux.HandleFunc("GET /path", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(PathResponse{Directory: root})
+	mux.HandleFunc("GET /api/location", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"directory":"/private/tmp/proj","project":{"id":"prj"}}`))
 	})
-	mux.HandleFunc("GET /session", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode([]Session{
-			{ID: "ses_in", Title: "in project", Directory: root},
-			{ID: "ses_tmp", Title: "via symlink", Directory: "/tmp/proj"}, // resolved == root
-			{ID: "ses_out", Title: "other project", Directory: "/Users/x/other"},
-		})
+	mux.HandleFunc("GET /api/session", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"ses_in","projectID":"prj","title":"in project","time":{"created":1,"updated":1},"location":{"directory":"/private/tmp/proj"}},
+			{"id":"ses_tmp","projectID":"prj","title":"via symlink","time":{"created":1,"updated":1},"location":{"directory":"/tmp/proj"}},
+			{"id":"ses_out","projectID":"prj","title":"other project","time":{"created":1,"updated":1},"location":{"directory":"/Users/x/other"}}]}`))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -323,27 +407,21 @@ func TestAdapter_SessionScoping(t *testing.T) {
 		t.Errorf("scoped sessions = %+v, want ses_in only", ss)
 	}
 
-	// A live session.updated from a foreign directory must not reach Events().
-	foreign := map[string]any{"sessionID": "ses_out", "info": map[string]any{
-		"id": "ses_out", "title": "other", "directory": "/Users/x/other",
-		"time": map[string]any{"created": 1, "updated": 1}}}
-	raw, _ := json.Marshal(map[string]any{"type": "session.updated", "properties": foreign})
-	// Push through a mini fake stream: reuse the adapter's client is not
-	// possible here, so assert the filter function directly for the event path.
-	env, err := DecodeEvent(Frame(raw))
+	// A session.created from a foreign directory must not reach Events().
+	foreign := v2Event("session.created", map[string]any{
+		"sessionID": "ses_out", "location": map[string]any{"directory": "/Users/x/other"}})
+	env, err := parseV2Event([]byte(foreign))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !a.foreignSessionEvent(env) {
-		t.Error("foreign session.updated not detected")
+		t.Error("foreign session.created not detected")
 	}
-	ours := map[string]any{"sessionID": "ses_in", "info": map[string]any{
-		"id": "ses_in", "title": "in", "directory": root,
-		"time": map[string]any{"created": 1, "updated": 1}}}
-	raw, _ = json.Marshal(map[string]any{"type": "session.updated", "properties": ours})
-	env, _ = DecodeEvent(Frame(raw))
+	ours := v2Event("session.created", map[string]any{
+		"sessionID": "ses_in", "location": map[string]any{"directory": root}})
+	env, _ = parseV2Event([]byte(ours))
 	if a.foreignSessionEvent(env) {
-		t.Error("in-scope session.updated wrongly flagged foreign")
+		t.Error("in-scope session.created wrongly flagged foreign")
 	}
 
 	_ = a.Stop(context.Background())
@@ -363,20 +441,25 @@ func TestAdapter_UnknownMode(t *testing.T) {
 	}
 }
 
-// Integration: full managed lifecycle against the real `opencode` binary.
-// Skipped when the binary is absent or -short is passed.
-func TestAdapter_Managed_Integration_Opencode(t *testing.T) {
+// Integration: full managed lifecycle against a real opencode v2 binary.
+// Skipped when no v2 binary is available or -short is passed.
+func TestAdapter_Managed_Integration_OpencodeV2(t *testing.T) {
 	if testing.Short() {
 		t.Skip("short mode")
 	}
-	if _, err := exec.LookPath("opencode"); err != nil {
-		t.Skip("opencode not installed")
+	bin := os.Getenv("CIRCULOGO_OPENCODE_BIN")
+	if bin == "" {
+		candidate := os.ExpandEnv("$HOME/.local/opencode-v2/node_modules/@opencode/cli-darwin-arm64/bin/opencode")
+		if _, err := os.Stat(candidate); err != nil {
+			t.Skip("no opencode v2 binary available")
+		}
+		bin = candidate
 	}
-	a := NewAdapter(AdapterConfig{ProjectID: "p", Mode: ModeManaged, Dir: t.TempDir()})
+	a := NewAdapter(AdapterConfig{ProjectID: "p", Mode: ModeManaged, Dir: t.TempDir(), Binary: bin})
 	if err := a.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	// First event: adapter running (after health + /event connected).
+	// First event: adapter running (after boot password + /api/info + /event).
 	evts := drain(t, a.Events(), func(e protocol.Envelope) bool {
 		return e.Type == protocol.EventAdapterStatus
 	})

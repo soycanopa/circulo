@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"regexp"
 	"sync"
 	"syscall"
 	"time"
@@ -83,30 +84,51 @@ func (m *Managed) Stop(grace time.Duration) {
 	}
 }
 
-// WaitHealthy polls GET /global/health until it succeeds or timeout elapses.
-// It also fails fast if the process exits while polling (startup crash).
-func (m *Managed) WaitHealthy(ctx context.Context, c *Client, timeout time.Duration) error {
+// serverPasswordRe matches the boot line the v2 server prints
+// ("server password <random>"); v2 requires this as the Basic auth password
+// on every route (docs/opencode-v2-migration.md §auth).
+var serverPasswordRe = regexp.MustCompile(`server password (\S+)`)
+
+// Password returns the API password printed at boot, or "" until it shows up
+// in the output tail.
+func (m *Managed) Password() string {
+	if mm := serverPasswordRe.FindStringSubmatch(m.ErrTail()); len(mm) >= 2 {
+		return mm[1]
+	}
+	return ""
+}
+
+// WaitReady polls until the server is usable: the boot password has been
+// printed and GET /api/info answers under Basic auth with it (both are v2
+// requirements). newClient builds the authed client once the password is
+// known. It also fails fast if the process exits while polling.
+func (m *Managed) WaitReady(ctx context.Context, newClient func(pass string) *Client, timeout time.Duration) (*Client, error) {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for time.Now().Before(deadline) {
 		select {
 		case err := <-m.done:
-			return fmt.Errorf("opencode exited during startup: %v; output: %s", err, m.ErrTail())
+			return nil, fmt.Errorf("opencode exited during startup: %v; output: %s", err, m.ErrTail())
 		default:
 		}
-		hctx, cancel := context.WithTimeout(ctx, 750*time.Millisecond)
-		_, lastErr = c.Health(hctx)
-		cancel()
-		if lastErr == nil {
-			return nil
+		if pass := m.Password(); pass != "" {
+			c := newClient(pass)
+			hctx, cancel := context.WithTimeout(ctx, 750*time.Millisecond)
+			_, lastErr = c.ServerInfoV2(hctx)
+			cancel()
+			if lastErr == nil {
+				return c, nil
+			}
+		} else {
+			lastErr = fmt.Errorf("waiting for the boot password")
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
-	return fmt.Errorf("opencode health check timed out after %s: %v; output: %s", timeout, lastErr, m.ErrTail())
+	return nil, fmt.Errorf("opencode readiness timed out after %s: %v; output: %s", timeout, lastErr, m.ErrTail())
 }
 
 // ringBuffer is a write-only buffer keeping the last N bytes.

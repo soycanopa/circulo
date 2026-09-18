@@ -92,10 +92,14 @@ func (c *Client) PromptV2(ctx context.Context, sessionID, text string) error {
 }
 
 // SetModelV2 pins the session's model (POST /api/session/{id}/model).
-func (c *Client) SetModelV2(ctx context.Context, sessionID, providerID, modelID string) error {
-	body := map[string]any{
-		"model": map[string]string{"id": modelID, "providerID": providerID},
+// The Model.Ref carries the reasoning-effort variant next to the ids; empty
+// variant means the model's default.
+func (c *Client) SetModelV2(ctx context.Context, sessionID, providerID, modelID, variant string) error {
+	model := map[string]string{"id": modelID, "providerID": providerID}
+	if variant != "" {
+		model["variant"] = variant
 	}
+	body := map[string]any{"model": model}
 	return c.post(ctx, "/api/session/"+sessionID+"/model", body, nil)
 }
 
@@ -161,4 +165,22 @@ func parseV2Event(raw []byte) (V2Event, error) {
 		return V2Event{}, fmt.Errorf("opencode: v2 event: %w", err)
 	}
 	return env, nil
+}
+
+// DefaultModelV2 calls GET /api/model/default (the server's configured
+// default; null when none).
+func (c *Client) DefaultModelV2(ctx context.Context) (*V2Model, error) {
+	var env struct {
+		Data *V2Model `json:"data"`
+	}
+	if err := c.get(ctx, "/api/model/default", &env); err != nil {
+		return nil, err
+	}
+	return env.Data, nil
+}
+
+// SetAgentV2 pins the session's agent (POST /api/session/{id}/agent).
+func (c *Client) SetAgentV2(ctx context.Context, sessionID, agent string) error {
+	body := map[string]string{"agent": agent}
+	return c.post(ctx, "/api/session/"+sessionID+"/agent", body, nil)
 }
