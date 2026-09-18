@@ -740,17 +740,22 @@ function AgentPicker() {
   );
 }
 
-/** Project/branch strip shown under the composer while creating a session
- *  (owner call): pick the target folder among linked projects, see whether
- *  it is a local git repo, and pin the branch the agent should work on. */
-function NewSessionTarget({
-  selectedId,
-  onSelect,
+/** Project/branch strip under the composer (owner call): always visible.
+ *  In an existing session the project is fixed (read-only chip) and picking
+ *  a branch pins it live on that session; while creating a session the
+ *  project itself is what gets selected, and the branch rides the create. */
+function SessionTargetStrip({
+  projectID,
+  onProjectSelect,
+  sessionID,
   branch,
   onBranch,
 }: {
-  selectedId: string;
-  onSelect: (projectID: string) => void;
+  projectID: string;
+  /** absent in existing sessions: the project cannot change there */
+  onProjectSelect?: (projectID: string) => void;
+  /** present in existing sessions: branch picks pin live via the API */
+  sessionID?: string;
   branch: string;
   onBranch: (branch: string) => void;
 }) {
@@ -760,61 +765,82 @@ function NewSessionTarget({
   const [projOpen, setProjOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
 
-  const selected = projects.find((p) => p.id === selectedId);
+  const selected = projects.find((p) => p.id === projectID);
 
   useEffect(() => {
     let alive = true;
     setVcs(undefined);
     setBranches([]);
+    onBranch(""); // reset any pinned override when the target changes
     api
-      .vcs(selectedId)
+      .vcs(projectID)
       .then((v) => {
         if (!alive) return;
         setVcs(v);
-        if (v.isRepo) api.branches(selectedId).then((b) => alive && setBranches(b)).catch(() => undefined);
+        if (v.isRepo) api.branches(projectID).then((b) => alive && setBranches(b)).catch(() => undefined);
       })
       .catch(() => alive && setVcs(null));
     return () => {
       alive = false;
     };
-  }, [selectedId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectID, sessionID]);
+
+  const pickBranch = (b: string) => {
+    onBranch(b);
+    setBranchOpen(false);
+    if (sessionID) void api.setBranch(projectID, sessionID, b).catch((e) => console.error(e));
+  };
 
   const chip =
     "inline-flex h-6 min-w-0 items-center gap-1 rounded-[6px] px-1.5 text-[12px] font-medium text-text-primary transition-colors duration-100 bg-bg-code hover:bg-bg-hover";
+  const chipStatic =
+    "inline-flex h-6 min-w-0 items-center gap-1 rounded-[6px] px-1.5 text-[12px] font-medium text-text-primary bg-bg-code";
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <Popover open={projOpen} onOpenChange={setProjOpen}>
-        <PopoverTrigger asChild>
-          <button type="button" aria-expanded={projOpen} className={chip}>
-            <Folder className="size-3 shrink-0 text-text-tertiary" />
-            <span className="max-w-48 truncate">{selected ? selected.path.split("/").filter(Boolean).pop() : "Project"}</span>
-            <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" side="top" sideOffset={8} className="w-[320px] p-1">
-          {projects.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => {
-                onSelect(p.id);
-                setProjOpen(false);
-              }}
-              className="relative z-10 flex w-full items-center gap-2 rounded-[6px] px-2 py-1.5 text-left transition-colors duration-100 hover:bg-bg-hover"
-            >
-              <FolderGit2 className="size-3.5 shrink-0 text-text-tertiary" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[12.5px] font-medium text-text-primary">
-                  {p.path.split("/").filter(Boolean).pop()}
-                </span>
-                <span className="block truncate text-[11px] text-text-tertiary">{p.path}</span>
+      {onProjectSelect ? (
+        <Popover open={projOpen} onOpenChange={setProjOpen}>
+          <PopoverTrigger asChild>
+            <button type="button" aria-expanded={projOpen} className={chip}>
+              <Folder className="size-3 shrink-0 text-text-tertiary" />
+              <span className="max-w-48 truncate">
+                {selected ? selected.path.split("/").filter(Boolean).pop() : "Project"}
               </span>
-              {p.id === selectedId && <Check className="size-3.5 shrink-0 text-text-primary" />}
+              <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
             </button>
-          ))}
-        </PopoverContent>
-      </Popover>
+          </PopoverTrigger>
+          <PopoverContent align="start" side="top" sideOffset={8} className="w-[320px] p-1">
+            {projects.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => {
+                  onProjectSelect(p.id);
+                  setProjOpen(false);
+                }}
+                className="flex w-full items-center gap-2 rounded-[6px] px-2 py-1.5 text-left transition-colors duration-100 hover:bg-bg-hover"
+              >
+                <FolderGit2 className="size-3.5 shrink-0 text-text-tertiary" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12.5px] font-medium text-text-primary">
+                    {p.path.split("/").filter(Boolean).pop()}
+                  </span>
+                  <span className="block truncate text-[11px] text-text-tertiary">{p.path}</span>
+                </span>
+                {p.id === projectID && <Check className="size-3.5 shrink-0 text-text-primary" />}
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <span className={chipStatic} title={selected?.path}>
+          <FolderGit2 className="size-3 shrink-0 text-text-tertiary" />
+          <span className="max-w-48 truncate">
+            {selected ? selected.path.split("/").filter(Boolean).pop() : "Project"}
+          </span>
+        </span>
+      )}
 
       {vcs === undefined ? null : vcs?.isRepo ? (
         <>
@@ -837,10 +863,7 @@ function NewSessionTarget({
                 <button
                   key={b}
                   type="button"
-                  onClick={() => {
-                    onBranch(b);
-                    setBranchOpen(false);
-                  }}
+                  onClick={() => pickBranch(b)}
                   className="flex w-full items-center gap-2 rounded-[6px] px-2 py-1.5 text-left transition-colors duration-100 hover:bg-bg-hover"
                 >
                   <GitBranch className="size-3 shrink-0 text-text-tertiary" />
@@ -876,6 +899,9 @@ export function Composer() {
   const isNewSession = !activeSessionId;
   const [targetProjectId, setTargetProjectId] = useState(activeProjectId ?? "");
   const [targetBranch, setTargetBranch] = useState("");
+  useEffect(() => {
+    setTargetBranch("");
+  }, [activeSessionId]);
 
   // Auto-grow up to ~6 lines.
   useEffect(() => {
@@ -957,11 +983,12 @@ export function Composer() {
             )}
           </div>
         </div>
-        {isNewSession && activeProjectId && (
+        {activeProjectId && (
           <div className="pt-2">
-            <NewSessionTarget
-              selectedId={targetProjectId || activeProjectId}
-              onSelect={setTargetProjectId}
+            <SessionTargetStrip
+              projectID={isNewSession ? targetProjectId || activeProjectId : activeProjectId}
+              onProjectSelect={isNewSession ? setTargetProjectId : undefined}
+              sessionID={activeSessionId ?? undefined}
               branch={targetBranch}
               onBranch={setTargetBranch}
             />
