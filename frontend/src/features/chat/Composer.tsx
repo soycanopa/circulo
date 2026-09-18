@@ -98,8 +98,9 @@ function ModelPicker() {
   const current = models.find((m) => `${m.provider}:${m.id}` === selectedModel);
   const q = query.trim().toLowerCase();
 
-  // One flat list sectioned by provider (owner spec: no provider tabs);
-  // opencode first, then alphabetical.
+  // One flat list sectioned by internal provider (owner spec); opencode
+  // first, then alphabetical. The rail holds agent-level tabs (future
+  // providers); internal providers are sections, never tabs.
   const sections = useMemo(() => {
     const seen = new Set(models.map((m) => m.provider));
     const order = [...seen].sort((a, b) => {
@@ -136,8 +137,22 @@ function ModelPicker() {
           <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
         </div>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" sideOffset={8} className="h-[320px] w-[300px]">
-        <div className="shrink-0 border-b border-border p-2">
+      <PopoverContent align="start" side="top" sideOffset={8} className="h-[320px] w-[344px]">
+        <div className="flex min-h-0 flex-1">
+          {/* Provider tabs — left rail. Today only opencode exists; future
+              agent providers get their own tab here (owner decision). */}
+          <div className="flex w-[44px] shrink-0 flex-col gap-0.5 border-r border-border p-1">
+            <button
+              type="button"
+              title="opencode"
+              aria-label="opencode"
+              className="flex items-center justify-center rounded-md bg-bg-hover py-2"
+            >
+              <ProviderIcon provider="opencode" size={12} />
+            </button>
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="shrink-0 border-b border-border p-2">
           <div className="flex items-center gap-2 rounded-md bg-bg-code px-2 py-1.5">
             <Search className="size-3 shrink-0 text-text-tertiary" />
             <input
@@ -149,8 +164,8 @@ function ModelPicker() {
             />
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
-          {sections.map((g) => (
+            <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+              {sections.map((g) => (
             <div key={g.provider} className="mb-1">
               <div className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-[11px] font-medium uppercase leading-[14px] tracking-wider text-text-tertiary">
                 <ProviderIcon provider={g.provider} size={10} />
@@ -184,9 +199,11 @@ function ModelPicker() {
               })}
             </div>
           ))}
-          {sections.length === 0 && (
-            <div className="px-2 py-1.5 text-xs text-text-tertiary">No models found</div>
-          )}
+              {sections.length === 0 && (
+                <div className="px-2 py-1.5 text-xs text-text-tertiary">No models found</div>
+              )}
+            </div>
+          </div>
         </div>
       </PopoverContent>
     </Popover>
