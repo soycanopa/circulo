@@ -242,7 +242,12 @@ function VariantPicker() {
           type="button"
           aria-label="Reasoning effort"
           className="flex items-center"
+          // The tag lives inside the model chip's popover trigger: swallow
+          // every event phase so opening the effort menu never opens the
+          // model menu with it.
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
         >
           {tag}
         </button>

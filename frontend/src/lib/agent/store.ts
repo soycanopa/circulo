@@ -300,12 +300,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ),
         }));
         // The boot requests (sessions/meta) can 503 while a managed server is
-        // still starting; when it comes up, resync the active project.
-        if (p.state === "running" && p.projectID === get().activeProjectId) {
-          void get().refreshSessions(p.projectID).catch(() => undefined);
-          if (get().metaModels.length === 0) {
-            void get().loadMeta(p.projectID).catch(() => undefined);
-          }
+        // still starting; when it comes up, resync. Sessions resync for the
+        // project regardless of selection (the sidebar lists them all); meta
+        // only for the active one and only while still empty.
+        if (p.state === "running") {
+          const resync = () => {
+            void get().refreshSessions(p.projectID).catch(() => undefined);
+            if (p.projectID === get().activeProjectId && get().metaModels.length === 0) {
+              void get().loadMeta(p.projectID).catch(() => undefined);
+            }
+          };
+          resync();
+          // Boot race: the running event can replay before refreshProjects
+          // sets activeProjectId — one delayed pass covers it.
+          setTimeout(resync, 800);
         }
         break;
       }
