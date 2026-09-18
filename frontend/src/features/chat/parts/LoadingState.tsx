@@ -21,7 +21,7 @@ import { useEffect, useState } from "react";
  * sits on --bg-code. Keyframes live in index.css.
  * ───────────────────────────────────────────────────────── */
 
-const DEFAULT_LABELS = ["Thinking", "Reasoning", "Churning", "Brewing", "Piecing it together"];
+export const DEFAULT_LABELS = ["Thinking", "Reasoning", "Churning", "Brewing", "Piecing it together"];
 const PHRASE_EVERY_MS = 2400;
 
 const chevron = Array.from({ length: 9 }, (_, i) => {
@@ -35,13 +35,13 @@ const orbit = Array.from({ length: 9 }, (_, i) => {
   return k === -1 ? null : k * 110;
 });
 
-const PATTERNS: Record<string, { delays: (number | null)[]; dur: number; round: boolean }> = {
+export const PATTERNS: Record<string, { delays: (number | null)[]; dur: number; round: boolean }> = {
   Drive: { delays: chevron, dur: 650, round: false },
   Dots: { delays: chevron, dur: 650, round: true },
   Orbit: { delays: orbit, dur: 950, round: false },
 };
 
-function LoaderGrid({
+export function LoaderGrid({
   delays,
   dur,
   round,
@@ -66,7 +66,7 @@ function LoaderGrid({
   );
 }
 
-function useElapsed() {
+export function useElapsed() {
   const [ds, setDs] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setDs((d) => d + 1), 100);
@@ -78,7 +78,7 @@ function useElapsed() {
 }
 
 /** Advances through the label list on PHRASE_EVERY_MS while mounted. */
-function useRotatingLabel(labels: string[]) {
+export function useRotatingLabel(labels: string[]) {
   const [index, setIndex] = useState(0);
   useEffect(() => {
     if (labels.length < 2) return;

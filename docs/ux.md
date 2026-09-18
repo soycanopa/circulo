@@ -84,9 +84,11 @@ Order inside an assistant turn is strictly the server's part order.
   `parts/ThinkingState.tsx`): vertical line, rows in server order. Web search/fetch
   rows carry colored dots + query/source links; read/write/edit/patch/shell rows show
   a ring spinner → muted check (red ✕ on error), mono path/command, ±diff counts when
-  the metadata carries them. Auto-expanded while a row runs, collapsed to the summary
-  after ("Ran 3 tools"); clicking a tool row toggles its output/error/input detail
-  (mono, max-h scroll). Driven by real part state — no staged timers.
+  the metadata carries them. **Always starts folded** — while the turn works the
+  header is the pixel-grid loader with rotating phrases and elapsed timer, and after
+  it settles the summary ("Ran 3 tools"); clicking toggles the trace open, clicking a
+  tool row toggles its output/error/input detail (mono, max-h scroll). Driven by real
+  part state — no staged timers.
 - **step-start / step-finish** — not rendered directly; `step-finish` aggregates into
   the turn footer: `Worked for 42s · 17.5k tok · $0.03` (sum tokens/cost of the message).
 - **patch** — "Changed files" card: file list with +adds/−dels counts; expand → per-file
@@ -104,9 +106,11 @@ User messages: plain bubble, right-aligned accent border, editable later (v1).
 - **Stream smoothing:** transcript re-renders capped ~15 Hz (TRD §6); the streaming
   text part reveals word-by-word (~55 ms, catch-up on bursts — see §4). Respect
   `prefers-reduced-motion` (no reveal animation, instant text).
-- **Working loader:** the 3×3 pixel-grid LoadingState replaces the old "Working… Ns"
-  line — rotating phrase every 2.4 s, shimmer label, elapsed timer in mono tabular
-  figures; `prefers-reduced-motion` freezes grid and shimmer (timer still ticks).
+- **Working loader:** the 3×3 pixel-grid LoadingState is the working indicator
+  everywhere — standalone (with rotating phrases) for turns with no trace yet, and as
+  the trace's folded header while tools/reasoning run. Phrases rotate every 2.4 s,
+  elapsed timer in mono tabular figures; `prefers-reduced-motion` freezes grid and
+  shimmer (timer still ticks).
 - **Never scroll-jack:** opening history does not force-scroll if the user is reading.
 
 ## 6. Interactions & shortcuts

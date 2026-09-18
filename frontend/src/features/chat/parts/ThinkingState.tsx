@@ -14,6 +14,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
  * ink-3→text-tertiary, accent/orange/green→accent-cir/warning/success.
  * ───────────────────────────────────────────────────────── */
 
+import { DEFAULT_LABELS, LoaderGrid, PATTERNS, useElapsed, useRotatingLabel } from "./LoadingState";
 import type { Part, ToolStatus } from "@/lib/agent/protocol";
 
 type Row = {
@@ -115,14 +116,6 @@ function buildRows(parts: Part[], streaming: boolean, liveReasoningId: string): 
   return rows;
 }
 
-function Sparkle({ working }: { working: boolean }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill={working ? "var(--text-secondary)" : "var(--text-tertiary)"}>
-      <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
-    </svg>
-  );
-}
-
 const TONES = ["bg-accent-cir", "bg-warning", "bg-success"];
 
 export default function ThinkingState({
@@ -150,20 +143,30 @@ export default function ThinkingState({
       thought = `Thought for ${Math.max(1, Math.round((p.time.end - p.time.start) / 1000))} seconds`;
     }
   }
-  const active = searching ? "Searching the web" : coding ? "Running tools" : "Thinking";
   const done = thought ?? (toolCount > 0 ? `Ran ${toolCount} tool${toolCount === 1 ? "" : "s"}` : "Thought");
+
+  // While the turn works, the header is the pixel-grid loader with rotating
+  // phrases (owner design) — the phrase set follows what the trace is doing.
+  const phraseSet = searching
+    ? ["Searching the web", "Reading results", "Comparing sources"]
+    : coding
+      ? ["Running tools", "Reading files", "Applying edits"]
+      : DEFAULT_LABELS;
+  const phrase = useRotatingLabel(phraseSet);
+  const elapsed = useElapsed();
 
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
   const [selectedTool, setSelectedTool] = useState<string | null>(null);
-  const expanded = manualExpanded ?? working;
+  // Traces always start folded — work stays out of the way until asked for.
+  const expanded = manualExpanded ?? false;
   const traceRef = useRef<HTMLDivElement>(null);
   const [lineHeight, setLineHeight] = useState(0);
   useLayoutEffect(() => {
     if (traceRef.current) setLineHeight(traceRef.current.offsetHeight);
   }, [rows.length, expanded, working]);
 
-  // A fresh trace re-arms the auto-expansion; manual override survives only
-  // within one trace (streaming end ⇒ settled collapse, like the design).
+  // A fresh trace re-arms the fold; manual override survives only within
+  // one trace.
   useEffect(() => {
     setManualExpanded(null);
     setSelectedTool(null);
@@ -173,35 +176,48 @@ export default function ThinkingState({
     <div className="flex w-full flex-col items-center">
       {/* centered cluster: header, trace and detail travel together */}
       <div className="flex w-fit max-w-full flex-col items-start">
-      {/* header — shared across variants */}
+      {/* header — pixel-grid loader with rotating phrases while working,
+          sparkle + settled summary after */}
       <button
         type="button"
         aria-expanded={expanded}
-        onClick={() => setManualExpanded((current) => !(current ?? working))}
+        onClick={() => setManualExpanded((current) => !(current ?? false))}
         className="-mx-1.5 flex w-fit items-center gap-2 rounded-md px-1.5 py-1
           transition-colors duration-100 hover:bg-bg-hover"
       >
-        <Sparkle working={working} />
         <span role="status" className="contents">
           {working ? (
-            <span
-              className="bg-clip-text text-[13px] font-medium whitespace-nowrap text-transparent"
-              style={{
-                backgroundImage:
-                  "linear-gradient(90deg, var(--text-tertiary) 35%, var(--text-primary) 50%, var(--text-tertiary) 65%)",
-                backgroundSize: "200% 100%",
-                animation: "shimmer-text 1.4s linear infinite",
-              }}
-            >
-              {active}
-            </span>
+            <>
+              <LoaderGrid {...PATTERNS.Drive} />
+              <span
+                key={phrase}
+                className="bg-clip-text text-[13px] font-medium whitespace-nowrap text-transparent"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(90deg, var(--text-tertiary) 35%, var(--text-primary) 50%, var(--text-tertiary) 65%)",
+                  backgroundSize: "200% 100%",
+                  animation:
+                    "shimmer-text 1.4s linear infinite, phrase-in 300ms cubic-bezier(0.16,1,0.3,1) both",
+                }}
+              >
+                {phrase}
+              </span>
+              <span className="font-mono text-[12px] text-text-tertiary tabular-nums">
+                {elapsed}
+              </span>
+            </>
           ) : (
-            <span
-              className="text-[13px] font-medium whitespace-nowrap text-text-secondary"
-              style={{ animation: "fade-in 350ms ease-out both" }}
-            >
-              {done}
-            </span>
+            <>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--text-tertiary)">
+                <path d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8z" />
+              </svg>
+              <span
+                className="text-[13px] font-medium whitespace-nowrap text-text-secondary"
+                style={{ animation: "fade-in 350ms ease-out both" }}
+              >
+                {done}
+              </span>
+            </>
           )}
         </span>
         <svg
