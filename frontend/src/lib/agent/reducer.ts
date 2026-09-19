@@ -18,6 +18,9 @@ import type {
   SessionUpdatedEvent,
   Task,
   TodoUpdatedEvent,
+  FormInfo,
+  FormUpdatedEvent,
+  FormResolvedEvent,
 } from "./protocol";
 
 export interface MessageRecord {
@@ -32,6 +35,8 @@ export interface SessionState {
   messages: MessageRecord[];
   /** Unresolved permission requests, oldest first. */
   permissions: PermissionRequest[];
+  /** Pending forms (question tool), newest last; keyed by id. */
+  forms: FormInfo[];
   /** Agent task list (todo.updated replaces it wholesale). */
   tasks: Task[];
   /** Last terminal turn error, cleared on the next user prompt. */
@@ -52,58 +57,81 @@ function ensureSession(state: ChatState, session: Session): SessionState {
       status: "idle",
       messages: [],
       permissions: [],
+      forms: [],
       tasks: [],
     };
     state.sessions[session.id] = s;
   } else {
-    s.session = session;
+    // Same memo rule as messages: replace the session record, never mutate.
+    state.sessions[session.id] = { ...s, session };
+    s = state.sessions[session.id];
   }
   return s;
 }
 
-function ensureMessage(s: SessionState, info: MessageInfo): MessageRecord {
-  let m = s.messages.find((x) => x.info.id === info.id);
-  if (!m) {
-    m = { info, parts: [] };
-    s.messages.push(m);
+/**
+ * Message updates MUST replace the MessageRecord object (never mutate it):
+ * UserMessage/AssistantTurn are React.memo'd on the record, so an in-place
+ * mutation leaves the reference equal and the bubble never re-renders —
+ * that was the empty-user-bubble bug.
+ */
+
+function ensureMessage(s: SessionState, info: MessageInfo): void {
+  const idx = s.messages.findIndex((x) => x.info.id === info.id);
+  if (idx === -1) {
+    s.messages.push({ info, parts: [] });
   } else {
     // Metadata update; content lives in parts.
-    m.info = info;
+    s.messages[idx] = { ...s.messages[idx], info };
   }
-  return m;
 }
 
 /**
- * stubMessage finds a message by id or creates a metadata-stub. Stubs use
+ * Locates a message by id or creates a metadata-stub to update. Stubs use
  * created: 0 so mergeHydrated can detect and fill real metadata; they never
  * overwrite existing info (a part.updated for a user message must not flip
  * its role).
  */
-function stubMessage(s: SessionState, messageID: string, sessionID: string): MessageRecord {
-  let m = s.messages.find((x) => x.info.id === messageID);
-  if (!m) {
-    m = {
-      info: { id: messageID, sessionID, role: "assistant", created: 0, completed: 0 },
-      parts: [],
-    };
-    s.messages.push(m);
-  }
-  return m;
-}
-
-function upsertPart(m: MessageRecord, part: Part): void {
-  const idx = m.parts.findIndex((p) => p.id === part.id);
+function upsertMessagePart(
+  s: SessionState,
+  messageID: string,
+  sessionID: string,
+  part: Part,
+): void {
+  const idx = s.messages.findIndex((x) => x.info.id === messageID);
   if (idx === -1) {
-    m.parts.push(part);
-  } else {
-    m.parts[idx] = part;
+    s.messages.push({
+      info: { id: messageID, sessionID, role: "assistant", created: 0, completed: 0 },
+      parts: [part],
+    });
+    return;
   }
+  const m = s.messages[idx];
+  const parts = [...m.parts];
+  const pIdx = parts.findIndex((p) => p.id === part.id);
+  if (pIdx === -1) parts.push(part);
+  else parts[pIdx] = part;
+  s.messages[idx] = { ...m, parts };
 }
 
-function applyDeltaToPart(part: Part, field: string, delta: string): void {
+function applyDeltaToPart(
+  s: SessionState,
+  messageID: string,
+  partID: string,
+  field: string,
+  delta: string,
+): void {
   if (field !== "text" && field !== "reasoning") return;
-  if (part.type !== field) return;
-  part[field] = (part[field] ?? "") + delta;
+  const idx = s.messages.findIndex((x) => x.info.id === messageID);
+  if (idx === -1) return;
+  const m = s.messages[idx];
+  let touched = false;
+  const parts = m.parts.map((part) => {
+    if (part.id !== partID || part.type !== field) return part;
+    touched = true;
+    return { ...part, [field]: (part[field] ?? "") + delta };
+  });
+  if (touched) s.messages[idx] = { ...m, parts };
 }
 
 /** Reducer entry: returns a NEW ChatState (immutable update for React). */
@@ -111,14 +139,24 @@ export function applyEvent(state: ChatState, env: Envelope): ChatState {
   switch (env.type) {
     case "session.updated": {
       const p = env.payload as SessionUpdatedEvent;
-      if (!state.sessions[p.session.id]) {
+      const prev = state.sessions[p.session.id];
+      if (!prev) {
+        // v2 partial patches (session.renamed carries only the title) must
+        // not create sessions with empty metadata: ignore them until the
+        // full session arrives (created event or hydration).
+        if (!p.session.timeCreated) return state;
         const next = { sessions: { ...state.sessions } };
         ensureSession(next, p.session);
         return next;
       }
-      // Existing session: update in place (new object for referential equality).
-      const prev = state.sessions[p.session.id];
-      const s: SessionState = { ...prev, session: p.session };
+      // Existing session: merge-patch — v2 patches (renamed) carry only the
+      // changed fields; empty strings and zero times keep existing values.
+      const session = { ...prev.session };
+      if (p.session.title) session.title = p.session.title;
+      if (p.session.timeCreated) session.timeCreated = p.session.timeCreated;
+      if (p.session.timeUpdated) session.timeUpdated = p.session.timeUpdated;
+      if (p.session.directory) session.directory = p.session.directory;
+      const s: SessionState = { ...prev, session };
       return { sessions: { ...state.sessions, [p.session.id]: s } };
     }
 
@@ -179,15 +217,11 @@ export function applyEvent(state: ChatState, env: Envelope): ChatState {
           timeCreated: 0,
           timeUpdated: 0,
         });
-        const m = stubMessage(s, p.messageID, p.sessionID);
-        m.parts = [...m.parts];
-        upsertPart(m, p.part);
+        upsertMessagePart(s, p.messageID, p.sessionID, p.part);
         return next;
       }
       const s: SessionState = { ...prev, messages: [...prev.messages] };
-      const m = stubMessage(s, p.messageID, p.sessionID);
-      m.parts = [...m.parts];
-      upsertPart(m, p.part);
+      upsertMessagePart(s, p.messageID, p.sessionID, p.part);
       return { sessions: { ...state.sessions, [p.sessionID]: s } };
     }
 
@@ -196,14 +230,7 @@ export function applyEvent(state: ChatState, env: Envelope): ChatState {
       const prev = state.sessions[p.sessionID];
       if (!prev) return state;
       const s: SessionState = { ...prev, messages: [...prev.messages] };
-      const m = s.messages.find((x) => x.info.id === p.messageID);
-      if (!m) return state;
-      m.parts = m.parts.map((part) => {
-        if (part.id !== p.partID) return part;
-        const copy = { ...part };
-        applyDeltaToPart(copy, p.field, p.delta);
-        return copy;
-      });
+      applyDeltaToPart(s, p.messageID, p.partID, p.field, p.delta);
       return { sessions: { ...state.sessions, [p.sessionID]: s } };
     }
 
@@ -238,6 +265,27 @@ export function applyEvent(state: ChatState, env: Envelope): ChatState {
       return { sessions: { ...state.sessions, [p.sessionID]: s } };
     }
 
+    case "form.updated": {
+      const p = env.payload as FormUpdatedEvent;
+      const prevState = state.sessions[p.sessionID];
+      if (!prevState) return state;
+      if (prevState.forms.some((f) => f.id === p.form.id)) return state;
+      const s: SessionState = { ...prevState, forms: [...prevState.forms, p.form] };
+      return { sessions: { ...state.sessions, [p.sessionID]: s } };
+    }
+
+    case "form.resolved": {
+      const p = env.payload as FormResolvedEvent;
+      const prevState = state.sessions[p.sessionID];
+      if (!prevState) return state;
+      if (!prevState.forms.some((f) => f.id === p.formID)) return state;
+      const s: SessionState = {
+        ...prevState,
+        forms: prevState.forms.filter((f) => f.id !== p.formID),
+      };
+      return { sessions: { ...state.sessions, [p.sessionID]: s } };
+    }
+
     default:
       // Unknown event types are ignored by design (NFR-3).
       return state;
@@ -254,24 +302,43 @@ export function mergeHydrated(
   sessionID: string,
   history: { info: MessageInfo; parts: Part[] }[],
 ): ChatState {
-  const prev = state.sessions[sessionID];
-  if (!prev) return state;
+  let prev = state.sessions[sessionID];
+  if (!prev) {
+    // The session entry can be missing after a failed boot fetch — the user's
+    // message must always show, so seed a minimal session for it.
+    prev = {
+      session: { id: sessionID, title: "", timeCreated: Date.now(), timeUpdated: Date.now() },
+      status: "idle",
+      messages: [],
+      permissions: [],
+      forms: [],
+      tasks: [],
+    };
+  }
   const s: SessionState = { ...prev, messages: [...prev.messages] };
   for (const h of history) {
-    const m = s.messages.find((x) => x.info.id === h.info.id);
-    if (!m) {
+    const idx = s.messages.findIndex((x) => x.info.id === h.info.id);
+    if (idx === -1) {
       s.messages.push({ info: h.info, parts: [...h.parts] });
       continue;
     }
-    if (m.info.created === 0 && h.info.created) {
-      m.info = h.info; // fill stub metadata
-    }
-    const parts = [...m.parts];
-    for (const p of h.parts) {
-      if (!parts.some((x) => x.id === p.id)) parts.push(p);
-    }
-    m.parts = parts;
+    const m = s.messages[idx];
+    const info = m.info.created === 0 && h.info.created ? h.info : m.info;
+    // Hydration is server truth: REPLACE parts we already hold (heals a
+    // live tool row stuck on running after a lost success frame) and keep
+    // live-only parts the server has not persisted yet.
+    const byId = new Map(m.parts.map((p) => [p.id, p]));
+    for (const p of h.parts) byId.set(p.id, p);
+    s.messages[idx] = { ...m, info, parts: [...byId.values()] };
   }
+  // Healed messages may have been appended out of order (a live echo shed
+  // by the event pipe only re-enters via hydration): restore server order.
+  // Stable sort; stubs without a timestamp sink to the end.
+  s.messages.sort((a, b) => {
+    const at = a.info.created || Number.MAX_SAFE_INTEGER;
+    const bt = b.info.created || Number.MAX_SAFE_INTEGER;
+    return at - bt;
+  });
   return { sessions: { ...state.sessions, [sessionID]: s } };
 }
 
@@ -282,8 +349,19 @@ export function addOptimisticUserMessage(
   clientID: string,
   text: string,
 ): ChatState {
-  const prev = state.sessions[sessionID];
-  if (!prev) return state;
+  let prev = state.sessions[sessionID];
+  if (!prev) {
+    // The session entry can be missing after a failed boot fetch — the user's
+    // message must always show, so seed a minimal session for it.
+    prev = {
+      session: { id: sessionID, title: "", timeCreated: Date.now(), timeUpdated: Date.now() },
+      status: "idle",
+      messages: [],
+      permissions: [],
+      forms: [],
+      tasks: [],
+    };
+  }
   const s: SessionState = { ...prev, messages: [...prev.messages] };
   s.messages.push({
     info: {

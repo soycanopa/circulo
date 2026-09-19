@@ -100,6 +100,8 @@ a daily driver. Re-evaluate if Tailscale ships official mobile tailcat.
 - **No stability promises** on CLI flags or wire format → pin the tailcat
   version in docs and in the spawn args; smoke-test the tunnel on version bump
   (same discipline as the OpenCode fixtures).
+  **Pinned version: none yet** — record it here (and in the F1 smoke-test
+  notes) the moment F1 starts; never spawn an unpinned tailcat.
 - **WASM client is experimental** — acceptable for F1 validation, never the
   shipping path.
 - **iOS background limits:** SSE does not survive backgrounding. Live streaming

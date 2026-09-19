@@ -20,6 +20,8 @@ const (
 	EventPartDelta          = "part.delta"
 	EventPermissionRequest  = "permission.request"
 	EventPermissionResolved = "permission.resolved"
+	EventFormUpdated        = "form.updated"
+	EventFormResolved       = "form.resolved"
 	EventSessionError       = "session.error"
 	EventTodoUpdated        = "todo.updated"
 )
@@ -271,6 +273,57 @@ type PermissionResolved struct {
 	Response     string `json:"response"`
 }
 
+// ProjectVcs is the git state of a project's directory: IsRepo gates the
+// branch picker; Branch is the checked-out branch.
+type ProjectVcs struct {
+	IsRepo        bool   `json:"isRepo"`
+	Provider      string `json:"provider,omitempty"`
+	Branch        string `json:"branch,omitempty"`
+	DefaultBranch string `json:"defaultBranch,omitempty"`
+}
+
+// FormOption is one choice of a select-style form field.
+type FormOption struct {
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+// FormField is one question of a form. V0 covers the question tool's shape:
+// a string field with options; Custom allows free text instead of a choice.
+type FormField struct {
+	Key         string       `json:"key"`
+	Type        string       `json:"type,omitempty"` // string|multiselect|…
+	Title       string       `json:"title,omitempty"`
+	Description string       `json:"description,omitempty"`
+	Options     []FormOption `json:"options,omitempty"`
+	Custom      bool         `json:"custom,omitempty"`
+}
+
+// Form is a pending form to answer (opencode v2 question tool). Kind is the
+// server metadata.kind ("question"); CallID links the originating tool call.
+type Form struct {
+	ID        string       `json:"id"`
+	Title     string       `json:"title,omitempty"`
+	Kind      string       `json:"kind,omitempty"`
+	CallID    string       `json:"callID,omitempty"`
+	Fields    []FormField  `json:"fields"`
+}
+
+// FormUpdated upserts a pending form (reducer keys by Form.ID).
+type FormUpdated struct {
+	ProjectID string `json:"projectID"`
+	SessionID string `json:"sessionID"`
+	Form      Form   `json:"form"`
+}
+
+// FormResolved closes a form: answered via ReplyForm or cancelled elsewhere.
+type FormResolved struct {
+	ProjectID string `json:"projectID"`
+	SessionID string `json:"sessionID"`
+	FormID    string `json:"formID"`
+}
+
 // AgentError is a normalized, user-presentable error.
 type AgentError struct {
 	Name    string `json:"name"`
@@ -309,6 +362,9 @@ type PromptRequest struct {
 	// Provider/Model as the agent server expects them, e.g. "anthropic"/"claude-…".
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
+	// Variant selects a model's reasoning-effort variant (OpenCode prompt
+	// body "variant"); empty = the model's default.
+	Variant string `json:"variant,omitempty"`
 }
 
 // ModelInfo is one selectable model.
@@ -316,6 +372,12 @@ type ModelInfo struct {
 	ID       string `json:"id"`
 	Name     string `json:"name,omitempty"`
 	Provider string `json:"provider"`
+	// Reasoning reports capabilities.reasoning from the agent server; only
+	// then does the UI offer the effort selector.
+	Reasoning bool `json:"reasoning,omitempty"`
+	// Variants lists the reasoning-effort options the model accepts
+	// (e.g. low/high/max), sorted.
+	Variants []string `json:"variants,omitempty"`
 }
 
 // AgentInfo is one selectable agent (build/plan/…).

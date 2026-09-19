@@ -10,6 +10,8 @@ import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { Flowchart, parseFlowBlock } from "./Flowchart";
+import { CodePanel } from "./CodePanel";
 
 function CopyButton({ getText }: { getText: () => string }) {
   const [copied, setCopied] = useState(false);
@@ -53,6 +55,19 @@ export const MarkdownView = memo(function MarkdownView({ text }: { text: string 
               );
             }
             const lang = /language-(\S+)/.exec(className ?? "")?.[1] ?? "text";
+            // Agent flowcharts: a circulogo-flow block carries the workflow
+            // JSON taught by the session format instruction; invalid JSON
+            // falls back to the plain code block.
+            if (lang === "circulogo-flow") {
+              const doc = parseFlowBlock(text.replace(/\n$/, ""));
+              if (doc) return <Flowchart doc={doc} />;
+            }
+            // Code + diff fences share the owner's editor-panel design:
+            // line numbers and light syntax coloring, or the unified diff
+            // with gutters, accent bars and word-level highlights.
+            if (text.includes("\n")) {
+              return <CodePanel lang={lang} code={text.replace(/\n$/, "")} />;
+            }
             return (
               <div className="group relative my-2 overflow-hidden rounded-lg border border-border bg-bg-code">
                 <div className="flex h-7 items-center justify-between border-b border-border/60 px-3">

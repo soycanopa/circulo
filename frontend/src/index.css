@@ -13,7 +13,8 @@
   /* surfaces */
   --bg-app: #17171a;
   --bg-sidebar: #1c1c1f;
-  --bg-main: #212124;
+  /* Owner call: main uses the sidebar tone (design token says #212124). */
+  --bg-main: #1c1c1f;
   --bg-code: #141417;
   --bg-popover: #1f1f21;
   --bg-hover: #2b2b30;
@@ -22,6 +23,7 @@
   /* lines */
   --border: #38383d;
   --border-strong: #47474d;
+  --track-off: #47474d;
 
   /* text */
   --text-primary: #ebebed;
@@ -95,6 +97,7 @@
   --color-bg-hover: var(--bg-hover);
   --color-bg-danger: var(--bg-danger);
   --color-border-strong: var(--border-strong);
+  --color-track-off: var(--track-off);
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
   --color-text-tertiary: var(--text-tertiary);
@@ -142,5 +145,124 @@
   code,
   [data-selectable] {
     user-select: text;
+  }
+}
+
+/* Circulo Paper bottom glow — verbatim from the file's computed style
+   (oklab easing keeps it tight at the very bottom, under the composer).
+   The sRGB line is the fallback for older webviews. */
+@utility circulo-glow {
+  background-image: linear-gradient(
+    180deg,
+    rgb(115 120 242 / 0%) 0%,
+    rgb(115 120 242 / 11%) 96.4%,
+    rgb(115 120 242 / 22%) 100%
+  );
+  background-image: linear-gradient(
+      in oklab 180deg,
+      oklab(100% 0 0 / 0%) 0%,
+      96.4%,
+      oklab(59.4% 0.052 -0.22 / 22%) 100%
+    );
+}
+
+/* Streaming text caret (AssistantText): a small rounded bar appended to
+   the last block of the streamed markdown — sized in px, independent of
+   the text font. */
+.caret-stream > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2.5px;
+  height: 12px;
+  margin-left: 3px;
+  border-radius: 1.25px;
+  background: var(--text-primary);
+  vertical-align: -1.5px;
+}
+
+/* Pixel-grid loader (features/chat/parts/LoadingState.tsx). Cells rest dim
+   and a per-cell animation-delay lights them in sequence (chevron wavefront,
+   or an orbiting comet). The shimmer sweeps a highlight band across the
+   label text; phrase-in eases each rotating label into place. Reduced
+   motion freezes grid and shimmer to their dim state — the elapsed timer
+   keeps ticking (JS interval, not CSS). */
+@keyframes pixel-on {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+@keyframes shimmer-text {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes phrase-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ThinkingState trace (features/chat/parts/ThinkingState.tsx): rows and the
+   settled summary ease in; the active row carries a ring spinner. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@layer utilities {
+  .animated-underline {
+    text-decoration-line: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 3px;
+    transition: text-decoration-color 150ms ease;
+  }
+  .animated-underline:hover {
+    text-decoration-color: currentColor;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-pixel,
+  .loading-shimmer {
+    animation: none !important;
   }
 }

@@ -16,6 +16,7 @@ import (
 	"circulogo/internal/agent"
 	"circulogo/internal/agent/protocol"
 	"circulogo/internal/store"
+	"circulogo/internal/term"
 )
 
 // AdapterFactory builds an adapter for a project config. It exists so tests
@@ -26,16 +27,18 @@ type AdapterFactory func(cfg store.Project) (agent.Adapter, error)
 
 // Orchestrator manages project → adapter wiring and event fan-out.
 type Orchestrator struct {
-	store    *store.Store
-	factory  AdapterFactory
+	store   *store.Store
+	factory AdapterFactory
 
-	mu         sync.RWMutex
-	projects   map[string]*project
-	order      []string
-	subs       map[int]*subscriber
-	nextSubID  int
-	replay     []protocol.Envelope // ring of recent events for late subscribers
-	startSeq   []string            // projects pending Start, in settings order
+	mu           sync.RWMutex
+	projects     map[string]*project
+	order        []string
+	terms        *term.Manager
+	subs         map[int]*subscriber
+	nextSubID    int
+	replay       []protocol.Envelope // ring of recent events for late subscribers
+	startSeq     []string            // projects pending Start, in settings order
+	shutdownOnce sync.Once
 }
 
 type project struct {
@@ -50,16 +53,17 @@ type project struct {
 }
 
 type subscriber struct {
-	ch   chan protocol.Envelope
+	ch chan protocol.Envelope
 }
 
 // New builds an orchestrator around a store and adapter factory.
 func New(st *store.Store, factory AdapterFactory) *Orchestrator {
 	return &Orchestrator{
-		store:   st,
-		factory: factory,
+		store:    st,
+		factory:  factory,
 		projects: map[string]*project{},
-		subs:    map[int]*subscriber{},
+		subs:     map[int]*subscriber{},
+		terms:    term.NewManager(),
 	}
 }
 
@@ -368,16 +372,37 @@ func (e *NotReadyError) Error() string {
 }
 
 // Shutdown stops every adapter (app quit — NFR-4: no orphaned processes).
-func (o *Orchestrator) Shutdown() {
+// Idempotent: both the Wails ServiceShutdown hook and main's defer invoke it,
+// whichever path the app exit takes.
+// Terms exposes the per-project terminal manager (composer terminal panel).
+func (o *Orchestrator) Terms() *term.Manager {
+	return o.terms
+}
+
+// OpenTerminal spawns an interactive shell rooted at the project directory.
+func (o *Orchestrator) OpenTerminal(projectID string) (*term.Terminal, error) {
 	o.mu.RLock()
-	adapters := make([]agent.Adapter, 0, len(o.projects))
-	for _, p := range o.projects {
-		if p.adapter != nil {
-			adapters = append(adapters, p.adapter)
-		}
-	}
+	p := o.projects[projectID]
 	o.mu.RUnlock()
-	for _, a := range adapters {
-		_ = a.Stop(context.Background())
+	if p == nil {
+		return nil, fmt.Errorf("orchestrator: unknown project %s", projectID)
 	}
+	return o.terms.Open(p.cfg.Path)
+}
+
+func (o *Orchestrator) Shutdown() {
+	o.shutdownOnce.Do(func() {
+		o.terms.CloseAll()
+		o.mu.RLock()
+		adapters := make([]agent.Adapter, 0, len(o.projects))
+		for _, p := range o.projects {
+			if p.adapter != nil {
+				adapters = append(adapters, p.adapter)
+			}
+		}
+		o.mu.RUnlock()
+		for _, a := range adapters {
+			_ = a.Stop(context.Background())
+		}
+	})
 }

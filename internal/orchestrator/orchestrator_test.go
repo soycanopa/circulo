@@ -20,8 +20,8 @@ type fakeAdapter struct {
 	mu        sync.Mutex
 	starts    int
 	stops     int
-	fail      error // if set, Start returns it
-	startHook func()      // if set, Start blocks on it after signaling started
+	fail      error  // if set, Start returns it
+	startHook func() // if set, Start blocks on it after signaling started
 	events    chan protocol.Envelope
 }
 
@@ -78,6 +78,15 @@ func (f *fakeAdapter) Abort(_ context.Context, _ string) error { panic("unexpect
 func (f *fakeAdapter) ReplyPermission(_ context.Context, _, _, _ string) error {
 	panic("unexpected")
 }
+func (f *fakeAdapter) ReplyForm(_ context.Context, _, _ string, _ map[string]any) error {
+	return nil
+}
+func (f *fakeAdapter) Vcs(_ context.Context) protocol.ProjectVcs {
+	return protocol.ProjectVcs{IsRepo: true, Provider: "git", Branch: "main"}
+}
+func (f *fakeAdapter) Branches(_ context.Context) []string            { return []string{"main"} }
+func (f *fakeAdapter) SetBranch(_ context.Context, _, _ string) error { return nil }
+
 func (f *fakeAdapter) Meta(_ context.Context) (protocol.Meta, error) { panic("unexpected") }
 
 // fakeFactory wires new fakeAdapters and remembers them by project path.
@@ -279,14 +288,15 @@ func TestShutdownStopsAllAdapters(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+	// Shutdown is idempotent (main defers it AND Wails ServiceShutdown calls
+	// it): a second invocation must not stop the adapters again.
 	o.Shutdown()
 	for p, a := range ff.adapters {
-		if a.stops == 0 {
-			t.Errorf("adapter for %s was not stopped", p)
+		if a.stops != 1 {
+			t.Errorf("adapter for %s was stopped %d times, want exactly 1", p, a.stops)
 		}
 	}
 }
-
 
 var errBackendDown = errors.New("fake: backend down")
 

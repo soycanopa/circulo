@@ -16,6 +16,7 @@ import {
 import type {
   AdapterStatus,
   Envelope,
+  ModelInfo,
   ProjectView,
   Session,
   SessionRemovedEvent,
@@ -40,28 +41,39 @@ interface AppStore {
 
   // Composer picker data
   metaAgents: { name: string; description?: string; mode?: string }[];
-  metaModels: { id: string; name?: string; provider: string }[];
+  metaModels: ModelInfo[];
   selectedAgent: string;
   selectedModel: string; // "provider:model"
+  /** Reasoning-effort variant for the selected model ("" = default). */
+  selectedVariant: string;
+  setSelectedVariant: (v: string) => void;
   sessionSearch: string;
   setSessionSearch: (q: string) => void;
 
   setConnection: (s: ConnectionState) => void;
+  /** Sidebar visibility (Cmd+B, ux.md §6). */
+  sidebarOpen: boolean;
+  toggleSidebar: () => void;
+  /** composer-adjacent terminal panel (project-scoped shells). */
+  terminalOpen: boolean;
+  toggleTerminal: () => void;
   refreshProjects: () => Promise<void>;
   refreshSessions: (projectID: string) => Promise<void>;
   addProject: (path: string, mode: "managed" | "attach", url?: string) => Promise<void>;
   removeProject: (projectID: string) => Promise<void>;
   setActiveProject: (projectID: string | null) => void;
-  newSession: (projectID: string, title?: string) => Promise<string | null>;
+  newSession: (projectID: string, title?: string, branch?: string) => Promise<string | null>;
   openSession: (projectID: string, sessionID: string) => Promise<void>;
   closeSession: () => void;
   deleteSession: (projectID: string, sessionID: string) => Promise<void>;
   loadMeta: (projectID: string) => Promise<void>;
   setSelectedAgent: (a: string) => void;
   setSelectedModel: (m: string) => void;
-  sendPrompt: (text: string) => Promise<void>;
+  sendPrompt: (text: string, target?: { projectID: string; branch?: string }) => Promise<void>;
   abort: () => Promise<void>;
   replyPermission: (permissionID: string, response: "once" | "always" | "reject") => Promise<void>;
+  /** Answer a pending form (question tool): field key → value(s). */
+  replyForm: (formID: string, answer: Record<string, string | string[]>) => Promise<void>;
   /** Feed one neutral envelope into the store (SSE or tests). */
   dispatch: (env: Envelope) => void;
   /** Full resync after (re)connect (flow.md §7). */
@@ -79,10 +91,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
   metaModels: [],
   selectedAgent: "build",
   selectedModel: "",
+  selectedVariant: "",
+  setSelectedVariant: (selectedVariant) => set({ selectedVariant }),
   sessionSearch: "",
   setSessionSearch: (sessionSearch) => set({ sessionSearch }),
 
   setConnection: (connection) => set({ connection }),
+
+  sidebarOpen: true,
+  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  terminalOpen: false,
+  toggleTerminal: () => set((s) => ({ terminalOpen: !s.terminalOpen })),
 
   refreshProjects: async () => {
     const projects = await api.listProjects();
@@ -147,14 +166,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  newSession: async (projectID, title) => {
+  newSession: async (projectID, title, branch) => {
     try {
-      const session = await api.createSession(projectID, title);
+      const session = await api.createSession(projectID, title, branch);
       await get().refreshSessions(projectID);
       await get().openSession(projectID, session.id);
       return session.id;
     } catch (e) {
       console.error("newSession failed", e);
+      // Surface it: a silent null made the composer swallow the draft with
+      // no feedback when the server was still starting.
+      set((s) => {
+        const active = s.activeSessionId ? s.chat.sessions[s.activeSessionId] : undefined;
+        if (!active) return s;
+        return {
+          chat: applyEvent(s.chat, {
+            type: "session.error",
+            payload: {
+              projectID,
+              sessionID: active.session.id,
+              error: { name: "SessionCreateFailed", message: String(e) },
+            },
+          }),
+        };
+      });
       return null;
     }
   },
@@ -167,11 +202,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((s) => {
       if (s.chat.sessions[sessionID]) return s;
       const meta = (s.sessionsByProject[projectID] ?? []).find((x) => x.id === sessionID);
-      if (!meta) return s;
+      // Seed even without list metadata (boot fetch may have failed): the
+      // optimistic user bubble depends on the session entry existing.
+      const session =
+        meta ?? { id: sessionID, title: "", timeCreated: Date.now(), timeUpdated: Date.now() };
       return {
         chat: applyEvent(s.chat, {
           type: "session.updated",
-          payload: { projectID, session: meta },
+          payload: { projectID, session },
         }),
       };
     });
@@ -224,14 +262,27 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setSelectedAgent: (selectedAgent) => set({ selectedAgent }),
-  setSelectedModel: (selectedModel) => set({ selectedModel }),
+  setSelectedModel: (selectedModel) =>
+    set((s) => {
+      // Drop the effort variant unless the new model offers it.
+      const model = s.metaModels.find((m) => `${m.provider}:${m.id}` === selectedModel);
+      const keep = model?.variants?.includes(s.selectedVariant) ?? false;
+      return { selectedModel, selectedVariant: keep ? s.selectedVariant : "" };
+    }),
 
-  sendPrompt: async (text) => {
-    const { activeProjectId, activeSessionId, selectedAgent, selectedModel } = get();
+  sendPrompt: async (text, target) => {
+    let { activeProjectId, activeSessionId } = get();
+    const { selectedAgent, selectedModel, selectedVariant } = get();
     if (!activeProjectId || !text.trim()) return;
+    // A new session may target a different project (composer picker): the
+    // active project follows so the sidebar and context stay coherent.
+    if (!activeSessionId && target?.projectID && target.projectID !== activeProjectId) {
+      activeProjectId = target.projectID;
+      set({ activeProjectId });
+    }
     let sessionID = activeSessionId;
     if (!sessionID) {
-      sessionID = await get().newSession(activeProjectId);
+      sessionID = await get().newSession(activeProjectId, undefined, target?.branch);
       if (!sessionID) return;
     }
     const clientID = `client_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -245,6 +296,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         agent: selectedAgent,
         provider: provider || undefined,
         model: model || undefined,
+        variant: selectedVariant || undefined,
       })
       .catch((e) => console.error("prompt failed", e));
   },
@@ -260,6 +312,24 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (!activeProjectId || !activeSessionId) return;
     await api
       .replyPermission(activeProjectId, activeSessionId, permissionID, response)
+      .catch((e) => console.error(e));
+  },
+
+  replyForm: async (formID, answer) => {
+    const { activeProjectId, activeSessionId } = get();
+    if (!activeProjectId || !activeSessionId) return;
+    await api
+      .replyForm(activeProjectId, activeSessionId, formID, answer)
+      .then(() => {
+        // Close the card immediately; the form.replied echo is idempotent
+        // (reducer drops unknown ids) if it arrives.
+        set((s) => ({
+          chat: applyEvent(s.chat, {
+            type: "form.resolved",
+            payload: { projectID: activeProjectId, sessionID: activeSessionId, formID },
+          }),
+        }));
+      })
       .catch((e) => console.error(e));
   },
 
@@ -279,6 +349,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
             x.id === p.projectID ? { ...x, status: p.state, detail: p.detail } : x,
           ),
         }));
+        // The boot requests (sessions/meta) can 503 while a managed server is
+        // still starting; when it comes up, resync. Sessions resync for the
+        // project regardless of selection (the sidebar lists them all); meta
+        // only for the active one and only while still empty.
+        if (p.state === "running") {
+          const resync = () => {
+            void get().refreshSessions(p.projectID).catch(() => undefined);
+            if (p.projectID === get().activeProjectId && get().metaModels.length === 0) {
+              void get().loadMeta(p.projectID).catch(() => undefined);
+            }
+          };
+          resync();
+          // Boot race: the running event can replay before refreshProjects
+          // sets activeProjectId — one delayed pass covers it.
+          setTimeout(resync, 800);
+        }
         break;
       }
       case "session.updated": {
@@ -286,10 +372,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
         set((s) => {
           const list = s.sessionsByProject[p.projectID] ?? [];
           const idx = list.findIndex((x) => x.id === p.session.id);
-          const next =
-            idx === -1
-              ? [p.session, ...list]
-              : list.map((x, i) => (i === idx ? p.session : x));
+          if (idx === -1) {
+            // v2 partial patches never create list entries: wait for the
+            // authoritative session (created event or list refresh).
+            if (!p.session.timeCreated) return s;
+            return {
+              sessionsByProject: {
+                ...s.sessionsByProject,
+                [p.projectID]: [p.session, ...list],
+              },
+            };
+          }
+          // Merge-patch: keep fields the patch does not carry.
+          const prev = list[idx];
+          const merged = {
+            ...prev,
+            title: p.session.title || prev.title,
+            timeCreated: p.session.timeCreated || prev.timeCreated,
+            timeUpdated: p.session.timeUpdated || prev.timeUpdated,
+          };
+          const next = list.map((x, i) => (i === idx ? merged : x));
           return { sessionsByProject: { ...s.sessionsByProject, [p.projectID]: next } };
         });
         break;
@@ -312,11 +414,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
         const p = env.payload as SessionStatusEvent;
         // Surface turn-end by refreshing the session list order (title/updated).
         if (p.status === "idle") {
-          const { activeProjectId } = get();
+          const { activeProjectId, activeSessionId } = get();
           if (activeProjectId) {
             get()
               .refreshSessions(activeProjectId)
               .catch(() => undefined);
+            // Heal any live event drops at turn end: the user echo is a
+            // single part.updated (no replace frames to repair it), so the
+            // transcript refetches history once the turn settles.
+            if (activeSessionId) {
+              api
+                .messages(activeProjectId, activeSessionId, 0)
+                .then((history) =>
+                  set((s) => ({ chat: mergeHydrated(s.chat, activeSessionId, history) })),
+                )
+                .catch(() => undefined);
+            }
           }
         }
         break;

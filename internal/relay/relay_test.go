@@ -25,6 +25,7 @@ type fakeAdapter struct {
 	mu       sync.Mutex
 	prompt   protocol.PromptRequest
 	permResp string
+	renamed  [2]string // sessionID, new title
 	startErr error
 	events   chan protocol.Envelope
 }
@@ -51,8 +52,13 @@ func (f *fakeAdapter) Sessions(_ context.Context) ([]protocol.Session, error) {
 func (f *fakeAdapter) CreateSession(_ context.Context, title string) (protocol.Session, error) {
 	return protocol.Session{ID: "ses_new", Title: title}, nil
 }
-func (f *fakeAdapter) RenameSession(_ context.Context, _, _ string) error { return nil }
-func (f *fakeAdapter) DeleteSession(_ context.Context, _ string) error    { return nil }
+func (f *fakeAdapter) RenameSession(_ context.Context, sessionID, title string) error {
+	f.mu.Lock()
+	f.renamed = [2]string{sessionID, title}
+	f.mu.Unlock()
+	return nil
+}
+func (f *fakeAdapter) DeleteSession(_ context.Context, _ string) error { return nil }
 func (f *fakeAdapter) Messages(_ context.Context, _ string, _ int) ([]agent.HydratedMessage, error) {
 	return []agent.HydratedMessage{{
 		Info:  protocol.MessageInfo{ID: "msg_1", Role: protocol.RoleUser},
@@ -72,6 +78,15 @@ func (f *fakeAdapter) ReplyPermission(_ context.Context, _, _, response string) 
 	f.mu.Unlock()
 	return nil
 }
+func (f *fakeAdapter) ReplyForm(_ context.Context, _, _ string, _ map[string]any) error {
+	return nil
+}
+func (f *fakeAdapter) Vcs(_ context.Context) protocol.ProjectVcs {
+	return protocol.ProjectVcs{IsRepo: true, Provider: "git", Branch: "main"}
+}
+func (f *fakeAdapter) Branches(_ context.Context) []string            { return []string{"main"} }
+func (f *fakeAdapter) SetBranch(_ context.Context, _, _ string) error { return nil }
+
 func (f *fakeAdapter) Meta(_ context.Context) (protocol.Meta, error) {
 	return protocol.Meta{
 		Agents: []protocol.AgentInfo{{Name: "build", Mode: "primary"}},
@@ -239,7 +254,7 @@ func TestPromptProxiesToAdapter(t *testing.T) {
 	waitRunning(t, srv, id)
 
 	resp, err := http.Post(srv.URL+"/agent/projects/"+id+"/sessions/ses_1/prompt",
-		"application/json", strings.NewReader(`{"text":"do it","agent":"build","provider":"p","model":"m"}`))
+		"application/json", strings.NewReader(`{"text":"do it","agent":"build","provider":"p","model":"m","variant":"high"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +265,7 @@ func TestPromptProxiesToAdapter(t *testing.T) {
 	a := ff.made[dir]
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.prompt.Text != "do it" || a.prompt.Agent != "build" {
+	if a.prompt.Text != "do it" || a.prompt.Agent != "build" || a.prompt.Variant != "high" {
 		t.Errorf("adapter got %+v", a.prompt)
 	}
 }
@@ -307,6 +322,45 @@ func TestMetaAndSessionsAndHydration(t *testing.T) {
 			t.Errorf("GET %s = %d", path, resp.StatusCode)
 		}
 		resp.Body.Close()
+	}
+}
+
+func TestRenameSessionProxiesToAdapter(t *testing.T) {
+	srv, ff := newServer(t)
+	dir := t.TempDir()
+	pv := addProject(t, srv, dir)
+	id := pv["id"].(string)
+	waitRunning(t, srv, id)
+
+	url := srv.URL + "/agent/projects/" + id + "/sessions/ses_1"
+
+	// Empty/blank titles are rejected before reaching the adapter.
+	for _, body := range []string{`{"title":""}`, `{"title":"   "}`, `not json`} {
+		req, _ := http.NewRequest(http.MethodPatch, url, strings.NewReader(body))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("PATCH %q status = %d, want 400", body, resp.StatusCode)
+		}
+	}
+
+	req, _ := http.NewRequest(http.MethodPatch, url, strings.NewReader(`{"title":"  renamed  "}`))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("rename status = %d", resp.StatusCode)
+	}
+	a := ff.made[dir]
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.renamed != [2]string{"ses_1", "renamed"} {
+		t.Errorf("adapter rename = %v", a.renamed)
 	}
 }
 

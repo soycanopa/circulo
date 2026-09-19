@@ -198,7 +198,8 @@ describe("reducer: hydration + live overlap", () => {
       },
     ]);
     const msgs = merged.sessions["ses_1"].messages;
-    expect(msgs.map((m) => m.info.id)).toEqual(["msg_a", "msg_u"]);
+    // Hydration restores server order (created ascending): user first.
+    expect(msgs.map((m) => m.info.id)).toEqual(["msg_u", "msg_a"]);
     const msgA = msgs.find((m) => m.info.id === "msg_a")!;
     expect(msgA.parts).toHaveLength(2); // step-start added, text not duplicated
     expect(msgA.parts.find((p) => p.id === "prt_t")!.text).toBe("OK");
@@ -314,5 +315,38 @@ describe("reducer: todo/tasks", () => {
     // Empty list clears.
     s = applyEvent(s, env("todo.updated", { projectID: "p", sessionID: "ses_1", tasks: [] }));
     expect(s.sessions["ses_1"].tasks).toHaveLength(0);
+  });
+});
+
+describe("session.updated merge-patch (opencode v2)", () => {
+  it("merges a partial patch (renamed) keeping existing times", () => {
+    let s = emptyChatState;
+    s = applyEvent(s, env("session.updated", { projectID: "p", session: session("ses_1") }));
+    expect(s.sessions["ses_1"].session.title).toBe("s-ses_1");
+    expect(s.sessions["ses_1"].session.timeCreated).toBe(1);
+
+    s = applyEvent(s, env("session.updated", {
+      projectID: "p",
+      session: { id: "ses_1", title: "new title", timeCreated: 0, timeUpdated: 0 },
+    }));
+    expect(s.sessions["ses_1"].session.title).toBe("new title");
+    expect(s.sessions["ses_1"].session.timeCreated).toBe(1);
+  });
+
+  it("never creates a session from an empty partial patch", () => {
+    const s = emptyChatState;
+    const next = applyEvent(s, env("session.updated", {
+      projectID: "p",
+      session: { id: "ses_ghost", title: "renamed", timeCreated: 0, timeUpdated: 0 },
+    }));
+    expect(next.sessions["ses_ghost"]).toBeUndefined();
+  });
+
+  it("creates a session from a full update (created event)", () => {
+    const next = applyEvent(emptyChatState, env("session.updated", {
+      projectID: "p",
+      session: { id: "ses_new", title: "fresh", timeCreated: 9, timeUpdated: 9 },
+    }));
+    expect(next.sessions["ses_new"].session.title).toBe("fresh");
   });
 });

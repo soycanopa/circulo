@@ -51,9 +51,10 @@ type AdapterConfig struct {
 	Mode      string // "managed" (spawn) | "attach" (existing server)
 	Dir       string // managed: project directory the server is rooted at
 	URL       string // attach: base URL of the running server
-	Binary    string // managed: default "opencode"
+	Binary    string // managed: default "opencode" (CIRCULOGO_OPENCODE_BIN)
 
-	// Optional Basic auth (OPENCODE_SERVER_PASSWORD on the server).
+	// Optional Basic auth. Managed v2 servers print their boot password and
+	// require it on every route; attach needs the user-provided password.
 	Username string
 	Password string
 }
@@ -70,18 +71,18 @@ type Adapter struct {
 	client *Client
 	events chan protocol.Envelope
 
-	// rootDir is the server's resolved scope root (GET /path → directory).
-	// The OpenCode session store is global on disk: GET /session and the
-	// event stream carry sessions from EVERY directory this user ever ran
-	// opencode in, so scoping happens here — the adapter only lets through
-	// sessions whose Directory equals this root.
+	// rootDir is the server's resolved scope root (GET /api/location →
+	// directory). The OpenCode session store is global on disk: the session
+	// list and the event stream carry sessions from EVERY directory this
+	// user ever ran opencode in, so scoping happens here — the adapter only
+	// lets through sessions whose directory equals this root.
 	rootDir string
 
-	mu      sync.Mutex
-	managed  *Managed
+	mu         sync.Mutex
+	managed    *Managed
 	procCancel context.CancelFunc // cancels the managed process context
-	cancel   context.CancelFunc // cancels the SSE loop
-	stopped bool
+	cancel     context.CancelFunc // cancels the SSE loop
+	stopped    bool
 }
 
 // compile-time proof the adapter satisfies the contract (AGENTS.md rule).
@@ -113,7 +114,7 @@ func NewAdapter(cfg AdapterConfig) *Adapter {
 
 func (a *Adapter) Events() <-chan protocol.Envelope { return a.events }
 
-// Start brings the backend up and begins consuming /event.
+// Start brings the backend up and begins consuming /api/event.
 func (a *Adapter) Start(ctx context.Context) error {
 	opts := []ClientOption{}
 	if a.cfg.Password != "" {
@@ -129,7 +130,7 @@ func (a *Adapter) Start(ctx context.Context) error {
 		a.client = NewClient(url, opts...)
 		hctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
-		if _, err := a.client.Health(hctx); err != nil {
+		if _, err := a.client.ServerInfoV2(hctx); err != nil {
 			return fmt.Errorf("opencode: attach health check failed: %w", err)
 		}
 
@@ -152,8 +153,12 @@ func (a *Adapter) Start(ctx context.Context) error {
 		a.procCancel = procCancel
 		a.mu.Unlock()
 		url = fmt.Sprintf("http://127.0.0.1:%d", port)
-		a.client = NewClient(url, opts...)
-		if err := m.WaitHealthy(ctx, a.client, 10*time.Second); err != nil {
+		// v2 prints its boot password and requires Basic auth with it; the
+		// authed client only exists once both are true.
+		c, err := m.WaitReady(ctx, func(pass string) *Client {
+			return NewClient(url, WithBasicAuth("opencode", pass))
+		}, 10*time.Second)
+		if err != nil {
 			m.Stop(2 * time.Second)
 			procCancel()
 			a.mu.Lock()
@@ -162,18 +167,19 @@ func (a *Adapter) Start(ctx context.Context) error {
 			a.mu.Unlock()
 			return err
 		}
+		a.client = c
 
 	default:
 		return fmt.Errorf("opencode: unknown adapter mode %q", a.cfg.Mode)
 	}
 
-	// Resolve the server's scope root. GET /path is the source of truth (its
-	// directory is symlink-resolved, e.g. /tmp/x → /private/tmp/x on macOS);
-	// fall back to the configured project dir resolved the same way.
+	// Resolve the server's scope root. GET /api/location is the source of
+	// truth (its directory is symlink-resolved, e.g. /tmp/x → /private/tmp/x
+	// on macOS); fall back to the configured project dir resolved the same.
 	a.rootDir = a.cfg.Dir
 	if pctx, pcancel := context.WithTimeout(context.Background(), 5*time.Second); pcancel != nil {
 		defer pcancel()
-		if p, err := a.client.Path(pctx); err == nil && p.Directory != "" {
+		if p, err := a.client.LocationV2(pctx); err == nil && p.Directory != "" {
 			a.rootDir = p.Directory
 		} else if resolved, rerr := resolveDir(a.cfg.Dir); rerr == nil {
 			a.rootDir = resolved
@@ -229,15 +235,15 @@ func (a *Adapter) Stop(_ context.Context) error {
 	return nil
 }
 
-// reconnectHysteresis: transient stream blips (server heartbeats timing out,
-// brief proxy hiccups) must NOT flip the project banner to error — the loop
-// reconnects and server.connected restores running within a second. Only
-// surface an error after this many consecutive failed attempts.
+// reconnectHysteresis: transient stream blips (brief proxy hiccups, server
+// restarts) must NOT flip the project banner to error — the loop reconnects
+// and server.connected restores running within a second. Only surface an
+// error after this many consecutive failed attempts.
 const reconnectHysteresis = 3
 
-// sseLoop consumes /event with reconnect until ctx is cancelled. Reconnect is
-// safe because every message.part.updated carries the full part (self-healing,
-// docs/trd.md §3.3).
+// sseLoop consumes /api/event with reconnect until ctx is cancelled.
+// Reconnect is safe because stream *ended frames carry the full cumulative
+// text and tool updates are idempotent by call id (self-healing).
 func (a *Adapter) sseLoop(ctx context.Context) {
 	defer close(a.events)
 	consecutiveFailures := 0
@@ -245,7 +251,7 @@ func (a *Adapter) sseLoop(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		body, err := a.client.Events(ctx)
+		body, err := a.client.EventsV2(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -271,7 +277,7 @@ func (a *Adapter) sseLoop(ctx context.Context) {
 			select {
 			case f := <-frames:
 				consecutiveFailures = 0
-				env, err := DecodeEvent(f)
+				env, err := parseV2Event(f)
 				if err != nil {
 					// One malformed frame must not kill the stream.
 					continue
@@ -279,7 +285,7 @@ func (a *Adapter) sseLoop(ctx context.Context) {
 				if a.foreignSessionEvent(env) {
 					continue
 				}
-				out, err := Translate(a.cfg.ProjectID, env)
+				out, err := TranslateV2(a.cfg.ProjectID, env)
 				if err != nil {
 					continue
 				}
@@ -316,24 +322,23 @@ func (a *Adapter) sseLoop(ctx context.Context) {
 	}
 }
 
-// foreignSessionEvent reports whether a raw OpenCode event carries a session
-// scoped to another directory (session.created/updated/deleted include the
-// full session). The event stream is user-global, so without this filter the
-// sidebar would fill with every session the user ever had anywhere.
-func (a *Adapter) foreignSessionEvent(env Envelope) bool {
-	if a.rootDir == "" {
+// foreignSessionEvent reports whether a raw v2 event carries a session
+// scoped to another directory. Only session.created carries the location —
+// partial patches (renamed, streams) are translated for every session and
+// filtered by the reducer, which never creates a session from a patch.
+func (a *Adapter) foreignSessionEvent(env V2Event) bool {
+	if a.rootDir == "" || env.Type != "session.created" {
 		return false
 	}
-	switch env.Type {
-	case "session.created", "session.updated", "session.deleted":
-	default:
-		return false
+	var p struct {
+		Location struct {
+			Directory string `json:"directory"`
+		} `json:"location"`
 	}
-	var p EventPropertiesSession
-	if err := json.Unmarshal(env.Properties, &p); err != nil {
+	if err := json.Unmarshal(env.Data, &p); err != nil {
 		return false // undecodable: let Translate decide
 	}
-	return !a.inScope(p.Info.Directory)
+	return !a.inScope(p.Location.Directory)
 }
 
 func (a *Adapter) emitStatus(state, detail string) {
@@ -345,7 +350,7 @@ func (a *Adapter) emitStatus(state, detail string) {
 }
 
 // emit sends to the buffered channel. If the consumer is wedged and the buffer
-// is full, the event is dropped: full-part semantics make the next update
+// is full, the event is dropped: ended-frame semantics make the next update
 // authoritative, and the relay resyncs sessions on reconnect (flow.md §7).
 func (a *Adapter) emit(typ string, payload any) {
 	env, err := protocol.NewEnvelope(typ, payload)
@@ -365,30 +370,53 @@ func (a *Adapter) Sessions(ctx context.Context) ([]protocol.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	ss, err := c.Sessions(ctx)
+	ss, err := c.SessionsV2(ctx)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]protocol.Session, 0, len(ss))
 	for _, s := range ss {
-		if !a.inScope(s.Directory) {
+		if !a.inScope(s.Location.Directory) {
 			continue // global store: drop sessions from other directories
 		}
-		out = append(out, sessionToNeutral(s))
+		out = append(out, sessionV2ToNeutral(s))
 	}
 	return out, nil
 }
+
+// formatInstruction is attached to every session the app creates: v2 ignores
+// the config "instructions" field (docs: "use AGENTS.md"), and the app must
+// not write into the user's project — the session instructions-entries API is
+// the app-owned path (verified live: the entry rides the turn's instruction
+// assembly and reaches the model).
+const formatInstructionKey = "circulogo-format"
+const formatInstruction = "Format every response in GitHub-flavored Markdown: " +
+	"short paragraphs, bullet lists, numbered steps for procedures, tables for " +
+	"comparisons, and fenced code blocks with a language tag. Never reply with " +
+	"unstructured plain text. When you need to show a flowchart or workflow, " +
+	"emit one fenced block labeled circulogo-flow whose body is valid JSON: " +
+	`{"nodes":[{"id":"a","row":0,"x":0.5,"w":300,"kind":"Trigger","hue":"purple",` +
+	`"title":"New order","caption":"Trigger when an order is created"}],` +
+	`"edges":[{"from":"a","to":"b"}]}. ` +
+	"row = depth from top starting at 0; x = horizontal center from 0 to 1; " +
+	"hue: purple|amber|blue|green|red; a decision node uses kind \"If / Else\" " +
+	`and adds "condition":[["order.flavor","is","Rocky Road"]] ` +
+	"(read-only rows). Keep the JSON strictly valid, no comments."
 
 func (a *Adapter) CreateSession(ctx context.Context, title string) (protocol.Session, error) {
 	c, err := a.clientOrErr()
 	if err != nil {
 		return protocol.Session{}, err
 	}
-	s, err := c.CreateSession(ctx, title)
+	s, err := c.CreateSessionV2(ctx, title)
 	if err != nil {
 		return protocol.Session{}, err
 	}
-	return sessionToNeutral(s), nil
+	// Best-effort guidance: the entries endpoint is experimental (spec
+	// /api/experimental/...), and an unformatted reply is degraded UX, not a
+	// failed session — dropping the error is deliberate here.
+	_ = c.PutInstructionV2(ctx, s.ID, formatInstructionKey, formatInstruction)
+	return sessionV2ToNeutral(s), nil
 }
 
 func (a *Adapter) RenameSession(ctx context.Context, sessionID, title string) error {
@@ -396,7 +424,7 @@ func (a *Adapter) RenameSession(ctx context.Context, sessionID, title string) er
 	if err != nil {
 		return err
 	}
-	return c.RenameSession(ctx, sessionID, title)
+	return c.RenameSessionV2(ctx, sessionID, title)
 }
 
 func (a *Adapter) DeleteSession(ctx context.Context, sessionID string) error {
@@ -404,7 +432,7 @@ func (a *Adapter) DeleteSession(ctx context.Context, sessionID string) error {
 	if err != nil {
 		return err
 	}
-	return c.DeleteSession(ctx, sessionID)
+	return c.DeleteSessionV2(ctx, sessionID)
 }
 
 func (a *Adapter) Messages(ctx context.Context, sessionID string, limit int) ([]agent.HydratedMessage, error) {
@@ -412,23 +440,11 @@ func (a *Adapter) Messages(ctx context.Context, sessionID string, limit int) ([]
 	if err != nil {
 		return nil, err
 	}
-	pages, err := c.Messages(ctx, sessionID, limit)
+	msgs, err := c.MessagesV2(ctx, sessionID, limit)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]agent.HydratedMessage, 0, len(pages))
-	for _, pg := range pages {
-		hm := agent.HydratedMessage{Info: messageToNeutral(pg.Info)}
-		for _, p := range pg.Parts {
-			np, ok := partToNeutral(p)
-			if !ok {
-				continue
-			}
-			hm.Parts = append(hm.Parts, np)
-		}
-		out = append(out, hm)
-	}
-	return out, nil
+	return messagesV2ToNeutral(sessionID, msgs), nil
 }
 
 func (a *Adapter) Prompt(ctx context.Context, sessionID string, req protocol.PromptRequest) error {
@@ -436,12 +452,19 @@ func (a *Adapter) Prompt(ctx context.Context, sessionID string, req protocol.Pro
 	if err != nil {
 		return err
 	}
-	return c.Prompt(ctx, sessionID, PromptInput{
-		Text:     req.Text,
-		Agent:    req.Agent,
-		Provider: req.Provider,
-		Model:    req.Model,
-	})
+	// v2 scopes model/agent to the session: pin them first when the request
+	// selects any, then send the text-only prompt.
+	if req.Provider != "" || req.Model != "" || req.Variant != "" {
+		if err := c.SetModelV2(ctx, sessionID, req.Provider, req.Model, req.Variant); err != nil {
+			return err
+		}
+	}
+	if req.Agent != "" {
+		if err := c.SetAgentV2(ctx, sessionID, req.Agent); err != nil {
+			return err
+		}
+	}
+	return c.PromptV2(ctx, sessionID, req.Text)
 }
 
 func (a *Adapter) Abort(ctx context.Context, sessionID string) error {
@@ -449,7 +472,7 @@ func (a *Adapter) Abort(ctx context.Context, sessionID string) error {
 	if err != nil {
 		return err
 	}
-	return c.Abort(ctx, sessionID)
+	return c.InterruptV2(ctx, sessionID)
 }
 
 func (a *Adapter) ReplyPermission(ctx context.Context, sessionID, permissionID, response string) error {
@@ -457,7 +480,61 @@ func (a *Adapter) ReplyPermission(ctx context.Context, sessionID, permissionID, 
 	if err != nil {
 		return err
 	}
-	return c.ReplyPermission(ctx, sessionID, permissionID, response)
+	return c.ReplyPermissionV2(ctx, sessionID, permissionID, response)
+}
+
+// Vcs reports the project's git state (isRepo gates the composer's branch
+// picker). Any failure degrades to "not a repo" — never blocks a session.
+func (a *Adapter) Vcs(ctx context.Context) protocol.ProjectVcs {
+	c, err := a.clientOrErr()
+	if err != nil {
+		return protocol.ProjectVcs{}
+	}
+	info, err := c.VcsInfoV2(ctx)
+	if err != nil || info.Provider == "" {
+		return protocol.ProjectVcs{}
+	}
+	return protocol.ProjectVcs{
+		IsRepo:        true,
+		Provider:      info.Provider,
+		Branch:        info.Branch.Current,
+		DefaultBranch: info.Branch.Default,
+	}
+}
+
+// Branches lists the project repository's branches (empty when not a repo).
+func (a *Adapter) Branches(ctx context.Context) []string {
+	c, err := a.clientOrErr()
+	if err != nil {
+		return nil
+	}
+	out, err := c.BranchesV2(ctx)
+	if err != nil {
+		return nil
+	}
+	return out
+}
+
+// SetBranch pins the branch the agent should work on for this session — v2
+// has no checkout endpoint, so it travels as a session instruction the model
+// follows (same verified path as the format instruction).
+func (a *Adapter) SetBranch(ctx context.Context, sessionID, branch string) error {
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.PutInstructionV2(ctx, sessionID, "circulogo-branch",
+		"Work on the git branch \""+branch+"\" for this whole session: switch to "+
+			"it first if needed (git switch "+branch+"), and keep every change on it.")
+}
+
+// ReplyForm answers a pending form (question tool) via the form reply API.
+func (a *Adapter) ReplyForm(ctx context.Context, sessionID, formID string, answer map[string]any) error {
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.ReplyFormV2(ctx, sessionID, formID, answer)
 }
 
 func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
@@ -465,11 +542,11 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 	if err != nil {
 		return protocol.Meta{}, err
 	}
-	agents, err := c.Agents(ctx)
+	agents, err := c.AgentsV2(ctx)
 	if err != nil {
 		return protocol.Meta{}, err
 	}
-	providers, err := c.Providers(ctx)
+	models, err := c.ModelsV2(ctx)
 	if err != nil {
 		return protocol.Meta{}, err
 	}
@@ -479,32 +556,160 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 			continue
 		}
 		meta.Agents = append(meta.Agents, protocol.AgentInfo{
-			Name:        ag.Name,
+			Name:        ag.ID,
 			Description: ag.Description,
 			Mode:        ag.Mode,
 		})
 	}
-	for _, p := range providers.Providers {
-		for _, m := range p.Models {
-			meta.Models = append(meta.Models, protocol.ModelInfo{
-				ID:       m.ID,
-				Name:     m.Name,
-				Provider: p.ID,
-			})
+	for _, m := range models {
+		if !m.Enabled {
+			continue
 		}
+		variants := make([]string, 0, len(m.Variants))
+		for _, v := range m.Variants {
+			variants = append(variants, v.ID)
+		}
+		sort.Strings(variants)
+		meta.Models = append(meta.Models, protocol.ModelInfo{
+			ID:        m.ID,
+			Name:      m.Name,
+			Provider:  m.ProviderID,
+			Reasoning: len(variants) > 0,
+			Variants:  variants,
+		})
 	}
 	// Surface the server's configured default model so the composer doesn't
-	// guess (the first list entry may be a plan-restricted variant). The
-	// default map has one entry per provider and Go map iteration is
-	// randomized — sort keys so every launch picks the same model.
-	keys := make([]string, 0, len(providers.Default))
-	for k := range providers.Default {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	if len(keys) > 0 {
-		meta.DefaultProvider = keys[0]
-		meta.DefaultModel = providers.Default[keys[0]]
+	// guess (the first list entry may be a plan-restricted variant).
+	if dm, err := c.DefaultModelV2(ctx); err == nil && dm != nil {
+		meta.DefaultProvider = dm.ProviderID
+		meta.DefaultModel = dm.ID
 	}
 	return meta, nil
+}
+
+// sessionV2ToNeutral maps a v2 session onto the neutral contract.
+func sessionV2ToNeutral(s V2Session) protocol.Session {
+	return protocol.Session{
+		ID:          s.ID,
+		Title:       s.Title,
+		Directory:   s.Location.Directory,
+		TimeCreated: s.Time.Created,
+		TimeUpdated: s.Time.Updated,
+	}
+}
+
+// messagesV2ToNeutral converts the v2 message list (newest-first, content
+// inline, idle/system markers interleaved) into chronological neutral
+// hydrated messages. Part ids match the live stream synthesis
+// (<messageID>:text|:reasoning, tool call ids, <messageID>:finish).
+func messagesV2ToNeutral(sessionID string, msgs []V2Message) []agent.HydratedMessage {
+	out := make([]agent.HydratedMessage, 0, len(msgs))
+	for i := len(msgs) - 1; i >= 0; i-- { // oldest-first
+		m := msgs[i]
+		switch m.Type {
+		case "user":
+			out = append(out, agent.HydratedMessage{
+				Info: protocol.MessageInfo{
+					ID:        m.ID,
+					SessionID: sessionID,
+					Role:      protocol.RoleUser,
+					Created:   m.Time.Created,
+				},
+				Parts: []protocol.Part{{
+					ID:   m.ID + ":text",
+					Type: protocol.PartText,
+					Text: m.Text,
+				}},
+			})
+		case "assistant":
+			info := protocol.MessageInfo{
+				ID:        m.ID,
+				SessionID: sessionID,
+				Role:      protocol.RoleAssistant,
+				Created:   m.Time.Created,
+				Completed: m.Time.Completed,
+				Agent:     m.Agent,
+				Provider:  m.Model.ProviderID,
+				Model:     m.Model.ID,
+				Cost:      m.Cost,
+				Finish:    m.Finish,
+			}
+			if m.Tokens != nil {
+				info.Tokens = &protocol.TokenUsage{
+					Input:      m.Tokens.Input,
+					Output:     m.Tokens.Output,
+					Reasoning:  m.Tokens.Reasoning,
+					CacheRead:  m.Tokens.Cache.Read,
+					CacheWrite: m.Tokens.Cache.Write,
+				}
+			}
+			parts := make([]protocol.Part, 0, len(m.Content)+1)
+			for _, c := range m.Content {
+				switch c.Type {
+				case "text":
+					parts = append(parts, protocol.Part{
+						ID:   m.ID + ":text",
+						Type: protocol.PartText,
+						Text: c.Text,
+					})
+				case "reasoning":
+					parts = append(parts, protocol.Part{
+						ID:   m.ID + ":reasoning",
+						Type: protocol.PartReasoning,
+						Text: c.Text,
+					})
+				case "tool":
+					parts = append(parts, protocol.Part{
+						ID:     c.ID,
+						Type:   protocol.PartTool,
+						CallID: c.ID,
+						Tool:   c.Name,
+						State: &protocol.ToolState{
+							Status: toolStatusV2(c.State.Status),
+							Input:  c.State.Input,
+							Output: c.stateOutput(),
+							Error:  c.stateError(),
+						},
+					})
+				}
+			}
+			if m.Finish != "" || m.Cost > 0 || m.Tokens != nil {
+				finish := protocol.Part{
+					ID:     m.ID + ":finish",
+					Type:   protocol.PartStepFinish,
+					Reason: m.Finish,
+					Cost:   m.Cost,
+				}
+				if m.Tokens != nil {
+					finish.Tokens = &protocol.TokenUsage{
+						Input:      m.Tokens.Input,
+						Output:     m.Tokens.Output,
+						Reasoning:  m.Tokens.Reasoning,
+						CacheRead:  m.Tokens.Cache.Read,
+						CacheWrite: m.Tokens.Cache.Write,
+					}
+				}
+				parts = append(parts, finish)
+			}
+			out = append(out, agent.HydratedMessage{Info: info, Parts: parts})
+		default:
+			// idle/system markers: turn boundaries and server context notes
+			// have no renderer — dropped in v0.
+		}
+	}
+	return out
+}
+
+// toolStatusV2 maps a v2 tool state status onto the neutral vocabulary.
+func toolStatusV2(status string) string {
+	switch status {
+	case "completed":
+		return protocol.ToolCompleted
+	case "error":
+		return protocol.ToolError
+	case "running", "streaming":
+		return protocol.ToolRunning
+	default:
+		return protocol.ToolPending
+	}
 }

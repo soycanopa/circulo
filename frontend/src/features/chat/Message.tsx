@@ -7,11 +7,32 @@
 
 import { memo, useMemo } from "react";
 
-import { MarkdownView } from "./markdown/MarkdownView";
-import { ReasoningPart } from "./parts/ReasoningPart";
-import { ToolCard } from "./parts/ToolCard";
+import ThinkingState, { type TraceVariant } from "./parts/ThinkingState";
+import { AssistantText, sourcesFromParts } from "./parts/AssistantText";
 import { PatchCard, SubtaskPill, TurnFooter } from "./parts/MiscParts";
+import type { Part } from "@/lib/agent/protocol";
 import type { MessageRecord } from "@/lib/agent/reducer";
+
+/** Tools that count as coding / file work (v2 names; shell is v2's bash). */
+const CODING_TOOLS = new Set([
+  "read", "write", "edit", "patch", "shell", "grep", "glob", "list",
+]);
+
+/** One collapsible per kind of agent work (owner call): reasoning, web
+ *  searches, file/shell coding, and any other tool calls. */
+function groupByVariant(parts: Part[]): Record<TraceVariant, Part[]> {
+  const g: Record<TraceVariant, Part[]> = { Reasoning: [], Search: [], Coding: [], Tools: [] };
+  for (const p of parts) {
+    if (p.type === "reasoning") g.Reasoning.push(p);
+    else if (p.type === "tool") {
+      const tool = (p.tool ?? "").toLowerCase();
+      if (tool === "websearch" || tool === "webfetch") g.Search.push(p);
+      else if (CODING_TOOLS.has(tool)) g.Coding.push(p);
+      else g.Tools.push(p);
+    }
+  }
+  return g;
+}
 
 export const UserMessage = memo(function UserMessage({ m }: { m: MessageRecord }) {
   const text = m.parts
@@ -27,9 +48,9 @@ export const UserMessage = memo(function UserMessage({ m }: { m: MessageRecord }
   );
 });
 
-function lastReasoningId(m: MessageRecord): string {
-  for (let i = m.parts.length - 1; i >= 0; i--) {
-    if (m.parts[i].type === "reasoning") return m.parts[i].id;
+function lastReasoningIdOf(parts: MessageRecord["parts"]): string {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (parts[i].type === "reasoning") return parts[i].id;
   }
   return "";
 }
@@ -51,71 +72,96 @@ function aggregateCost(m: MessageRecord): number {
   return cost;
 }
 
-export const AssistantMessage = memo(function AssistantMessage({
-  m,
+export const AssistantTurn = memo(function AssistantTurn({
+  messages,
   streaming,
 }: {
-  m: MessageRecord;
+  /** every assistant message of one turn (consecutive server messages) */
+  messages: MessageRecord[];
   streaming: boolean;
 }) {
+  // One collapsible per category (owner call): reasoning, searches, coding
+  // and other tool calls each group their own parts of every step.
+  const allParts = useMemo(() => messages.flatMap((m) => m.parts), [messages]);
+  const groups = useMemo(() => groupByVariant(allParts), [allParts]);
+  const sources = useMemo(() => sourcesFromParts(allParts), [allParts]);
   const lastTextId = useMemo(() => {
     let id = "";
-    for (const p of m.parts) if (p.type === "text") id = p.id;
+    for (const p of allParts) if (p.type === "text") id = p.id;
     return id;
-  }, [m.parts]);
-
+  }, [allParts]);
+  const tokens = useMemo(() => {
+    const sum = { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 };
+    let any = false;
+    for (const m of messages) {
+      const t = aggregateTokens(m);
+      if (!t) continue;
+      any = true;
+      sum.input += t.input;
+      sum.output += t.output;
+      sum.reasoning += t.reasoning;
+      sum.cacheRead += t.cacheRead;
+      sum.cacheWrite += t.cacheWrite;
+    }
+    return any ? sum : undefined;
+  }, [messages]);
+  const cost = useMemo(
+    () => messages.reduce((acc, m) => acc + (m.info.cost || aggregateCost(m)), 0),
+    [messages],
+  );
   return (
     <div className="flex w-full flex-col gap-2">
-      {m.parts.map((p) => {
-        switch (p.type) {
-          case "reasoning":
-            return (
-              <ReasoningPart
-                key={p.id}
-                part={p}
-                streaming={streaming && p.id === lastReasoningId(m)}
-              />
-            );
-          case "tool":
-            return <ToolCard key={p.id} part={p} />;
-          case "patch":
-            return <PatchCard key={p.id} part={p} />;
-          case "agent":
-          case "subtask":
-            return <SubtaskPill key={p.id} part={p} />;
-          case "text":
-            return <MarkdownView key={p.id} text={p.text ?? ""} />;
-          case "step-start":
-          case "step-finish":
-          case "file":
-          default:
-            return null; // step markers fold into the footer
-        }
-      })}
-      {streaming && lastTextId === "" && (
-        <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-          <span className="inline-flex gap-1">
-            <Dot delay="0ms" />
-            <Dot delay="150ms" />
-            <Dot delay="300ms" />
-          </span>
-        </div>
+      {(
+        [
+          ["Reasoning", groups.Reasoning],
+          ["Search", groups.Search],
+          ["Coding", groups.Coding],
+          ["Tools", groups.Tools],
+        ] as [TraceVariant, Part[]][]
+      ).map(([variant, groupParts]) =>
+        groupParts.length > 0 ? (
+          <ThinkingState
+            key={variant}
+            variant={variant}
+            parts={groupParts}
+            streaming={streaming}
+            liveReasoningId={lastReasoningIdOf(allParts)}
+          />
+        ) : null,
       )}
-      {!streaming && (
-        <TurnFooter tokens={aggregateTokens(m)} cost={m.info.cost || aggregateCost(m)} />
+      {messages.map((m) =>
+        m.parts.map((p) => {
+          switch (p.type) {
+            case "patch":
+              return <PatchCard key={p.id} part={p} />;
+            case "agent":
+            case "subtask":
+              return <SubtaskPill key={p.id} part={p} />;
+            case "text":
+              return (
+                <AssistantText
+                  key={p.id}
+                  partKey={p.id}
+                  text={p.text ?? ""}
+                  streaming={streaming && p.id === lastTextId}
+                  sources={sources}
+                  showActions={p.id === lastTextId}
+                />
+              );
+            case "step-start":
+            case "step-finish":
+            case "file":
+            default:
+              return null; // step markers fold into the footer
+          }
+        }),
       )}
+      {/* Nothing streamed yet: the transcript-level LoadingState below is the
+          single busy indicator — keep the turn clean. */}
+      {!streaming && <TurnFooter tokens={tokens} cost={cost} />}
     </div>
   );
 });
-
-export function Dot({ delay }: { delay: string }) {
-  return (
-    <span
-      className="size-1.5 animate-bounce rounded-full bg-muted-foreground/70"
-      style={{ animationDelay: delay }}
-    />
-  );
-}
 
 /** Optimistic rows (client_*) are hidden once the server echo of the same
  * text exists — otherwise every prompt renders as two bubbles. */

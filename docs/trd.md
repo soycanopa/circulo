@@ -2,8 +2,11 @@
 
 - **Status:** Draft v0.1 (2026-09-02)
 - **Related:** [PRD](prd.md) · [Flow](flow.md) · [Implementation Plan](implement.md)
-- **Verified against:** OpenCode **1.18.25** — note: 1.18.25 uses `permission.asked`/`permission.replied` with a nested `data` payload (NOT the older `permission.updated` shape from the docs site), and `message.part.delta` exists on the v1 stream (live `opencode serve` + `GET /doc` OpenAPI 3.1,
-  smoke-tested 2026-09-02), Wails **v3.0.0-beta.16** (`wails3 doctor` clean), Go 1.27, Node 24.
+- **Verified against:** OpenCode **2.0.8** — the adapter speaks the v2 API
+  (`/api/*`, Basic auth with the boot-printed server password, `/openapi.json` as the
+  machine spec; see [docs/opencode-v2-migration.md](opencode-v2-migration.md) for the
+  verified endpoint/event map). §3 below documents the **v1 API and is historical**.
+  Wails **v3.0.0-beta.16** (`wails3 doctor` clean), Go 1.27, Node 24.
 
 ## 1. Stack
 
@@ -52,7 +55,7 @@ frontend/src/
 `frontend → protocol ← orchestrator ← opencode`. The UI knows *parts*, never OpenCode.
 Adding adapter #2 touches only `internal/<newadapter>` + one registration line.
 
-## 3. OpenCode adapter (v1 API, verified 1.18.25)
+## 3. OpenCode adapter (HISTORICAL — v1 API; the adapter now speaks v2, see [opencode-v2-migration.md](opencode-v2-migration.md))
 
 ### 3.1 Process management (mode: managed)
 
@@ -193,7 +196,7 @@ Unknown `type` values are skipped by both Go and TS decoders (NFR-3).
 | `message.updated` `{info}` | `message.updated` (map AssistantMessage fields) |
 | `message.part.updated` `{part}` | `part.updated` (map part, table below) |
 | `message.part.delta` `{…,field,delta}` | `part.delta` |
-| `permission.updated` (Permission object) | `permission.request` |
+| `permission.asked` (Permission object, nested `data`) | `permission.request` |
 | `permission.replied` | `permission.resolved` |
 | `session.error` `{error:{name,data:{message,…}}}` | `session.error` |
 | `session.idle` | folds into `session.status{idle}` (UI uses it as turn-end) |

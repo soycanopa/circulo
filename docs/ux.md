@@ -57,28 +57,43 @@
 | Project starting | sidebar dot + transcript banner | "Starting OpenCode…" with spinner; composer disabled |
 | Adapter error | sidebar dot + banner | "OpenCode failed: <detail>" + `[Retry]` `[Show logs]` |
 | Empty session | transcript | Centered composer hint: agent name + model, "Ask anything" |
-| Streaming | transcript | Live reasoning tail, tool cards updating, pulsing "Working… 12s" |
+| Streaming | transcript | Live reasoning tail, tool cards updating, pixel-grid loader: rotating phrase + elapsed timer |
 | Retrying | status strip in transcript | "Provider retrying (attempt 2/…): <reason> · next in 3s" |
 | Session error | transcript inline | Red-bordered block: error name + message (FR-21) |
-| Permission pending | card above composer | Card + composer stays enabled (can type next prompt) |
+| Permission pending | card floating above composer | Elevated card + composer stays enabled (can type next prompt) |
+| Agent question | card floating above composer | QuestionCard: question text, option chips + custom answer, one Answer action |
 | Reconnecting (app↔backend) | thin top bar | "Reconnecting… showing last known state" |
 
 ## 4. Parts rendering rules
 
-Order inside an assistant turn is strictly the server's part order.
+Order inside an assistant turn is strictly the server's part order. Alignment rule
+(owner call): every assistant element — text, trace blocks, loaders — sits on the
+LEFT edge of the column; only user bubbles ride the right.
 
-- **reasoning** — collapsed by default *after* completion; **open while streaming**
-  showing the last ~10 lines with fade, streaming monospace-ish text; header
-  "Thinking · Ns". Click toggles. Never renders raw inside the answer flow.
-- **text (assistant)** — GFM markdown. Code blocks: header (language + copy button,
-  turns to ✓ for 2 s), wrapped lines, no horizontal scroll. Lists/tables/links styled
-  by the typography preset.
-- **tool** — card, one line when collapsed: icon by tool kind (bash/edit/read/search),
-  tool name, `state.title` or derived summary, state chip (`running` spinner /
-  `✓ completed` / `✕ error` / `… pending`). Expand → input (pretty JSON or command) and
-  output (mono, max-h-96 scroll, copy). Error state shows output in red tone.
-  Consecutive tool cards group under one collapsible "Worked · N steps" cluster when
-  the turn is finished (waku-style fold); streaming keeps them expanded.
+- **reasoning** — folds into the turn's ThinkingState trace: prose rows that expand
+  while streaming and settle muted; header "Thinking" (shimmer) → "Thought for Ns"
+  when the wire carried a duration, else "Ran N tools". Click toggles. Never renders
+  raw inside the answer flow.
+- **text (assistant)** — GFM markdown, streamed word-by-word behind a caret
+  (owner's StreamingText design; ~55 ms per word with catch-up on token bursts,
+  `prefers-reduced-motion` renders instantly). When the turn settles, an actions
+  row appears under the last text part: working copy button, plus (when the turn
+  used web tools) a sources avatar-stack toggle expanding to the visited URLs.
+  No inline citation chips or follow-up prompts yet — the wire carries no
+  citation markers or suggestion producer. Code blocks: header (language + copy
+  button, turns to ✓ for 2 s), wrapped lines, no horizontal scroll. Lists/tables/
+  links styled by the typography preset.
+- **tool** — the agent's work renders as **one collapsible per category** (owner
+  call), each a ThinkingState block (`parts/ThinkingState.tsx`) that starts folded
+  and groups every occurrence across the whole turn: **Reasoning** (prose rows),
+  **Search** (websearch/webfetch: colored dots, query line, source links),
+  **Coding** (read/write/edit/patch/shell/grep/glob/list: ring spinner → muted
+  check, red ✕ on error, mono path/command, ±counts when metadata carries them)
+  and **Tools** (any other tool call). Headers carry the pixel-grid loader with
+  rotating phrases + elapsed timer while that category works, settling to a
+  summary ("Thought", "Searched the web · 2 calls", "Ran 4 file ops"); clicking
+  toggles the rows, clicking a tool row toggles its output/error/input detail.
+  Driven by real part state — no staged timers.
 - **step-start / step-finish** — not rendered directly; `step-finish` aggregates into
   the turn footer: `Worked for 42s · 17.5k tok · $0.03` (sum tokens/cost of the message).
 - **patch** — "Changed files" card: file list with +adds/−dels counts; expand → per-file
@@ -93,10 +108,14 @@ User messages: plain bubble, right-aligned accent border, editable later (v1).
 - **Pin-to-bottom:** if the user is at the bottom (< 24 px), new content keeps the view
   pinned; any manual scroll up releases the pin and shows a `↓ Jump to latest` pill
   (with count of new lines while away, optional).
-- **Stream smoothing:** transcript re-renders capped ~15 Hz (TRD §6); text parts may
-  reveal with a 100 ms trailing fade. Respect `prefers-reduced-motion` (no reveal
-  animation, instant text).
-- **Throttle status timer:** "Working… Ns" ticks at 1 Hz, not per frame.
+- **Stream smoothing:** transcript re-renders capped ~15 Hz (TRD §6); the streaming
+  text part reveals word-by-word (~55 ms, catch-up on bursts — see §4). Respect
+  `prefers-reduced-motion` (no reveal animation, instant text).
+- **Working loader:** the 3×3 pixel-grid LoadingState is the working indicator
+  everywhere — standalone (with rotating phrases) for turns with no trace yet, and as
+  the trace's folded header while tools/reasoning run. Phrases rotate every 2.4 s,
+  elapsed timer in mono tabular figures; `prefers-reduced-motion` freezes grid and
+  shimmer (timer still ticks).
 - **Never scroll-jack:** opening history does not force-scroll if the user is reading.
 
 ## 6. Interactions & shortcuts

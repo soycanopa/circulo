@@ -3,6 +3,7 @@
 import type {
   HydratedMessage,
   Meta,
+  ProjectVcs,
   ProjectView,
   PromptRequest,
   Session,
@@ -41,14 +42,24 @@ export const api = {
   listSessions: (projectID: string) =>
     request<Session[]>(`/projects/${projectID}/sessions`),
 
-  createSession: (projectID: string, title?: string) =>
+  createSession: (projectID: string, title?: string, branch?: string) =>
     request<Session>(`/projects/${projectID}/sessions`, {
       method: "POST",
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, branch }),
     }),
 
+  vcs: (projectID: string) => request<ProjectVcs>(`/projects/${projectID}/vcs`),
+
+  branches: (projectID: string) => request<string[]>(`/projects/${projectID}/branches`),
+
+  setBranch: (projectID: string, sessionID: string, branch: string) =>
+    request<{ ok: boolean }>(
+      `/projects/${projectID}/sessions/${sessionID}/branch`,
+      { method: "POST", body: JSON.stringify({ branch }) },
+    ),
+
   renameSession: (projectID: string, sessionID: string, title: string) =>
-    request<Session>(`/projects/${projectID}/sessions/${sessionID}`, {
+    request<{ ok: boolean }>(`/projects/${projectID}/sessions/${sessionID}`, {
       method: "PATCH",
       body: JSON.stringify({ title }),
     }),
@@ -85,5 +96,32 @@ export const api = {
       { method: "POST", body: JSON.stringify({ response }) },
     ),
 
+  replyForm: (projectID: string, sessionID: string, formID: string, answer: Record<string, string | string[]>) =>
+    request<{ ok: boolean }>(
+      `/projects/${projectID}/sessions/${sessionID}/forms/${formID}`,
+      { method: "POST", body: JSON.stringify({ answer }) },
+    ),
+
   meta: (projectID: string) => request<Meta>(`/projects/${projectID}/meta`),
+
+  openTerminal: (projectID: string) =>
+    request<{ id: string }>(`/projects/${projectID}/terminals`, { method: "POST" }),
+
+  closeTerminal: (projectID: string, termId: string) =>
+    request<{ ok: boolean }>(
+      `/projects/${projectID}/terminals/${termId}`,
+      { method: "DELETE" },
+    ),
+
+  writeTerminal: (projectID: string, termId: string, data: string) =>
+    request<{ ok: boolean }>(
+      `/projects/${projectID}/terminals/${termId}/write`,
+      { method: "POST", body: JSON.stringify({ data }) },
+    ),
+
+  resizeTerminal: (projectID: string, termId: string, cols: number, rows: number) =>
+    request<{ ok: boolean }>(
+      `/projects/${projectID}/terminals/${termId}/resize`,
+      { method: "POST", body: JSON.stringify({ cols, rows }) },
+    ),
 };
