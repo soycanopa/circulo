@@ -1,4 +1,4 @@
-// Package store persists circuloGo's own settings (projects, UI prefs) as a
+// Package store persists Circulo's own settings (projects, UI prefs) as a
 // single JSON file. Chat history is deliberately NOT stored here: it lives in
 // each agent server's own storage (docs/trd.md §7).
 package store

@@ -1,4 +1,4 @@
-# circuloGo — UX Specification
+# Circulo — UX Specification
 
 - **Status:** Draft v0.1 (2026-09-02)
 - **Related:** [PRD](prd.md) · [UI](ui.md) (visual spec) · [Flow](flow.md)
@@ -17,7 +17,7 @@
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
-│ [≡] circuloGo                     project: ~/code/api  [status ●]   │  titlebar h-11
+│ [≡] Circulo                     project: ~/code/api  [status ●]   │  titlebar h-11
 ├──────────────┬─────────────────────────────────────────────────────┤
 │ [+ New chat] │                                                     │
 │──────────────│              TRANSCRIPT (scroll)                    │
@@ -33,7 +33,7 @@
 │──────────────│  ┌─────────────────────────────────────────────┐    │
 │ [⚙ Settings] │  │ Permission: run `rm -rf dist`  [Allow][Deny]│    │
 │              │  ├─────────────────────────────────────────────┤    │
-│              │  │ ▎ Message circuloGo…                  [↑]   │    │
+│              │  │ ▎ Message Circulo…                  [↑]   │    │
 │              │  └─────────────────────────────────────────────┘    │
 └──────────────┴─────────────────────────────────────────────────────┘
    sidebar          transcript + composer (fixed at bottom)

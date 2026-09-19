@@ -1,4 +1,4 @@
-# circuloGo — Flows
+# Circulo — Flows
 
 - **Status:** Draft v0.1 (2026-09-02)
 - **Related:** [TRD](trd.md) (endpoints, protocol) · [UX](ux.md)

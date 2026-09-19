@@ -1,4 +1,4 @@
-# circuloGo — Implementation Plan
+# Circulo — Implementation Plan
 
 - **Status:** Draft v0.1 (2026-09-02); amended 2026-09-18 (Circulo pivot + outstanding list, below)
 - **Related:** [TRD](trd.md) · [PRD](prd.md)

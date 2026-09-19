@@ -68,7 +68,7 @@ func main() {
 	}
 
 	app := application.New(application.Options{
-		Name:        "circuloGo",
+		Name:        "Circulo",
 		Description: "Local-first orchestrator for coding-agent CLIs",
 		Services: []application.Service{
 			application.NewService(dialogs),
@@ -86,7 +86,7 @@ func main() {
 	})
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:     "circuloGo",
+		Title:     "Circulo",
 		Width:     1280,
 		Height:    800,
 		MinWidth:  960,

@@ -1,4 +1,4 @@
-# AGENTS.md — circuloGo
+# AGENTS.md — Circulo
 
 Rules for any agent (or human) working in this repository. The original rule set was
 written for a Rust/crate project; adjustments for this Go + React/Wails codebase are

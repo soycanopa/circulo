@@ -1,4 +1,4 @@
-# circuloGo — UI Specification
+# Circulo — UI Specification
 
 - **Status:** Draft v0.1 (2026-09-02)
 - **Related:** [UX](ux.md) (behavior) · [Flow](flow.md)

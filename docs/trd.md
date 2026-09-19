@@ -1,4 +1,4 @@
-# circuloGo — Technical Requirements Document
+# Circulo — Technical Requirements Document
 
 - **Status:** Draft v0.1 (2026-09-02)
 - **Related:** [PRD](prd.md) · [Flow](flow.md) · [Implementation Plan](implement.md)
@@ -229,7 +229,7 @@ interface MessageRecord { info: MessageInfo; parts: Map<string, Part>; partOrder
 
 ## 7. Persistence (`internal/store`)
 
-`settings.json` under OS config dir (`~/Library/Application Support/circuloGo/` on macOS):
+`settings.json` under OS config dir (`~/Library/Application Support/Circulo/` on macOS):
 
 ```jsonc
 { "projects": [ { "id": "…", "path": "/…", "mode": "managed"|"attach", "url"?: "…" } ],
