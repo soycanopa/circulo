@@ -1,4 +1,4 @@
-# circuloGo — Remote & Mobile Design (Tailcat)
+# Circulo — Remote & Mobile Design (Tailcat)
 
 - **Status:** Design only — **implementation is gated** by the project rule:
   *do not build remote until the local protocol is stable* (gate = full pass of
@@ -24,7 +24,7 @@ code/context beyond the peer-to-peer tunnel, background sync services.
 
 ```
 ┌─ desktop (macOS) ──────────────────────────────────────────────┐
-│ circuloGo (Wails)                                              │
+│ Circulo (Wails)                                              │
 │   orchestrator ── opencode serve ×N   (all on 127.0.0.1)       │
 │   relay (/agent: REST + SSE)  ◄── same-origin webview (local)  │
 │                                                                │
@@ -36,7 +36,7 @@ code/context beyond the peer-to-peer tunnel, background sync services.
          │ encrypted P2P (DERP bootstrap → hole-punched direct)
 ┌────────▼───────────────────────────────────────────────────────┐
 │ phone: tailcat client (WASM/Termux/future companion app)       │
-│   → browser opens the relayed circuloGo UI                     │
+│   → browser opens the relayed Circulo UI                     │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -87,7 +87,7 @@ Tailcat ships **no iOS/Android binaries today**. Options, worst to best:
 |---|---|---|
 | WASM client (tailscale.github.io/tailcat) | browser establishes the tunnel, relay-only until WebRTC lands | **Validation path (F1)** — zero install, but experimental and slower |
 | Android + Termux | real `tailcat` CLI on the phone | works for tinkerers, not a product |
-| **Companion app embedding tailcat** | tailcat is Go + OSS: embed the client library in a small circuloGo mobile shell (webview → relayed UI) | **Target (F2/F3)** — the robust path |
+| **Companion app embedding tailcat** | tailcat is Go + OSS: embed the client library in a small Circulo mobile shell (webview → relayed UI) | **Target (F2/F3)** — the robust path |
 
 Recommendation: validate with WASM, ship the companion app when remote becomes
 a daily driver. Re-evaluate if Tailscale ships official mobile tailcat.

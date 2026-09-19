@@ -1,4 +1,4 @@
-# circuloGo — Product Requirements Document
+# Circulo — Product Requirements Document
 
 - **Status:** Draft v0.1 (2026-09-02)
 - **Owner:** soycanopa
@@ -6,7 +6,7 @@
 
 ## 1. Vision
 
-circuloGo is a local-first desktop orchestrator for coding-agent CLIs — the same product
+Circulo is a local-first desktop orchestrator for coding-agent CLIs — the same product
 category as [waku](https://github.com/egoist/waku), built on a different foundation:
 **Wails v3 + React** instead of Rust/GPUI, and **plain HTTP + SSE** instead of ACP.
 
@@ -51,7 +51,7 @@ A developer who already uses agent CLIs (OpenCode first) and wants a GUI that:
 
 ### Projects
 
-- **FR-1** — Add a project by picking a local folder. circuloGo starts an OpenCode server
+- **FR-1** — Add a project by picking a local folder. Circulo starts an OpenCode server
   rooted at that folder (or attaches to an already-running server — see FR-2).
 - **FR-2** — Two connection modes per project: **managed** (app spawns/stops
   `opencode serve`) and **attach** (user started the server; app connects by URL).
@@ -121,7 +121,7 @@ A developer who already uses agent CLIs (OpenCode first) and wants a GUI that:
 
 ## 7. Open questions
 
-- **Q1** — Auto session titles: OpenCode has a `title` agent; decide whether circuloGo
+- **Q1** — Auto session titles: OpenCode has a `title` agent; decide whether Circulo
   triggers it (costs one LLM call) or lets OpenCode's own title flow handle it. *Deferred
   until FR-5 lands; default = accept server-provided title, inline rename always available.*
 - **Q2** — Multiple windows (one per project) vs single window with project switcher.

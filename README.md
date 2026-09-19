@@ -1,13 +1,13 @@
 <div align="center">
 
-# circuloGo
+# Circulo
 
 **Your coding agent, without living in the terminal.**
 
 A native desktop window where [OpenCode](https://opencode.ai) works live: streaming
 answers, visible thinking, approval cards, diffs and real terminals — all in one
 place. Local-first: the app, the sessions and the terminals run on your machine, and
-circuloGo adds no cloud of its own.
+Circulo adds no cloud of its own.
 
 [Getting started](#getting-started) · [How it works](#how-it-works) · [Docs](docs/) · [AGENTS.md](AGENTS.md)
 
@@ -17,15 +17,15 @@ circuloGo adds no cloud of its own.
 ![OpenCode](https://img.shields.io/badge/OpenCode-v2-black)
 
 <!-- Drop a screenshot at docs/screenshot.png and uncomment:
-<img src="docs/screenshot.png" alt="circuloGo — a live streaming session with terminals" width="960">
+<img src="docs/screenshot.png" alt="Circulo — a live streaming session with terminals" width="960">
 -->
 
 </div>
 
-## Why circuloGo
+## Why Circulo
 
 Coding-agent CLIs are powerful — and hostile: one stream of text, permission prompts
-buried in scrollback, zero memory of what belongs to which task. circuloGo gives the
+buried in scrollback, zero memory of what belongs to which task. Circulo gives the
 agent a **real home**: a native window where work streams as it happens, decisions
 arrive as cards you answer with a click, and every project keeps its sessions,
 branches and terminals.
