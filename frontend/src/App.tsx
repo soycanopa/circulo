@@ -129,7 +129,7 @@ export default function App() {
           call): its own surface at the bottom of the window. */}
       {/* Chat + composer share ONE surface; the terminal card lives outside
           and below it (owner call). */}
-      <div className="circulo-glow relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[18px] bg-bg-main">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[18px] bg-bg-main">
         <GlowPixels />
         <div aria-hidden className="circulo-glow absolute inset-0" />
         <div className="relative flex min-h-0 flex-1 flex-col">
