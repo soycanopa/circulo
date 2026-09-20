@@ -2,6 +2,8 @@
 
 # Circulo
 
+<img src="docs/screenshot.png" alt="Circulo — Build products without the technical mess." width="960">
+
 **Your coding agent, without living in the terminal.**
 
 A native desktop window where [OpenCode](https://opencode.ai) works live: streaming
@@ -15,10 +17,6 @@ Circulo adds no cloud of its own.
 ![Wails](https://img.shields.io/badge/Wails-v3.0.0--beta.16-B31B1B)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
 ![OpenCode](https://img.shields.io/badge/OpenCode-v2-black)
-
-<!-- Drop a screenshot at docs/screenshot.png and uncomment:
-<img src="docs/screenshot.png" alt="Circulo — a live streaming session with terminals" width="960">
--->
 
 </div>
 
