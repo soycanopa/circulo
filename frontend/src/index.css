@@ -8,11 +8,22 @@
  * this, wheeling a scroller at its edge — e.g. the sidebar with few
  * sessions — chains into the overflow-hidden ancestors and visually moves
  * the whole interface. Every scroller stops at its own edge.
+ *
+ * The document itself must NEVER scroll: the app is a fixed h-screen shell
+ * (AppShell root is overflow-hidden), but WKWebView still reports a ~17px
+ * document overflow and lets the wheel move the entire interface. Locking
+ * html/body removes the viewport-level scroll entirely.
  */
 html,
 body,
 * {
   overscroll-behavior: none;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
 }
 
 /*
