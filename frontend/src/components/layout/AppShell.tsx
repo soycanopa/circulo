@@ -25,6 +25,25 @@ function loadSidebarWidth(): number {
     : SIDEBAR_DEFAULT;
 }
 
+/**
+ * Wheel anywhere outside a self-scrolling surface (sidebar, transcript,
+ * terminal, open popovers) scrolls the transcript: dead zones — composer,
+ * app bar, empty state — used to swallow the wheel.
+ */
+function useTranscriptWheel() {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const onWheel = useCallback((e: React.WheelEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest("aside")) return; // sidebar scrolls itself
+    if (target.closest("[data-native-scroll]")) return; // terminal (xterm)
+    if (target.closest("[data-chat-scroll]")) return; // transcript: native
+    const chat = rootRef.current?.querySelector<HTMLElement>("[data-chat-scroll]");
+    if (chat) chat.scrollTop += e.deltaY;
+  }, []);
+  return { rootRef, onWheel };
+}
+
 export function AppShell({
   sidebar,
   title,
@@ -42,6 +61,7 @@ export function AppShell({
   const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
   const [dragging, setDragging] = useState(false);
   const drag = useRef({ startX: 0, startWidth: 0 });
+  const { rootRef, onWheel } = useTranscriptWheel();
 
   const onHandleDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -69,7 +89,11 @@ export function AppShell({
   }, []);
 
   return (
-    <div className={cn("flex h-screen w-screen flex-col gap-2 overflow-hidden bg-bg-app p-2 text-foreground", dragging && "select-none")}>
+    <div
+      ref={rootRef}
+      onWheel={onWheel}
+      className={cn("flex h-screen w-screen flex-col gap-2 overflow-hidden bg-bg-app p-2 text-foreground", dragging && "select-none")}
+    >
       <div className="flex h-10 shrink-0 items-center">
         {/* Slot aligned with the sidebar width; the system traffic lights
             overlay its start, so the toggle button clears them. Collapses to

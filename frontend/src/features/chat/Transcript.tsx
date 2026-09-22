@@ -63,7 +63,7 @@ const Transcript = memo(function Transcript({ session }: { session: SessionState
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={ref} className="h-full overflow-y-auto" role="log" aria-label="Chat transcript">
+      <div ref={ref} data-chat-scroll className="h-full overflow-y-auto" role="log" aria-label="Chat transcript">
         <div className="mx-auto flex w-full max-w-[768px] flex-col items-center gap-6 px-0 pt-6 pb-2">
           {items.map((item) =>
             item.kind === "user" ? (
