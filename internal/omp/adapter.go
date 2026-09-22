@@ -500,7 +500,12 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 		return protocol.Meta{}, err
 	}
 
-	meta := protocol.Meta{Models: make([]protocol.ModelInfo, 0, len(models.Models))}
+	meta := protocol.Meta{
+		Models: make([]protocol.ModelInfo, 0, len(models.Models)),
+		// Agents stays empty (omp has no named-agent registry over RPC), but
+		// must be an array, not null: the TS contract says list.
+		Agents: []protocol.AgentInfo{},
+	}
 	for _, m := range models.Models {
 		mi := protocol.ModelInfo{
 			ID:        m.ID,
