@@ -26,6 +26,12 @@ import type {
 
 export type ConnectionState = "connecting" | "open" | "reconnecting";
 
+/** Picker data for one project (models + its default model key). */
+export interface ProjectMeta {
+  models: ModelInfo[];
+  defaultKey: string;
+}
+
 interface AppStore {
   // Connection (webview ↔ relay bridge)
   connection: ConnectionState;
@@ -41,9 +47,12 @@ interface AppStore {
 
   // Composer picker data
   metaAgents: { name: string; description?: string; mode?: string }[];
-  metaModels: ModelInfo[];
+  /** Per-project model catalogs: the picker aggregates tabs across projects. */
+  metaByProject: Record<string, ProjectMeta>;
   selectedAgent: string;
   selectedModel: string; // "provider:model"
+  /** The project the selected model belongs to (picker tab targeting). */
+  selectedModelProject: string | null;
   /** Reasoning-effort variant for the selected model ("" = default). */
   selectedVariant: string;
   setSelectedVariant: (v: string) => void;
@@ -73,7 +82,8 @@ interface AppStore {
   deleteSession: (projectID: string, sessionID: string) => Promise<void>;
   loadMeta: (projectID: string) => Promise<void>;
   setSelectedAgent: (a: string) => void;
-  setSelectedModel: (m: string) => void;
+  /** Selects a model and the project (picker tab) it belongs to. */
+  setSelectedModel: (m: string, projectID: string) => void;
   sendPrompt: (text: string, target?: { projectID: string; branch?: string }) => Promise<void>;
   abort: () => Promise<void>;
   replyPermission: (permissionID: string, response: "once" | "always" | "reject") => Promise<void>;
@@ -93,9 +103,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   activeSessionId: null,
   chat: emptyChatState,
   metaAgents: [],
-  metaModels: [],
+  metaByProject: {},
   selectedAgent: "build",
   selectedModel: "",
+  selectedModelProject: null,
   selectedVariant: "",
   setSelectedVariant: (selectedVariant) => set({ selectedVariant }),
   sessionSearch: "",
@@ -249,44 +260,51 @@ export const useAppStore = create<AppStore>((set, get) => ({
       // sparse provider cannot break composer boot.
       const agents = meta.agents ?? [];
       const models = meta.models ?? [];
-      const primary = agents.find((a) => a.mode === "primary") ?? agents[0];
       const defaultKey =
         meta.defaultProvider && meta.defaultModel
           ? `${meta.defaultProvider}:${meta.defaultModel}`
           : "";
-      const fallbackKey = firstModelKey(models);
       const chosen =
         defaultKey && models.some((m) => `${m.provider}:${m.id}` === defaultKey)
           ? defaultKey
-          : fallbackKey;
-      set((s) => ({
-        metaAgents: agents,
-        metaModels: models,
-        selectedAgent: s.selectedAgent || primary?.name || "build",
-        selectedModel: s.selectedModel || chosen,
-      }));
+          : firstModelKey(models);
+      set((s) => {
+        const isActive = projectID === s.activeProjectId;
+        return {
+          metaByProject: { ...s.metaByProject, [projectID]: { models, defaultKey: chosen } },
+          // The Mode chip reflects the active project's agents only.
+          metaAgents: isActive ? agents : s.metaAgents,
+          // Seed the global selection once, from the active project's default.
+          selectedModel: s.selectedModel || (isActive ? chosen : ""),
+          selectedModelProject: s.selectedModelProject ?? (isActive ? projectID : null),
+        };
+      });
     } catch (e) {
       console.error("loadMeta failed", e);
     }
   },
 
   setSelectedAgent: (selectedAgent) => set({ selectedAgent }),
-  setSelectedModel: (selectedModel) =>
+  setSelectedModel: (selectedModel, projectID) =>
     set((s) => {
       // Drop the effort variant unless the new model offers it.
-      const model = s.metaModels.find((m) => `${m.provider}:${m.id}` === selectedModel);
+      const model = s.metaByProject[projectID]?.models.find(
+        (m) => `${m.provider}:${m.id}` === selectedModel,
+      );
       const keep = model?.variants?.includes(s.selectedVariant) ?? false;
-      return { selectedModel, selectedVariant: keep ? s.selectedVariant : "" };
+      return { selectedModel, selectedModelProject: projectID, selectedVariant: keep ? s.selectedVariant : "" };
     }),
 
   sendPrompt: async (text, target) => {
     let { activeProjectId, activeSessionId } = get();
-    const { selectedAgent, selectedModel, selectedVariant } = get();
+    const { selectedAgent, selectedModel, selectedVariant, selectedModelProject } = get();
     if (!activeProjectId || !text.trim()) return;
-    // A new session may target a different project (composer picker): the
-    // active project follows so the sidebar and context stay coherent.
-    if (!activeSessionId && target?.projectID && target.projectID !== activeProjectId) {
-      activeProjectId = target.projectID;
+    // A new session may target a different project — explicit strip target
+    // first, then the picker tab the selected model came from. The active
+    // project follows so the sidebar and context stay coherent.
+    const wanted = target?.projectID ?? selectedModelProject;
+    if (!activeSessionId && wanted && wanted !== activeProjectId) {
+      activeProjectId = wanted;
       set({ activeProjectId });
     }
     let sessionID = activeSessionId;
@@ -360,12 +378,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
         }));
         // The boot requests (sessions/meta) can 503 while a managed server is
         // still starting; when it comes up, resync. Sessions resync for the
-        // project regardless of selection (the sidebar lists them all); meta
-        // only for the active one and only while still empty.
+        // project regardless of selection; meta loads for every project so
+        // the picker can offer all providers at once.
         if (p.state === "running") {
           const resync = () => {
             void get().refreshSessions(p.projectID).catch(() => undefined);
-            if (p.projectID === get().activeProjectId && get().metaModels.length === 0) {
+            if (!get().metaByProject[p.projectID]) {
               void get().loadMeta(p.projectID).catch(() => undefined);
             }
           };
@@ -450,6 +468,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
   resync: async () => {
     const { refreshProjects, activeProjectId, activeSessionId } = get();
     await refreshProjects().catch(() => undefined);
+    // Every running backend needs its catalog for the aggregated picker;
+    // boot-time adapter.status events may predate this page connection.
+    for (const p of get().projects) {
+      if (p.status === "running" && !get().metaByProject[p.id]) {
+        void get().loadMeta(p.id).catch(() => undefined);
+      }
+    }
     if (activeProjectId) {
       await get().refreshSessions(activeProjectId).catch(() => undefined);
       if (activeSessionId) {

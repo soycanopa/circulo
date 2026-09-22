@@ -483,20 +483,47 @@ const chipBtn =
   "flex items-center gap-[6px] rounded-md px-2 py-1 text-sm/tight text-text-secondary hover:bg-muted";
 
 function ModelPicker() {
-  const models = useAppStore((s) => s.metaModels);
+  const projects = useAppStore((s) => s.projects);
+  const metaByProject = useAppStore((s) => s.metaByProject);
+  const activeProjectId = useAppStore((s) => s.activeProjectId);
   const selectedModel = useAppStore((s) => s.selectedModel);
+  const selectedModelProject = useAppStore((s) => s.selectedModelProject);
   const setSelected = useAppStore((s) => s.setSelectedModel);
   const selectedVariant = useAppStore((s) => s.selectedVariant);
   const setVariant = useAppStore((s) => s.setSelectedVariant);
-  // One agent provider per project (opencode | omp); the rail shows it.
-  const provider = useAppStore(
-    (s) => s.projects.find((p) => p.id === s.activeProjectId)?.provider ?? "opencode",
-  );
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [tabOverride, setTabOverride] = useState<string | null>(null);
   const selectedRef = useRef<HTMLButtonElement>(null);
 
-  const current = models.find((m) => `${m.provider}:${m.id}` === selectedModel);
+  // One tab per project that can serve models (backend per project): the
+  // picker aggregates every provider so opencode and omp are both reachable.
+  const tabs = useMemo(() => {
+    const live = projects.filter(
+      (p) => p.status === "running" || p.status === "starting" || metaByProject[p.id],
+    );
+    return live
+      .map((p) => ({ project: p, meta: metaByProject[p.id] ?? { models: [], defaultKey: "" } }))
+      .sort((a, b) => {
+        if (a.project.id === activeProjectId) return -1;
+        if (b.project.id === activeProjectId) return 1;
+        return a.project.provider.localeCompare(b.project.provider);
+      });
+  }, [projects, metaByProject, activeProjectId]);
+
+  // Default to a tab that actually has models — the active project may be
+  // an erroring backend that can never serve a catalog.
+  const fallbackTab = tabs.find((t) => t.meta.models.length > 0)?.project.id ?? tabs[0]?.project.id ?? null;
+  const effectiveTab =
+    tabOverride ??
+    selectedModelProject ??
+    (activeProjectId && metaByProject[activeProjectId] ? activeProjectId : fallbackTab);
+  const models = metaByProject[effectiveTab ?? ""]?.models ?? [];
+  // The chip shows the actual selection (which may live in another tab);
+  // the list below shows the tab being browsed.
+  const current = metaByProject[selectedModelProject ?? effectiveTab ?? ""]?.models.find(
+    (m) => `${m.provider}:${m.id}` === selectedModel,
+  );
   const q = query.trim().toLowerCase();
 
   // One flat list sectioned by internal provider (owner spec); opencode
@@ -549,17 +576,24 @@ function ModelPicker() {
       </PopoverTrigger>
       <PopoverContent align="start" side="top" sideOffset={8} className="h-[320px] w-[344px]">
         <div className="flex min-h-0 flex-1">
-          {/* Provider tabs — left rail. One agent provider per project;
-              a tab per provider arrives with multi-provider projects. */}
+          {/* Provider tabs — one per project backend; picking a model from a
+              tab targets that project for the next message. */}
           <div className="flex w-[44px] shrink-0 flex-col gap-0.5 border-r border-border p-1">
-            <button
-              type="button"
-              title={provider}
-              aria-label={provider}
-              className="flex items-center justify-center rounded-md bg-bg-hover py-2"
-            >
-              <ProviderIcon provider={provider} size={12} />
-            </button>
+            {tabs.map(({ project }) => (
+              <button
+                key={project.id}
+                type="button"
+                title={`${project.provider} — ${project.path.split("/").pop()}`}
+                aria-label={`${project.provider} (${project.path})`}
+                onClick={() => setTabOverride(project.id)}
+                className={cn(
+                  "flex items-center justify-center rounded-md py-2",
+                  project.id === effectiveTab ? "bg-bg-hover" : "hover:bg-bg-hover/60",
+                )}
+              >
+                <ProviderIcon provider={project.provider} size={12} />
+              </button>
+            ))}
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="shrink-0 border-b border-border p-2">
@@ -591,7 +625,7 @@ function ModelPicker() {
                           ref={selected ? selectedRef : undefined}
                           type="button"
                           onClick={() => {
-                            setSelected(key);
+                            setSelected(key, effectiveTab ?? "");
                             setOpen(false);
                           }}
                           className={cn(
@@ -612,7 +646,7 @@ function ModelPicker() {
                             selected={selected}
                             selectedVariant={selectedVariant}
                             onPick={(variant) => {
-                              setSelected(key);
+                              setSelected(key, effectiveTab ?? "");
                               setVariant(variant);
                               setOpen(false);
                             }}

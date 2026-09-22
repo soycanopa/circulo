@@ -155,7 +155,10 @@ rejected at `AddProject`).
   queues as `steer` (omp requires an explicit queue policy mid-run). **No permission
   round-trip exists over RPC** — tool approvals resolve inside omp per its
   `tools.approvalMode` config and headless prompts fail closed;
-  `ReplyPermission` returns an explicit error.
+  `ReplyPermission` returns an explicit error. The composer's model picker
+  aggregates one tab per project backend (backend-per-project unchanged): browsing a
+  tab lists that catalog, selecting a model targets that project for the next
+  message (`sendPrompt` cross-project targeting for new sessions).
 - **Verification.** `internal/omp/testdata/*.jsonl` are real captures
   (omp 18.2.8, header comment per AGENTS.md); `go test ./internal/omp/` runs without
   the binary; `CIRCULOGO_OMP_LIVE=1 go test ./internal/omp/ -run TestLiveSmoke`
