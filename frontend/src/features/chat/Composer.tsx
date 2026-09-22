@@ -13,7 +13,6 @@ import {
   FolderGit2,
   Folder,
   GitBranch,
-  Pencil,
   Search,
   Square,
 } from "lucide-react";
@@ -620,7 +619,7 @@ function ModelPicker() {
                     const selected = key === selectedModel;
                     const hasVariants = Boolean(m.reasoning && m.variants?.length);
                     return (
-                      <div key={key} className="flex items-center gap-1">
+                      <div key={key} className="group flex items-center gap-1">
                         <button
                           ref={selected ? selectedRef : undefined}
                           type="button"
@@ -686,17 +685,21 @@ function ModelVariantsPopover({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
+        {/* Text affordance instead of a tiny pencil: revealed on row hover
+            via opacity (no layout shift, so the list never jumps/scrolls
+            under the cursor), pinned while the popover is open and on
+            keyboard focus. */}
         <button
           type="button"
           title="Reasoning effort"
-          aria-label={`Reasoning effort of ${model.name || model.id}`}
+          aria-label={`Edit reasoning effort of ${model.name || model.id}`}
           className={cn(
-            "shrink-0 rounded-md p-1 text-text-tertiary hover:bg-bg-hover/60",
-            open && "bg-bg-hover text-text-primary",
+            "shrink-0 rounded-md px-1.5 py-1 text-[11px] leading-none text-text-tertiary opacity-0 transition-opacity hover:bg-bg-hover/60 hover:text-text-primary focus-visible:opacity-100 group-hover:opacity-100",
+            open && "bg-bg-hover text-text-primary opacity-100",
           )}
           onClick={(e) => e.stopPropagation()}
         >
-          <Pencil className="size-3" strokeWidth={2} />
+          Edit
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="right" sideOffset={4} className="w-[164px] p-1.5">
