@@ -8,6 +8,12 @@ import { useState } from "react";
 import { FolderPlus, MessageSquarePlus, Search, Settings } from "lucide-react";
 
 import { PickFolder } from "@/bindings/circulogo/internal/appservice/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/lib/agent/store";
 
 export function SidebarHeader() {
@@ -18,12 +24,12 @@ export function SidebarHeader() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [error, setError] = useState("");
 
-  const pickFolder = async () => {
+  const pickFolder = async (provider: "opencode" | "omp") => {
     setError("");
     const path = await PickFolder().catch(() => "");
     if (!path) return;
     try {
-      await addProject(path, "managed");
+      await addProject(path, "managed", provider);
     } catch (e) {
       setError(String(e));
     }
@@ -46,14 +52,24 @@ export function SidebarHeader() {
         <MessageSquarePlus className="size-3.5 shrink-0 text-text-primary" strokeWidth={2} />
         <span className="text-sm/tight text-text-primary">New session</span>
       </button>
-      <button
-        type="button"
-        className="flex items-center gap-1 rounded-md py-1 text-left hover:bg-bg-hover"
-        onClick={() => void pickFolder()}
-      >
-        <FolderPlus className="size-3.5 shrink-0 text-text-primary" strokeWidth={2} />
-        <span className="text-sm/tight text-text-primary">New project</span>
-      </button>
+      {/* New project asks which agent backend drives the folder. */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="flex items-center gap-1 rounded-md py-1 text-left hover:bg-bg-hover"
+          >
+            <FolderPlus className="size-3.5 shrink-0 text-text-primary" strokeWidth={2} />
+            <span className="text-sm/tight text-text-primary">New project</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" sideOffset={4}>
+          <DropdownMenuItem onClick={() => void pickFolder("opencode")}>
+            OpenCode project
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => void pickFolder("omp")}>omp project</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       {searchOpen ? (
         <div className="flex items-center gap-1 rounded-md py-1">
           <Search className="size-3.5 shrink-0 text-text-primary" strokeWidth={2} />

@@ -488,6 +488,10 @@ function ModelPicker() {
   const setSelected = useAppStore((s) => s.setSelectedModel);
   const selectedVariant = useAppStore((s) => s.selectedVariant);
   const setVariant = useAppStore((s) => s.setSelectedVariant);
+  // One agent provider per project (opencode | omp); the rail shows it.
+  const provider = useAppStore(
+    (s) => s.projects.find((p) => p.id === s.activeProjectId)?.provider ?? "opencode",
+  );
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const selectedRef = useRef<HTMLButtonElement>(null);
@@ -545,16 +549,16 @@ function ModelPicker() {
       </PopoverTrigger>
       <PopoverContent align="start" side="top" sideOffset={8} className="h-[320px] w-[344px]">
         <div className="flex min-h-0 flex-1">
-          {/* Provider tabs — left rail. Today only opencode exists; future
-              agent providers get their own tab here (owner decision). */}
+          {/* Provider tabs — left rail. One agent provider per project;
+              a tab per provider arrives with multi-provider projects. */}
           <div className="flex w-[44px] shrink-0 flex-col gap-0.5 border-r border-border p-1">
             <button
               type="button"
-              title="opencode"
-              aria-label="opencode"
+              title={provider}
+              aria-label={provider}
               className="flex items-center justify-center rounded-md bg-bg-hover py-2"
             >
-              <ProviderIcon provider="opencode" size={12} />
+              <ProviderIcon provider={provider} size={12} />
             </button>
           </div>
           <div className="flex min-w-0 flex-1 flex-col">

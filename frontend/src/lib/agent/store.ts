@@ -245,19 +245,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
   loadMeta: async (projectID) => {
     try {
       const meta = await api.meta(projectID);
-      const primary = meta.agents.find((a) => a.mode === "primary") ?? meta.agents[0];
+      // Providers may send null lists (Go nil slices); normalize here so one
+      // sparse provider cannot break composer boot.
+      const agents = meta.agents ?? [];
+      const models = meta.models ?? [];
+      const primary = agents.find((a) => a.mode === "primary") ?? agents[0];
       const defaultKey =
         meta.defaultProvider && meta.defaultModel
           ? `${meta.defaultProvider}:${meta.defaultModel}`
           : "";
-      const fallbackKey = firstModelKey(meta.models);
+      const fallbackKey = firstModelKey(models);
       const chosen =
-        defaultKey && meta.models.some((m) => `${m.provider}:${m.id}` === defaultKey)
+        defaultKey && models.some((m) => `${m.provider}:${m.id}` === defaultKey)
           ? defaultKey
           : fallbackKey;
       set((s) => ({
-        metaAgents: meta.agents,
-        metaModels: meta.models,
+        metaAgents: agents,
+        metaModels: models,
         selectedAgent: s.selectedAgent || primary?.name || "build",
         selectedModel: s.selectedModel || chosen,
       }));
