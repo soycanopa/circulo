@@ -290,6 +290,8 @@ export interface ProjectView {
   id: string;
   path: string;
   mode: "managed" | "attach";
+  /** Agent backend: "opencode" | "omp". */
+  provider: "opencode" | "omp";
   url?: string;
   status: AdapterState;
   detail?: string;

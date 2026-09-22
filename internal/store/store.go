@@ -20,6 +20,9 @@ type Project struct {
 	Path string `json:"path"`
 	Mode string `json:"mode"` // managed|attach (opencode.Mode* values; string here to avoid an import cycle)
 	URL  string `json:"url,omitempty"`
+	// Provider selects the agent backend ("opencode" | "omp"). Empty means
+	// "opencode": settings written before providers existed stay valid.
+	Provider string `json:"provider,omitempty"`
 }
 
 // Settings is the whole settings file.

@@ -13,7 +13,7 @@ export function ProjectBanner({ project }: { project: ProjectView }) {
   if (project.status === "starting") {
     return (
       <div className="border-b border-border bg-muted/40 px-4 py-1.5 text-center text-[12px] text-muted-foreground">
-        Starting OpenCode…
+        Starting {project.provider === "omp" ? "omp" : "OpenCode"}…
       </div>
     );
   }

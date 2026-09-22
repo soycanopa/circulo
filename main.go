@@ -9,6 +9,7 @@ import (
 
 	"circulogo/internal/agent"
 	"circulogo/internal/appservice"
+	"circulogo/internal/omp"
 	"circulogo/internal/opencode"
 	"circulogo/internal/orchestrator"
 	"circulogo/internal/relay"
@@ -50,15 +51,26 @@ func main() {
 	}
 	st := store.New(stPath)
 	orch := orchestrator.New(st, func(cfg store.Project) (agent.Adapter, error) {
-		return opencode.NewAdapter(opencode.AdapterConfig{
-			ProjectID: cfg.ID,
-			Mode:      cfg.Mode,
-			Dir:       cfg.Path,
-			URL:       cfg.URL,
-			// lets the opencode v1/v2 migration run both binaries
-			// side-by-side (docs/opencode-v2-migration.md §binary).
-			Binary: os.Getenv("CIRCULOGO_OPENCODE_BIN"),
-		}), nil
+		// Provider defaults to opencode: settings written before providers
+		// existed are opencode projects.
+		switch cfg.Provider {
+		case "omp":
+			return omp.NewAdapter(omp.AdapterConfig{
+				ProjectID: cfg.ID,
+				Dir:       cfg.Path,
+				Binary:    os.Getenv("CIRCULOGO_OMP_BIN"),
+			}), nil
+		default:
+			return opencode.NewAdapter(opencode.AdapterConfig{
+				ProjectID: cfg.ID,
+				Mode:      cfg.Mode,
+				Dir:       cfg.Path,
+				URL:       cfg.URL,
+				// lets the opencode v1/v2 migration run both binaries
+				// side-by-side (docs/opencode-v2-migration.md §binary).
+				Binary: os.Getenv("CIRCULOGO_OPENCODE_BIN"),
+			}), nil
+		}
 	})
 
 	// The adapters tie their processes to their own lifetime (adapter.Stop),

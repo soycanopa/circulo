@@ -30,10 +30,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   listProjects: () => request<ProjectView[]>("/projects"),
 
-  addProject: (path: string, mode: "managed" | "attach", url?: string) =>
+  addProject: (path: string, mode: "managed" | "attach", provider: "opencode" | "omp" = "opencode", url?: string) =>
     request<ProjectView>("/projects", {
       method: "POST",
-      body: JSON.stringify({ path, mode, url }),
+      body: JSON.stringify({ path, mode, provider, url }),
     }),
 
   removeProject: (projectID: string) =>
