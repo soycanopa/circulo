@@ -54,7 +54,7 @@
 | State | Where | What the user sees |
 |---|---|---|
 | Empty (no projects) | full screen | Centered: product name, one sentence, `[Add project]` |
-| Project starting | sidebar dot + transcript banner | "Starting OpenCode…" with spinner; composer disabled |
+| Project starting | sidebar dot + transcript banner | "Starting OpenCode…/Starting omp…" with spinner; composer disabled |
 | Adapter error | sidebar dot + banner | "OpenCode failed: <detail>" + `[Retry]` `[Show logs]` |
 | Empty session | transcript | Centered composer hint: agent name + model, "Ask anything" |
 | Streaming | transcript | Live reasoning tail, tool cards updating, pixel-grid loader: rotating phrase + elapsed timer |

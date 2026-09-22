@@ -29,8 +29,8 @@ A developer who already uses agent CLIs (OpenCode first) and wants a GUI that:
 
 | Area | Commitment |
 |---|---|
-| Adapters | **OpenCode only** (`opencode serve`, HTTP+SSE, API v1) |
-| Transport | HTTP + SSE to the agent CLI server. **No ACP.** |
+| Adapters | **OpenCode** (`opencode serve`, HTTP+SSE, API v2) + **omp** (`omp --mode rpc`, stdio NDJSON; owner go-ahead 2026-09-22) |
+| Transport | OpenCode: HTTP + SSE to `opencode serve`. omp: stdio NDJSON to the `omp --mode rpc` child. **No ACP.** |
 | Network | **Local only** (127.0.0.1). No LAN, no Tailscale/remote until the local protocol is stable |
 | Platform | macOS (Apple Silicon) first; Wails v3 keeps Windows/Linux attainable |
 | Sessions | Create, list (grouped by date), rename, delete, open multiple sequentially |
@@ -43,7 +43,7 @@ A developer who already uses agent CLIs (OpenCode first) and wants a GUI that:
 ### Out of scope (v0) — explicit non-goals
 
 - Remote access (Tailscale/LAN), multi-user, cloud sync.
-- A second adapter (Claude, Codex, …) — the adapter interface must *exist*, adapter #2 waits.
+- A third adapter (Claude, Codex, …) — omp shipped as adapter #2 by owner decision (2026-09-22); further adapters still wait on the neutral protocol's daily-use gate.
 - Checkpoints/rewind, worktrees, session forking (OpenCode supports forking; UI later).
 - Telemetry. Nothing leaves the machine except what the agent CLI itself already does.
 

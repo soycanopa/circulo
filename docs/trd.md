@@ -34,6 +34,10 @@ internal/
                            Mirrored by hand in frontend/src/lib/agent/protocol.ts
   opencode/                ADAPTER: HTTP client, SSE consumer, process spawn, translation.
                            Imports: agent, agent/protocol, stdlib. Never Wails, never UI.
+  omp/                     ADAPTER for omp (https://omp.sh): `omp --mode rpc` child over
+                           stdio NDJSON (protocol v1 + v2 chunk reassembly), session-event
+                           translation, on-disk session discovery. Managed-only. Same
+                           import discipline as opencode.
   orchestrator/            Registry: projects → adapter instance; fan-in of adapter events
                            to subscribers; persistence via store
   relay/                   http.Handler mounted at /agent (same-origin API for the UI):
@@ -52,8 +56,9 @@ frontend/src/
 ```
 
 **Dependency rule (enforced by review + import-linter mindset):**
-`frontend → protocol ← orchestrator ← opencode`. The UI knows *parts*, never OpenCode.
-Adding adapter #2 touches only `internal/<newadapter>` + one registration line.
+`frontend → protocol ← orchestrator ← <adapter>`. The UI knows *parts*, never a vendor.
+Adapter #2 (omp) confirmed the claim: new `internal/omp` + the provider switch in
+`main.go`'s factory + a `provider` field on projects; zero relay/orchestrator changes.
 
 ## 3. OpenCode adapter (HISTORICAL — v1 API; the adapter now speaks v2, see [opencode-v2-migration.md](opencode-v2-migration.md))
 
@@ -111,6 +116,51 @@ re-verify when the pinned opencode version changes.
   `catalog.updated`, `reference.updated`, `integration.updated`, `lsp.*`, `file.*`,
   `todo.updated`, `pty.*`, `installation.*`, `vcs.branch.updated`, `tui.*`, `command.executed`.
 
+## 3A. omp adapter (`internal/omp`, provider `"omp"`)
+
+[omp](https://omp.sh) (can1357/oh-my-pi, fork of Pi) exposes no HTTP server: its
+programmatic surface is `omp --mode rpc` — newline-delimited JSON over the child's
+stdio (canonical spec: `docs/rpc.md` in that repo + `rpc-types.ts`). One spawned
+process per project, one live session per process; managed mode only (attach is
+rejected at `AddProject`).
+
+- **Lifecycle.** Spawn `omp --mode rpc` (cwd = project dir; binary override
+  `CIRCULOGO_OMP_BIN`), read the `ready` frame, negotiate protocol **v2** (lossless
+  chunked frames for oversized stdout — implemented with full chunk validation and
+  the advertised reassembly ceiling). Stop = close stdin (omp's orderly drain),
+  SIGTERM/SIGKILL fallback. Unexpected child death surfaces as
+  `adapter.status{error}` with the stderr ring tail (FR-19).
+- **Sessions.** omp has no RPC list command: discovery scans the on-disk bucket
+  `~/.omp/agent/sessions/<encoded-cwd>/*.jsonl` (4 KiB prefix: 256-byte title slot +
+  session header, first-user-text fallback), newest first — the same source omp's own
+  pickers use. Create = `new_session` (+ `set_session_name`), rename/delete via
+  guarded switch round trips, delete = remove the JSONL (refused for the active
+  session).
+- **Streaming translation.** `message_update.assistantMessageEvent` deltas →
+  `part.delta` + full-replacement `part.updated` (text/reasoning);
+  `toolcall_*` + `tool_execution_*` → tool parts keyed by the provider's
+  `toolCallId` (input carried forward — updates are full replacements);
+  assistant `message_end` → accounting + `<msgID>:finish` part;
+  `auto_retry_*` → `session.status{retry}`; `extension_ui_request`
+  select/confirm/input → forms round-tripped as `extension_ui_response`.
+  Widget/title/subagent/command noise and unknown future frames drop silently.
+- **Message identity.** omp frames carry no message id, and streamed content grows —
+  so ids are **chronological ordinals per role** (`a1`, `u1`, …), identical across
+  live frames, `get_messages` hydration, and adapter restarts. This preserves the
+  self-healing invariant (§3.3): hydration and live emit the same part ids.
+- **Parity notes vs the OpenCode adapter.** Reasoning effort rides
+  `PromptRequest.Variant` → `set_thinking_level` (session-level in omp, not per
+  model variant). Agents list is empty (no named-agent registry over RPC);
+  `SetBranch` is a documented no-op (no instruction channel). Prompt while streaming
+  queues as `steer` (omp requires an explicit queue policy mid-run). **No permission
+  round-trip exists over RPC** — tool approvals resolve inside omp per its
+  `tools.approvalMode` config and headless prompts fail closed;
+  `ReplyPermission` returns an explicit error.
+- **Verification.** `internal/omp/testdata/*.jsonl` are real captures
+  (omp 18.2.8, header comment per AGENTS.md); `go test ./internal/omp/` runs without
+  the binary; `CIRCULOGO_OMP_LIVE=1 go test ./internal/omp/ -run TestLiveSmoke`
+  exercises the real child end to end.
+
 ## 4. Transport: backend → webview
 
 The webview origin is `wails://localhost` (macOS/Linux). `fetch`/`EventSource` from the
@@ -125,7 +175,8 @@ route `/agent` (`application.ServiceOptions{Route:"/agent"}`). The UI talks same
 GET  /agent/sse                     SSE stream of neutral events (all projects; envelope
                                     carries projectID — mirrors /global/event semantics)
 GET  /agent/projects                configured projects + adapter status
-POST /agent/projects                {path, mode: managed|attach, url?} → project
+POST /agent/projects                {path, mode: managed|attach, provider?, url?} → project
+                                    (provider: "opencode" (default) | "omp"; omp rejects attach)
 DELETE /agent/projects/:id
 GET  /agent/projects/:id/sessions
 POST /agent/projects/:id/sessions   {title?} → session

@@ -139,19 +139,47 @@ endpoint/event map) and the app runs against **2.0.8** via
 The ui.md re-sync debt from the pivot amendment still stands and now also covers
 the terminal surface and app-bar actions.
 
-## Outstanding before Phase 7 (manual passes, consolidated)
+## Phase 7 — omp provider (branch `feature/omp-provider`) ✅ code-complete
+
+Adapter #2, built on the owner's explicit go-ahead (the AGENTS.md adapter-#2 gate —
+E2E checklist pass — is hereby overridden by owner decision for omp; the checklist
+below still stands for a formal release pass). Target: [omp](https://omp.sh)
+(can1357/oh-my-pi), which speaks `omp --mode rpc` over stdio NDJSON instead of
+HTTP+SSE — proving the neutral protocol holds for a fundamentally different
+transport, not just a second HTTP API.
+
+| # | Commit | Content |
+|---|---|---|
+| 7.1 | `feat(projects): plumb provider selection` | `store.Project.Provider` (empty = opencode, old settings valid), AddProject validation (opencode\|omp; omp rejects attach), ProjectView/`protocol.ts` mirror, `api.addProject` provider arg |
+| 7.2 | `feat(omp): adapter` | stdio RPC client (ready handshake, protocol v2 chunk reassembly, id correlation), event translation (deltas, tool parts, finish accounting, retry status, extension-UI forms), ordinal message identity, disk session discovery, fixtures + tests (`internal/omp/`), provider switch in `main.go` (`CIRCULOGO_OMP_BIN`) |
+| 7.3 | `feat(ui): provider identity` | omp π mark, provider-aware banner copy, model-picker rail from the project provider, New-project provider menu, null-list hardening in `loadMeta`, gated live smoke (`CIRCULOGO_OMP_LIVE=1`) |
+
+**Capability map (omp → Circulo).** Sessions (list/create/rename/delete), history
+hydration with live-identical part ids, prompt/abort with steering when busy,
+thinking-level variants, 264-model catalog with the composer default from omp's own
+state, git VCS read locally, retry status, extension-UI forms (select/confirm/input).
+**Known gaps:** no permission round-trip over RPC (approvals follow omp's
+`tools.approvalMode`; headless prompts fail closed — `ReplyPermission` errors), no
+named agents, no branch pinning (no instruction channel), compaction/subagent frames
+have no neutral surface yet. Details in [trd.md §3A](trd.md).
+
+**Verification.** `go test ./internal/omp/` (fixtures from real omp 18.2.8 captures,
+no binary needed) + `CIRCULOGO_OMP_LIVE=1 go test ./internal/omp/ -run TestLiveSmoke`
+(real child: handshake → catalog → prompt stream → hydration → abort → clean stop);
+browser E2E against the debug listener (add omp project → banner → streaming
+transcript → model picker) run on 2026-09-22.
+
+## Outstanding before Phase 8 (manual passes, consolidated)
 
 1. v2 handoff: owner E2E checklist (§3 of
    [opencode-v2-phase6-e2e.md](opencode-v2-phase6-e2e.md)) plus the §5 decisions
    still awaiting the owner.
 2. Full E2E manual checklist pass (below) — the project gate in AGENTS.md for
-   opening remote/adapter #2 work. (The phase-5 leftover — prompt verified inside
-   the webview — is exercised in daily use; the formal checklist pass is what
-   remains.)
+   remote work; the adapter-#2 clause was consumed by the omp provider (Phase 7).
 3. Re-sync [ui.md](ui.md) with the shipped Circulo replica, terminals and app-bar
    actions (debt recorded in both amendments above).
 
-## Phase 7 — Polish + packaging (branch `feature/release-v0`)
+## Phase 8 — Polish + packaging (branch `feature/release-v0`)
 
 - Perf pass (NFR-2 profiling with 50+ tool-call session), a11y pass (UX §8), light theme
   check, icon + app name, `wails3 build` + `wails3 package` (.app), orphan-process audit
@@ -174,6 +202,6 @@ the terminal surface and app-bar actions.
 1. v2 granular OpenCode events (`message.part.delta` everywhere, tool input streaming).
 2. `@` file mentions + image attachments in composer (protocol already has file parts).
 3. Syntax highlighting behind MarkdownView; diff syntax tone.
-4. Second adapter (Claude CLI stream-json) — proves the neutral protocol.
+4. Third adapter (Claude CLI stream-json) — the omp adapter already proved the neutral protocol across transports (stdio vs HTTP+SSE).
 5. Checkpoints/revert UI (OC supports revert/unrevert), session fork.
 6. Remote access (Tailcat) — design frozen in [remote.md](remote.md); implementation blocked by project rule until local protocol is stable.
