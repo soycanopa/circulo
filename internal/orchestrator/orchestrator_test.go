@@ -176,7 +176,7 @@ func TestAddRemoveProjectPersists(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	pv, err := o.AddProject(context.Background(), dir, "attach", "http://127.0.0.1:9")
+	pv, err := o.AddProject(context.Background(), dir, "attach", "http://127.0.0.1:9", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestAddRemoveProjectPersists(t *testing.T) {
 	}
 
 	// Adding the same dir again is rejected (stable ids).
-	if _, err := o.AddProject(context.Background(), dir, "attach", "http://x"); err == nil {
+	if _, err := o.AddProject(context.Background(), dir, "attach", "http://x", ""); err == nil {
 		t.Fatal("expected duplicate rejection")
 	}
 
@@ -206,7 +206,7 @@ func TestAddRemoveProjectPersists(t *testing.T) {
 
 func TestAddProjectManagedRequiresExistingDir(t *testing.T) {
 	o, _ := newTestOrchestrator(t, newFakeFactory())
-	if _, err := o.AddProject(context.Background(), "/definitely/not/there", "managed", ""); err == nil {
+	if _, err := o.AddProject(context.Background(), "/definitely/not/there", "managed", "", ""); err == nil {
 		t.Fatal("expected error for missing dir")
 	}
 }
@@ -316,7 +316,7 @@ func TestAdapterOfGatesUntilReady(t *testing.T) {
 		return a, nil
 	})
 	dir := t.TempDir()
-	pv, err := o.AddProject(context.Background(), dir, "attach", "http://127.0.0.1:9")
+	pv, err := o.AddProject(context.Background(), dir, "attach", "http://127.0.0.1:9", "")
 	if err != nil {
 		t.Fatal(err)
 	}

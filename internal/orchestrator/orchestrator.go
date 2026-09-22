@@ -199,22 +199,33 @@ func (o *Orchestrator) Subscribe() (<-chan protocol.Envelope, func()) {
 
 // ProjectView is the REST-facing project descriptor.
 type ProjectView struct {
-	ID     string `json:"id"`
-	Path   string `json:"path"`
-	Mode   string `json:"mode"`
-	URL    string `json:"url,omitempty"`
-	Status string `json:"status"` // starting|running|stopped|error
-	Detail string `json:"detail,omitempty"`
+	ID       string `json:"id"`
+	Path     string `json:"path"`
+	Mode     string `json:"mode"`
+	Provider string `json:"provider"`
+	URL      string `json:"url,omitempty"`
+	Status   string `json:"status"` // starting|running|stopped|error
+	Detail   string `json:"detail,omitempty"`
 }
 
 // AddProject registers and starts a project. Start happens in the background;
 // the returned view reports "starting" so the UI can render progress.
-func (o *Orchestrator) AddProject(ctx context.Context, path, mode, url string) (ProjectView, error) {
+// Provider selects the agent backend; empty means "opencode".
+func (o *Orchestrator) AddProject(ctx context.Context, path, mode, url, provider string) (ProjectView, error) {
 	if mode == "" {
 		mode = "managed"
 	}
 	if mode != "managed" && mode != "attach" {
 		return ProjectView{}, fmt.Errorf("orchestrator: unknown mode %q", mode)
+	}
+	if provider == "" {
+		provider = "opencode"
+	}
+	if provider != "opencode" && provider != "omp" {
+		return ProjectView{}, fmt.Errorf("orchestrator: unknown provider %q", provider)
+	}
+	if provider == "omp" && mode == "attach" {
+		return ProjectView{}, fmt.Errorf("orchestrator: omp provider supports managed mode only")
 	}
 	if mode == "managed" {
 		info, err := os.Stat(path)
@@ -229,10 +240,11 @@ func (o *Orchestrator) AddProject(ctx context.Context, path, mode, url string) (
 	}
 
 	cfg := store.Project{
-		ID:   store.ProjectID(path),
-		Path: path,
-		Mode: mode,
-		URL:  url,
+		ID:       store.ProjectID(path),
+		Path:     path,
+		Mode:     mode,
+		URL:      url,
+		Provider: provider,
 	}
 
 	o.mu.Lock()
@@ -317,12 +329,13 @@ func (o *Orchestrator) Projects() []ProjectView {
 			continue
 		}
 		out = append(out, ProjectView{
-			ID:     p.cfg.ID,
-			Path:   p.cfg.Path,
-			Mode:   p.cfg.Mode,
-			URL:    p.cfg.URL,
-			Status: p.status.State,
-			Detail: p.status.Detail,
+			ID:       p.cfg.ID,
+			Path:     p.cfg.Path,
+			Mode:     p.cfg.Mode,
+			Provider: p.cfg.Provider,
+			URL:      p.cfg.URL,
+			Status:   p.status.State,
+			Detail:   p.status.Detail,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
@@ -338,12 +351,13 @@ func (o *Orchestrator) Project(id string) (ProjectView, error) {
 		return ProjectView{}, fmt.Errorf("orchestrator: unknown project %s", id)
 	}
 	return ProjectView{
-		ID:     p.cfg.ID,
-		Path:   p.cfg.Path,
-		Mode:   p.cfg.Mode,
-		URL:    p.cfg.URL,
-		Status: p.status.State,
-		Detail: p.status.Detail,
+		ID:       p.cfg.ID,
+		Path:     p.cfg.Path,
+		Mode:     p.cfg.Mode,
+		Provider: p.cfg.Provider,
+		URL:      p.cfg.URL,
+		Status:   p.status.State,
+		Detail:   p.status.Detail,
 	}, nil
 }
 

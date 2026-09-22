@@ -59,7 +59,12 @@ interface AppStore {
   toggleTerminal: () => void;
   refreshProjects: () => Promise<void>;
   refreshSessions: (projectID: string) => Promise<void>;
-  addProject: (path: string, mode: "managed" | "attach", url?: string) => Promise<void>;
+  addProject: (
+    path: string,
+    mode: "managed" | "attach",
+    provider?: "opencode" | "omp",
+    url?: string,
+  ) => Promise<void>;
   removeProject: (projectID: string) => Promise<void>;
   setActiveProject: (projectID: string | null) => void;
   newSession: (projectID: string, title?: string, branch?: string) => Promise<string | null>;
@@ -130,8 +135,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }));
   },
 
-  addProject: async (path, mode, url) => {
-    const pv = await api.addProject(path, mode, url);
+  addProject: async (path, mode, provider = "opencode", url) => {
+    const pv = await api.addProject(path, mode, provider, url);
     set((s) => ({
       projects: [...s.projects.filter((p) => p.id !== pv.id), pv],
       activeProjectId: s.activeProjectId ?? pv.id,

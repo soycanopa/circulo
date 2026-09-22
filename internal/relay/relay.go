@@ -312,15 +312,16 @@ func (s *Server) withAdapter(w http.ResponseWriter, projectID string, fn func(a 
 
 func (s *Server) handleAddProject(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Path string `json:"path"`
-		Mode string `json:"mode"`
-		URL  string `json:"url"`
+		Path     string `json:"path"`
+		Mode     string `json:"mode"`
+		URL      string `json:"url"`
+		Provider string `json:"provider"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024)).Decode(&body); err != nil {
 		s.writeErr(w, badRequest("project body: %v", err))
 		return
 	}
-	pv, err := s.orch.AddProject(r.Context(), body.Path, body.Mode, body.URL)
+	pv, err := s.orch.AddProject(r.Context(), body.Path, body.Mode, body.URL, body.Provider)
 	s.writeJSONOrErr(w, pv, err)
 }
 
