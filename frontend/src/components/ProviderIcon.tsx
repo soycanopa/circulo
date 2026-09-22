@@ -1,14 +1,17 @@
 /**
  * Provider mark for the model selector. OpenCode and omp ship their own SVGs
  * (inlined); unknown providers get a letter-mark until real icons are added.
+ * `size` is the rendered HEIGHT for every provider — icons keep their own
+ * aspect ratio, so marks with different viewBoxes align on the baseline
+ * (owner call after the omp tab rendered shorter than OpenCode's).
  */
 
 export function ProviderIcon({ provider, size = 16 }: { provider: string; size?: number }) {
   if (provider === "opencode") {
     return (
       <svg
-        width={size}
-        height={Math.round((size * 300) / 240)}
+        width={Math.round((size * 240) / 300)}
+        height={size}
         viewBox="0 0 240 300"
         fill="none"
         aria-hidden
@@ -23,8 +26,8 @@ export function ProviderIcon({ provider, size = 16 }: { provider: string; size?:
     // omp's mark: π with plugin connector (can1357/oh-my-pi assets/icon.svg).
     return (
       <svg
-        width={size}
-        height={Math.round((size * 90) / 120)}
+        width={Math.round((size * 120) / 90)}
+        height={size}
         viewBox="0 0 120 90"
         fill="none"
         aria-hidden
