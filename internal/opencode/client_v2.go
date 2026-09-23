@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"path/filepath"
+	"strconv"
 )
 
 // dataEnvelope is the v2 response wrapper: every payload rides in `data`.
@@ -166,6 +169,48 @@ func (c *Client) CommandsV2(ctx context.Context) ([]V2Command, error) {
 func (c *Client) RunCommandV2(ctx context.Context, sessionID, name, text string) error {
 	body := map[string]string{"name": name, "text": text}
 	return c.post(ctx, "/api/session/"+sessionID+"/command", body, nil)
+}
+
+// V2FileHit is one item of GET /api/fs/find (relative workspace path).
+type V2FileHit struct {
+	Path string `json:"path"`
+	Type string `json:"type,omitempty"`
+}
+
+// FindFilesV2 calls GET /api/fs/find (fuzzy file search for @-mentions).
+func (c *Client) FindFilesV2(ctx context.Context, query string, limit int) ([]V2FileHit, error) {
+	q := url.Values{}
+	q.Set("type", "file")
+	q.Set("query", query)
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	var out []V2FileHit
+	err := getV2(c, ctx, "/api/fs/find?"+q.Encode(), &out)
+	return out, err
+}
+
+// PromptFilesV2 sends a user turn carrying @-mentioned files. Each file is
+// a workspace path; the server needs an absolute file:// URI and reads the
+// content itself (verified live on 2.x: relative paths and plain paths are
+// rejected with "Invalid attachment URI"). rootDir is the resolved scope
+// root from GET /api/location.
+func (c *Client) PromptFilesV2(ctx context.Context, sessionID, text, rootDir string, files []string) error {
+	refs := make([]map[string]string, 0, len(files))
+	for _, f := range files {
+		abs := f
+		if !filepath.IsAbs(abs) {
+			abs = filepath.Join(rootDir, f)
+		}
+		refs = append(refs, map[string]string{
+			"type":     "file",
+			"uri":      "file://" + abs,
+			"filename": filepath.Base(f),
+			"mime":     "text/plain",
+		})
+	}
+	body := map[string]any{"text": text, "files": refs}
+	return c.post(ctx, "/api/session/"+sessionID+"/prompt", body, nil)
 }
 
 // ModelsV2 calls GET /api/model (enabled and disabled; caller filters).

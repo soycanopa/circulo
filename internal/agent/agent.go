@@ -76,6 +76,11 @@ type Adapter interface {
 	// leading slash, Text the raw composer input (arguments included). The
 	// turn streams over Events() like a prompt.
 	RunCommand(ctx context.Context, sessionID, name, text string) error
+
+	// SearchFiles lists workspace files matching query for the @-mention
+	// autocomplete (relative paths, best match first). Providers without a
+	// search surface return an error; the UI falls back to git ls-files.
+	SearchFiles(ctx context.Context, query string, limit int) ([]protocol.FileHit, error)
 }
 
 // HydratedMessage is one message with all its parts from history.

@@ -465,6 +465,9 @@ func (a *Adapter) Prompt(ctx context.Context, sessionID string, req protocol.Pro
 			return err
 		}
 	}
+	if len(req.Files) > 0 {
+		return c.PromptFilesV2(ctx, sessionID, req.Text, a.rootDir, req.Files)
+	}
 	return c.PromptV2(ctx, sessionID, req.Text)
 }
 
@@ -620,6 +623,23 @@ func (a *Adapter) RunCommand(ctx context.Context, sessionID, name, text string) 
 		return err
 	}
 	return c.RunCommandV2(ctx, sessionID, name, text)
+}
+
+// SearchFiles proxies GET /api/fs/find for the @-mention autocomplete.
+func (a *Adapter) SearchFiles(ctx context.Context, query string, limit int) ([]protocol.FileHit, error) {
+	c, err := a.clientOrErr()
+	if err != nil {
+		return nil, err
+	}
+	hits, err := c.FindFilesV2(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]protocol.FileHit, 0, len(hits))
+	for _, h := range hits {
+		out = append(out, protocol.FileHit{Path: h.Path})
+	}
+	return out, nil
 }
 
 // sessionV2ToNeutral maps a v2 session onto the neutral contract.

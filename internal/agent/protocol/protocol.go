@@ -373,18 +373,6 @@ type TodoUpdated struct {
 	Tasks     []Task `json:"tasks"`
 }
 
-// PromptRequest is what the UI sends (relay → adapter).
-type PromptRequest struct {
-	Text  string `json:"text"`
-	Agent string `json:"agent,omitempty"`
-	// Provider/Model as the agent server expects them, e.g. "anthropic"/"claude-…".
-	Provider string `json:"provider,omitempty"`
-	Model    string `json:"model,omitempty"`
-	// Variant selects a model's reasoning-effort variant (OpenCode prompt
-	// body "variant"); empty = the model's default.
-	Variant string `json:"variant,omitempty"`
-}
-
 // ModelInfo is one selectable model.
 type ModelInfo struct {
 	ID       string `json:"id"`
@@ -482,6 +470,32 @@ const EventCommandsUpdated = "commands.updated"
 // CommandsUpdated replaces the project's command list (providers refresh it
 // when skills/config change); the UI also merges it from Meta.
 type CommandsUpdated struct {
-	ProjectID string       `json:"projectID"`
+	ProjectID string        `json:"projectID"`
 	Commands  []CommandInfo `json:"commands"`
+}
+
+// PromptRequest is what the UI sends (relay → adapter).
+type PromptRequest struct {
+	Text  string `json:"text"`
+	Agent string `json:"agent,omitempty"`
+	// Provider/Model as the agent server expects them, e.g. "anthropic"/"claude-…".
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	// Variant selects a model's reasoning-effort variant (OpenCode prompt
+	// body "variant"); empty = the model's default.
+	Variant string `json:"variant,omitempty"`
+	// Files lists @-mentioned workspace paths (relative to the project root).
+	Files []string `json:"files,omitempty"`
+}
+
+// FileSearchRequest is the query behind the composer's @-autocomplete.
+type FileSearchRequest struct {
+	Query string `json:"query"`
+	Limit int    `json:"limit,omitempty"`
+}
+
+// FileHit is one workspace file match.
+type FileHit struct {
+	// Path is relative to the project root.
+	Path string `json:"path"`
 }

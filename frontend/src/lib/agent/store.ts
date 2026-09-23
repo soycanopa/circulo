@@ -95,7 +95,11 @@ interface AppStore {
   setAccess: (mode: AccessMode) => Promise<void>;
   /** Selects a model and the project (picker tab) it belongs to. */
   setSelectedModel: (m: string, projectID: string) => void;
-  sendPrompt: (text: string, target?: { projectID: string; branch?: string }) => Promise<void>;
+  sendPrompt: (
+    text: string,
+    target?: { projectID: string; branch?: string },
+    files?: string[],
+  ) => Promise<void>;
   /** Invokes a slash command in the active session (composer slash menu). */
   runCommand: (name: string, text: string) => Promise<void>;
   abort: () => Promise<void>;
@@ -344,7 +348,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return { selectedModel, selectedModelProject: projectID, selectedVariant: keep ? s.selectedVariant : "" };
     }),
 
-  sendPrompt: async (text, target) => {
+  sendPrompt: async (text, target, files) => {
     let { activeProjectId, activeSessionId } = get();
     const { selectedAgent, selectedModel, selectedVariant, selectedModelProject } = get();
     if (!activeProjectId || !text.trim()) return;
@@ -373,6 +377,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         provider: provider || undefined,
         model: model || undefined,
         variant: selectedVariant || undefined,
+        files: files?.length ? files : undefined,
       })
       .catch((e) => console.error("prompt failed", e));
   },

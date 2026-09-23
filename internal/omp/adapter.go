@@ -501,6 +501,28 @@ func (a *Adapter) RunCommand(ctx context.Context, sessionID, name, text string) 
 	return a.Prompt(ctx, sessionID, protocol.PromptRequest{Text: "/" + name + args})
 }
 
+// SearchFiles backs the @-mention autocomplete. omp exposes no file-search
+// RPC, so Circulo asks git (tracked files, honoring .gitignore); non-repo
+// projects degrade to an empty list.
+func (a *Adapter) SearchFiles(_ context.Context, query string, limit int) ([]protocol.FileHit, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	lines := gitLines(a.cfg.Dir, "ls-files", "--cached", "--others", "--exclude-standard")
+	out := make([]protocol.FileHit, 0, limit)
+	q := strings.ToLower(query)
+	for _, path := range lines {
+		if q != "" && !strings.Contains(strings.ToLower(path), q) {
+			continue
+		}
+		out = append(out, protocol.FileHit{Path: path})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
 // --- permissions / forms ----------------------------------------------------
 
 // ReplyPermission is unsupported: omp's RPC mode has no permission round-trip.

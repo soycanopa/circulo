@@ -4,6 +4,7 @@ import type {
   AccessMode,
   AccessState,
   CommandRequest,
+  FileHit,
   HydratedMessage,
   Meta,
   ProjectVcs,
@@ -113,6 +114,12 @@ export const api = {
     ),
 
   meta: (projectID: string) => request<Meta>(`/projects/${projectID}/meta`),
+
+  /** @-mention autocomplete: workspace files matching query. */
+  searchFiles: (projectID: string, query: string, limit = 20) =>
+    request<FileHit[]>(
+      `/projects/${projectID}/files?q=${encodeURIComponent(query)}&limit=${limit}`,
+    ),
 
   /** Current access mode for a project (GET returns AccessState). */
   access: (projectID: string) =>

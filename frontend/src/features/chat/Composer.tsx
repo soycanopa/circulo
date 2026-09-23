@@ -10,6 +10,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  FileCode,
   FolderGit2,
   Folder,
   GitBranch,
@@ -30,6 +31,7 @@ import { useAppStore } from "@/lib/agent/store";
 import { cn } from "@/lib/utils";
 import type {
   CommandInfo,
+  FileHit,
   FormInfo,
   ModelInfo,
   PermissionRequest,
@@ -1053,6 +1055,19 @@ export function parseSlash(text: string): { name: string; args: string } | null 
   return { name: rest.slice(0, space), args: rest.slice(space + 1).trimStart() };
 }
 
+/** Extracts the "@query" token immediately before the caret, or null when
+ * the caret is not inside a mention. Exported for tests. A token starts at
+ * "@" (or after any whitespace) and ends at the caret or whitespace. */
+export function activeAtToken(text: string, caret: number | null): string | null {
+  if (caret === null) return null;
+  const upto = text.slice(0, caret);
+  const ws = Math.max(upto.lastIndexOf(" "), upto.lastIndexOf("\n"), upto.lastIndexOf("\t"));
+  const token = upto.slice(ws + 1);
+  if (!token.startsWith("@")) return null;
+  // A space already typed after "@" ends the mention query.
+  return token;
+}
+
 export function Composer() {
   const [text, setText] = useState("");
   // Slash-menu open state: opens on typing "/" and closes on click outside,
@@ -1063,6 +1078,12 @@ export function Composer() {
   // the textarea holds only the argument text and submit routes through
   // runCommand — the same contract as typing "/name args" inline.
   const [tagged, setTagged] = useState<{ command: CommandInfo; args: string } | null>(null);
+  // @-mentions: picked files render as inline chips after the command tag;
+  // their paths ride the prompt as Files.
+  const [mentions, setMentions] = useState<string[]>([]);
+  const [atResults, setAtResults] = useState<FileHit[]>([]);
+  const [atIndex, setAtIndex] = useState(0);
+  const atSeq = useRef(0);
   const send = useAppStore((s) => s.sendPrompt);
   const runCommand = useAppStore((s) => s.runCommand);
   const abort = useAppStore((s) => s.abort);
@@ -1107,16 +1128,19 @@ export function Composer() {
   const submit = () => {
     const t = text.trim();
     if (!t || !activeProjectId) return;
+    const files = [...mentions];
     // A picked command tag routes the whole submit through runCommand: the
     // tag carries the name, the textarea carries the arguments.
     if (tagged) {
       setText("");
       setTagged(null);
+      setMentions([]);
       setMenuOpen(false);
       void runCommand(tagged.command.name, `/${tagged.command.name} ${t}`.trimEnd());
       return;
     }
     setText("");
+    setMentions([]);
     setMenuOpen(false);
     // Slash invocation: "/name args" when the provider exposes that command.
     const slash = parseSlash(t);
@@ -1128,7 +1152,7 @@ export function Composer() {
       isNewSession && ((targetProjectId && targetProjectId !== activeProjectId) || targetBranch)
         ? { projectID: targetProjectId || activeProjectId, branch: targetBranch || undefined }
         : undefined;
-    void send(t, targeting);
+    void send(t, targeting, files.length > 0 ? files : undefined);
   };
 
   // --- slash menu -----------------------------------------------------------
@@ -1159,6 +1183,50 @@ export function Composer() {
     taRef.current?.focus();
   };
 
+  // --- @ file mentions ------------------------------------------------------
+  // The query is the "@token" immediately before the caret. Typing "@" opens
+  // the menu; whitespace/space closes it; picking a file removes the token
+  // from the text and pushes a chip.
+  // Caret captured at the last input event (React restores selection after
+  // the render pass, so reading it here races the DOM — the event never lies).
+  const caretRef = useRef<number | null>(null);
+  const atToken = activeAtToken(text, caretRef.current ?? taRef.current?.selectionStart ?? null);
+  // Unlike the "/" menu, the @ menu is a pure function of text+caret: it
+  // lives and dies with the "@token" under the caret. Escape closes it
+  // until the token changes (atDismissed).
+  const [atDismissed, setAtDismissed] = useState<string | null>(null);
+  const showAtMenu = atToken !== null && atDismissed !== atToken;
+  useEffect(() => {
+    if (atToken === null) {
+      setAtResults([]);
+      return;
+    }
+    const q = atToken.slice(1); // drop "@"
+    const seq = ++atSeq.current;
+    const timer = setTimeout(() => {
+      void api
+        .searchFiles(activeProjectId ?? "", q, 8)
+        .then((hits) => {
+          if (atSeq.current === seq) {
+            setAtResults(hits);
+            setAtIndex(0);
+          }
+        })
+        .catch(() => atSeq.current === seq && setAtResults([]));
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [atToken, activeProjectId]);
+  const acceptFile = (hit: FileHit) => {
+    if (atToken === null) return;
+    // Strip the "@token" out of the text; the chip carries the path.
+    const caret = taRef.current?.selectionStart ?? text.length;
+    const start = caret - atToken.length;
+    setText(text.slice(0, start) + text.slice(caret).replace(/^\s/, ""));
+    setMentions((m) => (m.includes(hit.path) ? m : [...m, hit.path]));
+    setMenuOpen(false);
+    taRef.current?.focus();
+  };
+
   return (
     <div className="shrink-0 px-6 pb-3 pt-2">
       <div className="mx-auto max-w-3xl space-y-2">
@@ -1173,10 +1241,9 @@ export function Composer() {
           </div>
         )}
         <div className="mx-auto flex w-full max-w-[768px] flex-col rounded-xl border border-border-strong bg-bg-main [box-shadow:#0E0E0E59_0px_8px_24px] focus-within:border-ring">
-          {/* Inline command row: the picked command's tag sits on the same
-              line as the argument text (textarea starts after the tag via
-              scroll-margin trick: clicking left of the text focuses it). */}
-          <div className="flex items-start px-4 pt-4 pb-2">
+          {/* Inline chips row: picked command tag + @-mention file chips,
+              then the textarea for the message/argument text. */}
+          <div className="flex flex-wrap items-start gap-x-1.5 gap-y-1 px-4 pt-4 pb-2">
             {tagged && (
               <span
                 className={cn(
@@ -1196,6 +1263,24 @@ export function Composer() {
                 </button>
               </span>
             )}
+            {mentions.map((path) => (
+              <span
+                key={path}
+                className="inline-flex shrink-0 items-center gap-1 self-center rounded-full border border-border bg-bg-hover px-1.5 py-0.5 text-xs leading-[14px] font-medium text-text-secondary"
+                title={path}
+              >
+                <FileCode className="size-2.5 shrink-0 text-text-tertiary" />
+                <span className="max-w-40 truncate">{path}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${path}`}
+                  className="-mr-0.5 rounded-full p-px transition-colors hover:bg-black/20"
+                  onClick={() => setMentions((m) => m.filter((p) => p !== path))}
+                >
+                  <X className="size-2.5" strokeWidth={2.5} />
+                </button>
+              </span>
+            ))}
             <textarea
               ref={taRef}
               id="composer"
@@ -1212,9 +1297,12 @@ export function Composer() {
               disabled={!activeProjectId}
               className="min-w-0 flex-1 resize-none bg-transparent py-px text-md/relaxed text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed"
             onChange={(e) => {
+              caretRef.current = e.target.selectionStart;
               setText(e.target.value);
-              // Open as soon as the text starts looking like an invocation.
+              // Open as soon as the text starts looking like an invocation:
+              // a leading "/" (commands) or a freshly typed "@" (files).
               if (e.target.value.startsWith("/")) setMenuOpen(true);
+              if (e.target.value.endsWith("@")) setMenuOpen(true);
             }}
             onBlur={() => {
               // Rows keep focus via onMouseDown preventDefault, so this only
@@ -1229,6 +1317,28 @@ export function Composer() {
                 setTagged(null);
                 setMenuOpen(false);
                 return;
+              }
+              if (showAtMenu && atResults.length > 0) {
+                if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
+                  e.preventDefault();
+                  setAtIndex((i) => (i + 1) % atResults.length);
+                  return;
+                }
+                if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) {
+                  e.preventDefault();
+                  setAtIndex((i) => (i - 1 + atResults.length) % atResults.length);
+                  return;
+                }
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  acceptFile(atResults[atIndex]);
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setAtDismissed(atToken);
+                  return;
+                }
               }
               if (showMenu && matches.length > 0) {
                 if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
@@ -1287,6 +1397,35 @@ export function Composer() {
                     )}
                   </button>
                 ))}
+              </div>
+            </div>
+          )}
+          {showAtMenu && (
+            <div className="relative pointer-events-none">
+              <div className="pointer-events-auto absolute bottom-1 left-2 right-2 z-10 max-h-[280px] overflow-y-auto rounded-xl border border-border-strong bg-bg-popover p-1.5 [box-shadow:#0E0E0E59_0px_8px_24px]">
+                <div className="px-2 py-1 text-xs leading-[14px] text-text-tertiary">
+                  Mention file
+                </div>
+                {atResults.map((hit, i) => (
+                  <button
+                    key={hit.path}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => acceptFile(hit)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
+                      i === atIndex ? "bg-bg-hover" : "hover:bg-bg-hover/60",
+                    )}
+                  >
+                    <FileCode className="size-3 shrink-0 text-text-tertiary" />
+                    <span className="min-w-0 flex-1 truncate font-mono text-[12px]/tight text-text-primary">
+                      {hit.path}
+                    </span>
+                  </button>
+                ))}
+                {atResults.length === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-text-tertiary">No files found</div>
+                )}
               </div>
             </div>
           )}

@@ -296,6 +296,14 @@ export interface PromptRequest {
   model?: string;
   /** Reasoning-effort variant (OpenCode prompt "variant"); empty = default. */
   variant?: string;
+  /** @-mentioned workspace paths (relative to the project root). */
+  files?: string[];
+}
+
+/** One workspace file match for the @-mention autocomplete. */
+export interface FileHit {
+  /** Path relative to the project root. */
+  path: string;
 }
 
 export interface ModelInfo {
