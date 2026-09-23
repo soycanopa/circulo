@@ -15,6 +15,7 @@ import {
   GitBranch,
   Search,
   Square,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ import { ContextGauge } from "@/features/chat/parts/ContextGauge";
 import { useAppStore } from "@/lib/agent/store";
 import { cn } from "@/lib/utils";
 import type {
+  CommandInfo,
   FormInfo,
   ModelInfo,
   PermissionRequest,
@@ -481,6 +483,22 @@ function variantTagClass(v: string): string {
 
 const chipBtn =
   "flex items-center gap-[6px] rounded-md px-2 py-1 text-sm/tight text-text-secondary hover:bg-muted";
+
+/** Tag color per command source (variantTagClass palette): skills green,
+ * custom yellow, extension orange, builtin neutral. */
+function commandTagClass(source?: string): string {
+  switch (source) {
+    case "skill":
+      return "bg-[#243D2E] border-diff-add text-success";
+    case "custom":
+      return "bg-[#47381A] border-[#8C661F] text-[#EBB847]";
+    case "extension":
+    case "file":
+      return "bg-[#522014] border-[#9E5214] text-[#FA9E47]";
+    default:
+      return "bg-bg-hover border-border text-text-secondary";
+  }
+}
 
 function ModelPicker() {
   const projects = useAppStore((s) => s.projects);
@@ -1041,6 +1059,10 @@ export function Composer() {
   // Escape, or submit. menuOpen lets the user blur/re-focus without the
   // menu fighting the text content.
   const [menuOpen, setMenuOpen] = useState(false);
+  // Picked command rendered as a colored tag: {command, args}. While set,
+  // the textarea holds only the argument text and submit routes through
+  // runCommand — the same contract as typing "/name args" inline.
+  const [tagged, setTagged] = useState<{ command: CommandInfo; args: string } | null>(null);
   const send = useAppStore((s) => s.sendPrompt);
   const runCommand = useAppStore((s) => s.runCommand);
   const abort = useAppStore((s) => s.abort);
@@ -1085,6 +1107,15 @@ export function Composer() {
   const submit = () => {
     const t = text.trim();
     if (!t || !activeProjectId) return;
+    // A picked command tag routes the whole submit through runCommand: the
+    // tag carries the name, the textarea carries the arguments.
+    if (tagged) {
+      setText("");
+      setTagged(null);
+      setMenuOpen(false);
+      void runCommand(tagged.command.name, `/${tagged.command.name} ${t}`.trimEnd());
+      return;
+    }
     setText("");
     setMenuOpen(false);
     // Slash invocation: "/name args" when the provider exposes that command.
@@ -1101,7 +1132,9 @@ export function Composer() {
   };
 
   // --- slash menu -----------------------------------------------------------
-  const slash = parseSlash(text);
+  // While a command tag is active the textarea holds plain argument text, so
+  // the inline "/" parser must not fight it.
+  const slash = tagged ? null : parseSlash(text);
   const matches =
     slash && commands
       ? commands.filter(
@@ -1116,9 +1149,13 @@ export function Composer() {
     (matches.length > 0 || (text === "/" && !!commands?.length));
   const [menuIndex, setMenuIndex] = useState(0);
   useEffect(() => setMenuIndex(0), [slash?.name ?? ""]);
-  const acceptCommand = (name: string) => {
-    // Leave the trailing space so the user types arguments directly.
-    setText(`/${name} `);
+  // Turning a picked command into its colored tag replaces the "/name" text;
+  // the composer keeps whatever argument text was already typed.
+  const acceptCommand = (picked: CommandInfo) => {
+    const args = slash?.args ?? "";
+    setText(args);
+    setTagged({ command: picked, args });
+    setMenuOpen(false);
     taRef.current?.focus();
   };
 
@@ -1136,6 +1173,27 @@ export function Composer() {
           </div>
         )}
         <div className="mx-auto flex w-full max-w-[768px] flex-col rounded-xl border border-border-strong bg-bg-main [box-shadow:#0E0E0E59_0px_8px_24px] focus-within:border-ring">
+          {tagged && (
+            <div className="flex items-center gap-1.5 px-4 pt-3">
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs leading-[14px] font-medium",
+                  commandTagClass(tagged.command.source),
+                )}
+                title={`${tagged.command.description || tagged.command.name} (${tagged.command.source || "builtin"})`}
+              >
+                /{tagged.command.name}
+                <button
+                  type="button"
+                  aria-label="Remove command"
+                  className="-mr-0.5 rounded-full p-px transition-colors hover:bg-black/20"
+                  onClick={() => setTagged(null)}
+                >
+                  <X className="size-2.5" strokeWidth={2.5} />
+                </button>
+              </span>
+            </div>
+          )}
           <textarea
             ref={taRef}
             id="composer"
@@ -1173,18 +1231,9 @@ export function Composer() {
                 }
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  // Tab/Enter accepts; the text becomes "/name " so the
-                  // user types the arguments, or submits directly when the
-                  // command takes none (empty args already typed).
-                  const picked = matches[menuIndex];
-                  if (picked.argsHint && !slash?.args) {
-                    acceptCommand(picked.name);
-                  } else {
-                    const t = `/${picked.name} ${slash?.args ?? ""}`.trimEnd();
-                    setText("");
-                    setMenuOpen(false);
-                    void runCommand(picked.name, t);
-                  }
+                  // Enter accepts into the colored tag: "/name" leaves the
+                  // textarea, arguments typed so far are kept.
+                  acceptCommand(matches[menuIndex]);
                   return;
                 }
                 if (e.key === "Escape") {
@@ -1208,16 +1257,7 @@ export function Composer() {
                     key={c.name}
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      if (c.argsHint && !slash?.args) {
-                        acceptCommand(c.name);
-                      } else {
-                        const t = `/${c.name} ${slash?.args ?? ""}`.trimEnd();
-                        setText("");
-                        setMenuOpen(false);
-                        void runCommand(c.name, t);
-                      }
-                    }}
+                    onClick={() => acceptCommand(c)}
                     className={cn(
                       "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
                       i === menuIndex ? "bg-bg-hover" : "hover:bg-bg-hover/60",
