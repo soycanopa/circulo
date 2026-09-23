@@ -1222,6 +1222,14 @@ export function Composer() {
               setMenuOpen(false);
             }}
             onKeyDown={(e) => {
+              // Backspace on empty argument text deletes the command tag —
+              // the standard chip-input dismissal.
+              if (tagged && text.length === 0 && e.key === "Backspace") {
+                e.preventDefault();
+                setTagged(null);
+                setMenuOpen(false);
+                return;
+              }
               if (showMenu && matches.length > 0) {
                 if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
                   e.preventDefault();
