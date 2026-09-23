@@ -1173,11 +1173,14 @@ export function Composer() {
           </div>
         )}
         <div className="mx-auto flex w-full max-w-[768px] flex-col rounded-xl border border-border-strong bg-bg-main [box-shadow:#0E0E0E59_0px_8px_24px] focus-within:border-ring">
-          {tagged && (
-            <div className="flex items-center gap-1.5 px-4 pt-3">
+          {/* Inline command row: the picked command's tag sits on the same
+              line as the argument text (textarea starts after the tag via
+              scroll-margin trick: clicking left of the text focuses it). */}
+          <div className="flex items-start px-4 pt-4 pb-2">
+            {tagged && (
               <span
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs leading-[14px] font-medium",
+                  "mr-1.5 inline-flex shrink-0 items-center gap-1 self-center rounded-full border px-1.5 py-0.5 text-xs leading-[14px] font-medium",
                   commandTagClass(tagged.command.source),
                 )}
                 title={`${tagged.command.description || tagged.command.name} (${tagged.command.source || "builtin"})`}
@@ -1192,21 +1195,22 @@ export function Composer() {
                   <X className="size-2.5" strokeWidth={2.5} />
                 </button>
               </span>
-            </div>
-          )}
-          <textarea
-            ref={taRef}
-            id="composer"
-            data-selectable
-            rows={1}
-            value={text}
-            placeholder={
-              activeSessionId
-                ? "Ask a follow-up…"
-                : "Write anything — Circulo does the rest"
-            }
-            disabled={!activeProjectId}
-            className="w-full resize-none bg-transparent px-4 pt-4 pb-2 text-md/relaxed text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed"
+            )}
+            <textarea
+              ref={taRef}
+              id="composer"
+              data-selectable
+              rows={1}
+              value={text}
+              placeholder={
+                tagged
+                  ? "Arguments…"
+                  : activeSessionId
+                    ? "Ask a follow-up…"
+                    : "Write anything — Circulo does the rest"
+              }
+              disabled={!activeProjectId}
+              className="min-w-0 flex-1 resize-none bg-transparent py-px text-md/relaxed text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed"
             onChange={(e) => {
               setText(e.target.value);
               // Open as soon as the text starts looking like an invocation.
@@ -1248,6 +1252,7 @@ export function Composer() {
               }
             }}
           />
+          </div>
           {showMenu && (
             <div className="relative pointer-events-none">
               <div className="pointer-events-auto absolute bottom-1 left-2 right-2 z-10 max-h-[280px] overflow-y-auto rounded-xl border border-border-strong bg-bg-popover p-1.5 [box-shadow:#0E0E0E59_0px_8px_24px]">
