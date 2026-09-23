@@ -446,9 +446,42 @@ type Meta struct {
 	AccessModes []AccessModeInfo `json:"accessModes,omitempty"`
 	// Current access mode (provider-agnostic id from the Access* constants).
 	Access AccessState `json:"access"`
+	// Slash commands (built-ins, skills, user commands); nil = provider
+	// exposes no command surface.
+	Commands []CommandInfo `json:"commands,omitempty"`
 }
 
 // SetAccessRequest is the body of POST /projects/{id}/access.
 type SetAccessRequest struct {
 	Mode string `json:"mode"`
+}
+
+// CommandInfo is one slash command the provider exposes (built-ins, skills,
+// user commands). ArgsHint documents the expected arguments, empty when the
+// command takes none.
+type CommandInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	ArgsHint    string `json:"argsHint,omitempty"`
+	// Source: builtin|skill|custom|extension|file (provider vocabulary,
+	// rendered as-is; unknown values fall back to a neutral chip).
+	Source string `json:"source,omitempty"`
+}
+
+// CommandRequest is the body of POST /projects/{id}/sessions/{sid}/command.
+// Name is the command without the leading slash; Text is the raw composer
+// input (arguments included) so the provider keeps its own parsing.
+type CommandRequest struct {
+	Name string `json:"name"`
+	Text string `json:"text"`
+}
+
+// EventCommandsUpdated is the envelope type for CommandsUpdated.
+const EventCommandsUpdated = "commands.updated"
+
+// CommandsUpdated replaces the project's command list (providers refresh it
+// when skills/config change); the UI also merges it from Meta.
+type CommandsUpdated struct {
+	ProjectID string       `json:"projectID"`
+	Commands  []CommandInfo `json:"commands"`
 }

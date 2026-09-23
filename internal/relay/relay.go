@@ -220,6 +220,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.writeJSONOrErr(w, map[string]bool{"ok": true}, a.Prompt(r.Context(), sid, req))
 		})
 		return
+	case tail2 == "command" && r.Method == http.MethodPost:
+		s.withAdapter(w, id, func(a agent.Adapter) {
+			var req protocol.CommandRequest
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+				s.writeErr(w, badRequest("command body: %v", err))
+				return
+			}
+			if strings.TrimSpace(req.Name) == "" {
+				s.writeErr(w, badRequest("command name is required"))
+				return
+			}
+			s.writeJSONOrErr(w, map[string]bool{"ok": true},
+				a.RunCommand(r.Context(), sid, req.Name, req.Text))
+		})
+		return
 	case tail2 == "abort" && r.Method == http.MethodPost:
 		s.withAdapter(w, id, func(a agent.Adapter) {
 			s.writeJSONOrErr(w, map[string]bool{"ok": true}, a.Abort(r.Context(), sid))

@@ -39,6 +39,8 @@ const (
 	frameModelChanged        frameType = "model_changed"
 	frameAutoCompactionStart frameType = "auto_compaction_start"
 	frameAutoCompactionEnd   frameType = "auto_compaction_end"
+	frameAvailableCommands   frameType = "available_commands_update"
+	frameCommandOutput       frameType = "command_output"
 )
 
 // envelope is the minimal route key of any stdout frame.

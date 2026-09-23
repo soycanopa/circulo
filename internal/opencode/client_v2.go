@@ -146,6 +146,28 @@ func (c *Client) AgentsV2(ctx context.Context) ([]V2Agent, error) {
 	return out, err
 }
 
+// V2Command is one item of GET /api/command (project/user slash commands;
+// opencode exposes no built-in command list over this endpoint).
+type V2Command struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// CommandsV2 calls GET /api/command.
+func (c *Client) CommandsV2(ctx context.Context) ([]V2Command, error) {
+	var out []V2Command
+	err := getV2(c, ctx, "/api/command", &out)
+	return out, err
+}
+
+// RunCommandV2 invokes a slash command
+// (POST /api/session/{id}/command, body {name, text}). The turn runs
+// asynchronously: 204 means accepted, output streams over /api/event.
+func (c *Client) RunCommandV2(ctx context.Context, sessionID, name, text string) error {
+	body := map[string]string{"name": name, "text": text}
+	return c.post(ctx, "/api/session/"+sessionID+"/command", body, nil)
+}
+
 // ModelsV2 calls GET /api/model (enabled and disabled; caller filters).
 func (c *Client) ModelsV2(ctx context.Context) ([]V2Model, error) {
 	var out []V2Model

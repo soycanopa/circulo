@@ -1021,12 +1021,29 @@ function SessionTargetStrip({
   );
 }
 
+/** Parses "/name args" from composer text; null when the text is not a
+ * slash invocation. Exported for tests. */
+export function parseSlash(text: string): { name: string; args: string } | null {
+  if (!text.startsWith("/")) return null;
+  const rest = text.slice(1);
+  const space = rest.indexOf(" ");
+  if (space === -1) {
+    // Still typing the name — only a complete word counts as a pickable
+    // command; "/nam" filters, "" matches everything.
+    return { name: rest, args: "" };
+  }
+  return { name: rest.slice(0, space), args: rest.slice(space + 1).trimStart() };
+}
+
 export function Composer() {
   const [text, setText] = useState("");
   const send = useAppStore((s) => s.sendPrompt);
+  const runCommand = useAppStore((s) => s.runCommand);
   const abort = useAppStore((s) => s.abort);
   const activeProjectId = useAppStore((s) => s.activeProjectId);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const meta = useAppStore((s) => (activeProjectId ? s.metaByProject[activeProjectId] : undefined));
+  const commands = meta?.commands;
   const chat = useAppStore((s) => s.chat);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -1065,11 +1082,36 @@ export function Composer() {
     const t = text.trim();
     if (!t || !activeProjectId) return;
     setText("");
+    // Slash invocation: "/name args" when the provider exposes that command.
+    const slash = parseSlash(t);
+    if (slash && commands?.some((c) => c.name === slash.name)) {
+      void runCommand(slash.name, t);
+      return;
+    }
     const targeting =
       isNewSession && ((targetProjectId && targetProjectId !== activeProjectId) || targetBranch)
         ? { projectID: targetProjectId || activeProjectId, branch: targetBranch || undefined }
         : undefined;
     void send(t, targeting);
+  };
+
+  // --- slash menu -----------------------------------------------------------
+  const slash = parseSlash(text);
+  const matches =
+    slash && commands
+      ? commands.filter(
+          (c) =>
+            c.name.startsWith(slash.name) &&
+            (slash.args || !commands.some((x) => x.name.startsWith(c.name + " "))),
+        )
+      : [];
+  const showMenu = (matches.length > 0 && slash !== null) || (text === "/" && !!commands?.length);
+  const [menuIndex, setMenuIndex] = useState(0);
+  useEffect(() => setMenuIndex(0), [slash?.name ?? ""]);
+  const acceptCommand = (name: string) => {
+    // Leave the trailing space so the user types arguments directly.
+    setText(`/${name} `);
+    taRef.current?.focus();
   };
 
   return (
@@ -1101,12 +1143,81 @@ export function Composer() {
             className="w-full resize-none bg-transparent px-4 pt-4 pb-2 text-md/relaxed text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed"
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
+              if (showMenu && matches.length > 0) {
+                if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
+                  e.preventDefault();
+                  setMenuIndex((i) => (i + 1) % matches.length);
+                  return;
+                }
+                if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) {
+                  e.preventDefault();
+                  setMenuIndex((i) => (i - 1 + matches.length) % matches.length);
+                  return;
+                }
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  // Tab/Enter accepts; the text becomes "/name " so the
+                  // user types the arguments, or submits directly when the
+                  // command takes none (empty args already typed).
+                  const picked = matches[menuIndex];
+                  if (picked.argsHint && !slash?.args) {
+                    acceptCommand(picked.name);
+                  } else {
+                    const t = `/${picked.name} ${slash?.args ?? ""}`.trimEnd();
+                    setText("");
+                    void runCommand(picked.name, t);
+                  }
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setText("");
+                  return;
+                }
+              }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 submit();
               }
             }}
           />
+          {showMenu && (
+            <div className="relative pointer-events-none">
+              <div className="pointer-events-auto absolute bottom-1 left-2 right-2 z-10 max-h-[280px] overflow-y-auto rounded-xl border border-border-strong bg-bg-popover p-1.5 [box-shadow:#0E0E0E59_0px_8px_24px]">
+                <div className="px-2 py-1 text-xs leading-[14px] text-text-tertiary">Commands</div>
+                {matches.map((c, i) => (
+                  <button
+                    key={c.name}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      if (c.argsHint && !slash?.args) {
+                        acceptCommand(c.name);
+                      } else {
+                        const t = `/${c.name} ${slash?.args ?? ""}`.trimEnd();
+                        setText("");
+                        void runCommand(c.name, t);
+                      }
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
+                      i === menuIndex ? "bg-bg-hover" : "hover:bg-bg-hover/60",
+                    )}
+                  >
+                    <span className="shrink-0 rounded bg-bg-code px-1 py-px font-mono text-[11px] text-text-secondary">
+                      /{c.name}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm/tight text-text-secondary">
+                      {c.description || c.argsHint}
+                    </span>
+                    {c.source && c.source !== "builtin" && (
+                      <span className="shrink-0 text-[11px] text-text-tertiary">{c.source}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex items-end px-[10px] pb-[10px] pt-2">
             <ModelPicker />
             <ModePicker />

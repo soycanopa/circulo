@@ -71,6 +71,11 @@ type Adapter interface {
 	// backend when the mode cannot change on a live process; the
 	// orchestrator serializes the switch against its own lifecycle.
 	SetAccess(ctx context.Context, mode string) error
+
+	// RunCommand invokes a slash command: Name is the command without the
+	// leading slash, Text the raw composer input (arguments included). The
+	// turn streams over Events() like a prompt.
+	RunCommand(ctx context.Context, sessionID, name, text string) error
 }
 
 // HydratedMessage is one message with all its parts from history.

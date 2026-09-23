@@ -3,6 +3,7 @@
 import type {
   AccessMode,
   AccessState,
+  CommandRequest,
   HydratedMessage,
   Meta,
   ProjectVcs,
@@ -78,6 +79,13 @@ export const api = {
 
   prompt: (projectID: string, sessionID: string, req: PromptRequest) =>
     request<{ ok: boolean }>(`/projects/${projectID}/sessions/${sessionID}/prompt`, {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+
+  /** Invoke a slash command (name without the leading slash). */
+  runCommand: (projectID: string, sessionID: string, req: CommandRequest) =>
+    request<{ ok: boolean }>(`/projects/${projectID}/sessions/${sessionID}/command`, {
       method: "POST",
       body: JSON.stringify(req),
     }),

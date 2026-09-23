@@ -40,6 +40,27 @@ export interface ContextUpdatedEvent {
 /** Envelope types not tied to a payload schema live beside their interface. */
 export const EventContextUpdated = "context.updated";
 
+/** One slash command (built-ins, skills, user commands). */
+export interface CommandInfo {
+  name: string;
+  description?: string;
+  argsHint?: string;
+  /** builtin|skill|custom|extension|file (provider vocabulary). */
+  source?: string;
+}
+
+export interface CommandRequest {
+  name: string;
+  text: string;
+}
+
+export interface CommandsUpdatedEvent {
+  projectID: string;
+  commands: CommandInfo[];
+}
+
+export const EventCommandsUpdated = "commands.updated";
+
 // Part types.
 export type PartType =
   | "text"
@@ -317,6 +338,8 @@ export interface Meta {
   accessModes?: AccessModeInfo[];
   /** Current access mode. */
   access: AccessState;
+  /** Slash commands; absent = provider exposes no command surface. */
+  commands?: CommandInfo[];
 }
 
 /** REST view from GET /agent/projects. */
