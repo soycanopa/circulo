@@ -89,6 +89,9 @@ func (f *fakeAdapter) SetBranch(_ context.Context, _, _ string) error { return n
 
 func (f *fakeAdapter) Meta(_ context.Context) (protocol.Meta, error) { panic("unexpected") }
 
+func (f *fakeAdapter) AccessSupported() bool                       { return false }
+func (f *fakeAdapter) SetAccess(_ context.Context, _ string) error { return nil }
+
 // fakeFactory wires new fakeAdapters and remembers them by project path.
 type fakeFactory struct {
 	mu       sync.Mutex

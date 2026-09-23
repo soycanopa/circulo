@@ -24,6 +24,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ProviderIcon } from "@/components/ProviderIcon";
+import { ContextGauge } from "@/features/chat/parts/ContextGauge";
 import { useAppStore } from "@/lib/agent/store";
 import { cn } from "@/lib/utils";
 import type {
@@ -732,49 +733,147 @@ function ModelVariantsPopover({
   );
 }
 
-function AgentPicker() {
+/** Icons for the access rows (Waku pattern: lock/pencil/sparkle). */
+function AccessIcon({ id, className }: { id: string; className?: string }) {
+  const common = {
+    className,
+    width: 14,
+    height: 14,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": true,
+  } as const;
+  if (id === "supervised") return <svg {...common}><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>;
+  if (id === "edits") return <svg {...common}><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>;
+  return <svg {...common}><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3Z" /></svg>;
+}
+
+/** One Mode row: label + value + (access rows) Waku-style subtitle. */
+function ModeRow({
+  label,
+  value,
+  active,
+  onClick,
+  trailing,
+}: {
+  label: string;
+  value: string;
+  active: boolean;
+  onClick: () => void;
+  trailing?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onClick();
+      }}
+      className={cn(
+        "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm/tight",
+        active ? "bg-bg-hover text-text-primary" : "text-text-primary hover:bg-bg-hover/60",
+      )}
+    >
+      <span className="min-w-0 flex-1 truncate">
+        {label}
+        <span className={cn("ml-1.5", active ? "text-text-secondary" : "text-text-tertiary")}>
+          {value}
+        </span>
+      </span>
+      {trailing}
+      {active && <Check className="size-3.5 shrink-0 text-accent-cir" strokeWidth={2} />}
+    </button>
+  );
+}
+
+/** Mode picker — one popover, two contexts (owner: no duplicate chips):
+ *  - omp projects: the Waku-style access selector (Supervised / Auto-accept
+ *    edits / Full access) with icon + title + subtitle rows.
+ *  - opencode projects: the agent list (build/plan/…), same rows without
+ *    subtitles (no access surface). */
+function ModePicker() {
   const agents = useAppStore((s) => s.metaAgents);
-  const selected = useAppStore((s) => s.selectedAgent);
-  const setSelected = useAppStore((s) => s.setSelectedAgent);
+  const selectedAgent = useAppStore((s) => s.selectedAgent);
+  const setSelectedAgent = useAppStore((s) => s.setSelectedAgent);
+  const activeProjectId = useAppStore((s) => s.activeProjectId);
+  const meta = useAppStore((s) => (activeProjectId ? s.metaByProject[activeProjectId] : undefined));
+  const setAccess = useAppStore((s) => s.setAccess);
   const [open, setOpen] = useState(false);
+
+  const modes = meta?.accessModes ?? [];
+  const current = modes.find((m) => m.id === meta?.accessMode) ?? modes.find((m) => m.id === "full");
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" className={chipBtn}>
-          Mode
-          {selected && (
-            <span className="max-w-24 truncate text-text-primary">{selected}</span>
+        <button type="button" className={chipBtn} aria-expanded={open}>
+          {modes.length > 0 ? (
+            <>
+              <AccessIcon id={current?.id ?? "full"} className="shrink-0 text-text-tertiary" />
+              <span className="max-w-32 truncate">{current?.title ?? "Mode"}</span>
+            </>
+          ) : (
+            <>
+              Mode
+              {selectedAgent && (
+                <span className="max-w-24 truncate text-text-primary">{selectedAgent}</span>
+              )}
+            </>
           )}
           <ChevronDown className="size-[11px] shrink-0 text-text-tertiary" strokeWidth={2} />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" sideOffset={8} className="w-[240px] p-1.5">
-        <div className="px-2 py-1 text-xs leading-[14px] text-text-tertiary">Mode</div>
-        {agents.map((a) => (
-          <button
-            key={a.name}
-            type="button"
-            onClick={() => {
-              setSelected(a.name);
-              setOpen(false);
-            }}
-            className={cn(
-              "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm/tight",
-              selected === a.name ? "bg-bg-hover text-text-primary" : "hover:bg-bg-hover/60",
+      <PopoverContent align="start" side="top" sideOffset={8} className="w-[320px] p-1.5">
+        {modes.length > 0 ? (
+          <>
+            <div className="px-2 py-1 text-xs leading-[14px] text-text-tertiary">Mode</div>
+            {modes.map((m) => {
+              const selected = m.id === meta?.accessMode;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => {
+                    setAccess(m.id);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    "flex w-full items-start gap-2.5 rounded-md px-2 py-1.5 text-left",
+                    selected ? "bg-bg-hover" : "hover:bg-bg-hover/60",
+                  )}
+                >
+                  <AccessIcon id={m.id} className="mt-0.5 shrink-0 text-text-secondary" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm/tight font-medium text-text-primary">{m.title}</span>
+                    <span className="block text-[11.5px]/[16px] text-text-tertiary">{m.description}</span>
+                  </span>
+                  {selected && <Check className="mt-1 size-3.5 shrink-0 text-accent-cir" strokeWidth={2} />}
+                </button>
+              );
+            })}
+          </>
+        ) : (
+          <>
+            <div className="px-2 py-1 text-xs leading-[14px] text-text-tertiary">Mode</div>
+            {agents.map((a) => (
+              <ModeRow
+                key={a.name}
+                label={a.name}
+                value={a.mode === "subagent" ? "subagent" : ""}
+                active={selectedAgent === a.name}
+                onClick={() => {
+                  setSelectedAgent(a.name);
+                  setOpen(false);
+                }}
+              />
+            ))}
+            {agents.length === 0 && (
+              <div className="px-2 py-1.5 text-xs text-text-tertiary">No modes available</div>
             )}
-          >
-            <span className="min-w-0 flex-1 truncate">{a.name}</span>
-            {a.mode === "subagent" && (
-              <span className="shrink-0 text-[11px] text-text-tertiary">subagent</span>
-            )}
-            {selected === a.name && (
-              <Check className="size-3.5 shrink-0 text-accent-cir" strokeWidth={2} />
-            )}
-          </button>
-        ))}
-        {agents.length === 0 && (
-          <div className="px-2 py-1.5 text-xs text-text-tertiary">No modes available</div>
+          </>
         )}
       </PopoverContent>
     </Popover>
@@ -1010,8 +1109,9 @@ export function Composer() {
           />
           <div className="flex items-end px-[10px] pb-[10px] pt-2">
             <ModelPicker />
-            <AgentPicker />
+            <ModePicker />
             <span className="flex-1" />
+            {session?.context && <ContextGauge used={session.context.used} window={session.context.window} />}
             {busy ? (
               <button
                 type="button"

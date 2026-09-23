@@ -644,13 +644,44 @@ func TranslateV2(projectID string, env V2Event) ([]protocol.Envelope, error) {
 			MessageID: p.AssistantMessageID,
 			Part:      part,
 		})
+
+	case "session.usage.updated":
+		var p struct {
+			SessionID string `json:"sessionID"`
+			Cost      float64 `json:"cost"`
+			Tokens    *struct {
+				Input     int64 `json:"input"`
+				Output    int64 `json:"output"`
+				Reasoning int64 `json:"reasoning"`
+				Cache     struct {
+					Read  int64 `json:"read"`
+					Write int64 `json:"write"`
+				} `json:"cache"`
+			} `json:"tokens"`
+		}
+		if err := json.Unmarshal(env.Data, &p); err != nil {
+			return nil, fmt.Errorf("opencode: session.usage.updated: %w", err)
+		}
+		// opencode reports session token totals but no context-window size
+		// (v2 /api/model carries no limit field), so Window stays 0: the UI
+		// renders a bare token count instead of a percentage.
+		var used int64
+		if p.Tokens != nil {
+			used = p.Tokens.Input + p.Tokens.Output + p.Tokens.Reasoning
+		}
+		return emit(protocol.EventContextUpdated, protocol.ContextUpdated{
+			Usage: protocol.ContextUsage{
+				ProjectID: projectID,
+				SessionID: p.SessionID,
+				Used:      used,
+			},
+		})
 	}
 
 	// Ignore-list: config refresh noise (model/provider/command/skill/
 	// websearch/instructions .updated), MCP status, integration updates,
-	// shell lifecycle, inbox delivery internals, session.usage.updated
-	// (session totals; step.ended already carries the per-turn numbers) and
-	// anything unknown — dropped by design, never an error.
+	// shell lifecycle and anything unknown — dropped by design, never an
+	// error.
 	return nil, nil
 }
 

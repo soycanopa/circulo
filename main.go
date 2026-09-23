@@ -56,9 +56,10 @@ func main() {
 		switch cfg.Provider {
 		case "omp":
 			return omp.NewAdapter(omp.AdapterConfig{
-				ProjectID: cfg.ID,
-				Dir:       cfg.Path,
-				Binary:    os.Getenv("CIRCULOGO_OMP_BIN"),
+				ProjectID:  cfg.ID,
+				Dir:        cfg.Path,
+				Binary:     os.Getenv("CIRCULOGO_OMP_BIN"),
+				AccessMode: cfg.AccessMode,
 			}), nil
 		default:
 			return opencode.NewAdapter(opencode.AdapterConfig{

@@ -8,6 +8,7 @@
  */
 
 import type {
+  ContextUpdatedEvent,
   Envelope,
   MessageInfo,
   Part,
@@ -39,6 +40,8 @@ export interface SessionState {
   forms: FormInfo[];
   /** Agent task list (todo.updated replaces it wholesale). */
   tasks: Task[];
+  /** Context-window fill (context.updated); undefined until first event. */
+  context?: { used: number; window?: number };
   /** Last terminal turn error, cleared on the next user prompt. */
   lastError?: { name: string; message: string };
 }
@@ -184,6 +187,17 @@ export function applyEvent(state: ChatState, env: Envelope): ChatState {
         lastError: p.error,
       };
       return { sessions: { ...state.sessions, [p.sessionID]: s } };
+    }
+
+    case "context.updated": {
+      const p = env.payload as ContextUpdatedEvent;
+      const prev = state.sessions[p.usage.sessionID];
+      if (!prev) return state;
+      const s: SessionState = {
+        ...prev,
+        context: { used: p.usage.used, window: p.usage.window },
+      };
+      return { sessions: { ...state.sessions, [p.usage.sessionID]: s } };
     }
 
     case "session.removed": {

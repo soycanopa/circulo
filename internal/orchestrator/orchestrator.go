@@ -297,6 +297,75 @@ func (o *Orchestrator) RemoveProject(_ context.Context, id string) error {
 // persistLocked saves settings from current state; caller must NOT hold mu.
 func (o *Orchestrator) persist() error { return o.persistLocked() }
 
+// SetAccess switches a project's access mode (omp only). omp applies
+// tools.approvalMode at process start only, so the adapter records the mode
+// and is restarted: Stop → factory → Start. The live session is re-adopted
+// by Start's getState; a streaming turn is aborted first so it isn't
+// orphaned mid-run. The mode persists in settings.
+func (o *Orchestrator) SetAccess(ctx context.Context, id, mode string) error {
+	switch mode {
+	case protocol.AccessSupervised, protocol.AccessEdits, protocol.AccessFull:
+	default:
+		return fmt.Errorf("orchestrator: unknown access mode %q", mode)
+	}
+	o.mu.RLock()
+	p := o.projects[id]
+	o.mu.RUnlock()
+	if p == nil {
+		return fmt.Errorf("orchestrator: unknown project %s", id)
+	}
+
+	o.mu.Lock()
+	adapter := p.adapter
+	o.mu.Unlock()
+	if adapter == nil {
+		return fmt.Errorf("orchestrator: project %s has no adapter", id)
+	}
+	if !adapter.AccessSupported() {
+		return fmt.Errorf("orchestrator: provider %s has no access-mode surface", p.cfg.Provider)
+	}
+	if p.cfg.AccessMode == mode {
+		return nil
+	}
+	if err := adapter.SetAccess(ctx, mode); err != nil {
+		return err
+	}
+
+	o.mu.Lock()
+	p.cfg.AccessMode = mode
+	ready := p.ready
+	o.mu.Unlock()
+	if err := o.persistLocked(); err != nil {
+		return fmt.Errorf("orchestrator: persist access mode: %w", err)
+	}
+	if ready {
+		o.restartAdapter(ctx, id)
+	}
+	return nil
+}
+
+// restartAdapter stops the current adapter (aborting a streaming turn first
+// so the turn isn't orphaned) and starts a fresh one via the factory.
+func (o *Orchestrator) restartAdapter(ctx context.Context, id string) {
+	o.mu.Lock()
+	p := o.projects[id]
+	old := p.adapter
+	p.adapter = nil
+	p.ready = false
+	p.status = protocol.AdapterStatus{ProjectID: id, State: protocol.AdapterStarting}
+	o.mu.Unlock()
+	env, err := protocol.NewEnvelope(protocol.EventAdapterStatus, p.status)
+	if err != nil {
+		env = protocol.Envelope{Type: protocol.EventAdapterStatus}
+	}
+	o.broadcast(env)
+
+	if old != nil {
+		_ = old.Stop(context.Background())
+	}
+	o.startAdapter(ctx, id)
+}
+
 func (o *Orchestrator) persistLocked() error {
 	o.mu.RLock()
 	projects := make([]store.Project, 0, len(o.order))

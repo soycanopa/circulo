@@ -1,6 +1,8 @@
 /** REST client for the same-origin /agent API (docs/trd.md §4). */
 
 import type {
+  AccessMode,
+  AccessState,
   HydratedMessage,
   Meta,
   ProjectVcs,
@@ -103,6 +105,17 @@ export const api = {
     ),
 
   meta: (projectID: string) => request<Meta>(`/projects/${projectID}/meta`),
+
+  /** Current access mode for a project (GET returns AccessState). */
+  access: (projectID: string) =>
+    request<AccessState>(`/projects/${projectID}/access`),
+
+  /** Switch a project's access mode (restarts omp with the new flag). */
+  setAccess: (projectID: string, mode: AccessMode) =>
+    request<{ ok: boolean }>(`/projects/${projectID}/access`, {
+      method: "POST",
+      body: JSON.stringify({ mode }),
+    }),
 
   openTerminal: (projectID: string) =>
     request<{ id: string }>(`/projects/${projectID}/terminals`, { method: "POST" }),

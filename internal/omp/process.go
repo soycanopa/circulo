@@ -24,9 +24,15 @@ type process struct {
 }
 
 // startProcess spawns `omp --mode rpc` with cwd = dir. The session root and
-// all tool work happen in dir.
-func startProcess(binary, dir string) (*process, error) {
-	return startCommand(binary, []string{"--mode", "rpc"}, dir)
+// all tool work happen in dir. approvalMode maps the UI access mode onto
+// omp's tools.approvalMode (always-ask|write|yolo), applied at start: omp
+// exposes no RPC to change it on a live process.
+func startProcess(binary, dir, approvalMode string) (*process, error) {
+	args := []string{"--mode", "rpc"}
+	if approvalMode != "" {
+		args = append(args, "--approval-mode", approvalMode)
+	}
+	return startCommand(binary, args, dir)
 }
 
 // startCommand spawns an arbitrary child speaking the omp RPC protocol (the

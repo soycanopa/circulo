@@ -124,6 +124,24 @@ type SessionStatus struct {
 	Retry     *RetryInfo `json:"retry,omitempty"`
 }
 
+// ContextUsage is the model context-window fill of the live session.
+// Window > 0 lets the UI render a percentage; Window == 0 means the backend
+// didn't expose one (UsedTokens still renders as a count).
+type ContextUsage struct {
+	ProjectID string `json:"projectID"`
+	SessionID string `json:"sessionID"`
+	Used      int64  `json:"used"`
+	Window    int64  `json:"window,omitempty"`
+}
+
+// EventContextUpdated is the envelope type for ContextUsage.
+const EventContextUpdated = "context.updated"
+
+// ContextUpdated fires whenever the session's context fill changes.
+type ContextUpdated struct {
+	Usage ContextUsage `json:"usage"`
+}
+
 // TokenUsage is flat (no nested cache object) so the TS mirror stays simple.
 type TokenUsage struct {
 	Input     int64 `json:"input"`
@@ -387,6 +405,35 @@ type AgentInfo struct {
 	Mode        string `json:"mode,omitempty"` // primary|subagent|all
 }
 
+// Access modes for the omp provider. They map 1:1 onto omp's
+// tools.approvalMode tiers (always-ask|write|yolo) applied at spawn; there
+// is no RPC setter in omp, so changing mode restarts the adapter child.
+const (
+	// AccessSupervised auto-approves read-only tools only; writes and exec
+	// prompt via the omp UI round-trip (extension_ui_request select).
+	AccessSupervised = "supervised"
+	// AccessEdits auto-approves read and workspace-write tools; exec tools
+	// (bash, eval, browser, task) still prompt.
+	AccessEdits = "edits"
+	// AccessFull auto-approves all tool tiers (omp "yolo"; omp's own default).
+	AccessFull = "full"
+)
+
+// AccessModeInfo is one selectable access mode for the composer picker.
+type AccessModeInfo struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// AccessState is the provider's current access mode. Supported is false for
+// providers without an access surface (opencode has no equivalent; the UI
+// hides the picker instead of guessing).
+type AccessState struct {
+	Mode      string `json:"mode,omitempty"`
+	Supported bool   `json:"supported"`
+}
+
 // Meta is the picker data for the composer.
 type Meta struct {
 	Agents []AgentInfo `json:"agents"`
@@ -395,4 +442,13 @@ type Meta struct {
 	// composer lands on a model the user's plan actually allows.
 	DefaultProvider string `json:"defaultProvider,omitempty"`
 	DefaultModel    string `json:"defaultModel,omitempty"`
+	// Access modes the provider exposes; empty for opencode (no surface).
+	AccessModes []AccessModeInfo `json:"accessModes,omitempty"`
+	// Current access mode (provider-agnostic id from the Access* constants).
+	Access AccessState `json:"access"`
+}
+
+// SetAccessRequest is the body of POST /projects/{id}/access.
+type SetAccessRequest struct {
+	Mode string `json:"mode"`
 }

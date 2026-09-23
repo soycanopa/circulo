@@ -81,6 +81,28 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.writeJSONOrErr(w, meta, err)
 		})
 		return
+	case rest == "access" && r.Method == http.MethodGet:
+		s.withAdapter(w, id, func(a agent.Adapter) {
+			meta, err := a.Meta(r.Context())
+			if err != nil {
+				s.writeErr(w, err)
+				return
+			}
+			s.writeJSON(w, http.StatusOK, meta.Access)
+		})
+		return
+	case rest == "access" && r.Method == http.MethodPost:
+		var body protocol.SetAccessRequest
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+			s.writeErr(w, badRequest("access body: %v", err))
+			return
+		}
+		if err := s.orch.SetAccess(r.Context(), id, body.Mode); err != nil {
+			s.writeErr(w, err)
+			return
+		}
+		s.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
 	case rest == "sessions" && r.Method == http.MethodGet:
 		s.withAdapter(w, id, func(a agent.Adapter) {
 			ss, err := a.Sessions(r.Context())

@@ -23,6 +23,9 @@ type Project struct {
 	// Provider selects the agent backend ("opencode" | "omp"). Empty means
 	// "opencode": settings written before providers existed stay valid.
 	Provider string `json:"provider,omitempty"`
+	// AccessMode is the provider's access mode (protocol.Access* values;
+	// string here to avoid an import cycle). Empty = provider default.
+	AccessMode string `json:"accessMode,omitempty"`
 }
 
 // Settings is the whole settings file.

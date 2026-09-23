@@ -257,6 +257,12 @@ type sessionState struct {
 	SessionID     string `json:"sessionId"`
 	SessionName   string `json:"sessionName"`
 	MessageCount  int    `json:"messageCount"`
+	// ContextUsage is the live context-window fill omp computes per turn.
+	ContextUsage *struct {
+		Tokens        int64   `json:"tokens"`
+		ContextWindow int64   `json:"contextWindow"`
+		Percent       float64 `json:"percent"`
+	} `json:"contextUsage"`
 }
 
 type modelRef struct {

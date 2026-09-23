@@ -14,6 +14,8 @@ import {
   type ChatState,
 } from "./reducer";
 import type {
+  AccessMode,
+  AccessModeInfo,
   AdapterStatus,
   Envelope,
   ModelInfo,
@@ -30,6 +32,10 @@ export type ConnectionState = "connecting" | "open" | "reconnecting";
 export interface ProjectMeta {
   models: ModelInfo[];
   defaultKey: string;
+  /** Access modes the provider exposes; empty = no access surface. */
+  accessModes: AccessModeInfo[];
+  /** Currently applied access mode; undefined until known/provider default. */
+  accessMode?: AccessMode;
 }
 
 interface AppStore {
@@ -82,6 +88,8 @@ interface AppStore {
   deleteSession: (projectID: string, sessionID: string) => Promise<void>;
   loadMeta: (projectID: string) => Promise<void>;
   setSelectedAgent: (a: string) => void;
+  /** Switches the active project's access mode (provider must support it). */
+  setAccess: (mode: AccessMode) => Promise<void>;
   /** Selects a model and the project (picker tab) it belongs to. */
   setSelectedModel: (m: string, projectID: string) => void;
   sendPrompt: (text: string, target?: { projectID: string; branch?: string }) => Promise<void>;
@@ -271,7 +279,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set((s) => {
         const isActive = projectID === s.activeProjectId;
         return {
-          metaByProject: { ...s.metaByProject, [projectID]: { models, defaultKey: chosen } },
+          metaByProject: {
+            ...s.metaByProject,
+            [projectID]: {
+              models,
+              defaultKey: chosen,
+              accessModes: meta.accessModes ?? [],
+              accessMode: meta.access?.mode,
+            },
+          },
           // The Mode chip reflects the active project's agents only.
           metaAgents: isActive ? agents : s.metaAgents,
           // Seed the global selection once, from the active project's default.
@@ -282,6 +298,33 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (e) {
       console.error("loadMeta failed", e);
     }
+  },
+
+  setAccess: async (mode) => {
+    const { activeProjectId } = get();
+    if (!activeProjectId) return;
+    // Optimistic: the chip flips immediately; the reload confirms the mode
+    // the backend actually applied (adapter restart re-reads Meta).
+    const prev = get().metaByProject[activeProjectId];
+    set((s) => ({
+      metaByProject: {
+        ...s.metaByProject,
+        [activeProjectId]: prev && { ...prev, accessMode: mode },
+      },
+    }));
+    try {
+      await api.setAccess(activeProjectId, mode);
+    } catch (e) {
+      console.error("setAccess failed", e);
+      set((s) => ({
+        metaByProject: {
+          ...s.metaByProject,
+          [activeProjectId]: prev && { ...prev },
+        },
+      }));
+      return;
+    }
+    await get().loadMeta(activeProjectId).catch(() => undefined);
   },
 
   setSelectedAgent: (selectedAgent) => set({ selectedAgent }),

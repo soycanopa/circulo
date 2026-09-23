@@ -24,6 +24,22 @@ export type AdapterState = "starting" | "running" | "stopped" | "error";
 // Session statuses.
 export type SessionStatusKind = "idle" | "busy" | "retry";
 
+/** Context-window fill of the live session (context.updated). Window == 0
+ * means the backend didn't expose one (render Used as a bare count). */
+export interface ContextUsage {
+  projectID: string;
+  sessionID: string;
+  used: number;
+  window?: number;
+}
+
+export interface ContextUpdatedEvent {
+  usage: ContextUsage;
+}
+
+/** Envelope types not tied to a payload schema live beside their interface. */
+export const EventContextUpdated = "context.updated";
+
 // Part types.
 export type PartType =
   | "text"
@@ -277,12 +293,30 @@ export interface AgentInfo {
   mode?: string;
 }
 
+/** Access modes (omp provider). Mirrors protocol.Access* constants in Go. */
+export type AccessMode = "supervised" | "edits" | "full";
+
+export interface AccessModeInfo {
+  id: AccessMode;
+  title: string;
+  description: string;
+}
+
+export interface AccessState {
+  mode?: AccessMode;
+  supported: boolean;
+}
+
 export interface Meta {
   agents: AgentInfo[];
   models: ModelInfo[];
   /** Server-configured default (GET /config/providers -> default). */
   defaultProvider?: string;
   defaultModel?: string;
+  /** Access modes the provider exposes; empty for opencode (no surface). */
+  accessModes?: AccessModeInfo[];
+  /** Current access mode. */
+  access: AccessState;
 }
 
 /** REST view from GET /agent/projects. */

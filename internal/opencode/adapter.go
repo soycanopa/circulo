@@ -584,7 +584,17 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 		meta.DefaultProvider = dm.ProviderID
 		meta.DefaultModel = dm.ID
 	}
+	// opencode has no access-mode surface: Meta.Access zero value keeps
+	// Supported=false and the UI hides the picker.
 	return meta, nil
+}
+
+// AccessSupported: opencode exposes no access-mode surface.
+func (a *Adapter) AccessSupported() bool { return false }
+
+// SetAccess is unsupported; the relay rejects the request before calling.
+func (a *Adapter) SetAccess(_ context.Context, _ string) error {
+	return fmt.Errorf("opencode: no access-mode surface")
 }
 
 // sessionV2ToNeutral maps a v2 session onto the neutral contract.

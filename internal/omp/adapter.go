@@ -27,6 +27,9 @@ type AdapterConfig struct {
 	Binary string
 	// Command replaces the child invocation entirely (tests).
 	Command []string
+	// AccessMode is the neutral access mode (protocol.Access*); mapped onto
+	// omp's --approval-mode at spawn. Empty = omp's own default (yolo).
+	AccessMode string
 }
 
 // Adapter drives one `omp --mode rpc` child and translates its JSONL frames
@@ -118,7 +121,74 @@ func (a *Adapter) spawn() (*process, error) {
 	if bin == "" {
 		bin = "omp"
 	}
-	return startProcess(bin, a.cfg.Dir)
+	return startProcess(bin, a.cfg.Dir, approvalModeFor(a.cfg.AccessMode))
+}
+
+// approvalModeFor maps a neutral access mode onto omp's --approval-mode
+// values. Unknown/empty returns "" (omp's own default: yolo).
+func approvalModeFor(accessMode string) string {
+	switch accessMode {
+	case protocol.AccessSupervised:
+		return "always-ask"
+	case protocol.AccessEdits:
+		return "write"
+	case protocol.AccessFull:
+		return "yolo"
+	default:
+		return ""
+	}
+}
+
+// accessMode normalizes the configured mode for reporting: empty (omp's
+// default) reports as full, unknown values report as full too (fail open on
+// display only; spawn still passes them through untouched).
+func accessMode(configured string) string {
+	switch configured {
+	case protocol.AccessSupervised, protocol.AccessEdits:
+		return configured
+	default:
+		return protocol.AccessFull
+	}
+}
+
+// AccessSupported: omp exposes an access-mode surface via --approval-mode.
+func (a *Adapter) AccessSupported() bool { return true }
+
+// SetAccess records the mode; the child picks it up on the next spawn. The
+// mode only takes effect at process start (omp has no RPC setter), so the
+// orchestrator restarts the adapter after calling this.
+func (a *Adapter) SetAccess(_ context.Context, mode string) error {
+	switch mode {
+	case protocol.AccessSupervised, protocol.AccessEdits, protocol.AccessFull:
+	default:
+		return fmt.Errorf("omp: unknown access mode %q", mode)
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.cfg.AccessMode = mode
+	return nil
+}
+
+// accessModes is the composer picker data for omp. Waku-style tiers without
+// Waku's AI-reviewer mode: omp has no equivalent.
+func accessModes() []protocol.AccessModeInfo {
+	return []protocol.AccessModeInfo{
+		{
+			ID:          protocol.AccessSupervised,
+			Title:       "Supervised",
+			Description: "Ask before commands and file changes",
+		},
+		{
+			ID:          protocol.AccessEdits,
+			Title:       "Auto-accept edits",
+			Description: "Auto-approve edits, ask before other actions",
+		},
+		{
+			ID:          protocol.AccessFull,
+			Title:       "Full access",
+			Description: "Allow commands and edits without prompts",
+		},
+	}
 }
 
 // waitErr adapts client.Done into an error channel.
@@ -175,6 +245,15 @@ func (a *Adapter) onFrame(raw json.RawMessage, typ frameType) {
 	}
 	for _, env := range envs {
 		a.emit(env)
+	}
+	// turn_end closes a run: the context fill only changes across turns, so
+	// one get_state per turn (not per frame) keeps the gauge current.
+	if typ == frameTurnEnd {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, _ = a.getState(ctx)
+		}()
 	}
 }
 
@@ -504,7 +583,9 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 		Models: make([]protocol.ModelInfo, 0, len(models.Models)),
 		// Agents stays empty (omp has no named-agent registry over RPC), but
 		// must be an array, not null: the TS contract says list.
-		Agents: []protocol.AgentInfo{},
+		Agents:      []protocol.AgentInfo{},
+		AccessModes: accessModes(),
+		Access:      protocol.AccessState{Mode: accessMode(a.cfg.AccessMode), Supported: true},
 	}
 	for _, m := range models.Models {
 		mi := protocol.ModelInfo{
@@ -560,8 +641,35 @@ func (a *Adapter) getState(ctx context.Context) (*sessionState, error) {
 	}
 	a.mu.Lock()
 	a.streaming = state.IsStreaming
+	sessionID := a.sessionID
 	a.mu.Unlock()
+	a.emitContext(sessionID, state.ContextUsage)
 	return &state, nil
+}
+
+// emitContext translates omp's contextUsage block into the neutral
+// context.updated envelope; skipped when the session isn't adopted yet or
+// omp reported nothing (empty session).
+func (a *Adapter) emitContext(sessionID string, cu *struct {
+	Tokens        int64   `json:"tokens"`
+	ContextWindow int64   `json:"contextWindow"`
+	Percent       float64 `json:"percent"`
+}) {
+	if sessionID == "" || cu == nil {
+		return
+	}
+	env, err := protocol.NewEnvelope(protocol.EventContextUpdated, protocol.ContextUpdated{
+		Usage: protocol.ContextUsage{
+			ProjectID: a.cfg.ProjectID,
+			SessionID: sessionID,
+			Used:      cu.Tokens,
+			Window:    cu.ContextWindow,
+		},
+	})
+	if err != nil {
+		return
+	}
+	a.emit(env)
 }
 
 // ensureSession makes sessionID the child's active session. omp is

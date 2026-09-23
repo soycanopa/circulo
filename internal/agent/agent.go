@@ -63,6 +63,14 @@ type Adapter interface {
 
 	// Meta returns composer picker data (agents, models).
 	Meta(ctx context.Context) (protocol.Meta, error)
+
+	// AccessSupported reports whether the provider exposes an access-mode
+	// surface (omp: yes; opencode: no).
+	AccessSupported() bool
+	// SetAccess switches the access mode. Implementations restart their
+	// backend when the mode cannot change on a live process; the
+	// orchestrator serializes the switch against its own lifecycle.
+	SetAccess(ctx context.Context, mode string) error
 }
 
 // HydratedMessage is one message with all its parts from history.
