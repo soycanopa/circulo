@@ -1037,6 +1037,10 @@ export function parseSlash(text: string): { name: string; args: string } | null 
 
 export function Composer() {
   const [text, setText] = useState("");
+  // Slash-menu open state: opens on typing "/" and closes on click outside,
+  // Escape, or submit. menuOpen lets the user blur/re-focus without the
+  // menu fighting the text content.
+  const [menuOpen, setMenuOpen] = useState(false);
   const send = useAppStore((s) => s.sendPrompt);
   const runCommand = useAppStore((s) => s.runCommand);
   const abort = useAppStore((s) => s.abort);
@@ -1082,6 +1086,7 @@ export function Composer() {
     const t = text.trim();
     if (!t || !activeProjectId) return;
     setText("");
+    setMenuOpen(false);
     // Slash invocation: "/name args" when the provider exposes that command.
     const slash = parseSlash(t);
     if (slash && commands?.some((c) => c.name === slash.name)) {
@@ -1105,7 +1110,10 @@ export function Composer() {
             (slash.args || !commands.some((x) => x.name.startsWith(c.name + " "))),
         )
       : [];
-  const showMenu = (matches.length > 0 && slash !== null) || (text === "/" && !!commands?.length);
+  const showMenu =
+    menuOpen &&
+    slash !== null &&
+    (matches.length > 0 || (text === "/" && !!commands?.length));
   const [menuIndex, setMenuIndex] = useState(0);
   useEffect(() => setMenuIndex(0), [slash?.name ?? ""]);
   const acceptCommand = (name: string) => {
@@ -1141,7 +1149,16 @@ export function Composer() {
             }
             disabled={!activeProjectId}
             className="w-full resize-none bg-transparent px-4 pt-4 pb-2 text-md/relaxed text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed"
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              // Open as soon as the text starts looking like an invocation.
+              if (e.target.value.startsWith("/")) setMenuOpen(true);
+            }}
+            onBlur={() => {
+              // Rows keep focus via onMouseDown preventDefault, so this only
+              // fires for real clicks outside the composer box.
+              setMenuOpen(false);
+            }}
             onKeyDown={(e) => {
               if (showMenu && matches.length > 0) {
                 if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
@@ -1165,13 +1182,14 @@ export function Composer() {
                   } else {
                     const t = `/${picked.name} ${slash?.args ?? ""}`.trimEnd();
                     setText("");
+                    setMenuOpen(false);
                     void runCommand(picked.name, t);
                   }
                   return;
                 }
                 if (e.key === "Escape") {
                   e.preventDefault();
-                  setText("");
+                  setMenuOpen(false);
                   return;
                 }
               }
@@ -1196,6 +1214,7 @@ export function Composer() {
                       } else {
                         const t = `/${c.name} ${slash?.args ?? ""}`.trimEnd();
                         setText("");
+                        setMenuOpen(false);
                         void runCommand(c.name, t);
                       }
                     }}
