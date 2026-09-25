@@ -134,7 +134,7 @@ export function AppShell({
         {(
           <>
             <aside
-              className="relative flex min-w-0 shrink-0 flex-col overflow-hidden rounded-[18px] bg-bg-sidebar transition-[width] duration-300 ease-out"
+              className="relative flex min-w-0 shrink-0 flex-col overflow-hidden rounded-lg bg-bg-sidebar transition-[width] duration-300 ease-out"
               style={{ width: sidebarOpen ? sidebarWidth : 0 }}
             >
               {/* layer order: surface → pixels → glow gradient → content;
