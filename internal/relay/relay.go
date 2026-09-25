@@ -91,6 +91,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.writeJSON(w, http.StatusOK, meta.Access)
 		})
 		return
+	// /projects/{id}/files?q=<query>&limit=<n> — @-mention autocomplete.
+	case rest == "files" && r.Method == http.MethodGet:
+		limit := 20
+		if v := r.URL.Query().Get("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 50 {
+				limit = n
+			}
+		}
+		s.withAdapter(w, id, func(a agent.Adapter) {
+			hits, err := a.SearchFiles(r.Context(), r.URL.Query().Get("q"), limit)
+			s.writeJSONOrErr(w, hits, err)
+		})
+		return
 	case rest == "access" && r.Method == http.MethodPost:
 		var body protocol.SetAccessRequest
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
@@ -218,6 +231,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.writeJSONOrErr(w, map[string]bool{"ok": true}, a.Prompt(r.Context(), sid, req))
+		})
+		return
+	case tail2 == "command" && r.Method == http.MethodPost:
+		s.withAdapter(w, id, func(a agent.Adapter) {
+			var req protocol.CommandRequest
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+				s.writeErr(w, badRequest("command body: %v", err))
+				return
+			}
+			if strings.TrimSpace(req.Name) == "" {
+				s.writeErr(w, badRequest("command name is required"))
+				return
+			}
+			s.writeJSONOrErr(w, map[string]bool{"ok": true},
+				a.RunCommand(r.Context(), sid, req.Name, req.Text))
 		})
 		return
 	case tail2 == "abort" && r.Method == http.MethodPost:

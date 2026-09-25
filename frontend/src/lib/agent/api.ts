@@ -3,6 +3,8 @@
 import type {
   AccessMode,
   AccessState,
+  CommandRequest,
+  FileHit,
   HydratedMessage,
   Meta,
   ProjectVcs,
@@ -82,6 +84,13 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
+  /** Invoke a slash command (name without the leading slash). */
+  runCommand: (projectID: string, sessionID: string, req: CommandRequest) =>
+    request<{ ok: boolean }>(`/projects/${projectID}/sessions/${sessionID}/command`, {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+
   abort: (projectID: string, sessionID: string) =>
     request<{ ok: boolean }>(`/projects/${projectID}/sessions/${sessionID}/abort`, {
       method: "POST",
@@ -105,6 +114,12 @@ export const api = {
     ),
 
   meta: (projectID: string) => request<Meta>(`/projects/${projectID}/meta`),
+
+  /** @-mention autocomplete: workspace files matching query. */
+  searchFiles: (projectID: string, query: string, limit = 20) =>
+    request<FileHit[]>(
+      `/projects/${projectID}/files?q=${encodeURIComponent(query)}&limit=${limit}`,
+    ),
 
   /** Current access mode for a project (GET returns AccessState). */
   access: (projectID: string) =>

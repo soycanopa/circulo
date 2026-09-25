@@ -488,6 +488,41 @@ func (a *Adapter) Abort(ctx context.Context, sessionID string) error {
 	return resp.ResponseError()
 }
 
+// RunCommand invokes a slash command. omp's prompt handler routes "/name
+// args" through its command dispatcher (verified live on 18.2.8: the text is
+// matched against the available-commands registry), so no dedicated RPC
+// exists or is needed. Text is the raw composer input; the slash prefix is
+// prepended here to keep the wire contract slash-free.
+func (a *Adapter) RunCommand(ctx context.Context, sessionID, name, text string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("omp: empty command name")
+	}
+	args := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(text), "/"+name))
+	return a.Prompt(ctx, sessionID, protocol.PromptRequest{Text: "/" + name + args})
+}
+
+// SearchFiles backs the @-mention autocomplete. omp exposes no file-search
+// RPC, so Circulo asks git (tracked files, honoring .gitignore); non-repo
+// projects degrade to an empty list.
+func (a *Adapter) SearchFiles(_ context.Context, query string, limit int) ([]protocol.FileHit, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	lines := gitLines(a.cfg.Dir, "ls-files", "--cached", "--others", "--exclude-standard")
+	out := make([]protocol.FileHit, 0, limit)
+	q := strings.ToLower(query)
+	for _, path := range lines {
+		if q != "" && !strings.Contains(strings.ToLower(path), q) {
+			continue
+		}
+		out = append(out, protocol.FileHit{Path: path})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
 // --- permissions / forms ----------------------------------------------------
 
 // ReplyPermission is unsupported: omp's RPC mode has no permission round-trip.
@@ -586,6 +621,16 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 		Agents:      []protocol.AgentInfo{},
 		AccessModes: accessModes(),
 		Access:      protocol.AccessState{Mode: accessMode(a.cfg.AccessMode), Supported: true},
+	}
+	// Slash commands (built-ins, skills, user commands). Best-effort: a
+	// failing catalog must not sink Meta.
+	if resp, err := a.call(ctx, newCommand("get_available_commands"), 15*time.Second); err == nil && resp.ResponseError() == nil {
+		var payload struct {
+			Commands []ompCommand `json:"commands"`
+		}
+		if json.Unmarshal(resp.Data, &payload) == nil {
+			meta.Commands = ompCommandsToNeutral(payload.Commands)
+		}
 	}
 	for _, m := range models.Models {
 		mi := protocol.ModelInfo{

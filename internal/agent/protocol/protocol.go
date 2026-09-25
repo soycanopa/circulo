@@ -373,18 +373,6 @@ type TodoUpdated struct {
 	Tasks     []Task `json:"tasks"`
 }
 
-// PromptRequest is what the UI sends (relay → adapter).
-type PromptRequest struct {
-	Text  string `json:"text"`
-	Agent string `json:"agent,omitempty"`
-	// Provider/Model as the agent server expects them, e.g. "anthropic"/"claude-…".
-	Provider string `json:"provider,omitempty"`
-	Model    string `json:"model,omitempty"`
-	// Variant selects a model's reasoning-effort variant (OpenCode prompt
-	// body "variant"); empty = the model's default.
-	Variant string `json:"variant,omitempty"`
-}
-
 // ModelInfo is one selectable model.
 type ModelInfo struct {
 	ID       string `json:"id"`
@@ -446,9 +434,68 @@ type Meta struct {
 	AccessModes []AccessModeInfo `json:"accessModes,omitempty"`
 	// Current access mode (provider-agnostic id from the Access* constants).
 	Access AccessState `json:"access"`
+	// Slash commands (built-ins, skills, user commands); nil = provider
+	// exposes no command surface.
+	Commands []CommandInfo `json:"commands,omitempty"`
 }
 
 // SetAccessRequest is the body of POST /projects/{id}/access.
 type SetAccessRequest struct {
 	Mode string `json:"mode"`
+}
+
+// CommandInfo is one slash command the provider exposes (built-ins, skills,
+// user commands). ArgsHint documents the expected arguments, empty when the
+// command takes none.
+type CommandInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	ArgsHint    string `json:"argsHint,omitempty"`
+	// Source: builtin|skill|custom|extension|file (provider vocabulary,
+	// rendered as-is; unknown values fall back to a neutral chip).
+	Source string `json:"source,omitempty"`
+}
+
+// CommandRequest is the body of POST /projects/{id}/sessions/{sid}/command.
+// Name is the command without the leading slash; Text is the raw composer
+// input (arguments included) so the provider keeps its own parsing.
+type CommandRequest struct {
+	Name string `json:"name"`
+	Text string `json:"text"`
+}
+
+// EventCommandsUpdated is the envelope type for CommandsUpdated.
+const EventCommandsUpdated = "commands.updated"
+
+// CommandsUpdated replaces the project's command list (providers refresh it
+// when skills/config change); the UI also merges it from Meta.
+type CommandsUpdated struct {
+	ProjectID string        `json:"projectID"`
+	Commands  []CommandInfo `json:"commands"`
+}
+
+// PromptRequest is what the UI sends (relay → adapter).
+type PromptRequest struct {
+	Text  string `json:"text"`
+	Agent string `json:"agent,omitempty"`
+	// Provider/Model as the agent server expects them, e.g. "anthropic"/"claude-…".
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	// Variant selects a model's reasoning-effort variant (OpenCode prompt
+	// body "variant"); empty = the model's default.
+	Variant string `json:"variant,omitempty"`
+	// Files lists @-mentioned workspace paths (relative to the project root).
+	Files []string `json:"files,omitempty"`
+}
+
+// FileSearchRequest is the query behind the composer's @-autocomplete.
+type FileSearchRequest struct {
+	Query string `json:"query"`
+	Limit int    `json:"limit,omitempty"`
+}
+
+// FileHit is one workspace file match.
+type FileHit struct {
+	// Path is relative to the project root.
+	Path string `json:"path"`
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -464,6 +465,9 @@ func (a *Adapter) Prompt(ctx context.Context, sessionID string, req protocol.Pro
 			return err
 		}
 	}
+	if len(req.Files) > 0 {
+		return c.PromptFilesV2(ctx, sessionID, req.Text, a.rootDir, req.Files)
+	}
 	return c.PromptV2(ctx, sessionID, req.Text)
 }
 
@@ -584,6 +588,17 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 		meta.DefaultProvider = dm.ProviderID
 		meta.DefaultModel = dm.ID
 	}
+	// Slash commands (project/user commands from markdown frontmatter).
+	// Best-effort: a failing catalog must not sink Meta.
+	if cmds, err := c.CommandsV2(ctx); err == nil {
+		meta.Commands = make([]protocol.CommandInfo, 0, len(cmds))
+		for _, cmd := range cmds {
+			meta.Commands = append(meta.Commands, protocol.CommandInfo{
+				Name:        cmd.Name,
+				Description: cmd.Description,
+			})
+		}
+	}
 	// opencode has no access-mode surface: Meta.Access zero value keeps
 	// Supported=false and the UI hides the picker.
 	return meta, nil
@@ -595,6 +610,36 @@ func (a *Adapter) AccessSupported() bool { return false }
 // SetAccess is unsupported; the relay rejects the request before calling.
 func (a *Adapter) SetAccess(_ context.Context, _ string) error {
 	return fmt.Errorf("opencode: no access-mode surface")
+}
+
+// RunCommand invokes a slash command (POST /api/session/{id}/command). The
+// server accepts with 204 and streams the turn over /api/event.
+func (a *Adapter) RunCommand(ctx context.Context, sessionID, name, text string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("opencode: empty command name")
+	}
+	c, err := a.clientOrErr()
+	if err != nil {
+		return err
+	}
+	return c.RunCommandV2(ctx, sessionID, name, text)
+}
+
+// SearchFiles proxies GET /api/fs/find for the @-mention autocomplete.
+func (a *Adapter) SearchFiles(ctx context.Context, query string, limit int) ([]protocol.FileHit, error) {
+	c, err := a.clientOrErr()
+	if err != nil {
+		return nil, err
+	}
+	hits, err := c.FindFilesV2(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]protocol.FileHit, 0, len(hits))
+	for _, h := range hits {
+		out = append(out, protocol.FileHit{Path: h.Path})
+	}
+	return out, nil
 }
 
 // sessionV2ToNeutral maps a v2 session onto the neutral contract.

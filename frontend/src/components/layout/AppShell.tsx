@@ -34,12 +34,26 @@ function useTranscriptWheel() {
   const rootRef = useRef<HTMLDivElement>(null);
   const onWheel = useCallback((e: React.WheelEvent) => {
     const target = e.target as HTMLElement | null;
-    if (!target) return;
+    const root = rootRef.current;
+    if (!target || !root) return;
     if (target.closest("aside")) return; // sidebar scrolls itself
     if (target.closest("[data-native-scroll]")) return; // terminal (xterm)
     if (target.closest("[data-chat-scroll]")) return; // transcript: native
-    const chat = rootRef.current?.querySelector<HTMLElement>("[data-chat-scroll]");
-    if (chat) chat.scrollTop += e.deltaY;
+    // Walk up to the shell: a scrollable ancestor (composer slash/@ menus,
+    // popover lists) scrolls itself; reaching the shell means a dead zone →
+    // transcript. Leaving the shell without hitting it means a Radix portal
+    // (model/branch pickers) — events bubble through the React tree even
+    // though the DOM lives under body, so never fall through to the
+    // transcript there.
+    for (let n: HTMLElement | null = target; n; n = n.parentElement) {
+      if (n === root) {
+        const chat = root.querySelector<HTMLElement>("[data-chat-scroll]");
+        if (chat) chat.scrollTop += e.deltaY;
+        return;
+      }
+      const overflowY = getComputedStyle(n).overflowY;
+      if (overflowY === "auto" || overflowY === "scroll") return;
+    }
   }, []);
   return { rootRef, onWheel };
 }
@@ -120,7 +134,7 @@ export function AppShell({
         {(
           <>
             <aside
-              className="relative flex min-w-0 shrink-0 flex-col overflow-hidden rounded-[18px] bg-bg-sidebar transition-[width] duration-300 ease-out"
+              className="relative flex min-w-0 shrink-0 flex-col overflow-hidden rounded-lg bg-bg-sidebar transition-[width] duration-300 ease-out"
               style={{ width: sidebarOpen ? sidebarWidth : 0 }}
             >
               {/* layer order: surface → pixels → glow gradient → content;

@@ -10,6 +10,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  FileCode,
   FolderGit2,
   Folder,
   GitBranch,
@@ -28,12 +29,23 @@ import { ContextGauge } from "@/features/chat/parts/ContextGauge";
 import { useAppStore } from "@/lib/agent/store";
 import { cn } from "@/lib/utils";
 import type {
+  CommandInfo,
+  FileHit,
   FormInfo,
   ModelInfo,
   PermissionRequest,
   ProjectVcs,
 } from "@/lib/agent/protocol";
 import { api } from "@/lib/agent/api";
+import {
+  buildChip,
+  caretProjection,
+  chipBeforeCaret,
+  insertChipAt,
+  projectedPrompt,
+  readSegments,
+  type Segment,
+} from "@/features/chat/richInput";
 
 /** Shared floating-card elevation (matches the composer box shadow). */
 const cardFloat =
@@ -481,6 +493,22 @@ function variantTagClass(v: string): string {
 
 const chipBtn =
   "flex items-center gap-[6px] rounded-md px-2 py-1 text-sm/tight text-text-secondary hover:bg-muted";
+
+/** Tag color per command source (variantTagClass palette): skills green,
+ * custom yellow, extension orange, builtin neutral. */
+function commandTagClass(source?: string): string {
+  switch (source) {
+    case "skill":
+      return "bg-[#243D2E] border-diff-add text-success";
+    case "custom":
+      return "bg-[#47381A] border-[#8C661F] text-[#EBB847]";
+    case "extension":
+    case "file":
+      return "bg-[#522014] border-[#9E5214] text-[#FA9E47]";
+    default:
+      return "bg-bg-hover border-border text-text-secondary";
+  }
+}
 
 function ModelPicker() {
   const projects = useAppStore((s) => s.projects);
@@ -1021,14 +1049,95 @@ function SessionTargetStrip({
   );
 }
 
+/** Parses "/name args" from composer text; null when the text is not a
+ * slash invocation. Exported for tests. */
+export function parseSlash(text: string): { name: string; args: string } | null {
+  if (!text.startsWith("/")) return null;
+  const rest = text.slice(1);
+  const space = rest.indexOf(" ");
+  if (space === -1) {
+    // Still typing the name — only a complete word counts as a pickable
+    // command; "/nam" filters, "" matches everything.
+    return { name: rest, args: "" };
+  }
+  return { name: rest.slice(0, space), args: rest.slice(space + 1).trimStart() };
+}
+
+/** Extracts the "@query" token immediately before the caret, or null when
+ * the caret is not inside a mention. Exported for tests. The query starts
+ * at the last "@" before the caret — anywhere in the text, mid-word
+ * included (owner call) — and ends at the first whitespace after it. */
+export function activeAtToken(text: string, caret: number | null): string | null {
+  if (caret === null) return null;
+  const upto = text.slice(0, caret);
+  const at = upto.lastIndexOf("@");
+  if (at === -1) return null;
+  const token = upto.slice(at);
+  // A space typed after "@" ends the mention query.
+  if (/\s/.test(token)) return null;
+  return token;
+}
+
+/** Extracts the "/name" token immediately before the caret, or null.
+ * Exported for tests. Unlike "@", the slash must start the text or follow
+ * whitespace: a mid-word slash is a path ("src/comp") or a URL
+ * ("https://x"), which must not pop the command menu. */
+export function activeSlashToken(text: string, caret: number | null): string | null {
+  if (caret === null) return null;
+  const upto = text.slice(0, caret);
+  const slash = upto.lastIndexOf("/");
+  if (slash === -1) return null;
+  if (slash > 0 && !/\s/.test(upto[slash - 1])) return null;
+  const token = upto.slice(slash);
+  // A space after "/" ends the query (args are only tracked at position 0).
+  if (/\s/.test(token)) return null;
+  return token;
+}
+
+/** Span of the first whitespace-bounded occurrence of token in text, or
+ * null. `token` includes its trigger character ("/cmd", "@path"). String
+ * scan (no regex) so names need no escaping. leadingBoundary requires the
+ * character before the token to be text start or whitespace — true for
+ * slash commands (a mid-word slash is a path/URL), false for mid-word
+ * "@" picks. Exported for tests. */
+export function findCommandToken(
+  text: string,
+  token: string,
+  leadingBoundary = true,
+): { start: number; end: number } | null {
+  for (let i = text.indexOf(token); i !== -1; i = text.indexOf(token, i + 1)) {
+    if (leadingBoundary && i > 0 && !/\s/.test(text[i - 1])) continue;
+    const end = i + token.length;
+    // A longer token ("/initx") must not match the shorter token ("/init").
+    if (end < text.length && !/\s/.test(text[end])) continue;
+    return { start: i, end };
+  }
+  return null;
+}
+
 export function Composer() {
+  // The input is a contenteditable (owner call: picked commands, skills and
+  // @files stay inline where typed, rendered as the agreed tag chips).
+  // `text` is the DOM *projection*: verbatim text, one space per chip — the
+  // coordinate space the token detectors and menus already speak.
   const [text, setText] = useState("");
+  // Slash-menu open state: opens on typing "/" and closes on click outside,
+  // Escape, or submit. menuOpen lets the user blur/re-focus without the
+  // menu fighting the text content.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [atResults, setAtResults] = useState<FileHit[]>([]);
+  const [atIndex, setAtIndex] = useState(0);
+  const atSeq = useRef(0);
   const send = useAppStore((s) => s.sendPrompt);
+  const runCommand = useAppStore((s) => s.runCommand);
   const abort = useAppStore((s) => s.abort);
   const activeProjectId = useAppStore((s) => s.activeProjectId);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const meta = useAppStore((s) => (activeProjectId ? s.metaByProject[activeProjectId] : undefined));
+  const commands = meta?.commands;
   const chat = useAppStore((s) => s.chat);
-  const taRef = useRef<HTMLTextAreaElement>(null);
+  const edRef = useRef<HTMLDivElement>(null);
+  const caretRef = useRef<number | null>(null);
 
   const session =
     activeProjectId && activeSessionId ? chat.sessions[activeSessionId] : undefined;
@@ -1053,23 +1162,207 @@ export function Composer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNewSession]);
 
+  // One-way DOM -> state sync after any content change (typing, chip ops,
+  // paste). React never re-renders the editor's children: the browser owns
+  // the DOM between syncs, so the caret never fights a re-render.
+  const syncFromDom = () => {
+    const root = edRef.current;
+    if (!root) return;
+    // A lone <br> the browser leaves after clearing would break :empty and
+    // the placeholder.
+    if (root.innerHTML === "<br>" || root.innerHTML === "<div><br></div>") {
+      root.innerHTML = "";
+    }
+    const { text: projected, caret } = caretProjection(root);
+    caretRef.current = caret;
+    setText(projected);
+    // Open the slash menu as soon as the text under the caret looks like an
+    // invocation ("/name" token — position 0 or after whitespace). The @
+    // menu doesn't need this flag: it is a pure function of text+caret.
+    if (activeSlashToken(projected, caret)) setMenuOpen(true);
+  };
+
   // Auto-grow up to ~6 lines.
   useEffect(() => {
-    const el = taRef.current;
+    const el = edRef.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
   }, [text]);
 
-  const submit = () => {
-    const t = text.trim();
-    if (!t || !activeProjectId) return;
+  const clearEditor = () => {
+    const root = edRef.current;
+    if (root) root.innerHTML = "";
     setText("");
+    caretRef.current = null;
+    setMenuOpen(false);
+  };
+
+  const submit = () => {
+    const root = edRef.current;
+    if (!root) return;
+    const segs = readSegments(root);
+    const t = projectedPrompt(segs).trim();
+    if (!t || !activeProjectId) return;
+    const seen = new Set<string>();
+    const files = segs
+      .filter((s): s is Extract<Segment, { kind: "file" }> => s.kind === "file")
+      .map((s) => s.path)
+      .filter((p) => (seen.has(p) ? false : (seen.add(p), true)));
+    const cmd = segs.find((s): s is Extract<Segment, { kind: "command" }> => s.kind === "command");
+    const slash = parseSlash(t);
+    clearEditor();
+    // A picked command chip (or a hand-typed full-text "/name args") routes
+    // through runCommand; everything else in the text rides as the prompt.
+    if (cmd) {
+      void runCommand(cmd.name, t);
+      return;
+    }
+    if (slash && commands?.some((c) => c.name === slash.name)) {
+      void runCommand(slash.name, t);
+      return;
+    }
     const targeting =
       isNewSession && ((targetProjectId && targetProjectId !== activeProjectId) || targetBranch)
         ? { projectID: targetProjectId || activeProjectId, branch: targetBranch || undefined }
         : undefined;
-    void send(t, targeting);
+    void send(t, targeting, files.length > 0 ? files : undefined);
+  };
+
+  // --- slash menu -----------------------------------------------------------
+  // Caret captured at the last input event (React restores selection after
+  // the render pass, so reading it here races the DOM — the event never lies).
+  const caret = caretRef.current;
+  const slash = (() => {
+    const tok = parseSlash(text) ?? (() => {
+      // Mid-text: the "/token" under the caret opens the same menu. Only
+      // position 0 tracks args typed after the name.
+      const mid = activeSlashToken(text, caret);
+      return mid ? { name: mid.slice(1), args: "" } : null;
+    })();
+    return tok;
+  })();
+  const matches =
+    slash && commands
+      ? commands.filter(
+          (c) =>
+            c.name.startsWith(slash.name) &&
+            (slash.args || !commands.some((x) => x.name.startsWith(c.name + " "))),
+        )
+      : [];
+  const showMenu =
+    menuOpen &&
+    slash !== null &&
+    (matches.length > 0 || (slash.name === "" && !!commands?.length));
+  const [menuIndex, setMenuIndex] = useState(0);
+  useEffect(() => setMenuIndex(0), [slash?.name ?? ""]);
+  // Both menus scroll internally (max-h 280px): arrowing can select rows
+  // outside the viewport, so keep the highlighted row scrolled into view.
+  const slashRowRef = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    slashRowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [menuIndex, showMenu, matches.length]);
+  // Accepting a pick — command, skill or file — inserts a real chip at the
+  // caret (owner call: the agreed tag design stays inline where typed). The
+  // chip travels with the text on submit; Backspace/X remove it atomically.
+  const acceptCommand = (picked: CommandInfo) => {
+    setMenuOpen(false);
+    const root = edRef.current;
+    if (!root) return;
+    const { text: projected, caret: c } = caretProjection(root);
+    let start = 0;
+    let end = c ?? projected.length;
+    let trailing = " ";
+    const inline = parseSlash(projected);
+    if (inline) {
+      // Position 0, args possibly typed: consume the "/name" head, keep the
+      // args as text after the chip — the old tag flow, unified.
+      const headEnd = projected.indexOf(" ") === -1 ? projected.length : projected.indexOf(" ");
+      end = headEnd;
+      const args = projected.slice(headEnd).trimStart();
+      trailing = args ? ` ${args}` : " ";
+    } else {
+      const tok = activeSlashToken(projected, end);
+      if (!tok) return;
+      start = end - tok.length;
+    }
+    insertChipAt(
+      root,
+      buildChip({
+        kind: "command",
+        name: picked.name,
+        source: picked.source,
+        label: `/${picked.name}`,
+        title: `${picked.description || picked.name} (${picked.source || "builtin"})`,
+        className: commandTagClass(picked.source),
+        onRemove: syncFromDom,
+      }),
+      start,
+      end,
+      trailing,
+    );
+    edRef.current?.focus();
+    syncFromDom();
+  };
+
+  // --- @ file mentions ------------------------------------------------------
+  // The query is the "@token" immediately before the caret. Typing "@" opens
+  // the menu; whitespace/space closes it; picking a file removes the token
+  // from the text and pushes a chip.
+  const atToken = activeAtToken(text, caret);
+  // Unlike the "/" menu, the @ menu is a pure function of text+caret: it
+  // lives and dies with the "@token" under the caret. Escape closes it
+  // until the token changes (atDismissed).
+  const [atDismissed, setAtDismissed] = useState<string | null>(null);
+  const showAtMenu = atToken !== null && atDismissed !== atToken;
+  // Highlighted row of the @ menu stays in view while arrowing (menu
+  // scrolls internally at max-h 280px).
+  const atRowRef = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    atRowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [atIndex, showAtMenu, atResults]);
+  useEffect(() => {
+    if (atToken === null) {
+      setAtResults([]);
+      return;
+    }
+    const q = atToken.slice(1); // drop "@"
+    const seq = ++atSeq.current;
+    const timer = setTimeout(() => {
+      void api
+        .searchFiles(activeProjectId ?? "", q, 8)
+        .then((hits) => {
+          if (atSeq.current === seq) {
+            setAtResults(hits);
+            setAtIndex(0);
+          }
+        })
+        .catch(() => atSeq.current === seq && setAtResults([]));
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [atToken, activeProjectId]);
+  const acceptFile = (hit: FileHit) => {
+    if (atToken === null) return;
+    const root = edRef.current;
+    if (!root) return;
+    const { text: projected, caret: c } = caretProjection(root);
+    const end = c ?? projected.length;
+    insertChipAt(
+      root,
+      buildChip({
+        kind: "file",
+        path: hit.path,
+        label: `@${hit.path}`,
+        title: hit.path,
+        className: "border-border bg-bg-hover text-text-secondary",
+        onRemove: syncFromDom,
+      }),
+      end - atToken.length,
+      end,
+    );
+    setMenuOpen(false);
+    edRef.current?.focus();
+    syncFromDom();
   };
 
   return (
@@ -1086,27 +1379,177 @@ export function Composer() {
           </div>
         )}
         <div className="mx-auto flex w-full max-w-[768px] flex-col rounded-xl border border-border-strong bg-bg-main [box-shadow:#0E0E0E59_0px_8px_24px] focus-within:border-ring">
-          <textarea
-            ref={taRef}
-            id="composer"
-            data-selectable
-            rows={1}
-            value={text}
-            placeholder={
-              activeSessionId
-                ? "Ask a follow-up…"
-                : "Write anything — Circulo does the rest"
-            }
-            disabled={!activeProjectId}
-            className="w-full resize-none bg-transparent px-4 pt-4 pb-2 text-md/relaxed text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed"
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
+          <div className="px-4 pt-4 pb-2">
+            {/* Rich input: plain text plus atomic chips (contenteditable=false)
+                — picked commands, skills and @files render as the agreed tag
+                design, inline where they were typed. The browser owns the DOM
+                between syncs; React never re-renders its children. */}
+            <div
+              ref={edRef}
+              id="composer"
+              data-selectable
+              role="textbox"
+              aria-multiline="true"
+              aria-disabled={!activeProjectId}
+              data-placeholder={
+                activeSessionId ? "Ask a follow-up…" : "Write anything — Circulo does the rest"
+              }
+              contentEditable={!!activeProjectId}
+              suppressContentEditableWarning
+              className="composer-rich min-h-[20px] w-full bg-transparent py-px text-md/relaxed text-text-primary outline-none break-words whitespace-pre-wrap aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+              onInput={syncFromDom}
+              onBeforeInput={(e) => {
+                // Atomic chip dismissal: Backspace right after a chip removes
+                // the whole chip instead of one projected character.
+                const native = e.nativeEvent as InputEvent;
+                if (native.inputType !== "deleteContentBackward") return;
+                const root = edRef.current;
+                if (!root) return;
+                const sel = window.getSelection();
+                if (!sel || !sel.isCollapsed) return;
+                const { caret: c } = caretProjection(root);
+                if (c === null || c === 0) return;
+                const chip = chipBeforeCaret(root, c);
+                if (chip) {
+                  e.preventDefault();
+                  chip.remove();
+                  syncFromDom();
+                }
+              }}
+              onPaste={(e) => {
+                // Plain text only: rich paste would smuggle markup into the
+                // projection.
+                e.preventDefault();
+                const pasted = e.clipboardData.getData("text/plain");
+                document.execCommand("insertText", false, pasted);
+              }}
+              onBlur={() => {
+                // Rows keep focus via onMouseDown preventDefault, so this only
+                // fires for real clicks outside the composer box.
+                setMenuOpen(false);
+              }}
+              onKeyDown={(e) => {
+                if (showAtMenu && atResults.length > 0) {
+                if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
+                  e.preventDefault();
+                  setAtIndex((i) => (i + 1) % atResults.length);
+                  return;
+                }
+                if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) {
+                  e.preventDefault();
+                  setAtIndex((i) => (i - 1 + atResults.length) % atResults.length);
+                  return;
+                }
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  acceptFile(atResults[atIndex]);
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setAtDismissed(atToken);
+                  return;
+                }
+              }
+              if (showMenu && matches.length > 0) {
+                if (e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey)) {
+                  e.preventDefault();
+                  setMenuIndex((i) => (i + 1) % matches.length);
+                  return;
+                }
+                if (e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey)) {
+                  e.preventDefault();
+                  setMenuIndex((i) => (i - 1 + matches.length) % matches.length);
+                  return;
+                }
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  // Enter accepts into the colored tag: "/name" leaves the
+                  // textarea, arguments typed so far are kept.
+                  acceptCommand(matches[menuIndex]);
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setMenuOpen(false);
+                  return;
+                }
+              }
+              // Shift+Enter = newline inside the editor (execCommand keeps
+              // the projection's "\n" mapping via <br>).
+              if (e.key === "Enter" && e.shiftKey) {
+                e.preventDefault();
+                document.execCommand("insertLineBreak");
+                syncFromDom();
+                return;
+              }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 submit();
               }
             }}
-          />
+            />
+          </div>
+          {showMenu && (
+            <div className="relative pointer-events-none">
+              <div className="pointer-events-auto absolute bottom-1 left-2 right-2 z-10 max-h-[280px] overflow-y-auto rounded-xl border border-border-strong bg-bg-popover p-1.5 [box-shadow:#0E0E0E59_0px_8px_24px]">
+                <div className="px-2 py-1 text-xs leading-[14px] text-text-tertiary">Commands</div>
+                {matches.map((c, i) => (
+                  <button
+                    key={c.name}
+                    type="button"
+                    ref={i === menuIndex ? slashRowRef : undefined}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => acceptCommand(c)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
+                      i === menuIndex ? "bg-bg-hover" : "hover:bg-bg-hover/60",
+                    )}
+                  >
+                    <span className="shrink-0 rounded bg-bg-code px-1 py-px font-mono text-[11px] text-text-secondary">
+                      /{c.name}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm/tight text-text-secondary">
+                      {c.description || c.argsHint}
+                    </span>
+                    {c.source && c.source !== "builtin" && (
+                      <span className="shrink-0 text-[11px] text-text-tertiary">{c.source}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {showAtMenu && (
+            <div className="relative pointer-events-none">
+              <div className="pointer-events-auto absolute bottom-1 left-2 right-2 z-10 max-h-[280px] overflow-y-auto rounded-xl border border-border-strong bg-bg-popover p-1.5 [box-shadow:#0E0E0E59_0px_8px_24px]">
+                <div className="px-2 py-1 text-xs leading-[14px] text-text-tertiary">
+                  Mention file
+                </div>
+                {atResults.map((hit, i) => (
+                  <button
+                    key={hit.path}
+                    type="button"
+                    ref={i === atIndex ? atRowRef : undefined}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => acceptFile(hit)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
+                      i === atIndex ? "bg-bg-hover" : "hover:bg-bg-hover/60",
+                    )}
+                  >
+                    <FileCode className="size-3 shrink-0 text-text-tertiary" />
+                    <span className="min-w-0 flex-1 truncate font-mono text-[12px]/tight text-text-primary">
+                      {hit.path}
+                    </span>
+                  </button>
+                ))}
+                {atResults.length === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-text-tertiary">No files found</div>
+                )}
+              </div>
+            </div>
+          )}
           <div className="flex items-end px-[10px] pb-[10px] pt-2">
             <ModelPicker />
             <ModePicker />

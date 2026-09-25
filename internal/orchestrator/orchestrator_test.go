@@ -91,6 +91,12 @@ func (f *fakeAdapter) Meta(_ context.Context) (protocol.Meta, error) { panic("un
 
 func (f *fakeAdapter) AccessSupported() bool                       { return false }
 func (f *fakeAdapter) SetAccess(_ context.Context, _ string) error { return nil }
+func (f *fakeAdapter) RunCommand(_ context.Context, _, _, _ string) error {
+	return nil
+}
+func (f *fakeAdapter) SearchFiles(_ context.Context, _ string, _ int) ([]protocol.FileHit, error) {
+	return nil, nil
+}
 
 // fakeFactory wires new fakeAdapters and remembers them by project path.
 type fakeFactory struct {

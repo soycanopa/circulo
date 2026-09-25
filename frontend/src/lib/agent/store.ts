@@ -17,6 +17,7 @@ import type {
   AccessMode,
   AccessModeInfo,
   AdapterStatus,
+  CommandInfo,
   Envelope,
   ModelInfo,
   ProjectView,
@@ -36,6 +37,8 @@ export interface ProjectMeta {
   accessModes: AccessModeInfo[];
   /** Currently applied access mode; undefined until known/provider default. */
   accessMode?: AccessMode;
+  /** Slash commands; undefined = provider exposes no command surface. */
+  commands?: CommandInfo[];
 }
 
 interface AppStore {
@@ -92,7 +95,13 @@ interface AppStore {
   setAccess: (mode: AccessMode) => Promise<void>;
   /** Selects a model and the project (picker tab) it belongs to. */
   setSelectedModel: (m: string, projectID: string) => void;
-  sendPrompt: (text: string, target?: { projectID: string; branch?: string }) => Promise<void>;
+  sendPrompt: (
+    text: string,
+    target?: { projectID: string; branch?: string },
+    files?: string[],
+  ) => Promise<void>;
+  /** Invokes a slash command in the active session (composer slash menu). */
+  runCommand: (name: string, text: string) => Promise<void>;
   abort: () => Promise<void>;
   replyPermission: (permissionID: string, response: "once" | "always" | "reject") => Promise<void>;
   /** Answer a pending form (question tool): field key → value(s). */
@@ -286,6 +295,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
               defaultKey: chosen,
               accessModes: meta.accessModes ?? [],
               accessMode: meta.access?.mode,
+              commands: meta.commands,
             },
           },
           // The Mode chip reflects the active project's agents only.
@@ -338,7 +348,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return { selectedModel, selectedModelProject: projectID, selectedVariant: keep ? s.selectedVariant : "" };
     }),
 
-  sendPrompt: async (text, target) => {
+  sendPrompt: async (text, target, files) => {
     let { activeProjectId, activeSessionId } = get();
     const { selectedAgent, selectedModel, selectedVariant, selectedModelProject } = get();
     if (!activeProjectId || !text.trim()) return;
@@ -367,6 +377,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         provider: provider || undefined,
         model: model || undefined,
         variant: selectedVariant || undefined,
+        files: files?.length ? files : undefined,
       })
       .catch((e) => console.error("prompt failed", e));
   },
@@ -375,6 +386,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const { activeProjectId, activeSessionId } = get();
     if (!activeProjectId || !activeSessionId) return;
     await api.abort(activeProjectId, activeSessionId).catch((e) => console.error(e));
+  },
+
+  runCommand: async (name, text) => {
+    const { activeProjectId, activeSessionId } = get();
+    if (!activeProjectId || !activeSessionId) return;
+    // Optimistic user bubble: the provider echoes the invoked command into
+    // the transcript anyway; this keeps the composer snappy.
+    const clientID = `client_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    set((s) => ({
+      chat: addOptimisticUserMessage(s.chat, activeSessionId, clientID, text),
+    }));
+    await api
+      .runCommand(activeProjectId, activeSessionId, { name, text })
+      .catch((e) => console.error("command failed", e));
   },
 
   replyPermission: async (permissionID, response) => {

@@ -3,6 +3,7 @@ package omp
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"circulogo/internal/agent/protocol"
 )
@@ -82,11 +83,84 @@ func (t *translator) translate(raw json.RawMessage, typ frameType, sessionID str
 	case frameExtensionUIRequest:
 		return t.extensionUI(raw, sessionID)
 
+	case frameAvailableCommands:
+		return t.commands(raw)
+
+	case frameCommandOutput:
+		// Slash-command output: omp emits it as a free frame (no request id)
+		// right before the prompt response — text the command printed, not a
+		// model turn. Same shape as the user echo: message.updated for the
+		// shell message, part.updated for its text.
+		var f struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(raw, &f); err != nil {
+			return nil, badFrame(frameCommandOutput, err)
+		}
+		if f.Text == "" {
+			return nil, nil
+		}
+		id := t.ids.next("system")
+		return envs(
+			protocol.EventMessageUpdated, protocol.MessageUpdated{
+				ProjectID: t.projectID, SessionID: sessionID,
+				Message: protocol.MessageInfo{
+					ID: id, SessionID: sessionID, Role: protocol.RoleAssistant,
+					Agent: "system", Created: time.Now().UnixMilli(),
+				},
+			},
+			protocol.EventPartUpdated, protocol.PartUpdated{
+				ProjectID: t.projectID, SessionID: sessionID, MessageID: id,
+				Part: protocol.Part{ID: id + ":text", Type: protocol.PartText, Text: f.Text},
+			},
+		)
+
 	default:
 		// turn_start/turn_end, model_changed, compaction, subagent frames,
 		// widget/title chatter, unknown future events: no neutral surface.
 		return nil, nil
 	}
+}
+
+// commands maps omp's available_commands_update (full list) onto the neutral
+// commands.updated envelope.
+func (t *translator) commands(raw json.RawMessage) ([]protocol.Envelope, error) {
+	var f struct {
+		Commands []ompCommand `json:"commands"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		return nil, badFrame(frameAvailableCommands, err)
+	}
+	return envs(protocol.EventCommandsUpdated, protocol.CommandsUpdated{
+		ProjectID: t.projectID,
+		Commands:  ompCommandsToNeutral(f.Commands),
+	})
+}
+
+// ompCommand is one entry of omp's command list.
+type ompCommand struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Input       *struct {
+		Hint string `json:"hint,omitempty"`
+	} `json:"input"`
+	Source string `json:"source,omitempty"`
+}
+
+func ompCommandsToNeutral(in []ompCommand) []protocol.CommandInfo {
+	out := make([]protocol.CommandInfo, 0, len(in))
+	for _, c := range in {
+		ci := protocol.CommandInfo{
+			Name:        c.Name,
+			Description: c.Description,
+			Source:      c.Source,
+		}
+		if c.Input != nil {
+			ci.ArgsHint = c.Input.Hint
+		}
+		out = append(out, ci)
+	}
+	return out
 }
 
 func badFrame(typ frameType, err error) error {
