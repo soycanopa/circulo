@@ -203,6 +203,15 @@ body {
   vertical-align: -1.5px;
 }
 
+/* Rich composer input (Composer.tsx): the placeholder must be CSS-generated
+   because the editor's children are browser-owned — a React placeholder
+   node would fight the contenteditable DOM. */
+.composer-rich:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
 /* Pixel-grid loader (features/chat/parts/LoadingState.tsx). Cells rest dim
    and a per-cell animation-delay lights them in sequence (chevron wavefront,
    or an orbiting comet). The shimmer sweeps a highlight band across the
