@@ -51,7 +51,12 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
 - The UI does not import adapters: frontend code knows only the neutral protocol
   (`frontend/src/lib/agent/protocol.ts`) and the relay API (`/agent/...`). It must
   never see OpenCode or omp types, ports, or URLs. The provider name
-  (`"opencode" | "omp"`) is the only provider vocabulary that crosses this line.
+  (`"opencode" | "omp"`) is the only provider vocabulary that crosses this line,
+  and only for *identity* — product name, logo, which "add project" entry to
+  show. **Behavior must branch on `protocol.Capabilities`, never on the name.**
+  A UI check like `provider === "omp"` is correct for identity and wrong for
+  anything else: omp's `SetBranch` is a no-op and its permission round-trip does
+  not exist, so a name check produces a control that does nothing.
 - Adapters do not know the UI: `internal/opencode` and `internal/omp` must not
   import `wails` packages, `internal/relay`, or `internal/orchestrator`. Each
   exposes an `agent.AgentAdapter` and a channel of `agent/protocol` events —

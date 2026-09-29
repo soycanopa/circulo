@@ -320,12 +320,27 @@ support exists, and need nothing from the harness.
   untracked and `git read-tree` does not remove them, so a rewind that only
   restored tracked files would have undone almost nothing.
 
-**P2 — Declared capabilities on the runtime.** `supports_steer`,
-`supports_checkpoints`, `supports_branch_pinning` and friends, advertised by the
-adapter in its runtime response. Today behavior is hardcoded per provider and the
-UI branches on the provider name in places. This is *stricter* than the current
-invariant — it removes the provider name as crossing vocabulary — and it is what
-lets queue/steer work for OpenCode the way it already does for omp.
+**P2 — Declared capabilities on the runtime.** ✅ done. `protocol.Capabilities`
+on the Adapter interface, carried on `Meta`, read in the UI through one helper.
+Flags: permissions, forms, steer, branch, agents, commands, accessMode — each one
+a real code path rather than an aspiration.
+
+The two gaps this actually fixes are the ones that are invisible until a user
+hits them. omp has no permission round-trip, so permission cards simply never
+appear with nothing to explain why; and its `SetBranch` is a documented no-op, so
+the branch picker looked functional and did nothing. The first real UI use is
+that picker, which now shows the checked-out branch read-only and says why.
+
+**Correction to how this was scoped:** the plan said capabilities would "remove
+the provider name as crossing vocabulary entirely". That was overselling it and
+it is wrong. Identity is legitimately name-based — which product this is, its
+logo, which "add project" entry to show. Only *behavior* moves to capabilities,
+and the AGENTS.md invariant that permits the provider name still holds.
+
+Not yet wired: `steer` is declared false for opencode because the adapter sends
+a second prompt rather than using the inbox delivery GA offers
+(`PATCH /api/session/{id}/inbox/{id} {delivery: steer|queue}`, per waku's #242
+table). That is the real queue/steer feature and it is still ahead.
 
 **P3 — Composer drafts per target.** Keyed by conversation target and restored on
 return, so switching sessions no longer discards what was being typed.
