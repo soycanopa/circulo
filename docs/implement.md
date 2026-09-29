@@ -212,9 +212,13 @@ rather than an error. Audited on 2026-09-29: **no drift**.
 
 ## Phase 8 — Polish + packaging (branch `feature/release-v0`)
 
-- Perf pass (NFR-2 profiling with 50+ tool-call session), a11y pass (UX §8), light theme
-  check, icon + app name, `wails3 build` + `wails3 package` (.app), orphan-process audit
-  (NFR-4), version pinning audit.
+- Perf pass (NFR-2 profiling with 50+ tool-call session), a11y pass (UX §8 —
+  the open items are sidebar ↑↓/Enter session navigation and a WCAG AA contrast
+  audit of the dark theme), icon + app name, `wails3 build` + `wails3 package`
+  (.app), orphan-process audit (NFR-4).
+- **No light theme in v0** (owner decision 2026-09-29): the build is deliberately
+  dark-first against the Circulo Paper tokens and [ux.md](ux.md) §8 was corrected
+  to stop promising one. A light theme is a v1 candidate.
 - **v0 exit checklist:** all FR-1…FR-21 demonstrated once in a recorded E2E session
   (prompt → stream → permission → abort → error → history).
 

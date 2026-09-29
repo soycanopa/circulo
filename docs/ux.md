@@ -1,6 +1,7 @@
 # Circulo — UX Specification
 
-- **Status:** Draft v0.1 (2026-09-02)
+- **Status:** Draft v0.1 (2026-09-02); §8 amended 2026-09-29 to match the shipped
+  dark-first build (no light theme, sidebar keyboard nav not yet built)
 - **Related:** [PRD](prd.md) · [UI](ui.md) (visual spec) · [Flow](flow.md)
 
 ## 1. Principles
@@ -146,7 +147,20 @@ markdown on selection copy (v1).
 
 ## 8. Accessibility & quality bar
 
-- Full keyboard reach: sidebar (↑↓ + Enter), composer, permission buttons.
-- ARIA: transcript = `log` region; tool cards = `button` + `aria-expanded`; live regions
-  only for status line (not every token — screen-reader noise).
-- Contrast: WCAG AA on both themes; dark theme is the default, light fully supported.
+Dark-first is the commitment, not a stopgap: the palette is a 1:1 mirror of the
+owner's Circulo Paper tokens (`frontend/src/index.css`), tuned as a single dark
+surface. There is no light theme, and this spec no longer promises one — the
+`prefers-color-scheme` hooks and a light token set were never built. A light
+theme is a v1 candidate, not a v0 commitment (see
+[implement.md](implement.md) Phase 8).
+
+- Keyboard reach: composer, permission buttons, collapsible cards, and the
+  composer's `@`/`/` autocomplete menus (↑↓ + Tab). **Not yet built:** ↑↓ + Enter
+  navigation of the session list in the sidebar — a real gap, tracked in Phase 8.
+- ARIA: transcript = `role="log"`; collapsibles (thinking, sources, session groups,
+  code) carry `aria-expanded`; live regions only for status, not per token —
+  screen-reader noise. The composer's own controls are labelled.
+- Motion: `prefers-reduced-motion: reduce` is honored in all four places that
+  animate — the word-by-word text reveal, the glow-pixel texture, the composer
+  transitions and the global CSS animation reset.
+- Contrast: WCAG AA on the dark theme. Not yet audited.
