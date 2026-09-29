@@ -264,7 +264,7 @@ reads from.
 3. Prompt "create notes.txt with 'hi'" → approve edit permission via card.
 4. Abort mid-turn on a long prompt → partial content stays, status idle.
 5. Kill `opencode serve` externally → project dot red with detail → Retry works.
-6. Quit app → `pgrep opencode` empty (no orphans).
+6. Quit app → `pgrep opencode` empty (no orphans). ← ✅ verified 2026-09-29 on the packaged bundle for both SIGTERM and SIGINT, after `shutdownOnSignal` landed; the check is what exposed the bug.
 7. Reopen → history hydrates for the same session.
 
 ## Amendment 2026-09-29 (II) — gap analysis against waku
