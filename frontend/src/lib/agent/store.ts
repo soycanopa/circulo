@@ -17,6 +17,7 @@ import type {
   AccessMode,
   AccessModeInfo,
   AdapterStatus,
+  Capabilities,
   CommandInfo,
   Envelope,
   ModelInfo,
@@ -39,6 +40,11 @@ export interface ProjectMeta {
   accessMode?: AccessMode;
   /** Slash commands; undefined = provider exposes no command surface. */
   commands?: CommandInfo[];
+  /**
+   * What the backend can actually do. Undefined until meta has loaded, which
+   * is why every read goes through can() and treats absent as unsupported.
+   */
+  capabilities?: Capabilities;
 }
 
 interface AppStore {

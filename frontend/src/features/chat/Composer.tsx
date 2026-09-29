@@ -36,6 +36,7 @@ import type {
   PermissionRequest,
   ProjectVcs,
 } from "@/lib/agent/protocol";
+import { can } from "@/lib/agent/protocol";
 import { api } from "@/lib/agent/api";
 import {
   buildChip,
@@ -965,6 +966,12 @@ function SessionTargetStrip({
   const chipStatic =
     "inline-flex h-6 min-w-0 items-center gap-1 rounded-[6px] px-1.5 text-[12px] font-medium text-text-primary bg-bg-code";
 
+  // Behaviour comes from the declared capabilities, not from the provider's
+  // name: identity is name-based on purpose, behavior is not.
+  const activeMeta = useAppStore((s) => (projectID ? s.metaByProject[projectID] : undefined));
+  const canPinBranch = can(activeMeta, "branch");
+  const providerLabel = selected?.provider === "omp" ? "omp" : "OpenCode";
+
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {onProjectSelect ? (
@@ -1019,6 +1026,21 @@ function SessionTargetStrip({
             <GitBranch className="size-3 shrink-0 text-success" />
             Local repo
           </span>
+          {/* A backend that cannot pin a branch still shows which one is
+              checked out, but the picker is closed and says why. omp's
+              SetBranch is a documented no-op, so leaving this interactive
+              would promise something the backend does not do. */}
+          {!canPinBranch ? (
+            <span
+              className={cn(chipStatic, "cursor-not-allowed text-text-tertiary")}
+              title={`${providerLabel} cannot pin a working branch — this is the checked-out branch, not an override`}
+            >
+              <GitBranch className="size-3 shrink-0 text-text-tertiary" />
+              <span className="max-w-40 truncate">
+                branch: {vcs.branch || "default"} (read-only)
+              </span>
+            </span>
+          ) : (
           <Popover open={branchOpen} onOpenChange={setBranchOpen}>
             <PopoverTrigger asChild>
               <button type="button" aria-expanded={branchOpen} className={chip}>
@@ -1041,6 +1063,7 @@ function SessionTargetStrip({
               ))}
             </PopoverContent>
           </Popover>
+          )}
         </>
       ) : (
         <span className="text-[12px] text-text-tertiary">No git repository</span>

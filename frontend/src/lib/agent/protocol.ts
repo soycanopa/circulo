@@ -416,6 +416,43 @@ export interface Meta {
   access: AccessState;
   /** Slash commands; absent = provider exposes no command surface. */
   commands?: CommandInfo[];
+  /**
+   * What this backend can actually do, mirrored from Go's
+   * protocol.Capabilities. Branch on these instead of on the provider name:
+   * identity (logo, product name, which "add project" entry) legitimately uses
+   * the name, but behavior must not.
+   */
+  capabilities?: Capabilities;
+}
+
+export interface Capabilities {
+  /** A real approve/deny round-trip (omp: no). */
+  permissions: boolean;
+  /** A real answer channel for select/confirm/input requests. */
+  forms: boolean;
+  /** A prompt while the agent is working steers instead of starting a turn. */
+  steer: boolean;
+  /** The working branch can actually be pinned. */
+  branch: boolean;
+  /** A named-agent registry exists to pick from. */
+  agents: boolean;
+  /** A slash-command surface exists. */
+  commands: boolean;
+  /** An access-mode selector exists. */
+  accessMode: boolean;
+}
+
+/**
+ * Capabilities are opt-in: a missing or partial block means the feature is not
+ * available. Reading a missing key as "true" would be the failure mode that
+ * makes a capability flag worse than none — the UI would offer a control that
+ * silently does nothing.
+ */
+export function can(
+  meta: { capabilities?: Capabilities } | undefined,
+  capability: keyof Capabilities,
+): boolean {
+  return meta?.capabilities?.[capability] === true;
 }
 
 /** REST view from GET /agent/projects. */
