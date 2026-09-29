@@ -76,9 +76,43 @@ export type PartType =
 // Tool states.
 export type ToolStatus = "pending" | "running" | "completed" | "error";
 
+/**
+ * Envelope is one SSE frame. `seq` and `epoch` are the resume contract and
+ * mirror Go's protocol.Envelope exactly — changing one means changing the
+ * other in the same commit.
+ *
+ * The epoch changes on every app start while seq restarts at 1, so a bare
+ * seq cannot be trusted across a restart; that pair is what makes a resumed
+ * stream safe. Both are optional because a frame produced outside the
+ * orchestrator (tests) has neither.
+ */
 export interface Envelope<T = unknown> {
   type: string;
+  seq?: number;
+  epoch?: string;
   payload: T;
+}
+
+/**
+ * ReplayStatus is the server's answer to a resume request, sent as the first
+ * SSE control frame (event: replay). It is not an Envelope: it describes the
+ * stream, not a domain event, and the reducer must never see it.
+ */
+export type ReplayStatus = "full" | "resumed" | "stale" | "gap";
+
+export interface ReplayFrame {
+  status: ReplayStatus;
+  epoch: string;
+  /** Highest sequence replayed on this connection; 0 when nothing was. */
+  seq: number;
+}
+
+/**
+ * Whether a ReplayStatus means the client must refetch. Only `resumed` means
+ * the client is already current — everything else leaves a hole it cannot see.
+ */
+export function needsResync(status: ReplayStatus): boolean {
+  return status !== "resumed";
 }
 
 export interface AdapterStatus {
