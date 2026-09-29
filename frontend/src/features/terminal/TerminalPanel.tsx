@@ -1,7 +1,9 @@
 /**
  * TerminalPanel (owner call): project-scoped interactive shells in a
- * tabbed panel below the chat zone, above the composer. Tabs open/close
- * in place; the panel grows and shrinks with a grid-rows animation.
+ * tabbed panel rendered as a separate card BELOW the chat surface
+ * (App.tsx) — transcript and composer share one bg-bg-main card and
+ * this is a sibling, not a child. Tabs open/close in place; the card
+ * animates its own max-height.
  * I/O: SSE stream (base64 chunks) + write/resize POSTs per terminal.
  */
 
