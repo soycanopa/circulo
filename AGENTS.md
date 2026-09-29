@@ -31,6 +31,13 @@ marked **[adjusted]**. Everything else is verbatim intent from the project owner
   (`internal/agent/protocol`) is proven stable by the OpenCode adapter in daily use
   (gate: the E2E checklist in docs/implement.md). The remote design is frozen in
   docs/remote.md — build from there when the gate opens, do not redesign.
+- **Reference projects: ideas yes, code never.** [waku](https://github.com/egoist/waku)
+  is GPL-3.0-only. Learn its UX patterns and protocol ideas from it — the neutral
+  protocol, the per-turn git-ref checkpoints, the sequenced envelope — but never
+  copy a file, a function or a type from it, or Circulo inherits GPL-3.0. Its
+  daemon split is also *not* a template: it exists to drive 9 providers plus a
+  browser client and remote access, and adopting it here would break the
+  single-composition-root invariant for no proven need.
 
 ## Architecture invariants **[adjusted]**
 
@@ -116,6 +123,14 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
     must be an absolute `file://` URI; relative paths fail server-side.
   - Every route needs Basic auth: user `opencode`, password from the
     `server password <random>` line the managed server prints at boot.
+  - **There is no `/api/health` in GA.** Beta had it; GA answers 404 and the
+    replacement is `GET /api/info` → `{version, pid, …}`. A probe that requires
+    `{healthy, true}` fails silently and leaves the catalog empty — that is
+    exactly how waku 0.1.19 ended up with an empty model picker on opencode
+    2.0.6+ (their issue #242, still open). The GA binary is a single `opencode`,
+    not a separate `opencode2`. Likewise: the command body is `{name, text}`
+    (beta's `{command, text}` gets a 400) and rename is `PATCH /api/session/{id}
+    {title}` (the dedicated endpoint is 404).
   - Unknown events are forward compatibility, not errors (NFR-3): the server emits
     a constant stream of `*.updated`, `mcp.*`, `model.*`, `provider.*` noise. Skip
     them silently — but remember that a silently skipped event is a part the user
