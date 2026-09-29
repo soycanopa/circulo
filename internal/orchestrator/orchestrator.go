@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -19,6 +20,7 @@ import (
 
 	"circulogo/internal/agent"
 	"circulogo/internal/agent/protocol"
+	"circulogo/internal/checkpoint"
 	"circulogo/internal/store"
 	"circulogo/internal/term"
 )
@@ -45,6 +47,11 @@ type Orchestrator struct {
 	epoch        string              // changes on every process start
 	startSeq     []string            // projects pending Start, in settings order
 	shutdownOnce sync.Once
+	// turns maps session id to the turn currently open, and nextTurn to the
+	// last number used for it. Both are the turn-boundary bookkeeping that
+	// decides which checkpoint ref an event writes.
+	turns    map[string]int
+	nextTurn map[string]int
 }
 
 type project struct {
@@ -100,6 +107,8 @@ func New(st *store.Store, factory AdapterFactory) *Orchestrator {
 		subs:     map[int]*subscriber{},
 		terms:    term.NewManager(),
 		epoch:    newEpoch(),
+		turns:    map[string]int{},
+		nextTurn: map[string]int{},
 	}
 }
 
@@ -171,9 +180,87 @@ func (o *Orchestrator) startAdapter(_ context.Context, id string) {
 // pump forwards adapter events to subscribers until the channel closes.
 func (o *Orchestrator) pump(projectID string, events <-chan protocol.Envelope) {
 	for env := range events {
+		o.observeTurnBoundary(projectID, env)
 		o.broadcast(env)
 	}
 	o.setStatus(projectID, protocol.AdapterStopped, "")
+}
+
+// keepTurns bounds how many turns of checkpoints a session retains. Refs are
+// cheap but not free, and nobody rewinds further back than a few turns.
+const keepTurns = 20
+
+// observeTurnBoundary records the workspace state at the edges of a turn.
+//
+// It keys off session.status rather than the prompt call because the relay
+// hands prompts straight to the adapter — the orchestrator never sees them —
+// while status is the one event both backends already translate, and means the
+// same thing in each. A turn is a busy→idle cycle.
+//
+// Checkpointing is best-effort and never blocks the event pump: a project that
+// is not a git repository simply has no checkpoints, and that is a normal
+// state, not a failure to report on every turn.
+func (o *Orchestrator) observeTurnBoundary(projectID string, env protocol.Envelope) {
+	if env.Type != protocol.EventSessionStatus {
+		return
+	}
+	var st protocol.SessionStatus
+	if err := json.Unmarshal(env.Payload, &st); err != nil {
+		return
+	}
+	// The adapter stamps its own project id; trust the pump's, which is the
+	// one this orchestrator registered the adapter under.
+	o.mu.Lock()
+	dir := ""
+	if p := o.projects[projectID]; p != nil {
+		dir = p.cfg.Path
+	}
+	if dir == "" {
+		o.mu.Unlock()
+		return
+	}
+	key := st.SessionID
+	switch st.Status {
+	case protocol.StatusBusy:
+		if _, open := o.turns[key]; open {
+			// A retry re-reports busy; the turn is already open.
+			o.mu.Unlock()
+			return
+		}
+		o.nextTurn[key]++
+		o.turns[key] = o.nextTurn[key]
+		turn := o.turns[key]
+		o.mu.Unlock()
+		o.capture(dir, key, turn, checkpoint.KindStart)
+	case protocol.StatusIdle:
+		turn, open := o.turns[key]
+		if !open {
+			o.mu.Unlock()
+			return
+		}
+		delete(o.turns, key)
+		o.mu.Unlock()
+		o.capture(dir, key, turn, checkpoint.KindEnd)
+		// Pruning is housekeeping; a failure only costs disk until the next
+		// turn tries again, so it is not worth a per-turn error path.
+		_ = checkpoint.Prune(context.Background(), dir, key, keepTurns)
+	default:
+		o.mu.Unlock()
+	}
+}
+
+// capture writes one checkpoint ref. Failures are swallowed on purpose: this
+// runs inside the event pump on every turn, and a project that is not a git
+// repository is a normal state rather than an error to surface there. Whether
+// checkpoints are available is a queryable property (Checkpoints below), so the
+// UI asks instead of the pump reporting.
+func (o *Orchestrator) capture(dir, sessionID string, turn int, kind checkpoint.Kind) {
+	if !checkpoint.Available(dir) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, _ = checkpoint.Capture(ctx, dir, sessionID, turn, kind)
 }
 
 func (o *Orchestrator) setStatus(id, state, detail string) {
@@ -274,6 +361,124 @@ func (o *Orchestrator) Epoch() string {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
 	return o.epoch
+}
+
+// CheckpointView is the UI-facing description of a project's rewind points.
+// Available is false for a directory that is not a git repository with at
+// least one commit — the normal case for a project that is just a folder, and
+// the UI hides the feature rather than showing an error.
+type CheckpointView struct {
+	ProjectID   string                  `json:"projectID"`
+	Available   bool                    `json:"available"`
+	Dirty       bool                    `json:"dirty"`
+	Checkpoints []checkpoint.Checkpoint `json:"checkpoints"`
+}
+
+// Checkpoints lists the stored turns for one session.
+func (o *Orchestrator) Checkpoints(projectID, sessionID string) (CheckpointView, error) {
+	dir, err := o.projectPath(projectID)
+	if err != nil {
+		return CheckpointView{}, err
+	}
+	view := CheckpointView{ProjectID: projectID}
+	if !checkpoint.Available(dir) {
+		return view, nil
+	}
+	view.Available = true
+	if dirty, err := checkpoint.Dirty(context.Background(), dir); err == nil {
+		view.Dirty = dirty
+	}
+	cps, err := checkpoint.List(context.Background(), dir, sessionID)
+	if err != nil {
+		return view, err
+	}
+	view.Checkpoints = cps
+	return view, nil
+}
+
+// RewindPreview is what a rewind would do, computed without doing it. The UI
+// shows this before asking for confirmation, because a rewind discards work.
+type RewindPreview struct {
+	Ref      string `json:"ref"`
+	Turn     int    `json:"turn"`
+	Diff     string `json:"diff"`
+	WillLose bool   `json:"willLose"` // uncommitted work exists right now
+	GuardRef string `json:"guardRef"` // where the current state is preserved
+}
+
+// PreviewRewind describes the effect of rewinding a session to one stored
+// turn. It is a separate call from Rewind so the confirmation is informed
+// rather than a guess.
+func (o *Orchestrator) PreviewRewind(projectID, sessionID string, turn int) (RewindPreview, error) {
+	dir, err := o.projectPath(projectID)
+	if err != nil {
+		return RewindPreview{}, err
+	}
+	if !checkpoint.Available(dir) {
+		return RewindPreview{}, &checkpoint.ErrNotARepo{Dir: dir}
+	}
+	cps, err := checkpoint.List(context.Background(), dir, sessionID)
+	if err != nil {
+		return RewindPreview{}, err
+	}
+	var start *checkpoint.Checkpoint
+	for i := range cps {
+		if cps[i].Turn == turn && cps[i].Kind == checkpoint.KindStart {
+			start = &cps[i]
+		}
+	}
+	if start == nil {
+		return RewindPreview{}, fmt.Errorf("orchestrator: no checkpoint for session %s turn %d", sessionID, turn)
+	}
+	// The diff is measured against the latest stored state, which is the
+	// current workspace unless later turns exist.
+	from := start.Ref
+	if len(cps) > 0 {
+		if last := cps[len(cps)-1]; last.Kind == checkpoint.KindEnd {
+			from = last.Ref
+		}
+	}
+	preview := RewindPreview{Ref: start.Ref, Turn: turn}
+	diff, err := checkpoint.Diff(context.Background(), dir, from, start.Ref)
+	if err != nil {
+		return RewindPreview{}, err
+	}
+	preview.Diff = diff
+	preview.WillLose, _ = checkpoint.Dirty(context.Background(), dir)
+	return preview, nil
+}
+
+// Rewind restores the workspace to the start of one turn. The state on disk is
+// itself checkpointed first, so a rewind can be undone — which is why this is
+// not as irreversible as it looks. Callers are expected to have shown the
+// preview and obtained confirmation.
+func (o *Orchestrator) Rewind(ctx context.Context, projectID, sessionID string, turn int) (CheckpointView, error) {
+	preview, err := o.PreviewRewind(projectID, sessionID, turn)
+	if err != nil {
+		return CheckpointView{}, err
+	}
+	dir, err := o.projectPath(projectID)
+	if err != nil {
+		return CheckpointView{}, err
+	}
+	// Preserve what is on disk right now before overwriting it.
+	if _, err := checkpoint.Capture(ctx, dir, sessionID, turn, checkpoint.KindGuard); err != nil {
+		return CheckpointView{}, err
+	}
+	if err := checkpoint.Restore(ctx, dir, preview.Ref); err != nil {
+		return CheckpointView{}, err
+	}
+	return o.Checkpoints(projectID, sessionID)
+}
+
+func (o *Orchestrator) projectPath(id string) (string, error) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	p := o.projects[id]
+	if p == nil {
+		return "", fmt.Errorf("orchestrator: unknown project %s", id)
+	}
+	return p.cfg.Path, nil
 }
 
 // ProjectView is the REST-facing project descriptor.

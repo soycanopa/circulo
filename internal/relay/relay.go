@@ -133,6 +133,58 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.writeJSON(w, http.StatusOK, map[string]string{"id": t.ID})
 		return
+	// Checkpoints are a project capability, not an adapter one: the refs live
+	// in the project's own repository, so this does not go through
+	// withAdapter and keeps working for a project whose backend is down.
+	case rest == "checkpoints" && r.Method == http.MethodGet:
+		view, err := s.orch.Checkpoints(id, r.URL.Query().Get("session"))
+		if err != nil {
+			s.writeErr(w, err)
+			return
+		}
+		s.writeJSON(w, http.StatusOK, view)
+		return
+	}
+
+	// /projects/{id}/checkpoints/rewind-preview?turn=N
+	if tpath, ok := cutPrefix(rest, "checkpoints/"); ok {
+		switch tpath {
+		case "rewind-preview":
+			if r.Method != http.MethodGet {
+				break
+			}
+			turn, err := turnParam(r)
+			if err != nil {
+				s.writeErr(w, badRequest("%v", err))
+				return
+			}
+			preview, err := s.orch.PreviewRewind(id, r.URL.Query().Get("session"), turn)
+			if err != nil {
+				s.writeErr(w, err)
+				return
+			}
+			s.writeJSON(w, http.StatusOK, preview)
+			return
+		case "rewind":
+			if r.Method != http.MethodPost {
+				break
+			}
+			turn, err := turnParam(r)
+			if err != nil {
+				s.writeErr(w, badRequest("%v", err))
+				return
+			}
+			// The rewind discards work, so the confirmation is the caller's
+			// job — the server does not ask. The preview endpoint is what the
+			// UI shows before it gets here.
+			view, err := s.orch.Rewind(r.Context(), id, r.URL.Query().Get("session"), turn)
+			if err != nil {
+				s.writeErr(w, err)
+				return
+			}
+			s.writeJSON(w, http.StatusOK, view)
+			return
+		}
 	}
 
 	// /projects/{id}/terminals/{tid}/…
@@ -551,4 +603,22 @@ func (e *badRequestError) Error() string { return e.msg }
 
 func badRequest(format string, args ...any) error {
 	return &badRequestError{msg: fmt.Sprintf(format, args...)}
+}
+
+// turnParam reads the turn number a rewind targets. It is required rather
+// than defaulted: rewinding to "turn 0" or to the newest turn implicitly would
+// make a destructive call ambiguous.
+func turnParam(r *http.Request) (int, error) {
+	raw := r.URL.Query().Get("turn")
+	if raw == "" {
+		return 0, errors.New("turn is required")
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("turn must be a number: %v", err)
+	}
+	if n <= 0 {
+		return 0, errors.New("turn must be greater than zero")
+	}
+	return n, nil
 }
