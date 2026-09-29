@@ -144,10 +144,10 @@ type ContextUpdated struct {
 
 // TokenUsage is flat (no nested cache object) so the TS mirror stays simple.
 type TokenUsage struct {
-	Input     int64 `json:"input"`
-	Output    int64 `json:"output"`
-	Reasoning int64 `json:"reasoning"`
-	CacheRead int64 `json:"cacheRead"`
+	Input      int64 `json:"input"`
+	Output     int64 `json:"output"`
+	Reasoning  int64 `json:"reasoning"`
+	CacheRead  int64 `json:"cacheRead"`
 	CacheWrite int64 `json:"cacheWrite"`
 }
 
@@ -156,7 +156,7 @@ type MessageInfo struct {
 	ID        string      `json:"id"`
 	SessionID string      `json:"sessionID"`
 	Role      string      `json:"role"`
-	Created   int64       `json:"created"`  // unix millis
+	Created   int64       `json:"created"`   // unix millis
 	Completed int64       `json:"completed"` // unix millis, 0 while streaming
 	Provider  string      `json:"provider,omitempty"`
 	Model     string      `json:"model,omitempty"`
@@ -321,11 +321,11 @@ type FormField struct {
 // Form is a pending form to answer (opencode v2 question tool). Kind is the
 // server metadata.kind ("question"); CallID links the originating tool call.
 type Form struct {
-	ID        string       `json:"id"`
-	Title     string       `json:"title,omitempty"`
-	Kind      string       `json:"kind,omitempty"`
-	CallID    string       `json:"callID,omitempty"`
-	Fields    []FormField  `json:"fields"`
+	ID     string      `json:"id"`
+	Title  string      `json:"title,omitempty"`
+	Kind   string      `json:"kind,omitempty"`
+	CallID string      `json:"callID,omitempty"`
+	Fields []FormField `json:"fields"`
 }
 
 // FormUpdated upserts a pending form (reducer keys by Form.ID).
