@@ -8,7 +8,7 @@
         <key>CFBundleExecutable</key>
             <string>circulogo</string>
         <key>CFBundleIdentifier</key>
-            <string>com.example.circulogo</string>
+            <string>work.dosmas.circulo.dev</string>
         <key>CFBundleVersion</key>
             <string>0.3.0</string>
         <key>CFBundleGetInfoString</key>
@@ -24,7 +24,7 @@
         <key>NSHighResolutionCapable</key>
             <string>true</string>
         <key>NSHumanReadableCopyright</key>
-            <string>© 2026, My Company</string>
+            <string>© 2026 Circulo</string>
         <key>NSAppTransportSecurity</key>
         <dict>
             <key>NSAllowsLocalNetworking</key>
