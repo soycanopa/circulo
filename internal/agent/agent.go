@@ -64,6 +64,11 @@ type Adapter interface {
 	// Meta returns composer picker data (agents, models).
 	Meta(ctx context.Context) (protocol.Meta, error)
 
+	// Capabilities declares what this backend can actually do, so the UI
+	// branches on behavior instead of on the provider's name. It is the
+	// single source of truth: Meta embeds it rather than restating it.
+	Capabilities() protocol.Capabilities
+
 	// AccessSupported reports whether the provider exposes an access-mode
 	// surface (omp: yes; opencode: no).
 	AccessSupported() bool

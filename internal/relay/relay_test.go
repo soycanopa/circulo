@@ -94,6 +94,15 @@ func (f *fakeAdapter) Meta(_ context.Context) (protocol.Meta, error) {
 	}, nil
 }
 
+// Capabilities on a fake: everything on, so tests that do not care about a
+// gap are not shaped by one. Capability-specific tests declare their own.
+func (f *fakeAdapter) Capabilities() protocol.Capabilities {
+	return protocol.Capabilities{
+		Permissions: true, Forms: true, Steer: true, Branch: true,
+		Agents: true, Commands: true, AccessMode: true,
+	}
+}
+
 func (f *fakeAdapter) AccessSupported() bool                       { return false }
 func (f *fakeAdapter) SetAccess(_ context.Context, _ string) error { return nil }
 func (f *fakeAdapter) RunCommand(_ context.Context, _, _, _ string) error {

@@ -152,6 +152,24 @@ func accessMode(configured string) string {
 }
 
 // AccessSupported: omp exposes an access-mode surface via --approval-mode.
+// Capabilities declares what this backend can do. Permissions is false
+// because approvals resolve inside omp per its own tools.approvalMode and
+// there is no RPC round-trip — ReplyPermission returns an explicit error
+// rather than pretending. Branch is false because omp exposes no
+// instruction channel to pin a working branch. Steer is true: a prompt
+// sent while the agent is working is delivered as steering.
+func (a *Adapter) Capabilities() protocol.Capabilities {
+	return protocol.Capabilities{
+		Permissions: false,
+		Forms:       true,
+		Steer:       true,
+		Branch:      false,
+		Agents:      false,
+		Commands:    true,
+		AccessMode:  true,
+	}
+}
+
 func (a *Adapter) AccessSupported() bool { return true }
 
 // SetAccess records the mode; the child picks it up on the next spawn. The
@@ -616,6 +634,11 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 
 	meta := protocol.Meta{
 		Models: make([]protocol.ModelInfo, 0, len(models.Models)),
+		// Permissions is false and Branch is false deliberately: there is no
+		// round-trip for the first (ReplyPermission returns an explicit
+		// error) and SetBranch is a documented no-op for the second, so the
+		// UI can say so instead of offering a picker that does nothing.
+		Capabilities: a.Capabilities(),
 		// Agents stays empty (omp has no named-agent registry over RPC), but
 		// must be an array, not null: the TS contract says list.
 		Agents:      []protocol.AgentInfo{},

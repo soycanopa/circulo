@@ -473,6 +473,37 @@ type AccessState struct {
 }
 
 // Meta is the picker data for the composer.
+// Capabilities declares what a backend can actually do.
+//
+// This exists so the UI never has to infer behavior from the provider's name.
+// The distinction matters because the two backends differ in ways that are
+// invisible until the user hits them: omp has no permission round-trip, so
+// permission cards simply never appear, and its branch picker is a no-op, so
+// the chip looks functional and does nothing. Declaring the gap is the
+// difference between a feature that is absent and a feature that is broken.
+//
+// Identity is a separate concern and stays name-based: which product this is,
+// its logo, and which "add project" entry to show are legitimately about the
+// provider's name.
+type Capabilities struct {
+	// Permissions is a real approve/deny round-trip (omp: no).
+	Permissions bool `json:"permissions"`
+	// Forms is a real answer channel for select/confirm/input requests.
+	Forms bool `json:"forms"`
+	// Steer means a prompt sent while the agent is working is delivered as a
+	// steering message rather than starting a second turn (omp: yes).
+	Steer bool `json:"steer"`
+	// Branch means the branch the session works on can actually be pinned.
+	Branch bool `json:"branch"`
+	// Agents means the backend exposes a named-agent registry to pick from.
+	Agents bool `json:"agents"`
+	// Commands means the backend exposes a slash-command surface.
+	Commands bool `json:"commands"`
+	// AccessMode means the backend exposes an access-mode selector.
+	AccessMode bool `json:"accessMode"`
+}
+
+// Meta is the composer picker's data.
 type Meta struct {
 	Agents []AgentInfo `json:"agents"`
 	Models []ModelInfo `json:"models"`
@@ -487,6 +518,9 @@ type Meta struct {
 	// Slash commands (built-ins, skills, user commands); nil = provider
 	// exposes no command surface.
 	Commands []CommandInfo `json:"commands,omitempty"`
+	// Capabilities mirrors what this backend can do, so the UI can explain a
+	// missing affordance instead of silently omitting it.
+	Capabilities Capabilities `json:"capabilities"`
 }
 
 // SetAccessRequest is the body of POST /projects/{id}/access.

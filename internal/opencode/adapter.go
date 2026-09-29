@@ -554,7 +554,7 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 	if err != nil {
 		return protocol.Meta{}, err
 	}
-	meta := protocol.Meta{Agents: []protocol.AgentInfo{}, Models: []protocol.ModelInfo{}}
+	meta := protocol.Meta{Agents: []protocol.AgentInfo{}, Models: []protocol.ModelInfo{}, Capabilities: a.Capabilities()}
 	for _, ag := range agents {
 		if ag.Hidden {
 			continue
@@ -605,6 +605,24 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 }
 
 // AccessSupported: opencode exposes no access-mode surface.
+// Capabilities declares what this backend can do. Each flag is a real code
+// path, not an aspiration: Permissions and Forms have working client calls,
+// Steer is false because a prompt sent while the agent is working is a second
+// turn rather than a steering message (opencode's inbox delivery is not
+// implemented in the adapter), Branch pins through an instruction entry, and
+// Agents/Commands come off the server's own agent and command surfaces.
+func (a *Adapter) Capabilities() protocol.Capabilities {
+	return protocol.Capabilities{
+		Permissions: true,
+		Forms:       true,
+		Steer:       false,
+		Branch:      true,
+		Agents:      true,
+		Commands:    true,
+		AccessMode:  false,
+	}
+}
+
 func (a *Adapter) AccessSupported() bool { return false }
 
 // SetAccess is unsupported; the relay rejects the request before calling.
