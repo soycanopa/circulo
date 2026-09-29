@@ -38,15 +38,26 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
 
 - One responsibility per **Go package** and per **TS module**.
 - Dependency direction is one-way:
-  `frontend → internal/agent/protocol (contract) ← internal/orchestrator ← internal/opencode`.
+  `frontend → internal/agent/protocol (contract) ← internal/orchestrator ← {internal/opencode, internal/omp}`.
+  The orchestrator holds N adapters behind one `agent.Adapter` interface; a third
+  adapter slots in beside them without touching the two above.
 - The UI does not import adapters: frontend code knows only the neutral protocol
-  (`frontend/src/lib/agent/protocol.ts`) and the relay API (`/agent/...`). It must never
-  see OpenCode types, ports, or URLs.
-- Adapters do not know the UI: `internal/opencode` (and every future
-  `internal/<provider>`) must not import `wails` packages, `internal/relay`, or
-  `internal/orchestrator`. It exposes an `agent.AgentAdapter` and a channel of
-  `agent/protocol` events — nothing else.
+  (`frontend/src/lib/agent/protocol.ts`) and the relay API (`/agent/...`). It must
+  never see OpenCode or omp types, ports, or URLs. The provider name
+  (`"opencode" | "omp"`) is the only provider vocabulary that crosses this line.
+- Adapters do not know the UI: `internal/opencode` and `internal/omp` must not
+  import `wails` packages, `internal/relay`, or `internal/orchestrator`. Each
+  exposes an `agent.AgentAdapter` and a channel of `agent/protocol` events —
+  nothing else.
+- The two adapters differ in transport on purpose: OpenCode is HTTP+SSE against
+  a spawned `opencode serve`, omp is newline-delimited JSON over a child's stdio
+  (`omp --mode rpc`). Nothing above them may learn that difference — if a change
+  makes the orchestrator or the UI aware of *how* an adapter talks, the neutral
+  protocol has been breached.
 - `internal/relay` translates HTTP ⇄ orchestrator calls and holds **no business logic**.
+- `main.go` is the only composition root: it is the one place that maps a
+  `store.Project.Provider` to a concrete adapter. Adding adapter #3 means editing
+  that switch and nothing else.
 
 ## Git & delivery
 
@@ -90,4 +101,15 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
   PR as the behavior they describe.
 - `internal/agent/protocol` — the neutral wire contract. Changing it means changing
   `frontend/src/lib/agent/protocol.ts` and reducer tests in the same commit.
-- `internal/opencode/` — the only place allowed to speak OpenCode.
+- `internal/agent` — the `Adapter` interface both backends implement. It is
+  deliberately the smallest useful surface; grow it only when a real backend needs it.
+- `internal/opencode/` — adapter #1. The only place allowed to speak OpenCode.
+  HTTP+SSE, v2 API only.
+- `internal/omp/` — adapter #2 (`omp --mode rpc`, stdio NDJSON). The only place
+  allowed to speak omp. Same contract, different transport.
+- `internal/orchestrator/` — project registry, adapter lifecycle fan-in, event hub.
+  Knows adapters only as `agent.Adapter`.
+- `internal/relay/` — the `/agent` HTTP+SSE surface the webview talks to.
+- `internal/store/` — `settings.json` persistence (projects, provider, mode). Atomic writes.
+- `internal/term/` — PTY terminals (creack/pty), one per project. I/O rides SSE +
+  write/resize POSTs; it is transport-agnostic to the provider, not to the relay.
