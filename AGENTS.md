@@ -163,6 +163,17 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
   PR as the behavior they describe.
 - `internal/agent/protocol` — the neutral wire contract. Changing it means changing
   `frontend/src/lib/agent/protocol.ts` and reducer tests in the same commit.
+- Every `protocol.Envelope` carries `seq` and `epoch`, assigned by the orchestrator
+  as it fans events in. **They are not decoration.** `seq` restarts at 1 on every
+  process start, so a client that trusted a bare sequence would accept a fresh run's
+  event 1 as the continuation of an old run's event 1; `epoch` is what makes a
+  resume across a restart detectable. The relay answers a resume with a `replay`
+  control frame (`full` / `resumed` / `stale` / `gap`) *before* any event, and the
+  client refetches only when the status is not `resumed`. A cursor older than the
+  ring replays nothing — a partial tail that looks complete is worse than none.
+  Corollary: **full-part updates are the self-healing mechanism for part content
+  only.** A dropped `permission.asked`, `session.status`, `adapter.status`, retry
+  or form request strands the UI no matter how idempotent the parts are.
 - `internal/agent` — the `Adapter` interface both backends implement. It is
   deliberately the smallest useful surface; grow it only when a real backend needs it.
 - `internal/opencode/` — adapter #1. The only place allowed to speak OpenCode.

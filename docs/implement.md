@@ -271,24 +271,28 @@ smoke added in the version audit now keeps it that way.
 Scope line set by the owner 2026-09-29: P0–P4 land before v0.1; P5–P7 are v1.
 Sequenced P0 first because the later ones that touch the protocol ride on it.
 
-**P0 — Sequenced envelopes with a replay cursor.** The reason this is not
-cosmetic: today the only defense against a dropped frame is that parts are full
-replacements, so the reducer self-heals (FR-20). That covers *part content only*.
-It does not cover `permission.asked`, `session.status`, `adapter.status`, retry
-or form requests — losing one of those strands the UI. waku's issue #50 (a session
-stuck in "Working") is that exact failure, and it is a consequence of an
-unnumbered stream rather than a bug in their code.
-- `protocol.Envelope` grows `seq` and `epoch` alongside `Type`/`Payload`; the
-  orchestrator assigns them as it fans in. `protocol.ts` and the reducer change in
-  the same commit, per the AGENTS.md contract rule.
-- The orchestrator's replay ring becomes resumable: a subscriber sends the last
-  sequence it saw and gets the tail, instead of a full 1024-event re-dump today.
-- **`epoch` is what makes resume safe**: bump it on every process start, so a
-  sequence that restarts at 1 after a restart is never mistaken for an old event.
-  Without it, resuming is worse than not resuming.
-- Client side: `sse.ts` sends `Last-Event-ID` and dedupes on `seq`.
-- Cross-cutting — protocol, reducer, relay, orchestrator, SSE client. It gets its
-  own phase for that reason, not one commit.
+**P0 — Sequenced envelopes with a replay cursor.** ✅ done (branch
+`feature/stream-integrity`). The reason this was not cosmetic: the only defense
+against a dropped frame was that parts are full replacements, so the reducer
+self-heals (FR-20) — but that covers *part content only*. It does not cover
+`permission.asked`, `session.status`, `adapter.status`, retry or form requests,
+and those are the events that strand a UI. What shipped:
+- `protocol.Envelope` carries `seq` + `epoch`; `protocol.ts` and the SSE client
+  changed with it, per the AGENTS.md contract rule.
+- The orchestrator stamps both, and `Subscribe(protocol.Cursor)` returns a
+  `ReplayStatus` (`full` / `resumed` / `stale` / `gap`) with the channel.
+- The relay sends that status as the first SSE control frame and writes an `id:`
+  per event, so a native `EventSource` reconnect also carries `Last-Event-ID`.
+- The client owns the cursor and rebuilds the `EventSource` on reconnect, dedupes
+  on the `(epoch, seq)` pair rather than `seq` alone, and refetches **only** when
+  the status is not `resumed`. A one-second blip no longer costs four REST round
+  trips including the model catalog.
+- **A hole the cursor exposed, now closed:** a subscriber that stopped reading had
+  its events silently dropped. It is now dropped as a subscription — the channel
+  closes, the relay ends the response, and the client reconnects with a cursor
+  that recovers the exact tail.
+- Verified end to end over HTTP, not just per-unit: connect, cut, emit three
+  events while away, reconnect, receive exactly those three.
 
 **P1 — Checkpoints as per-turn git refs.** Replaces backlog item 5 rather than
 adding to it: the old item assumed OpenCode's `revert`/`unrevert`, which ties
