@@ -10,6 +10,7 @@ import { Folder, Loader2, X } from "lucide-react";
 import { useAppStore } from "@/lib/agent/store";
 import type { ProjectView } from "@/lib/agent/protocol";
 import type { SessionState } from "@/lib/agent/reducer";
+import { RewindControl } from "./RewindControl";
 
 export const ChatAppBar = memo(function ChatAppBar({
   project,
@@ -42,6 +43,15 @@ export const ChatAppBar = memo(function ChatAppBar({
             <Loader2 className="size-3.5 animate-spin" />
             retrying{session?.retry ? ` (attempt ${session.retry.attempt})` : ""}
           </span>
+        )}
+        {/* Renders nothing unless the project is a git repository with
+            rewindable turns, so there is no disabled state to explain. */}
+        {session && !busy && (
+          <RewindControl
+            projectID={project.id}
+            sessionID={session.session.id}
+            onRewound={() => useAppStore.getState().resync()}
+          />
         )}
         {session && (
           <button

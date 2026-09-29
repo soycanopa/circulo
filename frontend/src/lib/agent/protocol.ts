@@ -115,6 +115,40 @@ export function needsResync(status: ReplayStatus): boolean {
   return status !== "resumed";
 }
 
+/**
+ * One stored workspace state. Checkpoints are git refs under refs/circulo/,
+ * written at the edges of a turn: `start` is the tree the turn began from and
+ * is both what a rewind restores and what its diff is measured against.
+ */
+export interface Checkpoint {
+  sessionID: string;
+  turn: number;
+  kind: "start" | "end" | "guard";
+  ref: string;
+  commit: string;
+  createdAt: number;
+}
+
+export interface CheckpointView {
+  projectID: string;
+  /** False for a project that is not a git repository — the feature hides. */
+  available: boolean;
+  /** The worktree has uncommitted changes right now. */
+  dirty: boolean;
+  checkpoints: Checkpoint[];
+}
+
+export interface RewindPreview {
+  ref: string;
+  turn: number;
+  /** Unified diff of what the rewind would undo. */
+  diff: string;
+  /** Uncommitted work exists, so a rewind discards something. */
+  willLose: boolean;
+  /** Where the current state is preserved, so the rewind is undoable. */
+  guardRef: string;
+}
+
 export interface AdapterStatus {
   projectID: string;
   state: AdapterState;

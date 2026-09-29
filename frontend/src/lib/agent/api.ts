@@ -3,6 +3,7 @@
 import type {
   AccessMode,
   AccessState,
+  CheckpointView,
   CommandRequest,
   FileHit,
   HydratedMessage,
@@ -10,6 +11,7 @@ import type {
   ProjectVcs,
   ProjectView,
   PromptRequest,
+  RewindPreview,
   Session,
 } from "./protocol";
 
@@ -76,6 +78,31 @@ export const api = {
   messages: (projectID: string, sessionID: string, limit = 0) =>
     request<HydratedMessage[]>(
       `/projects/${projectID}/sessions/${sessionID}/messages?limit=${limit}`,
+    ),
+
+  /**
+   * Checkpoints are a project capability backed by git refs in the project's
+   * own repository, not an adapter one: `available` is false for a folder that
+   * is not a repository, which is a normal state rather than an error.
+   */
+  checkpoints: (projectID: string, sessionID: string) =>
+    request<CheckpointView>(
+      `/projects/${projectID}/checkpoints?session=${encodeURIComponent(sessionID)}`,
+    ),
+
+  /**
+   * What a rewind would do, computed without doing it. The UI shows this
+   * before asking for confirmation, because a rewind discards work.
+   */
+  rewindPreview: (projectID: string, sessionID: string, turn: number) =>
+    request<RewindPreview>(
+      `/projects/${projectID}/checkpoints/rewind-preview?session=${encodeURIComponent(sessionID)}&turn=${turn}`,
+    ),
+
+  rewind: (projectID: string, sessionID: string, turn: number) =>
+    request<CheckpointView>(
+      `/projects/${projectID}/checkpoints/rewind?session=${encodeURIComponent(sessionID)}&turn=${turn}`,
+      { method: "POST", body: "{}" },
     ),
 
   prompt: (projectID: string, sessionID: string, req: PromptRequest) =>
