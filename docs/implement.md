@@ -236,11 +236,104 @@ rather than an error. Audited on 2026-09-29: **no drift**.
 6. Quit app → `pgrep opencode` empty (no orphans).
 7. Reopen → history hydrates for the same session.
 
+## Amendment 2026-09-29 (II) — gap analysis against waku
+
+Circulo and [waku](https://github.com/egoist/waku) sit in the same product
+category, so waku is a legitimate reference. Three constraints on that reference,
+decided by the owner on 2026-09-29:
+
+1. **waku is GPL-3.0-only. Ideas and UX patterns yes, code never** — copying a
+   file would force Circulo under GPL-3.0. This is now a rule in AGENTS.md.
+2. **waku's architecture is not portable.** Its `waku-daemon` / `waku-protocol` /
+   `waku-core` split exists because it drives 9 providers plus a browser client
+   and remote access. Circulo is one process with a route-mounted relay, and the
+   neutral protocol already covers what the daemon covers there. A daemon would
+   break the single-composition-root invariant (main.go) with no proven need.
+   WebSocket RPC is likewise the wrong call for a one-way event stream.
+3. **The gaps below were each verified against the code**, not inferred from
+   waku's README. Where Circulo already has something, it says so.
+
+Also checked and **no action needed**: waku's oversized-catalog bug (its omp probe
+skipped chunk reassembly, PR #153). Circulo's `Meta` reads through the same
+reassembling framed reader, and the 18.4.2 live smoke returns a 276-model catalog
+against the real binary.
+
+And a position worth keeping: waku 0.1.19 is **broken against OpenCode GA** —
+issue #242, open 11 days, 0 reactions, unfixed in main. Its probe hits
+`GET /api/health`, which does not exist in GA, so the model picker silently
+empties. Verified against the live 2.0.18 spec: `/api/health` is absent,
+`/api/info` is present, the command body requires `{name, text}` and rename is a
+`PATCH` — Circulo already does the right thing on all four counts, and the live
+smoke added in the version audit now keeps it that way.
+
+## Phase 9 — Stream integrity + checkpoints (post-E2E, before calling v0.1 stable)
+
+Scope line set by the owner 2026-09-29: P0–P4 land before v0.1; P5–P7 are v1.
+Sequenced P0 first because the later ones that touch the protocol ride on it.
+
+**P0 — Sequenced envelopes with a replay cursor.** The reason this is not
+cosmetic: today the only defense against a dropped frame is that parts are full
+replacements, so the reducer self-heals (FR-20). That covers *part content only*.
+It does not cover `permission.asked`, `session.status`, `adapter.status`, retry
+or form requests — losing one of those strands the UI. waku's issue #50 (a session
+stuck in "Working") is that exact failure, and it is a consequence of an
+unnumbered stream rather than a bug in their code.
+- `protocol.Envelope` grows `seq` and `epoch` alongside `Type`/`Payload`; the
+  orchestrator assigns them as it fans in. `protocol.ts` and the reducer change in
+  the same commit, per the AGENTS.md contract rule.
+- The orchestrator's replay ring becomes resumable: a subscriber sends the last
+  sequence it saw and gets the tail, instead of a full 1024-event re-dump today.
+- **`epoch` is what makes resume safe**: bump it on every process start, so a
+  sequence that restarts at 1 after a restart is never mistaken for an old event.
+  Without it, resuming is worse than not resuming.
+- Client side: `sse.ts` sends `Last-Event-ID` and dedupes on `seq`.
+- Cross-cutting — protocol, reducer, relay, orchestrator, SSE client. It gets its
+  own phase for that reason, not one commit.
+
+**P1 — Checkpoints as per-turn git refs.** Replaces backlog item 5 rather than
+adding to it: the old item assumed OpenCode's `revert`/`unrevert`, which ties
+checkpoints to one provider. Refs work identically for omp, where no such support
+exists, and need nothing from the harness.
+- `refs/circulo/session-<id>-turn-<n>`, plus `-start-` and `-diff-` variants, so
+  rewind and the turn's diff base come from the same mechanism.
+- Written at turn boundaries by the orchestrator; rewind moves the ref and
+  re-hydrates. Requires an explicit confirmation when uncommitted work exists.
+
+**P2 — Declared capabilities on the runtime.** `supports_steer`,
+`supports_checkpoints`, `supports_branch_pinning` and friends, advertised by the
+adapter in its runtime response. Today behavior is hardcoded per provider and the
+UI branches on the provider name in places. This is *stricter* than the current
+invariant — it removes the provider name as crossing vocabulary — and it is what
+lets queue/steer work for OpenCode the way it already does for omp.
+
+**P3 — Composer drafts per target.** Keyed by conversation target and restored on
+return, so switching sessions no longer discards what was being typed.
+
+**P4 — Scope on slash commands.** The useful idea is that **presentation order and
+resolution precedence are two different orderings**: the picker ranks builtin →
+project → user → skill, while project and user commands may still override a
+less-specific command of the same name. Circulo's slash commands have no scope.
+
 ## Out-of-scope backlog (v1+, in priority order)
 
-1. v2 granular OpenCode events (`message.part.delta` everywhere, tool input streaming).
+1. omp tool-call granularity. The OpenCode side is done — the adapter already
+   handles `session.tool.input.started/ended` and `session.tool.progress`, and
+   the neutral protocol has a `part.delta` fast path behind a full `part.updated`.
+   omp only emits `toolcall_end`, so arguments appear when the call completes;
+   incremental input depends on what omp's RPC actually exposes.
 2. `@` file mentions + image attachments in composer (protocol already has file parts).
 3. Syntax highlighting behind MarkdownView; diff syntax tone.
 4. Third adapter (Claude CLI stream-json) — the omp adapter already proved the neutral protocol across transports (stdio vs HTTP+SSE).
-5. Checkpoints/revert UI (OC supports revert/unrevert), session fork.
+5. ~~Checkpoints/revert UI~~ → **replaced by P1** in Phase 9: per-turn git refs
+   instead of OpenCode's provider-specific `revert`/`unrevert`. Session fork stays
+   here (OpenCode now takes `{before: msgID}` on `POST /api/session/{id}/fork`).
 6. Remote access (Tailcat) — design frozen in [remote.md](remote.md); implementation blocked by project rule until local protocol is stable.
+7. **Projectless tasks** (waku P5): auto-create a workspace under a local dated
+   directory for a quick question, instead of demanding a folder up front. Fits
+   the local-first model; Circulo has no such path today.
+8. **Search within session history** (waku P6): message search, complementing the
+   existing `@` file search.
+9. **Plan quota / usage history** (waku P7): subscription-remaining display. Circulo
+   shows per-turn usage only.
+10. Auto-update (waku ships signed .dmg + updater). Packaging exists; the updater is
+    a separate concern, after v0.1.
