@@ -200,9 +200,11 @@ rather than an error. Audited on 2026-09-29: **no drift**.
 ## Outstanding before Phase 8 (manual passes, consolidated)
 
 1. v2 handoff: owner E2E checklist (§3 of
-   [opencode-v2-phase6-e2e.md](opencode-v2-phase6-e2e.md)) plus the §5 decisions
-   still awaiting the owner. §5.5 (merge the branch stack) is resolved — it landed
-   on `main`; §5.4 is moot — the global CLI is v2, not v1.
+   [opencode-v2-phase6-e2e.md](opencode-v2-phase6-e2e.md)). Of the five §5
+   decisions, **only §5.3 remains open** (import v1 sessions or start clean):
+   §5.1 done (AGENTS.md rewritten for v2), §5.2 retracted (Wails already routes
+   SIGTERM to `ServiceShutdown` — no handler needed), §5.4 moot (the global CLI
+   is v2), §5.5 done (the stack is on `main`).
 2. Full E2E manual checklist pass (below) — the project gate in AGENTS.md for
    remote work; the adapter-#2 clause was consumed by the omp provider (Phase 7).
    The provider half of it is now covered by the two live smokes above; what
