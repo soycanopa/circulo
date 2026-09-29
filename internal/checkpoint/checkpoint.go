@@ -220,12 +220,82 @@ func Restore(ctx context.Context, dir, ref string) error {
 		return fmt.Errorf("checkpoint: %s is not a stored checkpoint: %w", ref, err)
 	}
 	// read-tree --reset -u rewrites the index and the worktree to the ref's
-	// tree. It does not touch HEAD, and it removes files the checkpoint did
-	// not have — which is the honest meaning of "undo this turn".
+	// tree. It does not touch HEAD, and it restores modified and deleted
+	// tracked files.
 	if _, err := runCtx(ctx, dir, "read-tree", "--reset", "-u", ref); err != nil {
 		return fmt.Errorf("checkpoint: restore %s: %w", ref, err)
 	}
+	// …but read-tree only knows about paths in the index, so the files an
+	// agent *created* survive it. Those are untracked, and they are usually
+	// the entire point of a rewind. Remove the ones the checkpoint does not
+	// have, and only those: ignored files (build output, node_modules) are
+	// not enumerated by --others --exclude-standard, so they are untouched.
+	if err := removeUntrackedNotIn(ctx, dir, ref); err != nil {
+		return err
+	}
 	return nil
+}
+
+// removeUntrackedNotIn deletes untracked, non-ignored files that are absent
+// from the checkpoint's tree. Files that the checkpoint contains are left
+// alone, and anything git is ignoring is never a candidate.
+func removeUntrackedNotIn(ctx context.Context, dir, ref string) error {
+	untracked, err := runCtx(ctx, dir, "ls-files", "--others", "--exclude-standard", "-z")
+	if err != nil {
+		return fmt.Errorf("checkpoint: list untracked: %w", err)
+	}
+	if untracked == "" {
+		return nil
+	}
+	inRef, err := runCtx(ctx, dir, "ls-tree", "-r", "--name-only", "-z", ref)
+	if err != nil {
+		return fmt.Errorf("checkpoint: list checkpoint tree: %w", err)
+	}
+	present := map[string]bool{}
+	for _, name := range strings.Split(inRef, "\x00") {
+		if name != "" {
+			present[name] = true
+		}
+	}
+	for _, name := range strings.Split(untracked, "\x00") {
+		if name == "" || present[name] {
+			continue
+		}
+		target := filepath.Join(dir, filepath.FromSlash(name))
+		// Only files git itself reported, and only inside the worktree.
+		if !strings.HasPrefix(target, filepath.Clean(dir)+string(os.PathSeparator)) {
+			continue
+		}
+		if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("checkpoint: remove %s: %w", name, err)
+		}
+	}
+	// Drop the now-empty directories the agent created, so the tree looks like
+	// the checkpoint instead of leaving husks behind.
+	pruneEmptyDirs(dir, untracked, present)
+	return nil
+}
+
+// pruneEmptyDirs removes directories left empty by the restore. Best effort:
+// a directory that is not empty, or that vanished already, is fine.
+func pruneEmptyDirs(dir, untracked string, keep map[string]bool) {
+	seen := map[string]bool{}
+	for _, name := range strings.Split(untracked, "\x00") {
+		if name == "" || keep[name] {
+			continue
+		}
+		d := filepath.Dir(filepath.Join(dir, filepath.FromSlash(name)))
+		for d != filepath.Clean(dir) && len(d) > len(dir) {
+			if seen[d] {
+				break
+			}
+			seen[d] = true
+			if err := os.Remove(d); err != nil {
+				break
+			}
+			d = filepath.Dir(d)
+		}
+	}
 }
 
 // Diff returns the unified diff between two stored checkpoints, which is what

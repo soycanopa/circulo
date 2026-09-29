@@ -291,6 +291,82 @@ func TestDirty(t *testing.T) {
 	}
 }
 
+// The files an agent creates are untracked, and undoing a turn is mostly
+// about removing them. read-tree only sees paths in the index, so this case is
+// the one that actually matters — and the one a test that commits its changes
+// first will never reach.
+func TestRestore_RemovesUntrackedFilesTheTurnCreated(t *testing.T) {
+	dir := repo(t)
+	ctx := context.Background()
+	start, err := Capture(ctx, dir, "ses_1", 1, KindStart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The turn creates a new file and never stages it.
+	write(t, dir, "brand-new.txt", "agent output\n")
+	// …and edits a tracked one.
+	write(t, dir, "README.md", "agent edit\n")
+
+	if err := Restore(ctx, dir, start.Ref); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(filepath.Join(dir, "brand-new.txt")) {
+		t.Error("untracked file created by the turn survived the restore")
+	}
+	if got := read(t, dir, "README.md"); got != "one\n" {
+		t.Errorf("tracked edit not reverted: %q", got)
+	}
+}
+
+// Ignored files are build output, not the turn's work: a rewind must not
+// delete them.
+func TestRestore_KeepsIgnoredFiles(t *testing.T) {
+	dir := repo(t)
+	ctx := context.Background()
+	write(t, dir, ".gitignore", "node_modules/\n")
+	git(t, dir, "add", ".gitignore")
+	git(t, dir, "commit", "-m", "ignore")
+
+	start, err := Capture(ctx, dir, "ses_1", 1, KindStart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, dir, "node_modules/pkg/index.js", "// built\n")
+	write(t, dir, "source.js", "// agent\n")
+
+	if err := Restore(ctx, dir, start.Ref); err != nil {
+		t.Fatal(err)
+	}
+	if !fileExists(filepath.Join(dir, "node_modules/pkg/index.js")) {
+		t.Error("an ignored file was deleted by a rewind")
+	}
+	if fileExists(filepath.Join(dir, "source.js")) {
+		t.Error("untracked, non-ignored file should have been removed")
+	}
+}
+
+// A file the checkpoint itself contains must survive a later rewind to it,
+// even though nothing tracks it.
+func TestRestore_KeepsFilesTheCheckpointHolds(t *testing.T) {
+	dir := repo(t)
+	ctx := context.Background()
+	write(t, dir, "kept.txt", "at checkpoint time\n")
+	start, err := Capture(ctx, dir, "ses_1", 1, KindStart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Something later deletes it from the worktree only.
+	if err := os.Remove(filepath.Join(dir, "kept.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Restore(ctx, dir, start.Ref); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, dir, "kept.txt"); got != "at checkpoint time\n" {
+		t.Errorf("file held by the checkpoint was not restored: %q", got)
+	}
+}
+
 func TestPrune_KeepsNewestTurns(t *testing.T) {
 	dir := repo(t)
 	ctx := context.Background()
