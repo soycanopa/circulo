@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"circulogo/internal/agent"
-	"circulogo/internal/agent/protocol"
-	"circulogo/internal/orchestrator"
-	"circulogo/internal/relay"
-	"circulogo/internal/store"
+	"circulo/internal/agent"
+	"circulo/internal/agent/protocol"
+	"circulo/internal/orchestrator"
+	"circulo/internal/relay"
+	"circulo/internal/store"
 )
 
 // fakeAdapter implements agent.Adapter for relay tests. Only the methods the
@@ -28,6 +28,8 @@ type fakeAdapter struct {
 	renamed  [2]string // sessionID, new title
 	startErr error
 	events   chan protocol.Envelope
+	// commands lets a test drive the command list that Meta returns.
+	commands []protocol.CommandInfo
 }
 
 func newFakeAdapter() *fakeAdapter { return &fakeAdapter{events: make(chan protocol.Envelope, 64)} }
@@ -89,9 +91,20 @@ func (f *fakeAdapter) SetBranch(_ context.Context, _, _ string) error { return n
 
 func (f *fakeAdapter) Meta(_ context.Context) (protocol.Meta, error) {
 	return protocol.Meta{
-		Agents: []protocol.AgentInfo{{Name: "build", Mode: "primary"}},
-		Models: []protocol.ModelInfo{{ID: "glm-5.3", Provider: "zai-coding-plan"}},
+		Agents:       []protocol.AgentInfo{{Name: "build", Mode: "primary"}},
+		Models:       []protocol.ModelInfo{{ID: "glm-5.3", Provider: "zai-coding-plan"}},
+		Commands:     f.commands,
+		Capabilities: f.Capabilities(),
 	}, nil
+}
+
+// Capabilities on a fake: everything on, so tests that do not care about a
+// gap are not shaped by one. Capability-specific tests declare their own.
+func (f *fakeAdapter) Capabilities() protocol.Capabilities {
+	return protocol.Capabilities{
+		Permissions: true, Forms: true, Steer: true, Branch: true,
+		Agents: true, Commands: true, AccessMode: true,
+	}
 }
 
 func (f *fakeAdapter) AccessSupported() bool                       { return false }

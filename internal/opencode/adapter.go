@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"circulogo/internal/agent"
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent"
+	"circulo/internal/agent/protocol"
 )
 
 // resolveDir returns the symlink-resolved absolute path of dir (empty in →
@@ -390,12 +390,12 @@ func (a *Adapter) Sessions(ctx context.Context) ([]protocol.Session, error) {
 // not write into the user's project — the session instructions-entries API is
 // the app-owned path (verified live: the entry rides the turn's instruction
 // assembly and reaches the model).
-const formatInstructionKey = "circulogo-format"
+const formatInstructionKey = "circulo-format"
 const formatInstruction = "Format every response in GitHub-flavored Markdown: " +
 	"short paragraphs, bullet lists, numbered steps for procedures, tables for " +
 	"comparisons, and fenced code blocks with a language tag. Never reply with " +
 	"unstructured plain text. When you need to show a flowchart or workflow, " +
-	"emit one fenced block labeled circulogo-flow whose body is valid JSON: " +
+	"emit one fenced block labeled circulo-flow whose body is valid JSON: " +
 	`{"nodes":[{"id":"a","row":0,"x":0.5,"w":300,"kind":"Trigger","hue":"purple",` +
 	`"title":"New order","caption":"Trigger when an order is created"}],` +
 	`"edges":[{"from":"a","to":"b"}]}. ` +
@@ -527,7 +527,7 @@ func (a *Adapter) SetBranch(ctx context.Context, sessionID, branch string) error
 	if err != nil {
 		return err
 	}
-	return c.PutInstructionV2(ctx, sessionID, "circulogo-branch",
+	return c.PutInstructionV2(ctx, sessionID, "circulo-branch",
 		"Work on the git branch \""+branch+"\" for this whole session: switch to "+
 			"it first if needed (git switch "+branch+"), and keep every change on it.")
 }
@@ -554,7 +554,7 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 	if err != nil {
 		return protocol.Meta{}, err
 	}
-	meta := protocol.Meta{Agents: []protocol.AgentInfo{}, Models: []protocol.ModelInfo{}}
+	meta := protocol.Meta{Agents: []protocol.AgentInfo{}, Models: []protocol.ModelInfo{}, Capabilities: a.Capabilities()}
 	for _, ag := range agents {
 		if ag.Hidden {
 			continue
@@ -596,6 +596,10 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 			meta.Commands = append(meta.Commands, protocol.CommandInfo{
 				Name:        cmd.Name,
 				Description: cmd.Description,
+				// GET /api/command merges project and user commands without
+				// saying which is which, so everything is reported at the
+				// lowest scope that is honest rather than guessed upward.
+				Scope: protocol.ScopeProject,
 			})
 		}
 	}
@@ -605,6 +609,24 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 }
 
 // AccessSupported: opencode exposes no access-mode surface.
+// Capabilities declares what this backend can do. Each flag is a real code
+// path, not an aspiration: Permissions and Forms have working client calls,
+// Steer is false because a prompt sent while the agent is working is a second
+// turn rather than a steering message (opencode's inbox delivery is not
+// implemented in the adapter), Branch pins through an instruction entry, and
+// Agents/Commands come off the server's own agent and command surfaces.
+func (a *Adapter) Capabilities() protocol.Capabilities {
+	return protocol.Capabilities{
+		Permissions: true,
+		Forms:       true,
+		Steer:       false,
+		Branch:      true,
+		Agents:      true,
+		Commands:    true,
+		AccessMode:  false,
+	}
+}
+
 func (a *Adapter) AccessSupported() bool { return false }
 
 // SetAccess is unsupported; the relay rejects the request before calling.

@@ -27,9 +27,9 @@ SSE captures that could not be taken from a scratch server.
 
 ```sh
 pnpm --dir frontend build
-go build -o build/bin/circulogo .
+go build -o build/bin/circulo .
 CIRCULOGO_OPENCODE_BIN="$HOME/.local/opencode-v2/node_modules/@opencode/cli-darwin-arm64/bin/opencode" \
-  ./build/bin/circulogo
+  ./build/bin/circulo
 ```
 
 The managed v2 server prints `server password <random>` and listens on a random loopback
@@ -83,14 +83,15 @@ Status as of 2026-09-29 (see the version-audit amendment in
 1. ~~`AGENTS.md` OpenCode-traps section describes v1.~~ **Done** — rewritten for v2
    on branch `docs/agent-rules-sync`, along with the dependency diagram and project
    map that still omitted `internal/omp`.
-2. ~~SIGTERM/SIGINT handler so `kill` routes through graceful shutdown.~~ **No action
-   needed — this item was wrong.** Wails v3.0.0-beta.16 installs a default handler for
-   SIGINT+SIGTERM (`internal/signal`) that routes `App.Quit()` → `cleanup()` →
-   `shutdownServices()` → `ServiceShutdown()`, and Circulo never sets
-   `DisableDefaultSignalHandler`. The managed server is therefore stopped on `kill`.
-   What was never actually verified is whether the ObjC teardown completes before the
-   process exits; that is E2E checklist §3 step 6 (`pgrep` after quit), which is
-   still pending. Do not add a signal handler on the strength of this section.
+2. ~~SIGTERM/SIGINT handler so `kill` routes through graceful shutdown.~~ **Done —
+   the original claim here was right and the retraction in this file was wrong.**
+   Wails does install a default handler whose routing does reach
+   `ServiceShutdown()`; what fails is that the graceful teardown does not finish
+   before the process exits. Measured twice on 2026-09-29 against opencode 2.0.18:
+   after SIGTERM the app was gone and `opencode serve` was still listening on its
+   port. `main.go` now installs `shutdownOnSignal`, which stops the adapters
+   synchronously and then exits; SIGTERM and SIGINT were both re-measured with no
+   orphans afterwards.
 3. Import v1 sessions (`/api/experimental/migration/v1`) or start clean.
 4. ~~Switch the global CLI to v2.~~ **Moot** — the global `opencode` is already v2
    (2.0.18 as of 2026-09-29); the 2.0.8 side-by-side install is stale.

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"circulogo/internal/agent"
-	"circulogo/internal/agent/protocol"
-	"circulogo/internal/store"
+	"circulo/internal/agent"
+	"circulo/internal/agent/protocol"
+	"circulo/internal/store"
 )
 
 // fakeAdapter is a scripted agent.Adapter for orchestrator tests.
@@ -89,6 +89,15 @@ func (f *fakeAdapter) SetBranch(_ context.Context, _, _ string) error { return n
 
 func (f *fakeAdapter) Meta(_ context.Context) (protocol.Meta, error) { panic("unexpected") }
 
+// Capabilities on a fake: everything on, so tests that do not care about a
+// gap are not shaped by one. Capability-specific tests declare their own.
+func (f *fakeAdapter) Capabilities() protocol.Capabilities {
+	return protocol.Capabilities{
+		Permissions: true, Forms: true, Steer: true, Branch: true,
+		Agents: true, Commands: true, AccessMode: true,
+	}
+}
+
 func (f *fakeAdapter) AccessSupported() bool                       { return false }
 func (f *fakeAdapter) SetAccess(_ context.Context, _ string) error { return nil }
 func (f *fakeAdapter) RunCommand(_ context.Context, _, _, _ string) error {
@@ -164,7 +173,7 @@ func TestLoadStartsPersistedProjects(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ch, cancel := o.Subscribe()
+	ch, _, _, cancel := o.Subscribe(protocol.Cursor{})
 	defer cancel()
 	if err := o.Load(context.Background()); err != nil {
 		t.Fatal(err)
@@ -228,7 +237,7 @@ func TestAdapterFailureSurfacesAsErrorStatus(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	ch, cancel := o.Subscribe()
+	ch, _, _, cancel := o.Subscribe(protocol.Cursor{})
 	defer cancel()
 	if err := o.Load(context.Background()); err != nil {
 		t.Fatal(err)
@@ -261,7 +270,7 @@ func TestSubscribeReplaysRecentEvents(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	sub, cancel := o.Subscribe()
+	sub, _, _, cancel := o.Subscribe(protocol.Cursor{})
 	defer cancel()
 	select {
 	case env := <-sub:

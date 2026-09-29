@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent/protocol"
 )
 
 // fakeOC is a minimal OpenCode v2 server: /api/info readiness, a scripted

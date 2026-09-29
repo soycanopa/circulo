@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent/protocol"
 )
 
 // TestLiveSmokeAgainstOpencode exercises the adapter against a real

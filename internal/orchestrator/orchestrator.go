@@ -8,15 +8,21 @@ package orchestrator
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"sync"
+	"time"
 
-	"circulogo/internal/agent"
-	"circulogo/internal/agent/protocol"
-	"circulogo/internal/store"
-	"circulogo/internal/term"
+	"circulo/internal/agent"
+	"circulo/internal/agent/protocol"
+	"circulo/internal/checkpoint"
+	"circulo/internal/store"
+	"circulo/internal/term"
 )
 
 // AdapterFactory builds an adapter for a project config. It exists so tests
@@ -37,8 +43,15 @@ type Orchestrator struct {
 	subs         map[int]*subscriber
 	nextSubID    int
 	replay       []protocol.Envelope // ring of recent events for late subscribers
+	seq          uint64              // last assigned envelope sequence
+	epoch        string              // changes on every process start
 	startSeq     []string            // projects pending Start, in settings order
 	shutdownOnce sync.Once
+	// turns maps session id to the turn currently open, and nextTurn to the
+	// last number used for it. Both are the turn-boundary bookkeeping that
+	// decides which checkpoint ref an event writes.
+	turns    map[string]int
+	nextTurn map[string]int
 }
 
 type project struct {
@@ -56,6 +69,35 @@ type subscriber struct {
 	ch chan protocol.Envelope
 }
 
+const (
+	// replayMax bounds the ring of recent events kept for subscribers that
+	// attach late or resume. A cursor older than the ring cannot be served
+	// and the client is told to refetch instead.
+	replayMax = 1024
+	// subBuffer is how far a subscriber may lag before its channel is closed.
+	// On a full buffer the orchestrator drops the subscriber rather than
+	// silently discarding events: closing makes the relay end the response,
+	// the client reconnects with its cursor, and the ring delivers exactly
+	// what was missed. Silently dropping is what makes a UI strand itself.
+	subBuffer = 256
+)
+
+// newEpoch returns a value that differs between processes. Sequence numbers
+// restart at 1 on every start, so the epoch is the only thing that stops a
+// client from treating a fresh run's event 1 as the continuation of an old
+// run's event 1. Random rather than a timestamp so two processes started in
+// the same millisecond still differ.
+func newEpoch() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand failing is not recoverable in any useful way here, and
+		// a predictable epoch would be worse than a distinctive-but-fixed
+		// one; fall back to the clock, which is still unique per process.
+		return strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
+	return hex.EncodeToString(b[:])
+}
+
 // New builds an orchestrator around a store and adapter factory.
 func New(st *store.Store, factory AdapterFactory) *Orchestrator {
 	return &Orchestrator{
@@ -64,6 +106,9 @@ func New(st *store.Store, factory AdapterFactory) *Orchestrator {
 		projects: map[string]*project{},
 		subs:     map[int]*subscriber{},
 		terms:    term.NewManager(),
+		epoch:    newEpoch(),
+		turns:    map[string]int{},
+		nextTurn: map[string]int{},
 	}
 }
 
@@ -135,9 +180,87 @@ func (o *Orchestrator) startAdapter(_ context.Context, id string) {
 // pump forwards adapter events to subscribers until the channel closes.
 func (o *Orchestrator) pump(projectID string, events <-chan protocol.Envelope) {
 	for env := range events {
+		o.observeTurnBoundary(projectID, env)
 		o.broadcast(env)
 	}
 	o.setStatus(projectID, protocol.AdapterStopped, "")
+}
+
+// keepTurns bounds how many turns of checkpoints a session retains. Refs are
+// cheap but not free, and nobody rewinds further back than a few turns.
+const keepTurns = 20
+
+// observeTurnBoundary records the workspace state at the edges of a turn.
+//
+// It keys off session.status rather than the prompt call because the relay
+// hands prompts straight to the adapter — the orchestrator never sees them —
+// while status is the one event both backends already translate, and means the
+// same thing in each. A turn is a busy→idle cycle.
+//
+// Checkpointing is best-effort and never blocks the event pump: a project that
+// is not a git repository simply has no checkpoints, and that is a normal
+// state, not a failure to report on every turn.
+func (o *Orchestrator) observeTurnBoundary(projectID string, env protocol.Envelope) {
+	if env.Type != protocol.EventSessionStatus {
+		return
+	}
+	var st protocol.SessionStatus
+	if err := json.Unmarshal(env.Payload, &st); err != nil {
+		return
+	}
+	// The adapter stamps its own project id; trust the pump's, which is the
+	// one this orchestrator registered the adapter under.
+	o.mu.Lock()
+	dir := ""
+	if p := o.projects[projectID]; p != nil {
+		dir = p.cfg.Path
+	}
+	if dir == "" {
+		o.mu.Unlock()
+		return
+	}
+	key := st.SessionID
+	switch st.Status {
+	case protocol.StatusBusy:
+		if _, open := o.turns[key]; open {
+			// A retry re-reports busy; the turn is already open.
+			o.mu.Unlock()
+			return
+		}
+		o.nextTurn[key]++
+		o.turns[key] = o.nextTurn[key]
+		turn := o.turns[key]
+		o.mu.Unlock()
+		o.capture(dir, key, turn, checkpoint.KindStart)
+	case protocol.StatusIdle:
+		turn, open := o.turns[key]
+		if !open {
+			o.mu.Unlock()
+			return
+		}
+		delete(o.turns, key)
+		o.mu.Unlock()
+		o.capture(dir, key, turn, checkpoint.KindEnd)
+		// Pruning is housekeeping; a failure only costs disk until the next
+		// turn tries again, so it is not worth a per-turn error path.
+		_ = checkpoint.Prune(context.Background(), dir, key, keepTurns)
+	default:
+		o.mu.Unlock()
+	}
+}
+
+// capture writes one checkpoint ref. Failures are swallowed on purpose: this
+// runs inside the event pump on every turn, and a project that is not a git
+// repository is a normal state rather than an error to surface there. Whether
+// checkpoints are available is a queryable property (Checkpoints below), so the
+// UI asks instead of the pump reporting.
+func (o *Orchestrator) capture(dir, sessionID string, turn int, kind checkpoint.Kind) {
+	if !checkpoint.Available(dir) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, _ = checkpoint.Capture(ctx, dir, sessionID, turn, kind)
 }
 
 func (o *Orchestrator) setStatus(id, state, detail string) {
@@ -158,43 +281,204 @@ func (o *Orchestrator) setStatus(id, state, detail string) {
 
 func (o *Orchestrator) broadcast(env protocol.Envelope) {
 	o.mu.Lock()
-	// Keep a replay ring so subscribers that attach later (or after a UI
-	// reload) still see recent state without a full refetch (flow.md §1).
-	const replayMax = 1024
+	o.seq++
+	env.Seq = o.seq
+	env.Epoch = o.epoch
+	// Keep a replay ring so subscribers that attach later (or resume) still
+	// see recent state without a full refetch (flow.md §1).
 	o.replay = append(o.replay, env)
 	if len(o.replay) > replayMax {
 		o.replay = o.replay[len(o.replay)-replayMax:]
 	}
-	for _, s := range o.subs {
+	for id, s := range o.subs {
 		select {
 		case s.ch <- env:
 		default:
-			// Slow subscriber: drop rather than block every project's stream.
-			// The UI resyncs via reconnect replay + REST refetch.
+			// Slow subscriber: drop the subscription instead of the event.
+			// Closing the channel ends the relay's response; the client
+			// reconnects with its cursor and the ring hands it the exact tail
+			// it missed. Dropping the event silently is what strands a UI —
+			// the client has no way to learn that something went missing.
+			delete(o.subs, id)
+			close(s.ch)
 		}
 	}
 	o.mu.Unlock()
 }
 
-// Subscribe returns a channel of events (replayed from the ring first).
-// The returned func unsubscribes and must be called exactly once.
-func (o *Orchestrator) Subscribe() (<-chan protocol.Envelope, func()) {
+// Subscribe returns a channel of events plus the replay status that describes
+// what the caller received, so the relay can tell the client whether it is
+// current (ReplayResumed) or owes it a refetch. The returned func unsubscribes
+// and must be called exactly once.
+func (o *Orchestrator) Subscribe(after protocol.Cursor) (<-chan protocol.Envelope, protocol.ReplayStatus, uint64, func()) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	id := o.nextSubID
 	o.nextSubID++
-	ch := make(chan protocol.Envelope, 256)
+	ch := make(chan protocol.Envelope, subBuffer)
+
+	status := protocol.ReplayFull
 	// Replay buffered events (copy under lock, send outside would block — the
 	// channel is fresh so sends cannot block).
-	for _, env := range o.replay {
-		ch <- env
+	switch {
+	case after.Epoch == "" || (after.Epoch == o.epoch && after.Seq == 0):
+		// First connection: hand over the whole ring, best effort.
+		for _, env := range o.replay {
+			ch <- env
+		}
+	case after.Epoch != o.epoch || after.Seq > o.seq:
+		// Either the app restarted between the cursor and now — the ring
+		// describes a process the client never saw — or the cursor claims a
+		// position this process cannot have produced. Replaying it would be
+		// worse than replaying nothing: the client must refetch.
+		status = protocol.ReplayStale
+	case len(o.replay) > 0 && after.Seq+1 < o.replay[0].Seq:
+		// The cursor predates the ring; the events in between are gone.
+		status = protocol.ReplayGap
+	default:
+		// Contiguous: deliver only what follows the cursor.
+		status = protocol.ReplayResumed
+		for _, env := range o.replay {
+			if env.Seq > after.Seq {
+				ch <- env
+			}
+		}
 	}
+	replayed := o.seq
 	o.subs[id] = &subscriber{ch: ch}
-	return ch, func() {
+	return ch, status, replayed, func() {
 		o.mu.Lock()
 		defer o.mu.Unlock()
-		delete(o.subs, id)
+		if s, ok := o.subs[id]; ok {
+			delete(o.subs, id)
+			close(s.ch)
+		}
 	}
+}
+
+// Epoch reports this process's resume epoch.
+func (o *Orchestrator) Epoch() string {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.epoch
+}
+
+// CheckpointView is the UI-facing description of a project's rewind points.
+// Available is false for a directory that is not a git repository with at
+// least one commit — the normal case for a project that is just a folder, and
+// the UI hides the feature rather than showing an error.
+type CheckpointView struct {
+	ProjectID   string                  `json:"projectID"`
+	Available   bool                    `json:"available"`
+	Dirty       bool                    `json:"dirty"`
+	Checkpoints []checkpoint.Checkpoint `json:"checkpoints"`
+}
+
+// Checkpoints lists the stored turns for one session.
+func (o *Orchestrator) Checkpoints(projectID, sessionID string) (CheckpointView, error) {
+	dir, err := o.projectPath(projectID)
+	if err != nil {
+		return CheckpointView{}, err
+	}
+	view := CheckpointView{ProjectID: projectID}
+	if !checkpoint.Available(dir) {
+		return view, nil
+	}
+	view.Available = true
+	if dirty, err := checkpoint.Dirty(context.Background(), dir); err == nil {
+		view.Dirty = dirty
+	}
+	cps, err := checkpoint.List(context.Background(), dir, sessionID)
+	if err != nil {
+		return view, err
+	}
+	view.Checkpoints = cps
+	return view, nil
+}
+
+// RewindPreview is what a rewind would do, computed without doing it. The UI
+// shows this before asking for confirmation, because a rewind discards work.
+type RewindPreview struct {
+	Ref      string `json:"ref"`
+	Turn     int    `json:"turn"`
+	Diff     string `json:"diff"`
+	WillLose bool   `json:"willLose"` // uncommitted work exists right now
+	GuardRef string `json:"guardRef"` // where the current state is preserved
+}
+
+// PreviewRewind describes the effect of rewinding a session to one stored
+// turn. It is a separate call from Rewind so the confirmation is informed
+// rather than a guess.
+func (o *Orchestrator) PreviewRewind(projectID, sessionID string, turn int) (RewindPreview, error) {
+	dir, err := o.projectPath(projectID)
+	if err != nil {
+		return RewindPreview{}, err
+	}
+	if !checkpoint.Available(dir) {
+		return RewindPreview{}, &checkpoint.ErrNotARepo{Dir: dir}
+	}
+	cps, err := checkpoint.List(context.Background(), dir, sessionID)
+	if err != nil {
+		return RewindPreview{}, err
+	}
+	var start *checkpoint.Checkpoint
+	for i := range cps {
+		if cps[i].Turn == turn && cps[i].Kind == checkpoint.KindStart {
+			start = &cps[i]
+		}
+	}
+	if start == nil {
+		return RewindPreview{}, fmt.Errorf("orchestrator: no checkpoint for session %s turn %d", sessionID, turn)
+	}
+	// The diff is measured against the latest stored state, which is the
+	// current workspace unless later turns exist.
+	from := start.Ref
+	if len(cps) > 0 {
+		if last := cps[len(cps)-1]; last.Kind == checkpoint.KindEnd {
+			from = last.Ref
+		}
+	}
+	preview := RewindPreview{Ref: start.Ref, Turn: turn}
+	diff, err := checkpoint.Diff(context.Background(), dir, from, start.Ref)
+	if err != nil {
+		return RewindPreview{}, err
+	}
+	preview.Diff = diff
+	preview.WillLose, _ = checkpoint.Dirty(context.Background(), dir)
+	return preview, nil
+}
+
+// Rewind restores the workspace to the start of one turn. The state on disk is
+// itself checkpointed first, so a rewind can be undone — which is why this is
+// not as irreversible as it looks. Callers are expected to have shown the
+// preview and obtained confirmation.
+func (o *Orchestrator) Rewind(ctx context.Context, projectID, sessionID string, turn int) (CheckpointView, error) {
+	preview, err := o.PreviewRewind(projectID, sessionID, turn)
+	if err != nil {
+		return CheckpointView{}, err
+	}
+	dir, err := o.projectPath(projectID)
+	if err != nil {
+		return CheckpointView{}, err
+	}
+	// Preserve what is on disk right now before overwriting it.
+	if _, err := checkpoint.Capture(ctx, dir, sessionID, turn, checkpoint.KindGuard); err != nil {
+		return CheckpointView{}, err
+	}
+	if err := checkpoint.Restore(ctx, dir, preview.Ref); err != nil {
+		return CheckpointView{}, err
+	}
+	return o.Checkpoints(projectID, sessionID)
+}
+
+func (o *Orchestrator) projectPath(id string) (string, error) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	p := o.projects[id]
+	if p == nil {
+		return "", fmt.Errorf("orchestrator: unknown project %s", id)
+	}
+	return p.cfg.Path, nil
 }
 
 // ProjectView is the REST-facing project descriptor.

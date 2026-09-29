@@ -55,7 +55,7 @@ export function useShortcuts() {
             return;
           case "arrowdown":
             e.preventDefault();
-            window.dispatchEvent(new CustomEvent("circulogo:jump-to-latest"));
+            window.dispatchEvent(new CustomEvent("circulo:jump-to-latest"));
             return;
         }
       }

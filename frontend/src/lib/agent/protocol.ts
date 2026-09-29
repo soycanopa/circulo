@@ -40,13 +40,28 @@ export interface ContextUpdatedEvent {
 /** Envelope types not tied to a payload schema live beside their interface. */
 export const EventContextUpdated = "context.updated";
 
-/** One slash command (built-ins, skills, user commands). */
+/**
+ * The neutral origin of a slash command, mirroring Go's protocol.CommandScope.
+ * The backend's own word ("skill" is omp's, "file" is opencode's) does not
+ * cross into the UI.
+ */
+export type CommandScope = "builtin" | "project" | "projectFile" | "user" | "extension" | "skill";
+
+export const SCOPES: CommandScope[] = [
+  "builtin",
+  "project",
+  "user",
+  "skill",
+  "extension",
+  "projectFile",
+];
+
+/** One slash command (built-ins, project/user commands, skills). */
 export interface CommandInfo {
   name: string;
   description?: string;
   argsHint?: string;
-  /** builtin|skill|custom|extension|file (provider vocabulary). */
-  source?: string;
+  scope?: CommandScope;
 }
 
 export interface CommandRequest {
@@ -76,9 +91,77 @@ export type PartType =
 // Tool states.
 export type ToolStatus = "pending" | "running" | "completed" | "error";
 
+/**
+ * Envelope is one SSE frame. `seq` and `epoch` are the resume contract and
+ * mirror Go's protocol.Envelope exactly — changing one means changing the
+ * other in the same commit.
+ *
+ * The epoch changes on every app start while seq restarts at 1, so a bare
+ * seq cannot be trusted across a restart; that pair is what makes a resumed
+ * stream safe. Both are optional because a frame produced outside the
+ * orchestrator (tests) has neither.
+ */
 export interface Envelope<T = unknown> {
   type: string;
+  seq?: number;
+  epoch?: string;
   payload: T;
+}
+
+/**
+ * ReplayStatus is the server's answer to a resume request, sent as the first
+ * SSE control frame (event: replay). It is not an Envelope: it describes the
+ * stream, not a domain event, and the reducer must never see it.
+ */
+export type ReplayStatus = "full" | "resumed" | "stale" | "gap";
+
+export interface ReplayFrame {
+  status: ReplayStatus;
+  epoch: string;
+  /** Highest sequence replayed on this connection; 0 when nothing was. */
+  seq: number;
+}
+
+/**
+ * Whether a ReplayStatus means the client must refetch. Only `resumed` means
+ * the client is already current — everything else leaves a hole it cannot see.
+ */
+export function needsResync(status: ReplayStatus): boolean {
+  return status !== "resumed";
+}
+
+/**
+ * One stored workspace state. Checkpoints are git refs under refs/circulo/,
+ * written at the edges of a turn: `start` is the tree the turn began from and
+ * is both what a rewind restores and what its diff is measured against.
+ */
+export interface Checkpoint {
+  sessionID: string;
+  turn: number;
+  kind: "start" | "end" | "guard";
+  ref: string;
+  commit: string;
+  createdAt: number;
+}
+
+export interface CheckpointView {
+  projectID: string;
+  /** False for a project that is not a git repository — the feature hides. */
+  available: boolean;
+  /** The worktree has uncommitted changes right now. */
+  dirty: boolean;
+  checkpoints: Checkpoint[];
+}
+
+export interface RewindPreview {
+  ref: string;
+  turn: number;
+  /** Unified diff of what the rewind would undo. */
+  diff: string;
+  /** Uncommitted work exists, so a rewind discards something. */
+  willLose: boolean;
+  /** Where the current state is preserved, so the rewind is undoable. */
+  guardRef: string;
 }
 
 export interface AdapterStatus {
@@ -348,6 +431,43 @@ export interface Meta {
   access: AccessState;
   /** Slash commands; absent = provider exposes no command surface. */
   commands?: CommandInfo[];
+  /**
+   * What this backend can actually do, mirrored from Go's
+   * protocol.Capabilities. Branch on these instead of on the provider name:
+   * identity (logo, product name, which "add project" entry) legitimately uses
+   * the name, but behavior must not.
+   */
+  capabilities?: Capabilities;
+}
+
+export interface Capabilities {
+  /** A real approve/deny round-trip (omp: no). */
+  permissions: boolean;
+  /** A real answer channel for select/confirm/input requests. */
+  forms: boolean;
+  /** A prompt while the agent is working steers instead of starting a turn. */
+  steer: boolean;
+  /** The working branch can actually be pinned. */
+  branch: boolean;
+  /** A named-agent registry exists to pick from. */
+  agents: boolean;
+  /** A slash-command surface exists. */
+  commands: boolean;
+  /** An access-mode selector exists. */
+  accessMode: boolean;
+}
+
+/**
+ * Capabilities are opt-in: a missing or partial block means the feature is not
+ * available. Reading a missing key as "true" would be the failure mode that
+ * makes a capability flag worse than none — the UI would offer a control that
+ * silently does nothing.
+ */
+export function can(
+  meta: { capabilities?: Capabilities } | undefined,
+  capability: keyof Capabilities,
+): boolean {
+  return meta?.capabilities?.[capability] === true;
 }
 
 /** REST view from GET /agent/projects. */

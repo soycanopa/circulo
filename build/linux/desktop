@@ -1,13 +1,13 @@
 [Desktop Entry]
 Version=1.0
 Name=My Product
-Comment=A circulogo application
+Comment=Local-first orchestrator for coding-agent CLIs
 # The Exec line includes %u to pass the URL to the application
-Exec=/usr/local/bin/circulogo %u
+Exec=/usr/local/bin/circulo %u
 Terminal=false
 Type=Application
-Icon=circulogo
+Icon=circulo
 Categories=Utility;
-StartupWMClass=circulogo
+StartupWMClass=circulo
 
  

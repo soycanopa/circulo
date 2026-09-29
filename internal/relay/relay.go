@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"circulogo/internal/agent"
-	"circulogo/internal/agent/protocol"
-	"circulogo/internal/orchestrator"
-	"circulogo/internal/term"
+	"circulo/internal/agent"
+	"circulo/internal/agent/protocol"
+	"circulo/internal/orchestrator"
+	"circulo/internal/term"
 )
 
 // Server implements http.Handler for the agent API. Wails mounts it at route
@@ -78,7 +78,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case rest == "meta" && r.Method == http.MethodGet:
 		s.withAdapter(w, id, func(a agent.Adapter) {
 			meta, err := a.Meta(r.Context())
-			s.writeJSONOrErr(w, meta, err)
+			if err != nil {
+				s.writeErr(w, err)
+				return
+			}
+			// Collapsing same-name commands is a neutral concern — it merges
+			// sources from any backend — so it belongs here rather than in an
+			// adapter that only sees its own list.
+			meta.Commands = protocol.ResolveCommands(meta.Commands)
+			s.writeJSON(w, http.StatusOK, meta)
 		})
 		return
 	case rest == "access" && r.Method == http.MethodGet:
@@ -133,6 +141,58 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.writeJSON(w, http.StatusOK, map[string]string{"id": t.ID})
 		return
+	// Checkpoints are a project capability, not an adapter one: the refs live
+	// in the project's own repository, so this does not go through
+	// withAdapter and keeps working for a project whose backend is down.
+	case rest == "checkpoints" && r.Method == http.MethodGet:
+		view, err := s.orch.Checkpoints(id, r.URL.Query().Get("session"))
+		if err != nil {
+			s.writeErr(w, err)
+			return
+		}
+		s.writeJSON(w, http.StatusOK, view)
+		return
+	}
+
+	// /projects/{id}/checkpoints/rewind-preview?turn=N
+	if tpath, ok := cutPrefix(rest, "checkpoints/"); ok {
+		switch tpath {
+		case "rewind-preview":
+			if r.Method != http.MethodGet {
+				break
+			}
+			turn, err := turnParam(r)
+			if err != nil {
+				s.writeErr(w, badRequest("%v", err))
+				return
+			}
+			preview, err := s.orch.PreviewRewind(id, r.URL.Query().Get("session"), turn)
+			if err != nil {
+				s.writeErr(w, err)
+				return
+			}
+			s.writeJSON(w, http.StatusOK, preview)
+			return
+		case "rewind":
+			if r.Method != http.MethodPost {
+				break
+			}
+			turn, err := turnParam(r)
+			if err != nil {
+				s.writeErr(w, badRequest("%v", err))
+				return
+			}
+			// The rewind discards work, so the confirmation is the caller's
+			// job — the server does not ask. The preview endpoint is what the
+			// UI shows before it gets here.
+			view, err := s.orch.Rewind(r.Context(), id, r.URL.Query().Get("session"), turn)
+			if err != nil {
+				s.writeErr(w, err)
+				return
+			}
+			s.writeJSON(w, http.StatusOK, view)
+			return
+		}
 	}
 
 	// /projects/{id}/terminals/{tid}/…
@@ -431,14 +491,21 @@ func (s *Server) handleTermStream(w http.ResponseWriter, r *http.Request, t *ter
 	}
 }
 
-// handleSSE streams neutral events to one webview client: replay ring first,
-// then live events, with comment keep-alives every 15s.
+// handleSSE streams neutral events to one webview client: the replay tail for
+// the supplied cursor, then live events, with comment keep-alives every 15s.
+// The first frame is a `replay` control frame telling the client whether it is
+// current or owes a refetch — without it the client refetches everything on
+// every reconnect because it cannot tell a lost event from a lost blip.
 func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
+	cursor := cursorFromRequest(r)
+	events, status, replayed, unsubscribe := s.orch.Subscribe(cursor)
+	defer unsubscribe()
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -446,8 +513,12 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, ": connected\n\n")
 	flusher.Flush()
 
-	events, unsubscribe := s.orch.Subscribe()
-	defer unsubscribe()
+	if raw, err := json.Marshal(protocol.ReplayFrame{Status: status, Epoch: s.orch.Epoch(), Seq: replayed}); err == nil {
+		if _, err := fmt.Fprintf(w, "event: replay\ndata: %s\n\n", raw); err != nil {
+			return
+		}
+		flusher.Flush()
+	}
 
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
@@ -461,17 +532,48 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			flusher.Flush()
-		case env := <-events:
+		case env, open := <-events:
+			if !open {
+				// The subscriber fell behind and was dropped. End the
+				// response so the client reconnects with its cursor and the
+				// ring hands it exactly what it missed.
+				return
+			}
 			raw, err := json.Marshal(env)
 			if err != nil {
 				continue
 			}
-			if _, err := fmt.Fprintf(w, "data: %s\n\n", raw); err != nil {
+			// id: is the standard resume hook, so even a native EventSource
+			// reconnect carries Last-Event-ID.
+			if _, err := fmt.Fprintf(w, "id: %d\ndata: %s\n\n", env.Seq, raw); err != nil {
 				return
 			}
 			flusher.Flush()
 		}
 	}
+}
+
+// cursorFromRequest reads the resume position. The query is authoritative
+// because the client owns the cursor and rebuilds the EventSource on reconnect;
+// Last-Event-ID is honored as the standard SSE fallback. An epoch mismatch is
+// not checked here — the orchestrator decides that, because only it knows its
+// own epoch.
+func cursorFromRequest(r *http.Request) protocol.Cursor {
+	q := r.URL.Query()
+	c := protocol.Cursor{Epoch: q.Get("epoch")}
+	if v := q.Get("seq"); v != "" {
+		if n, err := strconv.ParseUint(v, 10, 64); err == nil {
+			c.Seq = n
+		}
+	}
+	if c.Epoch == "" {
+		if v := r.Header.Get("Last-Event-ID"); v != "" {
+			if n, err := strconv.ParseUint(v, 10, 64); err == nil {
+				c.Seq = n
+			}
+		}
+	}
+	return c
 }
 
 func (s *Server) writeJSON(w http.ResponseWriter, status int, body any) {
@@ -509,4 +611,22 @@ func (e *badRequestError) Error() string { return e.msg }
 
 func badRequest(format string, args ...any) error {
 	return &badRequestError{msg: fmt.Sprintf(format, args...)}
+}
+
+// turnParam reads the turn number a rewind targets. It is required rather
+// than defaulted: rewinding to "turn 0" or to the newest turn implicitly would
+// make a destructive call ambiguous.
+func turnParam(r *http.Request) (int, error) {
+	raw := r.URL.Query().Get("turn")
+	if raw == "" {
+		return 0, errors.New("turn is required")
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("turn must be a number: %v", err)
+	}
+	if n <= 0 {
+		return 0, errors.New("turn must be greater than zero")
+	}
+	return n, nil
 }

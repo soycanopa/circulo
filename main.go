@@ -6,14 +6,16 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 
-	"circulogo/internal/agent"
-	"circulogo/internal/appservice"
-	"circulogo/internal/omp"
-	"circulogo/internal/opencode"
-	"circulogo/internal/orchestrator"
-	"circulogo/internal/relay"
-	"circulogo/internal/store"
+	"circulo/internal/agent"
+	"circulo/internal/appservice"
+	"circulo/internal/omp"
+	"circulo/internal/opencode"
+	"circulo/internal/orchestrator"
+	"circulo/internal/relay"
+	"circulo/internal/store"
+	"syscall"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -47,7 +49,7 @@ func main() {
 	stPath, err := store.DefaultPath()
 	if err != nil {
 		log.Printf("settings path unavailable, using cwd store: %v", err)
-		stPath = "circulogo-settings.json"
+		stPath = "circulo-settings.json"
 	}
 	st := store.New(stPath)
 	orch := orchestrator.New(st, func(cfg store.Project) (agent.Adapter, error) {
@@ -140,7 +142,33 @@ func main() {
 		URL:              "/",
 	})
 
+	shutdownOnSignal(orch)
+
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// shutdownOnSignal stops the adapters when the process is asked to quit.
+//
+// Wails v3.0.0-beta.16 does install a default SIGINT/SIGTERM handler, and its
+// routing does reach ServiceShutdown — but the graceful teardown does not
+// reliably finish before the process exits, so the managed agent servers
+// survive as orphans still holding their ports. Measured twice on 2.0.18:
+// after SIGTERM the app was gone and `opencode serve` was still listening.
+//
+// So we take the signal ourselves, stop the adapters synchronously, and only
+// then leave. Shutdown is idempotent, so the Wails handler and the ServiceShutdown
+// hook that also call it are unaffected.
+func shutdownOnSignal(orch *orchestrator.Orchestrator) {
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		received := <-sig
+		log.Printf("received %s — stopping adapters", received)
+		orch.Shutdown()
+		// Every adapter is stopped. Exiting explicitly is what makes that
+		// guarantee hold: waiting for the platform teardown is what loses it.
+		os.Exit(0)
+	}()
 }

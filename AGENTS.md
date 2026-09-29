@@ -31,6 +31,13 @@ marked **[adjusted]**. Everything else is verbatim intent from the project owner
   (`internal/agent/protocol`) is proven stable by the OpenCode adapter in daily use
   (gate: the E2E checklist in docs/implement.md). The remote design is frozen in
   docs/remote.md — build from there when the gate opens, do not redesign.
+- **Reference projects: ideas yes, code never.** [waku](https://github.com/egoist/waku)
+  is GPL-3.0-only. Learn its UX patterns and protocol ideas from it — the neutral
+  protocol, the per-turn git-ref checkpoints, the sequenced envelope — but never
+  copy a file, a function or a type from it, or Circulo inherits GPL-3.0. Its
+  daemon split is also *not* a template: it exists to drive 9 providers plus a
+  browser client and remote access, and adopting it here would break the
+  single-composition-root invariant for no proven need.
 
 ## Architecture invariants **[adjusted]**
 
@@ -44,7 +51,12 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
 - The UI does not import adapters: frontend code knows only the neutral protocol
   (`frontend/src/lib/agent/protocol.ts`) and the relay API (`/agent/...`). It must
   never see OpenCode or omp types, ports, or URLs. The provider name
-  (`"opencode" | "omp"`) is the only provider vocabulary that crosses this line.
+  (`"opencode" | "omp"`) is the only provider vocabulary that crosses this line,
+  and only for *identity* — product name, logo, which "add project" entry to
+  show. **Behavior must branch on `protocol.Capabilities`, never on the name.**
+  A UI check like `provider === "omp"` is correct for identity and wrong for
+  anything else: omp's `SetBranch` is a no-op and its permission round-trip does
+  not exist, so a name check produces a control that does nothing.
 - Adapters do not know the UI: `internal/opencode` and `internal/omp` must not
   import `wails` packages, `internal/relay`, or `internal/orchestrator`. Each
   exposes an `agent.AgentAdapter` and a channel of `agent/protocol` events —
@@ -79,15 +91,15 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
 - **Wails v3 traps (beta — pinned, currently v3.0.0-beta.16):**
   - `ServiceShutdown() error` — no `context.Context` parameter, or it is silently
     never called.
-  - **There is no missing SIGTERM handler.** Wails installs a default one
-    (`internal/signal`) for SIGINT+SIGTERM that routes to `App.Quit()` →
-    `cleanup()` → `shutdownServices()` → `ServiceShutdown()`. Managed child
-    processes therefore *do* die on `kill`, as long as the app never sets
-    `Options.DisableDefaultSignalHandler`. A previous handoff doc claimed
-    otherwise and it was wrong. The open question is not routing but whether the
-    ObjC teardown finishes before the process exits — that is what E2E checklist
-    step 6 (`pgrep` after quit) proves, so do not re-open the design question
-    until that check has actually been run.
+  - **The Wails signal handler routes correctly but does not finish in time.**
+    It handles SIGINT+SIGTERM and reaches `ServiceShutdown()` — that part was
+    verified by reading the code and it is true. But the graceful teardown does
+    not complete before the process exits, so the managed agent servers survive
+    as orphans still holding their ports. Measured twice on 2026-09-29 with
+    opencode 2.0.18: after SIGTERM the app was gone and `opencode serve` was
+    still listening. `main.go` therefore installs `shutdownOnSignal`, which
+    stops the adapters synchronously and then exits. Do not "simplify" it away by
+    trusting the default handler — that is what this note is for.
   - `frontend/bindings/` is generated. Never hand-edit; regenerate via
     `wails3 generate bindings` / build.
   - `Events.Off(name)` removes **all** listeners for that name — keep and call the
@@ -116,6 +128,14 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
     must be an absolute `file://` URI; relative paths fail server-side.
   - Every route needs Basic auth: user `opencode`, password from the
     `server password <random>` line the managed server prints at boot.
+  - **There is no `/api/health` in GA.** Beta had it; GA answers 404 and the
+    replacement is `GET /api/info` → `{version, pid, …}`. A probe that requires
+    `{healthy, true}` fails silently and leaves the catalog empty — that is
+    exactly how waku 0.1.19 ended up with an empty model picker on opencode
+    2.0.6+ (their issue #242, still open). The GA binary is a single `opencode`,
+    not a separate `opencode2`. Likewise: the command body is `{name, text}`
+    (beta's `{command, text}` gets a 400) and rename is `PATCH /api/session/{id}
+    {title}` (the dedicated endpoint is 404).
   - Unknown events are forward compatibility, not errors (NFR-3): the server emits
     a constant stream of `*.updated`, `mcp.*`, `model.*`, `provider.*` noise. Skip
     them silently — but remember that a silently skipped event is a part the user
@@ -148,6 +168,17 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
   PR as the behavior they describe.
 - `internal/agent/protocol` — the neutral wire contract. Changing it means changing
   `frontend/src/lib/agent/protocol.ts` and reducer tests in the same commit.
+- Every `protocol.Envelope` carries `seq` and `epoch`, assigned by the orchestrator
+  as it fans events in. **They are not decoration.** `seq` restarts at 1 on every
+  process start, so a client that trusted a bare sequence would accept a fresh run's
+  event 1 as the continuation of an old run's event 1; `epoch` is what makes a
+  resume across a restart detectable. The relay answers a resume with a `replay`
+  control frame (`full` / `resumed` / `stale` / `gap`) *before* any event, and the
+  client refetches only when the status is not `resumed`. A cursor older than the
+  ring replays nothing — a partial tail that looks complete is worse than none.
+  Corollary: **full-part updates are the self-healing mechanism for part content
+  only.** A dropped `permission.asked`, `session.status`, `adapter.status`, retry
+  or form request strands the UI no matter how idempotent the parts are.
 - `internal/agent` — the `Adapter` interface both backends implement. It is
   deliberately the smallest useful surface; grow it only when a real backend needs it.
 - `internal/opencode/` — adapter #1. The only place allowed to speak OpenCode.
@@ -160,3 +191,8 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
 - `internal/store/` — `settings.json` persistence (projects, provider, mode). Atomic writes.
 - `internal/term/` — PTY terminals (creack/pty), one per project. I/O rides SSE +
   write/resize POSTs; it is transport-agnostic to the provider, not to the relay.
+- `internal/checkpoint/` — per-turn workspace states stored as git refs under
+  `refs/circulo/`, so a turn can be rewound without asking the backend to
+  cooperate (omp has no equivalent of OpenCode's `revert`). Two invariants the
+  tests protect: a capture must not touch the user's index, worktree or stash
+  list, and a rewind must restore the **worktree** without moving HEAD.

@@ -7,7 +7,10 @@
 // (AGENTS.md: Project map).
 package protocol
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"sort"
+)
 
 // Event types carried by Envelope.Type.
 const (
@@ -76,9 +79,59 @@ const (
 )
 
 // Envelope is the top-level frame written to /agent/sse.
+//
+// Seq and Epoch are the resume contract. Seq is assigned by the orchestrator as
+// it fans events in, monotonically from 1 within one Epoch. Epoch changes on
+// every process start, so a Seq that restarts at 1 after a restart can never be
+// mistaken for a continuation of the old run — without that, resuming a stream
+// across a restart is worse than not resuming at all. Both are omitted when
+// zero/empty, which is only true for envelopes built outside the orchestrator
+// (tests, direct construction).
 type Envelope struct {
 	Type    string          `json:"type"`
+	Seq     uint64          `json:"seq,omitempty"`
+	Epoch   string          `json:"epoch,omitempty"`
 	Payload json.RawMessage `json:"payload"`
+}
+
+// Cursor is where a subscriber left off. An empty Cursor means "no position
+// held yet" (first connect, or a page reload): the subscriber wants the whole
+// ring and still owes the client a full bootstrap.
+type Cursor struct {
+	Epoch string
+	Seq   uint64
+}
+
+// ReplayStatus is the server's answer to a resume request, sent as the first
+// SSE control frame. It exists so the client knows whether it must refetch
+// (full/stale/gap) or can simply continue (resumed) — today it refetches
+// everything on every reconnect because it cannot tell the difference.
+type ReplayStatus string
+
+const (
+	// ReplayFull: no cursor supplied; the whole ring is replayed.
+	ReplayFull ReplayStatus = "full"
+	// ReplayResumed: the cursor is valid and contiguous; only the tail after
+	// it is replayed and the client is already current.
+	ReplayResumed ReplayStatus = "resumed"
+	// ReplayStale: the cursor's epoch is not this process's epoch — the app
+	// restarted, so the cursor is meaningless.
+	ReplayStale ReplayStatus = "stale"
+	// ReplayGap: the cursor predates the replay ring, so the events in
+	// between no longer exist server-side.
+	ReplayGap ReplayStatus = "gap"
+)
+
+// ReplayFrame is the SSE control frame carrying a ReplayStatus. It is not an
+// Envelope: it describes the stream, not a domain event, and the reducer must
+// never see it.
+type ReplayFrame struct {
+	Status ReplayStatus `json:"status"`
+	Epoch  string       `json:"epoch"`
+	// Seq is the highest sequence replayed in this connection (0 when the
+	// cursor was stale or gapped and nothing was replayed), so the client can
+	// seed its own position without waiting for the first event.
+	Seq uint64 `json:"seq"`
 }
 
 // NewEnvelope marshals payload and wraps it. Marshal errors are programmer
@@ -423,6 +476,37 @@ type AccessState struct {
 }
 
 // Meta is the picker data for the composer.
+// Capabilities declares what a backend can actually do.
+//
+// This exists so the UI never has to infer behavior from the provider's name.
+// The distinction matters because the two backends differ in ways that are
+// invisible until the user hits them: omp has no permission round-trip, so
+// permission cards simply never appear, and its branch picker is a no-op, so
+// the chip looks functional and does nothing. Declaring the gap is the
+// difference between a feature that is absent and a feature that is broken.
+//
+// Identity is a separate concern and stays name-based: which product this is,
+// its logo, and which "add project" entry to show are legitimately about the
+// provider's name.
+type Capabilities struct {
+	// Permissions is a real approve/deny round-trip (omp: no).
+	Permissions bool `json:"permissions"`
+	// Forms is a real answer channel for select/confirm/input requests.
+	Forms bool `json:"forms"`
+	// Steer means a prompt sent while the agent is working is delivered as a
+	// steering message rather than starting a second turn (omp: yes).
+	Steer bool `json:"steer"`
+	// Branch means the branch the session works on can actually be pinned.
+	Branch bool `json:"branch"`
+	// Agents means the backend exposes a named-agent registry to pick from.
+	Agents bool `json:"agents"`
+	// Commands means the backend exposes a slash-command surface.
+	Commands bool `json:"commands"`
+	// AccessMode means the backend exposes an access-mode selector.
+	AccessMode bool `json:"accessMode"`
+}
+
+// Meta is the composer picker's data.
 type Meta struct {
 	Agents []AgentInfo `json:"agents"`
 	Models []ModelInfo `json:"models"`
@@ -437,6 +521,9 @@ type Meta struct {
 	// Slash commands (built-ins, skills, user commands); nil = provider
 	// exposes no command surface.
 	Commands []CommandInfo `json:"commands,omitempty"`
+	// Capabilities mirrors what this backend can do, so the UI can explain a
+	// missing affordance instead of silently omitting it.
+	Capabilities Capabilities `json:"capabilities"`
 }
 
 // SetAccessRequest is the body of POST /projects/{id}/access.
@@ -447,13 +534,132 @@ type SetAccessRequest struct {
 // CommandInfo is one slash command the provider exposes (built-ins, skills,
 // user commands). ArgsHint documents the expected arguments, empty when the
 // command takes none.
+// CommandScope is the neutral origin of a slash command. It replaces the raw
+// provider vocabulary that used to cross in CommandInfo.Source: "skill" is
+// omp's word, "file" is opencode's, and the UI should not need to know which
+// backend it is talking to in order to colour a chip.
+type CommandScope string
+
+const (
+	// ScopeBuiltin is shipped by the backend itself.
+	ScopeBuiltin CommandScope = "builtin"
+	// ScopeProject comes from the project the agent is working in.
+	ScopeProject CommandScope = "project"
+	// ScopeProjectFile is a command file in the project (opencode's "file").
+	ScopeProjectFile CommandScope = "projectFile"
+	// ScopeUser comes from the user's own command directory.
+	ScopeUser CommandScope = "user"
+	// ScopeExtension is contributed by a plugin or extension.
+	ScopeExtension CommandScope = "extension"
+	// ScopeSkill is a skill-provided command.
+	ScopeSkill CommandScope = "skill"
+)
+
+// displayRank orders the picker. Backends first because they are always
+// available; the user's own commands last because those are the ones they
+// wrote. This is deliberately NOT the same as ResolveCommands' precedence.
+func (c CommandScope) displayRank() int {
+	switch c {
+	case ScopeBuiltin:
+		return 0
+	case ScopeProject:
+		return 1
+	case ScopeUser:
+		return 2
+	case ScopeSkill:
+		return 3
+	case ScopeExtension:
+		return 4
+	case ScopeProjectFile:
+		return 5
+	}
+	return 6
+}
+
+// resolutionRank decides which command wins a name collision. A user's own
+// project command should shadow a backend builtin, or the builtin would make
+// the project's command unreachable — which is the opposite of intent. It is
+// intentionally the reverse of displayRank in places: the winner of a
+// collision is not the one shown first.
+func (c CommandScope) resolutionRank() int {
+	switch c {
+	case ScopeProject:
+		return 5
+	case ScopeUser:
+		return 4
+	case ScopeProjectFile:
+		return 3
+	case ScopeExtension:
+		return 2
+	case ScopeSkill:
+		return 1
+	case ScopeBuiltin:
+		return 0
+	}
+	return -1
+}
+
+// NormalizeScope maps a backend's own vocabulary onto the neutral scope. An
+// unrecognized value becomes ScopeBuiltin rather than crossing the boundary
+// as an unknown string the UI has to guess about.
+func NormalizeScope(raw string) CommandScope {
+	switch raw {
+	case "project":
+		return ScopeProject
+	case "user":
+		return ScopeUser
+	case "skill":
+		return ScopeSkill
+	case "custom", "extension":
+		return ScopeExtension
+	case "file", "projectFile":
+		return ScopeProjectFile
+	case "builtin", "waku", "":
+		return ScopeBuiltin
+	}
+	return ScopeBuiltin
+}
+
 type CommandInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	ArgsHint    string `json:"argsHint,omitempty"`
-	// Source: builtin|skill|custom|extension|file (provider vocabulary,
-	// rendered as-is; unknown values fall back to a neutral chip).
-	Source string `json:"source,omitempty"`
+	// Scope is the neutral origin of the command. The provider's own word
+	// does not cross.
+	Scope CommandScope `json:"scope,omitempty"`
+}
+
+// ResolveCommands collapses same-name commands to the one that wins by
+// resolution precedence, then orders the result for display. The two orderings
+// are different on purpose: a project command outranks a builtin so it can
+// shadow it, while the picker still lists the builtin first. Getting this
+// backwards produces either unreachable commands or a picker in which the
+// shadowed entry appears to be the winner.
+//
+// Input order does not matter: the result depends only on names and scopes.
+func ResolveCommands(in []CommandInfo) []CommandInfo {
+	best := make(map[string]CommandInfo, len(in))
+	for _, c := range in {
+		if c.Name == "" {
+			continue
+		}
+		prev, seen := best[c.Name]
+		if !seen || c.Scope.resolutionRank() > prev.Scope.resolutionRank() {
+			best[c.Name] = c
+		}
+	}
+	out := make([]CommandInfo, 0, len(best))
+	for _, c := range best {
+		out = append(out, c)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		ri, rj := out[i].Scope.displayRank(), out[j].Scope.displayRank()
+		if ri != rj {
+			return ri < rj
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
 }
 
 // CommandRequest is the body of POST /projects/{id}/sessions/{sid}/command.

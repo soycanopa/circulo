@@ -39,7 +39,7 @@ branches and terminals.
   one question at a time, a 1/N counter, answer with a click.
 - 📊 **Code as a first-class citizen** — syntax-highlighted panels with line numbers,
   unified diffs with old/new gutters and word-level pairing, and dotted flowchart
-  canvases from `circulogo-flow` blocks.
+  canvases from `circulo-flow` blocks.
 - 🖥️ **PTY terminals built in** — one tabbed terminal surface per project, right
   below the chat. No third app needed.
 - 🗂️ **Sessions first** — projects (folders) hold sessions; pick project and branch
@@ -78,7 +78,7 @@ git clone https://github.com/soycanopa/circulo && cd circulo
 task dev            # app dev mode (webview + hot reload)
 
 # no wails3/task? build the embedded UI, then compile the app binary
-pnpm -C frontend build && go build -o build/bin/circulogo .
+pnpm -C frontend build && go build -o build/bin/circulo .
 
 # verify everything is green
 go test ./...

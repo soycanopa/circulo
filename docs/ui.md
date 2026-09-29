@@ -92,7 +92,7 @@ rather than a one-off color.
   (`InvisibleTitleBarHeight: 44` in `main.go`); it matches the sidebar width so the
   context title stays aligned when the sidebar slides.
 - The sidebar width is drag-resizable (200–480px, default 260) and persists in
-  `localStorage` under `circulogo.sidebarWidth`; double-click the handle resets it.
+  `localStorage` under `circulo.sidebarWidth`; double-click the handle resets it.
   The handle is an invisible `role="separator"` living in the 8px gap.
 - Both the sidebar and main surfaces carry the Paper bottom glow (`circulo-glow`
   utility) over a `GlowPixels` texture, in that layer order: surface → pixels →
@@ -174,7 +174,7 @@ the retry banner inline instead of the loader.
 
 ### Markdown — `features/chat/markdown/`
 - `MarkdownView.tsx` routes fences: ` ```lang ` and ` ```diff ` to `CodePanel`,
-  ` ```circulogo-flow ` to `Flowchart`, everything else to prose.
+  ` ```circulo-flow ` to `Flowchart`, everything else to prose.
 - `CodePanel.tsx` — one editor-style panel for both: line-numbered code with light
   syntax coloring, or a unified diff with old/new gutters, accent bar, row tint
   and word-level add/del highlights. Copy + wrap.

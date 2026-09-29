@@ -19,7 +19,7 @@ const SIDEBAR_MAX = 480;
 const SIDEBAR_DEFAULT = 260;
 
 function loadSidebarWidth(): number {
-  const raw = Number(localStorage.getItem("circulogo.sidebarWidth"));
+  const raw = Number(localStorage.getItem("circulo.sidebarWidth"));
   return Number.isFinite(raw) && raw > 0
     ? Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, raw))
     : SIDEBAR_DEFAULT;
@@ -97,7 +97,7 @@ export function AppShell({
     setDragging(false);
     e.currentTarget.releasePointerCapture(e.pointerId);
     setSidebarWidth((w) => {
-      localStorage.setItem("circulogo.sidebarWidth", String(w));
+      localStorage.setItem("circulo.sidebarWidth", String(w));
       return w;
     });
   }, []);
@@ -161,7 +161,7 @@ export function AppShell({
               onPointerUp={onHandleUp}
               onDoubleClick={() => {
                 setSidebarWidth(SIDEBAR_DEFAULT);
-                localStorage.setItem("circulogo.sidebarWidth", String(SIDEBAR_DEFAULT));
+                localStorage.setItem("circulo.sidebarWidth", String(SIDEBAR_DEFAULT));
               }}
             >
               <div

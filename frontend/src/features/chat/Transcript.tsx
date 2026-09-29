@@ -57,8 +57,8 @@ const Transcript = memo(function Transcript({ session }: { session: SessionState
 
   // Cmd+↓ (ux.md §6) lands here via the global shortcut hook.
   useEffect(() => {
-    window.addEventListener("circulogo:jump-to-latest", jump);
-    return () => window.removeEventListener("circulogo:jump-to-latest", jump);
+    window.addEventListener("circulo:jump-to-latest", jump);
+    return () => window.removeEventListener("circulo:jump-to-latest", jump);
   }, [jump]);
 
   return (

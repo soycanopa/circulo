@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent/protocol"
 )
 
 // fixtureEnvelopes parses every frame of a real-capture fixture and translates

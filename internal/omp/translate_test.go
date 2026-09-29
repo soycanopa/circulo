@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent/protocol"
 )
 
 // fixtureFrames reads a testdata fixture, skipping '#' comment lines.

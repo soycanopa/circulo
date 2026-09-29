@@ -16,7 +16,7 @@ contains the adjusted rule set.
 | # | Commit | Content | DoD |
 |---|---|---|---|
 | 1.1 | `chore: git init + ignore` | .gitignore (Go, node, wails build, .scratch) | clean status |
-| 1.2 | `chore: wails3 react-ts scaffold` | `wails3 init -n circulogo -t react` output, `go mod tidy`, window options (1280×800, dark bg, mac hidden-inset titlebar) | `wails3 dev` opens window with template page |
+| 1.2 | `chore: wails3 react-ts scaffold` | `wails3 init -n circulogo -t react` output (the project was later renamed to `circulo`, see the 2026-09-29 rename amendment), `go mod tidy`, window options (1280×800, dark bg, mac hidden-inset titlebar) | `wails3 dev` opens window with template page |
 | 1.3 | `feat(frontend): tailwind theme tokens + shadcn init` | shadcn init, theme vars from UI.md §1, dark default | Button renders themed |
 | 1.4 | `test: vitest + go test wiring` | vitest config + sample, `make test` target (go test ./... + vitest run) | both suites green |
 | 1.5 | `docs: AGENTS.md guardrails in template` | ensure lint configs reflect rules | lint passes |
@@ -127,14 +127,14 @@ endpoint/event map) and the app runs against **2.0.8** via
   with pixel-loader headers.
 - CodePanel: fenced code with line numbers + syntax coloring; unified `diff`
   with old/new gutters and word-level pairing.
-- `circulogo-flow` blocks render as the dotted flowchart canvas.
+- `circulo-flow` blocks render as the dotted flowchart canvas.
 - AssistantText streams word-by-word (55ms reveal) and settles to copyable text.
 - Session targeting: always-visible strip; new-session mode selects project +
   branch up front and the session materializes on the first message.
 - Resizable sidebar (200–480px, persisted), animated pixel-glow texture,
   transcript edge fades, white Send/Stop pair.
 - Per-session markdown formatting instruction via the instructions-entries API
-  (`circulogo-format`); the v2 `instructions` config key is not read by the server.
+  (`circulo-format`); the v2 `instructions` config key is not read by the server.
 
 The ui.md re-sync debt from the pivot amendment still stands and now also covers
 the terminal surface and app-bar actions.
@@ -197,6 +197,37 @@ rather than an error. Audited on 2026-09-29: **no drift**.
 - **Spec URL corrected.** On v2 `GET /doc` serves the webview HTML; the machine
   spec is `GET /openapi.json`. AGENTS.md pointed at `/doc`.
 
+## Amendment 2026-09-29 (III) — project rename `circulogo` → `circulo`
+
+Owner decision: nothing in the product may remain `circulogo`. The scaffold had
+been named that way and it leaked into the module, the binary, the bundle, the
+Wails bindings path, the localStorage keys and the config directory.
+
+What moved, and the one thing that needed care:
+
+- **Go module** `circulogo` → `circulo`, with every import rewritten.
+- **Binary, bundle, Taskfile `APP_NAME`**, and the Wails-generated platform
+  templates for iOS, Linux and Windows — which also still carried the template
+  metadata ("A circulogo application", `com.example.circulogo`) that the macOS
+  and iOS plists were cleaned of earlier.
+- **Bindings** moved with `git mv`, since they are tracked despite being
+  generated: `frontend/bindings/circulogo/` → `frontend/bindings/circulo/`.
+- **`circulogo-flow` → `circulo-flow`.** This one is a wire contract, not a label:
+  the adapter tells the agent to emit the fence and the renderer recognises it, so
+  both sides had to move together. A one-sided rename would have silently stopped
+  rendering flowcharts.
+- **Instruction entry keys** `circulogo-format` / `circulogo-branch` →
+  `circulo-*`, written into the user's agent config per session.
+- **The config directory** `~/Library/Application Support/circulogo` →
+  `circulo`, with a migration. Renaming it without one would have looked like a
+  fresh install and silently dropped every project the user had added. The store
+  moves the file on first run and falls back to the old path if the move fails,
+  because losing the projects matters far more than the directory name.
+
+The two remaining `circulogo` strings are deliberate: the Phase 1 record of the
+original `wails3 init` command, and the `legacyAppDir` constant the migration
+reads from.
+
 ## Outstanding before Phase 8 (manual passes, consolidated)
 
 1. v2 handoff: owner E2E checklist (§3 of
@@ -233,14 +264,170 @@ rather than an error. Audited on 2026-09-29: **no drift**.
 3. Prompt "create notes.txt with 'hi'" → approve edit permission via card.
 4. Abort mid-turn on a long prompt → partial content stays, status idle.
 5. Kill `opencode serve` externally → project dot red with detail → Retry works.
-6. Quit app → `pgrep opencode` empty (no orphans).
+6. Quit app → `pgrep opencode` empty (no orphans). ← ✅ verified 2026-09-29 on the packaged bundle for both SIGTERM and SIGINT, after `shutdownOnSignal` landed; the check is what exposed the bug.
 7. Reopen → history hydrates for the same session.
+
+## Amendment 2026-09-29 (II) — gap analysis against waku
+
+Circulo and [waku](https://github.com/egoist/waku) sit in the same product
+category, so waku is a legitimate reference. Three constraints on that reference,
+decided by the owner on 2026-09-29:
+
+1. **waku is GPL-3.0-only. Ideas and UX patterns yes, code never** — copying a
+   file would force Circulo under GPL-3.0. This is now a rule in AGENTS.md.
+2. **waku's architecture is not portable.** Its `waku-daemon` / `waku-protocol` /
+   `waku-core` split exists because it drives 9 providers plus a browser client
+   and remote access. Circulo is one process with a route-mounted relay, and the
+   neutral protocol already covers what the daemon covers there. A daemon would
+   break the single-composition-root invariant (main.go) with no proven need.
+   WebSocket RPC is likewise the wrong call for a one-way event stream.
+3. **The gaps below were each verified against the code**, not inferred from
+   waku's README. Where Circulo already has something, it says so.
+
+Also checked and **no action needed**: waku's oversized-catalog bug (its omp probe
+skipped chunk reassembly, PR #153). Circulo's `Meta` reads through the same
+reassembling framed reader, and the 18.4.2 live smoke returns a 276-model catalog
+against the real binary.
+
+And a position worth keeping: waku 0.1.19 is **broken against OpenCode GA** —
+issue #242, open 11 days, 0 reactions, unfixed in main. Its probe hits
+`GET /api/health`, which does not exist in GA, so the model picker silently
+empties. Verified against the live 2.0.18 spec: `/api/health` is absent,
+`/api/info` is present, the command body requires `{name, text}` and rename is a
+`PATCH` — Circulo already does the right thing on all four counts, and the live
+smoke added in the version audit now keeps it that way.
+
+## Phase 9 — Stream integrity + checkpoints (post-E2E, before calling v0.1 stable)
+
+Scope line set by the owner 2026-09-29: P0–P4 land before v0.1; P5–P7 are v1.
+Sequenced P0 first because the later ones that touch the protocol ride on it.
+**P0–P4 are all done** (branch `docs/waku-gap-plan`).
+
+**P0 — Sequenced envelopes with a replay cursor.** ✅ done (branch
+`feature/stream-integrity`). The reason this was not cosmetic: the only defense
+against a dropped frame was that parts are full replacements, so the reducer
+self-heals (FR-20) — but that covers *part content only*. It does not cover
+`permission.asked`, `session.status`, `adapter.status`, retry or form requests,
+and those are the events that strand a UI. What shipped:
+- `protocol.Envelope` carries `seq` + `epoch`; `protocol.ts` and the SSE client
+  changed with it, per the AGENTS.md contract rule.
+- The orchestrator stamps both, and `Subscribe(protocol.Cursor)` returns a
+  `ReplayStatus` (`full` / `resumed` / `stale` / `gap`) with the channel.
+- The relay sends that status as the first SSE control frame and writes an `id:`
+  per event, so a native `EventSource` reconnect also carries `Last-Event-ID`.
+- The client owns the cursor and rebuilds the `EventSource` on reconnect, dedupes
+  on the `(epoch, seq)` pair rather than `seq` alone, and refetches **only** when
+  the status is not `resumed`. A one-second blip no longer costs four REST round
+  trips including the model catalog.
+- **A hole the cursor exposed, now closed:** a subscriber that stopped reading had
+  its events silently dropped. It is now dropped as a subscription — the channel
+  closes, the relay ends the response, and the client reconnects with a cursor
+  that recovers the exact tail.
+- Verified end to end over HTTP, not just per-unit: connect, cut, emit three
+  events while away, reconnect, receive exactly those three.
+
+**P1 — Checkpoints as per-turn git refs.** ✅ done. Replaced backlog item 5
+rather than adding to it: that item assumed OpenCode's `revert`/`unrevert`, which
+ties checkpoints to one provider. Refs work identically for omp, where no such
+support exists, and need nothing from the harness.
+- `internal/checkpoint` owns the git plumbing. Refs live under `refs/circulo/`,
+  outside `refs/heads` and `refs/tags`, named `session-<id>-turn-<n>-<start|end>`.
+- Snapshots go through an **alternate index**, not `git stash create`: stash
+  leaves everything alone but omits untracked files, and the files an agent
+  creates are the whole point. The user's index, worktree and stash list are
+  asserted unchanged after a capture.
+- Turn boundaries are detected in the orchestrator from `session.status`
+  (busy→idle), because the relay hands prompts straight to the adapter — the
+  orchestrator never sees them — while status is the one event both backends
+  translate identically.
+- **Rewind restores the worktree and leaves HEAD alone.** Moving the branch
+  would discard commits the user made during the session. The pre-rewind state
+  is checkpointed as a `guard` first, so the action is undoable.
+- The relay splits preview from action: `rewind-preview` returns the diff and
+  whether uncommitted work would be lost; `rewind` acts and requires an explicit
+  turn number so it can never default to "the newest one". Both routes are on
+  the project, not the adapter, so rewind keeps working when the backend is down.
+- 21 package tests against real git repositories, 9 wiring tests, 6 relay tests,
+  8 frontend tests. One bug the wiring test caught: files an agent creates are
+  untracked and `git read-tree` does not remove them, so a rewind that only
+  restored tracked files would have undone almost nothing.
+
+**P2 — Declared capabilities on the runtime.** ✅ done. `protocol.Capabilities`
+on the Adapter interface, carried on `Meta`, read in the UI through one helper.
+Flags: permissions, forms, steer, branch, agents, commands, accessMode — each one
+a real code path rather than an aspiration.
+
+The two gaps this actually fixes are the ones that are invisible until a user
+hits them. omp has no permission round-trip, so permission cards simply never
+appear with nothing to explain why; and its `SetBranch` is a documented no-op, so
+the branch picker looked functional and did nothing. The first real UI use is
+that picker, which now shows the checked-out branch read-only and says why.
+
+**Correction to how this was scoped:** the plan said capabilities would "remove
+the provider name as crossing vocabulary entirely". That was overselling it and
+it is wrong. Identity is legitimately name-based — which product this is, its
+logo, which "add project" entry to show. Only *behavior* moves to capabilities,
+and the AGENTS.md invariant that permits the provider name still holds.
+
+Not yet wired: `steer` is declared false for opencode because the adapter sends
+a second prompt rather than using the inbox delivery GA offers
+(`PATCH /api/session/{id}/inbox/{id} {delivery: steer|queue}`, per waku's #242
+table). That is the real queue/steer feature and it is still ahead.
+
+**P3 — Composer drafts per target.** ✅ done. Keyed by conversation target and
+restored on return, so switching sessions no longer discards what was being
+typed. The key includes the branch, because for a new session the same project
+plus "new session" can be aimed at different branches.
+
+Two decisions that shape it:
+- **A draft stores segments, not text.** The composer is a `contenteditable`
+  whose @file and /command tags are DOM chips rather than characters, so
+  storing the projected string would come back with `@src/app.ts` pasted as
+  plain text — which then reads as a command the user never picked.
+- **`localStorage`, not a server store.** waku persists drafts in its daemon;
+  Circulo has no daemon and a draft has no reason to sync between anything.
+  The storage is injected so the module is testable in node, and every failure
+  path (blocked storage, quota, corrupt entry) degrades instead of throwing: a
+  draft is never worth failing a keystroke over. Save and restore are one
+  effect on purpose — as two they race and can write the restored draft back
+  over the one just restored. Sending clears the draft for that target.
+
+**P4 — Scope on slash commands.** ✅ done. `CommandInfo.Source` carried the
+backend's own word across the boundary (omp's `skill`, opencode's `file`) and
+the UI branched on it. Replaced with the neutral `CommandScope`; `NormalizeScope`
+maps the provider vocabulary and an unknown value becomes builtin rather than
+crossing as a string nobody can render.
+
+The substantive part is the two orderings, and conflating them breaks both. A
+project command must outrank a backend builtin, or the builtin makes the
+project's command unreachable — the opposite of what a project command is for.
+But the picker still lists the builtin first. Backwards, you get either
+unreachable commands or a picker where the shadowed entry looks like the winner.
+A test asserts the two orderings still differ; if they ever agree, one has
+collapsed into the other. `ResolveCommands` ignores input order, so two backends
+listing the same thing differently produce the same picker, and it runs in the
+relay because merging sources is a neutral concern an adapter cannot do.
 
 ## Out-of-scope backlog (v1+, in priority order)
 
-1. v2 granular OpenCode events (`message.part.delta` everywhere, tool input streaming).
+1. omp tool-call granularity. The OpenCode side is done — the adapter already
+   handles `session.tool.input.started/ended` and `session.tool.progress`, and
+   the neutral protocol has a `part.delta` fast path behind a full `part.updated`.
+   omp only emits `toolcall_end`, so arguments appear when the call completes;
+   incremental input depends on what omp's RPC actually exposes.
 2. `@` file mentions + image attachments in composer (protocol already has file parts).
 3. Syntax highlighting behind MarkdownView; diff syntax tone.
 4. Third adapter (Claude CLI stream-json) — the omp adapter already proved the neutral protocol across transports (stdio vs HTTP+SSE).
-5. Checkpoints/revert UI (OC supports revert/unrevert), session fork.
+5. ~~Checkpoints/revert UI~~ → **shipped as P1** in Phase 9: per-turn git refs
+   instead of OpenCode's provider-specific `revert`/`unrevert`. Session fork stays
+   here (OpenCode now takes `{before: msgID}` on `POST /api/session/{id}/fork`).
 6. Remote access (Tailcat) — design frozen in [remote.md](remote.md); implementation blocked by project rule until local protocol is stable.
+7. **Projectless tasks** (waku P5): auto-create a workspace under a local dated
+   directory for a quick question, instead of demanding a folder up front. Fits
+   the local-first model; Circulo has no such path today.
+8. **Search within session history** (waku P6): message search, complementing the
+   existing `@` file search.
+9. **Plan quota / usage history** (waku P7): subscription-remaining display. Circulo
+   shows per-turn usage only.
+10. Auto-update (waku ships signed .dmg + updater). Packaging exists; the updater is
+    a separate concern, after v0.1.

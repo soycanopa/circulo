@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"circulogo/internal/agent"
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent"
+	"circulo/internal/agent/protocol"
 )
 
 // messagesPayload is the get_messages response data.

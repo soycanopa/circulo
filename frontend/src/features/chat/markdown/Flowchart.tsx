@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 /* ─────────────────────────────────────────────────────────
  * FLOWCHART — an agent workflow on a dotted canvas (owner's
- * design). The agent emits a ```circulogo-flow fenced block
+ * design). The agent emits a ```circulo-flow fenced block
  * with JSON (taught via the session format instruction);
  * MarkdownView renders it here instead of as code.
  *
@@ -44,7 +44,7 @@ const hueColor = (hue?: string): string =>
 const mix = (hue: string, pct: number, base = "var(--bg-popover)") =>
   `color-mix(in srgb, ${hue} ${pct}%, ${base})`;
 
-/** Validates + normalizes one circulogo-flow block; null → render as code. */
+/** Validates + normalizes one circulo-flow block; null → render as code. */
 export function parseFlowBlock(text: string): FlowDoc | null {
   let raw: unknown;
   try {

@@ -30,12 +30,15 @@ import { useAppStore } from "@/lib/agent/store";
 import { cn } from "@/lib/utils";
 import type {
   CommandInfo,
+  CommandScope,
   FileHit,
   FormInfo,
   ModelInfo,
   PermissionRequest,
   ProjectVcs,
 } from "@/lib/agent/protocol";
+import { can } from "@/lib/agent/protocol";
+import { clearDraft, draftKey, loadDraft, saveDraft } from "@/features/chat/drafts";
 import { api } from "@/lib/agent/api";
 import {
   buildChip,
@@ -496,14 +499,16 @@ const chipBtn =
 
 /** Tag color per command source (variantTagClass palette): skills green,
  * custom yellow, extension orange, builtin neutral. */
-function commandTagClass(source?: string): string {
-  switch (source) {
+// Chip colour by neutral scope. The provider's own word never reaches here;
+// omp's "custom" and opencode's "file" both arrive as scopes.
+function commandTagClass(scope?: CommandScope): string {
+  switch (scope) {
     case "skill":
       return "bg-[#243D2E] border-diff-add text-success";
-    case "custom":
+    case "user":
       return "bg-[#47381A] border-[#8C661F] text-[#EBB847]";
     case "extension":
-    case "file":
+    case "projectFile":
       return "bg-[#522014] border-[#9E5214] text-[#FA9E47]";
     default:
       return "bg-bg-hover border-border text-text-secondary";
@@ -965,6 +970,12 @@ function SessionTargetStrip({
   const chipStatic =
     "inline-flex h-6 min-w-0 items-center gap-1 rounded-[6px] px-1.5 text-[12px] font-medium text-text-primary bg-bg-code";
 
+  // Behaviour comes from the declared capabilities, not from the provider's
+  // name: identity is name-based on purpose, behavior is not.
+  const activeMeta = useAppStore((s) => (projectID ? s.metaByProject[projectID] : undefined));
+  const canPinBranch = can(activeMeta, "branch");
+  const providerLabel = selected?.provider === "omp" ? "omp" : "OpenCode";
+
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {onProjectSelect ? (
@@ -1019,6 +1030,21 @@ function SessionTargetStrip({
             <GitBranch className="size-3 shrink-0 text-success" />
             Local repo
           </span>
+          {/* A backend that cannot pin a branch still shows which one is
+              checked out, but the picker is closed and says why. omp's
+              SetBranch is a documented no-op, so leaving this interactive
+              would promise something the backend does not do. */}
+          {!canPinBranch ? (
+            <span
+              className={cn(chipStatic, "cursor-not-allowed text-text-tertiary")}
+              title={`${providerLabel} cannot pin a working branch — this is the checked-out branch, not an override`}
+            >
+              <GitBranch className="size-3 shrink-0 text-text-tertiary" />
+              <span className="max-w-40 truncate">
+                branch: {vcs.branch || "default"} (read-only)
+              </span>
+            </span>
+          ) : (
           <Popover open={branchOpen} onOpenChange={setBranchOpen}>
             <PopoverTrigger asChild>
               <button type="button" aria-expanded={branchOpen} className={chip}>
@@ -1041,6 +1067,7 @@ function SessionTargetStrip({
               ))}
             </PopoverContent>
           </Popover>
+          )}
         </>
       ) : (
         <span className="text-[12px] text-text-tertiary">No git repository</span>
@@ -1152,6 +1179,17 @@ export function Composer() {
   useEffect(() => {
     setTargetBranch("");
   }, [activeSessionId]);
+
+  // Drafts are keyed by the conversation the prompt is aimed at, so switching
+  // sessions stashes what was being written instead of discarding it. For a
+  // new session the target also includes the branch, because the same
+  // project + "new session" can be aimed at different branches.
+  const draftTargetId = isNewSession ? targetProjectId || (activeProjectId ?? "") : (activeProjectId ?? "");
+  const draftTarget = draftKey(
+    draftTargetId,
+    isNewSession ? undefined : (activeSessionId ?? undefined),
+    isNewSession ? targetBranch : undefined,
+  );
   // Entering new-session mode defaults the target to the last-added project
   // (owner call); the user re-picks from the unlocked strip.
   useEffect(() => {
@@ -1198,6 +1236,61 @@ export function Composer() {
     setMenuOpen(false);
   };
 
+  // Stash whatever is in the editor under the target it belongs to, then
+  // restore the one belonging to the target we are moving to. This is a
+  // single effect on purpose: saving and restoring in separate effects races
+  // on the target change and can write the restored draft straight back over
+  // the one it just restored.
+  const lastDraftTarget = useRef<string | null>(null);
+  useEffect(() => {
+    const root = edRef.current;
+    if (!root) return;
+    if (lastDraftTarget.current === draftTarget) return;
+    if (lastDraftTarget.current !== null) {
+      saveDraft(lastDraftTarget.current, readSegments(root));
+    }
+    lastDraftTarget.current = draftTarget;
+
+    const draft = loadDraft(draftTarget);
+    root.innerHTML = "";
+    if (draft && draft.length > 0) {
+      // Append in order at the end of the editor. onRemove re-syncs from the
+      // DOM so a restored chip stays deletable, which a detached callback
+      // would silently break.
+      for (const segment of draft) {
+        if (segment.kind === "text") {
+          root.appendChild(document.createTextNode(segment.value));
+          continue;
+        }
+        const end = caretProjection(root).text.length;
+        const chip =
+          segment.kind === "file"
+            ? buildChip({
+                kind: "file",
+                name: undefined,
+                path: segment.path,
+                label: `@${segment.path}`,
+                title: segment.path,
+                className: "border-border bg-bg-hover text-text-secondary",
+                onRemove: syncFromDom,
+              })
+            : buildChip({
+                kind: "command",
+                name: segment.name,
+                scope: segment.scope,
+                label: `/${segment.name}`,
+                title: `/${segment.name} (${segment.scope || "builtin"})`,
+                className: commandTagClass(segment.scope),
+                onRemove: syncFromDom,
+              });
+        insertChipAt(root, chip, end, end);
+      }
+    }
+    const projected = caretProjection(root).text;
+    setText(projected);
+    caretRef.current = projected.length;
+  }, [draftTarget]);
+
   const submit = () => {
     const root = edRef.current;
     if (!root) return;
@@ -1212,6 +1305,9 @@ export function Composer() {
     const cmd = segs.find((s): s is Extract<Segment, { kind: "command" }> => s.kind === "command");
     const slash = parseSlash(t);
     clearEditor();
+    // The prompt is on its way, so this target has nothing pending. Without
+    // this, switching away and back would restore the text just sent.
+    clearDraft(draftTarget);
     // A picked command chip (or a hand-typed full-text "/name args") routes
     // through runCommand; everything else in the text rides as the prompt.
     if (cmd) {
@@ -1291,10 +1387,10 @@ export function Composer() {
       buildChip({
         kind: "command",
         name: picked.name,
-        source: picked.source,
+        scope: picked.scope,
         label: `/${picked.name}`,
-        title: `${picked.description || picked.name} (${picked.source || "builtin"})`,
-        className: commandTagClass(picked.source),
+        title: `${picked.description || picked.name} (${picked.scope || "builtin"})`,
+        className: commandTagClass(picked.scope),
         onRemove: syncFromDom,
       }),
       start,
@@ -1512,8 +1608,8 @@ export function Composer() {
                     <span className="min-w-0 flex-1 truncate text-sm/tight text-text-secondary">
                       {c.description || c.argsHint}
                     </span>
-                    {c.source && c.source !== "builtin" && (
-                      <span className="shrink-0 text-[11px] text-text-tertiary">{c.source}</span>
+                    {c.scope && c.scope !== "builtin" && (
+                      <span className="shrink-0 text-[11px] text-text-tertiary">{c.scope}</span>
                     )}
                   </button>
                 ))}

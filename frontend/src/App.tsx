@@ -48,7 +48,7 @@ function GeneralEmptyState({ hasProjects }: { hasProjects: boolean }) {
           variant="secondary"
           className="mt-2"
           onClick={() => {
-            void import("@/bindings/circulogo/internal/appservice/dialog").then(
+            void import("@/bindings/circulo/internal/appservice/dialog").then(
               async ({ PickFolder }) => {
                 const path = await PickFolder().catch(() => "");
                 if (path) await addProject(path, "managed");
@@ -72,11 +72,17 @@ export default function App() {
 
   useEffect(() => {
     const store = useAppStore.getState();
-    const handle: SseHandle = connectSse(
-      (env: Envelope) => store.dispatch(env),
-      (state) => useAppStore.getState().setConnection(state),
-      () => void useAppStore.getState().resync(),
-    );
+    const handle: SseHandle = connectSse({
+      onEvent: (env: Envelope) => store.dispatch(env),
+      onState: (state) => useAppStore.getState().setConnection(state),
+      // Only called when the server says our position is not continuous. A
+      // clean resume delivers the missed tail as events and skips this
+      // entirely — including the model catalog refetch.
+      onResync: (reason) => {
+        if (reason) console.info("sse: resync", reason);
+        void useAppStore.getState().resync();
+      },
+    });
     void store.refreshProjects().catch((e) => console.error("initial load", e));
     return () => handle.close();
   }, []);
