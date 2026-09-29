@@ -186,3 +186,8 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
 - `internal/store/` — `settings.json` persistence (projects, provider, mode). Atomic writes.
 - `internal/term/` — PTY terminals (creack/pty), one per project. I/O rides SSE +
   write/resize POSTs; it is transport-agnostic to the provider, not to the relay.
+- `internal/checkpoint/` — per-turn workspace states stored as git refs under
+  `refs/circulo/`, so a turn can be rewound without asking the backend to
+  cooperate (omp has no equivalent of OpenCode's `revert`). Two invariants the
+  tests protect: a capture must not touch the user's index, worktree or stash
+  list, and a rewind must restore the **worktree** without moving HEAD.

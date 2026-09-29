@@ -294,14 +294,31 @@ and those are the events that strand a UI. What shipped:
 - Verified end to end over HTTP, not just per-unit: connect, cut, emit three
   events while away, reconnect, receive exactly those three.
 
-**P1 — Checkpoints as per-turn git refs.** Replaces backlog item 5 rather than
-adding to it: the old item assumed OpenCode's `revert`/`unrevert`, which ties
-checkpoints to one provider. Refs work identically for omp, where no such support
-exists, and need nothing from the harness.
-- `refs/circulo/session-<id>-turn-<n>`, plus `-start-` and `-diff-` variants, so
-  rewind and the turn's diff base come from the same mechanism.
-- Written at turn boundaries by the orchestrator; rewind moves the ref and
-  re-hydrates. Requires an explicit confirmation when uncommitted work exists.
+**P1 — Checkpoints as per-turn git refs.** ✅ done. Replaced backlog item 5
+rather than adding to it: that item assumed OpenCode's `revert`/`unrevert`, which
+ties checkpoints to one provider. Refs work identically for omp, where no such
+support exists, and need nothing from the harness.
+- `internal/checkpoint` owns the git plumbing. Refs live under `refs/circulo/`,
+  outside `refs/heads` and `refs/tags`, named `session-<id>-turn-<n>-<start|end>`.
+- Snapshots go through an **alternate index**, not `git stash create`: stash
+  leaves everything alone but omits untracked files, and the files an agent
+  creates are the whole point. The user's index, worktree and stash list are
+  asserted unchanged after a capture.
+- Turn boundaries are detected in the orchestrator from `session.status`
+  (busy→idle), because the relay hands prompts straight to the adapter — the
+  orchestrator never sees them — while status is the one event both backends
+  translate identically.
+- **Rewind restores the worktree and leaves HEAD alone.** Moving the branch
+  would discard commits the user made during the session. The pre-rewind state
+  is checkpointed as a `guard` first, so the action is undoable.
+- The relay splits preview from action: `rewind-preview` returns the diff and
+  whether uncommitted work would be lost; `rewind` acts and requires an explicit
+  turn number so it can never default to "the newest one". Both routes are on
+  the project, not the adapter, so rewind keeps working when the backend is down.
+- 21 package tests against real git repositories, 9 wiring tests, 6 relay tests,
+  8 frontend tests. One bug the wiring test caught: files an agent creates are
+  untracked and `git read-tree` does not remove them, so a rewind that only
+  restored tracked files would have undone almost nothing.
 
 **P2 — Declared capabilities on the runtime.** `supports_steer`,
 `supports_checkpoints`, `supports_branch_pinning` and friends, advertised by the
@@ -328,7 +345,7 @@ less-specific command of the same name. Circulo's slash commands have no scope.
 2. `@` file mentions + image attachments in composer (protocol already has file parts).
 3. Syntax highlighting behind MarkdownView; diff syntax tone.
 4. Third adapter (Claude CLI stream-json) — the omp adapter already proved the neutral protocol across transports (stdio vs HTTP+SSE).
-5. ~~Checkpoints/revert UI~~ → **replaced by P1** in Phase 9: per-turn git refs
+5. ~~Checkpoints/revert UI~~ → **shipped as P1** in Phase 9: per-turn git refs
    instead of OpenCode's provider-specific `revert`/`unrevert`. Session fork stays
    here (OpenCode now takes `{before: msgID}` on `POST /api/session/{id}/fork`).
 6. Remote access (Tailcat) — design frozen in [remote.md](remote.md); implementation blocked by project rule until local protocol is stable.
