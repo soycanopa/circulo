@@ -270,6 +270,7 @@ smoke added in the version audit now keeps it that way.
 
 Scope line set by the owner 2026-09-29: P0–P4 land before v0.1; P5–P7 are v1.
 Sequenced P0 first because the later ones that touch the protocol ride on it.
+**P0–P4 are all done** (branch `docs/waku-gap-plan`).
 
 **P0 — Sequenced envelopes with a replay cursor.** ✅ done (branch
 `feature/stream-integrity`). The reason this was not cosmetic: the only defense
@@ -342,13 +343,39 @@ a second prompt rather than using the inbox delivery GA offers
 (`PATCH /api/session/{id}/inbox/{id} {delivery: steer|queue}`, per waku's #242
 table). That is the real queue/steer feature and it is still ahead.
 
-**P3 — Composer drafts per target.** Keyed by conversation target and restored on
-return, so switching sessions no longer discards what was being typed.
+**P3 — Composer drafts per target.** ✅ done. Keyed by conversation target and
+restored on return, so switching sessions no longer discards what was being
+typed. The key includes the branch, because for a new session the same project
+plus "new session" can be aimed at different branches.
 
-**P4 — Scope on slash commands.** The useful idea is that **presentation order and
-resolution precedence are two different orderings**: the picker ranks builtin →
-project → user → skill, while project and user commands may still override a
-less-specific command of the same name. Circulo's slash commands have no scope.
+Two decisions that shape it:
+- **A draft stores segments, not text.** The composer is a `contenteditable`
+  whose @file and /command tags are DOM chips rather than characters, so
+  storing the projected string would come back with `@src/app.ts` pasted as
+  plain text — which then reads as a command the user never picked.
+- **`localStorage`, not a server store.** waku persists drafts in its daemon;
+  Circulo has no daemon and a draft has no reason to sync between anything.
+  The storage is injected so the module is testable in node, and every failure
+  path (blocked storage, quota, corrupt entry) degrades instead of throwing: a
+  draft is never worth failing a keystroke over. Save and restore are one
+  effect on purpose — as two they race and can write the restored draft back
+  over the one just restored. Sending clears the draft for that target.
+
+**P4 — Scope on slash commands.** ✅ done. `CommandInfo.Source` carried the
+backend's own word across the boundary (omp's `skill`, opencode's `file`) and
+the UI branched on it. Replaced with the neutral `CommandScope`; `NormalizeScope`
+maps the provider vocabulary and an unknown value becomes builtin rather than
+crossing as a string nobody can render.
+
+The substantive part is the two orderings, and conflating them breaks both. A
+project command must outrank a backend builtin, or the builtin makes the
+project's command unreachable — the opposite of what a project command is for.
+But the picker still lists the builtin first. Backwards, you get either
+unreachable commands or a picker where the shadowed entry looks like the winner.
+A test asserts the two orderings still differ; if they ever agree, one has
+collapsed into the other. `ResolveCommands` ignores input order, so two backends
+listing the same thing differently produce the same picker, and it runs in the
+relay because merging sources is a neutral concern an adapter cannot do.
 
 ## Out-of-scope backlog (v1+, in priority order)
 
