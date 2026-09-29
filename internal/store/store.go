@@ -40,16 +40,52 @@ type Store struct {
 	path string
 }
 
-// New targets path (e.g. ~/Library/Application Support/circulogo/settings.json).
+// New targets path (e.g. ~/Library/Application Support/circulo/settings.json).
 func New(path string) *Store { return &Store{path: path} }
 
-// DefaultPath returns the OS config location for circulogo.
+const appDir = "circulo"
+
+// legacyAppDir is where releases before the rename stored their settings. It
+// still holds real user data — project rows the user added by hand — so the
+// path change migrates rather than abandoning it.
+const legacyAppDir = "circulogo"
+
+// DefaultPath returns the OS config location, migrating a pre-rename settings
+// file into the new directory the first time it is found.
+//
+// A renamed config directory would otherwise look like a fresh install: the
+// user's projects would silently vanish, with no error to explain it.
 func DefaultPath() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "circulogo", "settings.json"), nil
+	return defaultPathIn(dir)
+}
+
+// defaultPathIn is the testable core. It takes the config directory explicitly
+// so a test can never reach the real one: an earlier version of this migration
+// was exercised through DefaultPath, and on a machine where
+// os.UserConfigDir ignores XDG_CONFIG_HOME the test performed the real
+// migration on the developer's own settings file.
+func defaultPathIn(configDir string) (string, error) {
+	newPath := filepath.Join(configDir, appDir, "settings.json")
+	legacy := filepath.Join(configDir, legacyAppDir, "settings.json")
+	if _, err := os.Stat(newPath); err == nil {
+		return newPath, nil // already on the new path
+	}
+	if _, err := os.Stat(legacy); err != nil {
+		return newPath, nil // nothing to migrate
+	}
+	if err := os.MkdirAll(filepath.Dir(newPath), 0o755); err != nil {
+		// Not fatal: fall back to the old location so the user keeps their
+		// projects, which matters far more than the directory name.
+		return legacy, nil
+	}
+	if err := os.Rename(legacy, newPath); err != nil {
+		return legacy, nil
+	}
+	return newPath, nil
 }
 
 // ProjectID derives a stable id from the project path so re-adding the same
