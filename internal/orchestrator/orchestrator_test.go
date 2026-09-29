@@ -164,7 +164,7 @@ func TestLoadStartsPersistedProjects(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ch, cancel := o.Subscribe()
+	ch, _, _, cancel := o.Subscribe(protocol.Cursor{})
 	defer cancel()
 	if err := o.Load(context.Background()); err != nil {
 		t.Fatal(err)
@@ -228,7 +228,7 @@ func TestAdapterFailureSurfacesAsErrorStatus(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	ch, cancel := o.Subscribe()
+	ch, _, _, cancel := o.Subscribe(protocol.Cursor{})
 	defer cancel()
 	if err := o.Load(context.Background()); err != nil {
 		t.Fatal(err)
@@ -261,7 +261,7 @@ func TestSubscribeReplaysRecentEvents(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	sub, cancel := o.Subscribe()
+	sub, _, _, cancel := o.Subscribe(protocol.Cursor{})
 	defer cancel()
 	select {
 	case env := <-sub:

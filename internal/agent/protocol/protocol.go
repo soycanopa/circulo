@@ -76,9 +76,59 @@ const (
 )
 
 // Envelope is the top-level frame written to /agent/sse.
+//
+// Seq and Epoch are the resume contract. Seq is assigned by the orchestrator as
+// it fans events in, monotonically from 1 within one Epoch. Epoch changes on
+// every process start, so a Seq that restarts at 1 after a restart can never be
+// mistaken for a continuation of the old run — without that, resuming a stream
+// across a restart is worse than not resuming at all. Both are omitted when
+// zero/empty, which is only true for envelopes built outside the orchestrator
+// (tests, direct construction).
 type Envelope struct {
 	Type    string          `json:"type"`
+	Seq     uint64          `json:"seq,omitempty"`
+	Epoch   string          `json:"epoch,omitempty"`
 	Payload json.RawMessage `json:"payload"`
+}
+
+// Cursor is where a subscriber left off. An empty Cursor means "no position
+// held yet" (first connect, or a page reload): the subscriber wants the whole
+// ring and still owes the client a full bootstrap.
+type Cursor struct {
+	Epoch string
+	Seq   uint64
+}
+
+// ReplayStatus is the server's answer to a resume request, sent as the first
+// SSE control frame. It exists so the client knows whether it must refetch
+// (full/stale/gap) or can simply continue (resumed) — today it refetches
+// everything on every reconnect because it cannot tell the difference.
+type ReplayStatus string
+
+const (
+	// ReplayFull: no cursor supplied; the whole ring is replayed.
+	ReplayFull ReplayStatus = "full"
+	// ReplayResumed: the cursor is valid and contiguous; only the tail after
+	// it is replayed and the client is already current.
+	ReplayResumed ReplayStatus = "resumed"
+	// ReplayStale: the cursor's epoch is not this process's epoch — the app
+	// restarted, so the cursor is meaningless.
+	ReplayStale ReplayStatus = "stale"
+	// ReplayGap: the cursor predates the replay ring, so the events in
+	// between no longer exist server-side.
+	ReplayGap ReplayStatus = "gap"
+)
+
+// ReplayFrame is the SSE control frame carrying a ReplayStatus. It is not an
+// Envelope: it describes the stream, not a domain event, and the reducer must
+// never see it.
+type ReplayFrame struct {
+	Status ReplayStatus `json:"status"`
+	Epoch  string       `json:"epoch"`
+	// Seq is the highest sequence replayed in this connection (0 when the
+	// cursor was stale or gapped and nothing was replayed), so the client can
+	// seed its own position without waiting for the first event.
+	Seq uint64 `json:"seq"`
 }
 
 // NewEnvelope marshals payload and wraps it. Marshal errors are programmer

@@ -8,10 +8,14 @@ package orchestrator
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"sync"
+	"time"
 
 	"circulogo/internal/agent"
 	"circulogo/internal/agent/protocol"
@@ -37,6 +41,8 @@ type Orchestrator struct {
 	subs         map[int]*subscriber
 	nextSubID    int
 	replay       []protocol.Envelope // ring of recent events for late subscribers
+	seq          uint64              // last assigned envelope sequence
+	epoch        string              // changes on every process start
 	startSeq     []string            // projects pending Start, in settings order
 	shutdownOnce sync.Once
 }
@@ -56,6 +62,35 @@ type subscriber struct {
 	ch chan protocol.Envelope
 }
 
+const (
+	// replayMax bounds the ring of recent events kept for subscribers that
+	// attach late or resume. A cursor older than the ring cannot be served
+	// and the client is told to refetch instead.
+	replayMax = 1024
+	// subBuffer is how far a subscriber may lag before its channel is closed.
+	// On a full buffer the orchestrator drops the subscriber rather than
+	// silently discarding events: closing makes the relay end the response,
+	// the client reconnects with its cursor, and the ring delivers exactly
+	// what was missed. Silently dropping is what makes a UI strand itself.
+	subBuffer = 256
+)
+
+// newEpoch returns a value that differs between processes. Sequence numbers
+// restart at 1 on every start, so the epoch is the only thing that stops a
+// client from treating a fresh run's event 1 as the continuation of an old
+// run's event 1. Random rather than a timestamp so two processes started in
+// the same millisecond still differ.
+func newEpoch() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		// crypto/rand failing is not recoverable in any useful way here, and
+		// a predictable epoch would be worse than a distinctive-but-fixed
+		// one; fall back to the clock, which is still unique per process.
+		return strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
+	return hex.EncodeToString(b[:])
+}
+
 // New builds an orchestrator around a store and adapter factory.
 func New(st *store.Store, factory AdapterFactory) *Orchestrator {
 	return &Orchestrator{
@@ -64,6 +99,7 @@ func New(st *store.Store, factory AdapterFactory) *Orchestrator {
 		projects: map[string]*project{},
 		subs:     map[int]*subscriber{},
 		terms:    term.NewManager(),
+		epoch:    newEpoch(),
 	}
 }
 
@@ -158,43 +194,86 @@ func (o *Orchestrator) setStatus(id, state, detail string) {
 
 func (o *Orchestrator) broadcast(env protocol.Envelope) {
 	o.mu.Lock()
-	// Keep a replay ring so subscribers that attach later (or after a UI
-	// reload) still see recent state without a full refetch (flow.md §1).
-	const replayMax = 1024
+	o.seq++
+	env.Seq = o.seq
+	env.Epoch = o.epoch
+	// Keep a replay ring so subscribers that attach later (or resume) still
+	// see recent state without a full refetch (flow.md §1).
 	o.replay = append(o.replay, env)
 	if len(o.replay) > replayMax {
 		o.replay = o.replay[len(o.replay)-replayMax:]
 	}
-	for _, s := range o.subs {
+	for id, s := range o.subs {
 		select {
 		case s.ch <- env:
 		default:
-			// Slow subscriber: drop rather than block every project's stream.
-			// The UI resyncs via reconnect replay + REST refetch.
+			// Slow subscriber: drop the subscription instead of the event.
+			// Closing the channel ends the relay's response; the client
+			// reconnects with its cursor and the ring hands it the exact tail
+			// it missed. Dropping the event silently is what strands a UI —
+			// the client has no way to learn that something went missing.
+			delete(o.subs, id)
+			close(s.ch)
 		}
 	}
 	o.mu.Unlock()
 }
 
-// Subscribe returns a channel of events (replayed from the ring first).
-// The returned func unsubscribes and must be called exactly once.
-func (o *Orchestrator) Subscribe() (<-chan protocol.Envelope, func()) {
+// Subscribe returns a channel of events plus the replay status that describes
+// what the caller received, so the relay can tell the client whether it is
+// current (ReplayResumed) or owes it a refetch. The returned func unsubscribes
+// and must be called exactly once.
+func (o *Orchestrator) Subscribe(after protocol.Cursor) (<-chan protocol.Envelope, protocol.ReplayStatus, uint64, func()) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	id := o.nextSubID
 	o.nextSubID++
-	ch := make(chan protocol.Envelope, 256)
+	ch := make(chan protocol.Envelope, subBuffer)
+
+	status := protocol.ReplayFull
 	// Replay buffered events (copy under lock, send outside would block — the
 	// channel is fresh so sends cannot block).
-	for _, env := range o.replay {
-		ch <- env
+	switch {
+	case after.Epoch == "" || (after.Epoch == o.epoch && after.Seq == 0):
+		// First connection: hand over the whole ring, best effort.
+		for _, env := range o.replay {
+			ch <- env
+		}
+	case after.Epoch != o.epoch || after.Seq > o.seq:
+		// Either the app restarted between the cursor and now — the ring
+		// describes a process the client never saw — or the cursor claims a
+		// position this process cannot have produced. Replaying it would be
+		// worse than replaying nothing: the client must refetch.
+		status = protocol.ReplayStale
+	case len(o.replay) > 0 && after.Seq+1 < o.replay[0].Seq:
+		// The cursor predates the ring; the events in between are gone.
+		status = protocol.ReplayGap
+	default:
+		// Contiguous: deliver only what follows the cursor.
+		status = protocol.ReplayResumed
+		for _, env := range o.replay {
+			if env.Seq > after.Seq {
+				ch <- env
+			}
+		}
 	}
+	replayed := o.seq
 	o.subs[id] = &subscriber{ch: ch}
-	return ch, func() {
+	return ch, status, replayed, func() {
 		o.mu.Lock()
 		defer o.mu.Unlock()
-		delete(o.subs, id)
+		if s, ok := o.subs[id]; ok {
+			delete(o.subs, id)
+			close(s.ch)
+		}
 	}
+}
+
+// Epoch reports this process's resume epoch.
+func (o *Orchestrator) Epoch() string {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.epoch
 }
 
 // ProjectView is the REST-facing project descriptor.
