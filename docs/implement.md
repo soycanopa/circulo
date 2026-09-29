@@ -16,7 +16,7 @@ contains the adjusted rule set.
 | # | Commit | Content | DoD |
 |---|---|---|---|
 | 1.1 | `chore: git init + ignore` | .gitignore (Go, node, wails build, .scratch) | clean status |
-| 1.2 | `chore: wails3 react-ts scaffold` | `wails3 init -n circulogo -t react` output, `go mod tidy`, window options (1280×800, dark bg, mac hidden-inset titlebar) | `wails3 dev` opens window with template page |
+| 1.2 | `chore: wails3 react-ts scaffold` | `wails3 init -n circulogo -t react` output (the project was later renamed to `circulo`, see the 2026-09-29 rename amendment), `go mod tidy`, window options (1280×800, dark bg, mac hidden-inset titlebar) | `wails3 dev` opens window with template page |
 | 1.3 | `feat(frontend): tailwind theme tokens + shadcn init` | shadcn init, theme vars from UI.md §1, dark default | Button renders themed |
 | 1.4 | `test: vitest + go test wiring` | vitest config + sample, `make test` target (go test ./... + vitest run) | both suites green |
 | 1.5 | `docs: AGENTS.md guardrails in template` | ensure lint configs reflect rules | lint passes |
@@ -127,14 +127,14 @@ endpoint/event map) and the app runs against **2.0.8** via
   with pixel-loader headers.
 - CodePanel: fenced code with line numbers + syntax coloring; unified `diff`
   with old/new gutters and word-level pairing.
-- `circulogo-flow` blocks render as the dotted flowchart canvas.
+- `circulo-flow` blocks render as the dotted flowchart canvas.
 - AssistantText streams word-by-word (55ms reveal) and settles to copyable text.
 - Session targeting: always-visible strip; new-session mode selects project +
   branch up front and the session materializes on the first message.
 - Resizable sidebar (200–480px, persisted), animated pixel-glow texture,
   transcript edge fades, white Send/Stop pair.
 - Per-session markdown formatting instruction via the instructions-entries API
-  (`circulogo-format`); the v2 `instructions` config key is not read by the server.
+  (`circulo-format`); the v2 `instructions` config key is not read by the server.
 
 The ui.md re-sync debt from the pivot amendment still stands and now also covers
 the terminal surface and app-bar actions.
@@ -196,6 +196,37 @@ rather than an error. Audited on 2026-09-29: **no drift**.
   passing against the pinned 2.0.8 side-by-side install.
 - **Spec URL corrected.** On v2 `GET /doc` serves the webview HTML; the machine
   spec is `GET /openapi.json`. AGENTS.md pointed at `/doc`.
+
+## Amendment 2026-09-29 (III) — project rename `circulogo` → `circulo`
+
+Owner decision: nothing in the product may remain `circulogo`. The scaffold had
+been named that way and it leaked into the module, the binary, the bundle, the
+Wails bindings path, the localStorage keys and the config directory.
+
+What moved, and the one thing that needed care:
+
+- **Go module** `circulogo` → `circulo`, with every import rewritten.
+- **Binary, bundle, Taskfile `APP_NAME`**, and the Wails-generated platform
+  templates for iOS, Linux and Windows — which also still carried the template
+  metadata ("A circulogo application", `com.example.circulogo`) that the macOS
+  and iOS plists were cleaned of earlier.
+- **Bindings** moved with `git mv`, since they are tracked despite being
+  generated: `frontend/bindings/circulogo/` → `frontend/bindings/circulo/`.
+- **`circulogo-flow` → `circulo-flow`.** This one is a wire contract, not a label:
+  the adapter tells the agent to emit the fence and the renderer recognises it, so
+  both sides had to move together. A one-sided rename would have silently stopped
+  rendering flowcharts.
+- **Instruction entry keys** `circulogo-format` / `circulogo-branch` →
+  `circulo-*`, written into the user's agent config per session.
+- **The config directory** `~/Library/Application Support/circulogo` →
+  `circulo`, with a migration. Renaming it without one would have looked like a
+  fresh install and silently dropped every project the user had added. The store
+  moves the file on first run and falls back to the old path if the move fails,
+  because losing the projects matters far more than the directory name.
+
+The two remaining `circulogo` strings are deliberate: the Phase 1 record of the
+original `wails3 init` command, and the `legacyAppDir` constant the migration
+reads from.
 
 ## Outstanding before Phase 8 (manual passes, consolidated)
 

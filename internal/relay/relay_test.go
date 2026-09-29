@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"circulogo/internal/agent"
-	"circulogo/internal/agent/protocol"
-	"circulogo/internal/orchestrator"
-	"circulogo/internal/relay"
-	"circulogo/internal/store"
+	"circulo/internal/agent"
+	"circulo/internal/agent/protocol"
+	"circulo/internal/orchestrator"
+	"circulo/internal/relay"
+	"circulo/internal/store"
 )
 
 // fakeAdapter implements agent.Adapter for relay tests. Only the methods the

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"circulogo/internal/agent"
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent"
+	"circulo/internal/agent/protocol"
 )
 
 // resolveDir returns the symlink-resolved absolute path of dir (empty in →
@@ -390,12 +390,12 @@ func (a *Adapter) Sessions(ctx context.Context) ([]protocol.Session, error) {
 // not write into the user's project — the session instructions-entries API is
 // the app-owned path (verified live: the entry rides the turn's instruction
 // assembly and reaches the model).
-const formatInstructionKey = "circulogo-format"
+const formatInstructionKey = "circulo-format"
 const formatInstruction = "Format every response in GitHub-flavored Markdown: " +
 	"short paragraphs, bullet lists, numbered steps for procedures, tables for " +
 	"comparisons, and fenced code blocks with a language tag. Never reply with " +
 	"unstructured plain text. When you need to show a flowchart or workflow, " +
-	"emit one fenced block labeled circulogo-flow whose body is valid JSON: " +
+	"emit one fenced block labeled circulo-flow whose body is valid JSON: " +
 	`{"nodes":[{"id":"a","row":0,"x":0.5,"w":300,"kind":"Trigger","hue":"purple",` +
 	`"title":"New order","caption":"Trigger when an order is created"}],` +
 	`"edges":[{"from":"a","to":"b"}]}. ` +
@@ -527,7 +527,7 @@ func (a *Adapter) SetBranch(ctx context.Context, sessionID, branch string) error
 	if err != nil {
 		return err
 	}
-	return c.PutInstructionV2(ctx, sessionID, "circulogo-branch",
+	return c.PutInstructionV2(ctx, sessionID, "circulo-branch",
 		"Work on the git branch \""+branch+"\" for this whole session: switch to "+
 			"it first if needed (git switch "+branch+"), and keep every change on it.")
 }

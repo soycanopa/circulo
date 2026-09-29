@@ -8,7 +8,7 @@
         AllowPromptForPassword="false">
     </Settings>
     <Installer
-        Path="circulogo"
+        Path="circulo"
         Arguments=""
         InstallLocation="C:\Program Files\My Company\My Product">
     </Installer>
@@ -18,17 +18,17 @@
         PublisherName="CN=My Company"
         PublisherDisplayName="My Company"
         Version="0.1.0.0"
-        PackageDescription="A circulogo application">
+        PackageDescription="Local-first orchestrator for coding-agent CLIs">
         <Capabilities>
             <Capability Name="runFullTrust" />
             
         </Capabilities>
         <Applications>
             <Application
-                Id="com.example.circulogo"
-                Description="A circulogo application"
+                Id="work.dosmas.circulo"
+                Description="Local-first orchestrator for coding-agent CLIs"
                 DisplayName="My Product"
-                ExecutableName="circulogo"
+                ExecutableName="circulo"
                 EntryPoint="Windows.FullTrustApplication">
                 
             </Application>
@@ -43,11 +43,11 @@
             <Framework>false</Framework>
             <DisplayName>My Product</DisplayName>
             <PublisherDisplayName>My Company</PublisherDisplayName>
-            <Description>A circulogo application</Description>
+            <Description>Local-first orchestrator for coding-agent CLIs</Description>
             <Logo>Assets\AppIcon.png</Logo>
         </Properties>
     </PackageInformation>
-    <SaveLocation PackagePath="circulogo.msix" />
+    <SaveLocation PackagePath="circulo.msix" />
     <PackageIntegrity>
         <CertificatePath></CertificatePath>
     </PackageIntegrity>

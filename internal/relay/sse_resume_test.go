@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent/protocol"
 )
 
 // sseFrame is one parsed SSE frame. name is "" for ordinary event frames,

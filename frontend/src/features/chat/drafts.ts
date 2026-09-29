@@ -34,7 +34,7 @@ export interface DraftStorage {
   key?(index: number): string | null;
 }
 
-const PREFIX = "circulogo.draft.";
+const PREFIX = "circulo.draft.";
 
 /** A draft older than this is not worth restoring. */
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;

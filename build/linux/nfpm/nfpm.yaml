@@ -3,26 +3,26 @@
 #
 # The lines below are called `modelines`. See `:help modeline`
 
-name: "circulogo"
+name: "circulo"
 arch: ${GOARCH}
 platform: "linux"
 version: "0.1.0"
 section: "default"
 priority: "extra"
 maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
-description: "A circulogo application"
+description: "Local-first orchestrator for coding-agent CLIs"
 vendor: "My Company"
 homepage: "https://wails.io"
 license: "MIT"
 release: "1"
 
 contents:
-  - src: "./bin/circulogo"
-    dst: "/usr/local/bin/circulogo"
+  - src: "./bin/circulo"
+    dst: "/usr/local/bin/circulo"
   - src: "./build/appicon.png"
-    dst: "/usr/share/icons/hicolor/128x128/apps/circulogo.png"
-  - src: "./build/linux/circulogo.desktop"
-    dst: "/usr/share/applications/circulogo.desktop"
+    dst: "/usr/share/icons/hicolor/128x128/apps/circulo.png"
+  - src: "./build/linux/circulo.desktop"
+    dst: "/usr/share/applications/circulo.desktop"
 
 # Default dependencies for the GTK4 + WebKitGTK 6.0 stack (Ubuntu 24.04+ / Debian 13+)
 depends:

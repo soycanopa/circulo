@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"circulogo/internal/agent"
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent"
+	"circulo/internal/agent/protocol"
 )
 
 // Compile proof: *Adapter satisfies the neutral adapter contract.

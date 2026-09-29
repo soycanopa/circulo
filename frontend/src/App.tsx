@@ -48,7 +48,7 @@ function GeneralEmptyState({ hasProjects }: { hasProjects: boolean }) {
           variant="secondary"
           className="mt-2"
           onClick={() => {
-            void import("@/bindings/circulogo/internal/appservice/dialog").then(
+            void import("@/bindings/circulo/internal/appservice/dialog").then(
               async ({ PickFolder }) => {
                 const path = await PickFolder().catch(() => "");
                 if (path) await addProject(path, "managed");

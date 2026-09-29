@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent/protocol"
 )
 
 // omp stores file sessions under a canonical-cwd bucket:

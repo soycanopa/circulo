@@ -55,10 +55,10 @@ export const MarkdownView = memo(function MarkdownView({ text }: { text: string 
               );
             }
             const lang = /language-(\S+)/.exec(className ?? "")?.[1] ?? "text";
-            // Agent flowcharts: a circulogo-flow block carries the workflow
+            // Agent flowcharts: a circulo-flow block carries the workflow
             // JSON taught by the session format instruction; invalid JSON
             // falls back to the plain code block.
-            if (lang === "circulogo-flow") {
+            if (lang === "circulo-flow") {
               const doc = parseFlowBlock(text.replace(/\n$/, ""));
               if (doc) return <Flowchart doc={doc} />;
             }

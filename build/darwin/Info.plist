@@ -6,7 +6,7 @@
         <key>CFBundleName</key>
             <string>Circulo</string>
         <key>CFBundleExecutable</key>
-            <string>circulogo</string>
+            <string>circulo</string>
         <key>CFBundleIdentifier</key>
             <string>work.dosmas.circulo</string>
         <key>CFBundleVersion</key>

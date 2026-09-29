@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"circulogo/internal/agent"
-	"circulogo/internal/agent/protocol"
-	"circulogo/internal/orchestrator"
-	"circulogo/internal/term"
+	"circulo/internal/agent"
+	"circulo/internal/agent/protocol"
+	"circulo/internal/orchestrator"
+	"circulo/internal/term"
 )
 
 // Server implements http.Handler for the agent API. Wails mounts it at route

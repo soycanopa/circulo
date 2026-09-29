@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"circulogo/internal/agent"
-	"circulogo/internal/agent/protocol"
-	"circulogo/internal/store"
+	"circulo/internal/agent"
+	"circulo/internal/agent/protocol"
+	"circulo/internal/store"
 )
 
 // fakeAdapter is a scripted agent.Adapter for orchestrator tests.

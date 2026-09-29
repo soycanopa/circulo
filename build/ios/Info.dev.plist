@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>circulogo</string>
+    <string>circulo</string>
     <key>CFBundleIdentifier</key>
     <string>work.dosmas.circulo.dev</string>
     <key>CFBundleName</key>

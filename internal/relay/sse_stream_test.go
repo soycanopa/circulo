@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent/protocol"
 )
 
 // Shared SSE helpers (sseFrame, openSSE, untilSSE, eventFrames, replayFrame)

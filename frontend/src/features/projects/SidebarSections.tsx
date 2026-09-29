@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { FolderPlus, MessageSquarePlus, Search, Settings } from "lucide-react";
 
-import { PickFolder } from "@/bindings/circulogo/internal/appservice/dialog";
+import { PickFolder } from "@/bindings/circulo/internal/appservice/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,

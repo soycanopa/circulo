@@ -232,11 +232,11 @@ func TestClientV2_PutInstructionEntry(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL)
-	if err := c.PutInstructionV2(context.Background(), "ses_1", "circulogo-format", "use markdown"); err != nil {
+	if err := c.PutInstructionV2(context.Background(), "ses_1", "circulo-format", "use markdown"); err != nil {
 		t.Fatal(err)
 	}
 	if gotMethod != http.MethodPut ||
-		gotPath != "/api/experimental/session/ses_1/instructions/entries/circulogo-format" {
+		gotPath != "/api/experimental/session/ses_1/instructions/entries/circulo-format" {
 		t.Errorf("request = %s %s", gotMethod, gotPath)
 	}
 	if gotBody["value"] != "use markdown" {

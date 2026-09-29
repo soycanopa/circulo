@@ -188,12 +188,12 @@ describe("pruneDrafts", () => {
 
   it("never touches keys that are not drafts", () => {
     const s = memStore();
-    s.setItem("circulogo.sidebarWidth", "260");
+    s.setItem("circulo.sidebarWidth", "260");
     s.setItem("some.other.key", "x");
     saveDraft(draftKey("p1", "ses_gone"), [seg.text("drop")], s);
 
     pruneDrafts(new Set(), s);
-    expect(s.map.has("circulogo.sidebarWidth")).toBe(true);
+    expect(s.map.has("circulo.sidebarWidth")).toBe(true);
     expect(s.map.has("some.other.key")).toBe(true);
   });
 

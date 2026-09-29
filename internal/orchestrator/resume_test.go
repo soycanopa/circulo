@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 
-	"circulogo/internal/agent"
+	"circulo/internal/agent"
 	"testing"
 	"time"
 
-	"circulogo/internal/agent/protocol"
-	"circulogo/internal/store"
+	"circulo/internal/agent/protocol"
+	"circulo/internal/store"
 )
 
 func bareOrchestrator(t *testing.T) *Orchestrator {

@@ -98,7 +98,7 @@
   listed under GET …/entries. Verified live: an attached entry appears in the turn's
   `session.instructions.updated` assembly (`api/<key>` next to the `core/*` entries)
   and reaches the model; a control session without it answered unstructured. The
-  adapter attaches a markdown-format entry (`circulogo-format`) on every session it
+  adapter attaches a markdown-format entry (`circulo-format`) on every session it
   creates, best-effort (experimental surface — degraded UX, not a failed session).
 - **Question tool = forms (live 2.0.8)**: the blocking `question` tool does NOT
   ride permissions — it creates a form. `form.created`

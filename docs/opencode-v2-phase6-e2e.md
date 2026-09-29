@@ -27,9 +27,9 @@ SSE captures that could not be taken from a scratch server.
 
 ```sh
 pnpm --dir frontend build
-go build -o build/bin/circulogo .
+go build -o build/bin/circulo .
 CIRCULOGO_OPENCODE_BIN="$HOME/.local/opencode-v2/node_modules/@opencode/cli-darwin-arm64/bin/opencode" \
-  ./build/bin/circulogo
+  ./build/bin/circulo
 ```
 
 The managed v2 server prints `server password <random>` and listens on a random loopback

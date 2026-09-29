@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent/protocol"
 )
 
 // TestFakeOmpChild is the scripted `omp --mode rpc` child used by the adapter

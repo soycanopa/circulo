@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent/protocol"
 )
 
 func TestCursorFromRequest_QueryWinsOverHeader(t *testing.T) {

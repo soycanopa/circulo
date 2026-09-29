@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"os"
 
-	"circulogo/internal/agent"
-	"circulogo/internal/appservice"
-	"circulogo/internal/omp"
-	"circulogo/internal/opencode"
-	"circulogo/internal/orchestrator"
-	"circulogo/internal/relay"
-	"circulogo/internal/store"
+	"circulo/internal/agent"
+	"circulo/internal/appservice"
+	"circulo/internal/omp"
+	"circulo/internal/opencode"
+	"circulo/internal/orchestrator"
+	"circulo/internal/relay"
+	"circulo/internal/store"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -47,7 +47,7 @@ func main() {
 	stPath, err := store.DefaultPath()
 	if err != nil {
 		log.Printf("settings path unavailable, using cwd store: %v", err)
-		stPath = "circulogo-settings.json"
+		stPath = "circulo-settings.json"
 	}
 	st := store.New(stPath)
 	orch := orchestrator.New(st, func(cfg store.Project) (agent.Adapter, error) {

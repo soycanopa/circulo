@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent/protocol"
 )
 
 // translator converts omp session-event frames into neutral envelopes. It is

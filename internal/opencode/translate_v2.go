@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent/protocol"
 )
 
 // TranslateV2 converts one OpenCode v2 event into zero or more neutral

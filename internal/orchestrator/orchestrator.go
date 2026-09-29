@@ -18,11 +18,11 @@ import (
 	"sync"
 	"time"
 
-	"circulogo/internal/agent"
-	"circulogo/internal/agent/protocol"
-	"circulogo/internal/checkpoint"
-	"circulogo/internal/store"
-	"circulogo/internal/term"
+	"circulo/internal/agent"
+	"circulo/internal/agent/protocol"
+	"circulo/internal/checkpoint"
+	"circulo/internal/store"
+	"circulo/internal/term"
 )
 
 // AdapterFactory builds an adapter for a project config. It exists so tests

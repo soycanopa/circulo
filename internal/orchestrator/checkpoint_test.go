@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"circulogo/internal/agent/protocol"
-	"circulogo/internal/checkpoint"
-	"circulogo/internal/store"
+	"circulo/internal/agent/protocol"
+	"circulo/internal/checkpoint"
+	"circulo/internal/store"
 )
 
 // gitRepo makes a real repository: checkpointing is git plumbing, and the

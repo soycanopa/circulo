@@ -10,7 +10,7 @@ package agent
 import (
 	"context"
 
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent/protocol"
 )
 
 // Adapter is one project's connection to an agent CLI backend.

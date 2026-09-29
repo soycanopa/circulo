@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"circulogo/internal/agent/protocol"
-	"circulogo/internal/omp"
-	"circulogo/internal/opencode"
+	"circulo/internal/agent/protocol"
+	"circulo/internal/omp"
+	"circulo/internal/opencode"
 )
 
 // The capability matrix is the thing that makes the two backends

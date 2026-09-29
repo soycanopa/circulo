@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"circulogo/internal/agent/protocol"
+	"circulo/internal/agent/protocol"
 )
 
 // The relay's checkpoint routes answer for the project, not the adapter: the

@@ -1,4 +1,4 @@
-module circulogo
+module circulo
 
 go 1.25.0
 
