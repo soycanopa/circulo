@@ -169,13 +169,44 @@ no binary needed) + `CIRCULOGO_OMP_LIVE=1 go test ./internal/omp/ -run TestLiveS
 browser E2E against the debug listener (add omp project → banner → streaming
 transcript → model picker) run on 2026-09-22.
 
+## Amendment 2026-09-29 — provider version audit (branch `feature/version-audit`)
+
+The adapters were verified against **opencode 2.0.8** and **omp 18.2.8** captures,
+but the binaries the app actually spawns had moved on. Ten opencode minors and two
+omp minors is enough to move an event or a field, and the adapters tolerate unknown
+input by design (NFR-3), so drift would surface as a silently empty transcript
+rather than an error. Audited on 2026-09-29: **no drift**.
+
+- **omp 18.4.2** — `CIRCULOGO_OMP_LIVE=1 go test ./internal/omp/ -run TestLiveSmoke`
+  green end to end (276-model catalog, default `zai/glm-5.3-flash`, real turn,
+  hydration, abort, clean stop). Doc said 264 models: only the catalog grew.
+- **opencode 2.0.18** — all **19** endpoints the adapter calls are present with
+  identical method + path in the 2.0.18 spec (138 operations total); the streaming
+  path, the usage accounting and the hydration shape are unchanged. Additive only:
+  `session.inbox.delivered`, `session.step.streamed` and
+  `session.instructions.updated` are new and correctly ignored, as is the usual
+  mcp/model/provider noise. The prompt body is still `{text, files}` — `parts[]` is
+  rejected — and `files[]` now carries `skills`, `delivery`, `resume`, `metadata`
+  that the adapter does not use yet.
+- **Guard added.** `internal/opencode/live_test.go` mirrors the omp smoke
+  (`CIRCULOGO_OPENCODE_LIVE=1`): readiness, a real turn, and the §3.3
+  hydration-parity assertion, logging the server version it ran against. The
+  managed integration test now resolves the binary from PATH (what `main.go`
+  spawns) and skips with a reason when the major is not 2, instead of silently
+  passing against the pinned 2.0.8 side-by-side install.
+- **Spec URL corrected.** On v2 `GET /doc` serves the webview HTML; the machine
+  spec is `GET /openapi.json`. AGENTS.md pointed at `/doc`.
+
 ## Outstanding before Phase 8 (manual passes, consolidated)
 
 1. v2 handoff: owner E2E checklist (§3 of
    [opencode-v2-phase6-e2e.md](opencode-v2-phase6-e2e.md)) plus the §5 decisions
-   still awaiting the owner.
+   still awaiting the owner. §5.5 (merge the branch stack) is resolved — it landed
+   on `main`; §5.4 is moot — the global CLI is v2, not v1.
 2. Full E2E manual checklist pass (below) — the project gate in AGENTS.md for
    remote work; the adapter-#2 clause was consumed by the omp provider (Phase 7).
+   The provider half of it is now covered by the two live smokes above; what
+   remains is the window-level pass (cards, banners, terminal, reconnect).
 3. Re-sync [ui.md](ui.md) with the shipped Circulo replica, terminals and app-bar
    actions (debt recorded in both amendments above).
 
