@@ -207,8 +207,10 @@ rather than an error. Audited on 2026-09-29: **no drift**.
    remote work; the adapter-#2 clause was consumed by the omp provider (Phase 7).
    The provider half of it is now covered by the two live smokes above; what
    remains is the window-level pass (cards, banners, terminal, reconnect).
-3. Re-sync [ui.md](ui.md) with the shipped Circulo replica, terminals and app-bar
-   actions (debt recorded in both amendments above).
+3. ~~Re-sync [ui.md](ui.md) with the shipped Circulo replica, terminals and app-bar
+   actions.~~ **Done** (2026-09-29) — rewritten from the build as v0.2, split into
+   durable contract (§2–§4) and dated inventory (§5). Debt from both earlier
+   amendments is closed.
 
 ## Phase 8 — Polish + packaging (branch `feature/release-v0`)
 
