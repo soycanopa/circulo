@@ -37,6 +37,7 @@ import type {
   ProjectVcs,
 } from "@/lib/agent/protocol";
 import { can } from "@/lib/agent/protocol";
+import { clearDraft, draftKey, loadDraft, saveDraft } from "@/features/chat/drafts";
 import { api } from "@/lib/agent/api";
 import {
   buildChip,
@@ -1175,6 +1176,17 @@ export function Composer() {
   useEffect(() => {
     setTargetBranch("");
   }, [activeSessionId]);
+
+  // Drafts are keyed by the conversation the prompt is aimed at, so switching
+  // sessions stashes what was being written instead of discarding it. For a
+  // new session the target also includes the branch, because the same
+  // project + "new session" can be aimed at different branches.
+  const draftTargetId = isNewSession ? targetProjectId || (activeProjectId ?? "") : (activeProjectId ?? "");
+  const draftTarget = draftKey(
+    draftTargetId,
+    isNewSession ? undefined : (activeSessionId ?? undefined),
+    isNewSession ? targetBranch : undefined,
+  );
   // Entering new-session mode defaults the target to the last-added project
   // (owner call); the user re-picks from the unlocked strip.
   useEffect(() => {
@@ -1221,6 +1233,61 @@ export function Composer() {
     setMenuOpen(false);
   };
 
+  // Stash whatever is in the editor under the target it belongs to, then
+  // restore the one belonging to the target we are moving to. This is a
+  // single effect on purpose: saving and restoring in separate effects races
+  // on the target change and can write the restored draft straight back over
+  // the one it just restored.
+  const lastDraftTarget = useRef<string | null>(null);
+  useEffect(() => {
+    const root = edRef.current;
+    if (!root) return;
+    if (lastDraftTarget.current === draftTarget) return;
+    if (lastDraftTarget.current !== null) {
+      saveDraft(lastDraftTarget.current, readSegments(root));
+    }
+    lastDraftTarget.current = draftTarget;
+
+    const draft = loadDraft(draftTarget);
+    root.innerHTML = "";
+    if (draft && draft.length > 0) {
+      // Append in order at the end of the editor. onRemove re-syncs from the
+      // DOM so a restored chip stays deletable, which a detached callback
+      // would silently break.
+      for (const segment of draft) {
+        if (segment.kind === "text") {
+          root.appendChild(document.createTextNode(segment.value));
+          continue;
+        }
+        const end = caretProjection(root).text.length;
+        const chip =
+          segment.kind === "file"
+            ? buildChip({
+                kind: "file",
+                name: undefined,
+                path: segment.path,
+                label: `@${segment.path}`,
+                title: segment.path,
+                className: "border-border bg-bg-hover text-text-secondary",
+                onRemove: syncFromDom,
+              })
+            : buildChip({
+                kind: "command",
+                name: segment.name,
+                source: segment.source,
+                label: `/${segment.name}`,
+                title: `/${segment.name} (${segment.source || "builtin"})`,
+                className: commandTagClass(segment.source),
+                onRemove: syncFromDom,
+              });
+        insertChipAt(root, chip, end, end);
+      }
+    }
+    const projected = caretProjection(root).text;
+    setText(projected);
+    caretRef.current = projected.length;
+  }, [draftTarget]);
+
   const submit = () => {
     const root = edRef.current;
     if (!root) return;
@@ -1235,6 +1302,9 @@ export function Composer() {
     const cmd = segs.find((s): s is Extract<Segment, { kind: "command" }> => s.kind === "command");
     const slash = parseSlash(t);
     clearEditor();
+    // The prompt is on its way, so this target has nothing pending. Without
+    // this, switching away and back would restore the text just sent.
+    clearDraft(draftTarget);
     // A picked command chip (or a hand-typed full-text "/name args") routes
     // through runCommand; everything else in the text rides as the prompt.
     if (cmd) {
