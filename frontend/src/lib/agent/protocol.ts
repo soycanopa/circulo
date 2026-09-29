@@ -40,13 +40,28 @@ export interface ContextUpdatedEvent {
 /** Envelope types not tied to a payload schema live beside their interface. */
 export const EventContextUpdated = "context.updated";
 
-/** One slash command (built-ins, skills, user commands). */
+/**
+ * The neutral origin of a slash command, mirroring Go's protocol.CommandScope.
+ * The backend's own word ("skill" is omp's, "file" is opencode's) does not
+ * cross into the UI.
+ */
+export type CommandScope = "builtin" | "project" | "projectFile" | "user" | "extension" | "skill";
+
+export const SCOPES: CommandScope[] = [
+  "builtin",
+  "project",
+  "user",
+  "skill",
+  "extension",
+  "projectFile",
+];
+
+/** One slash command (built-ins, project/user commands, skills). */
 export interface CommandInfo {
   name: string;
   description?: string;
   argsHint?: string;
-  /** builtin|skill|custom|extension|file (provider vocabulary). */
-  source?: string;
+  scope?: CommandScope;
 }
 
 export interface CommandRequest {

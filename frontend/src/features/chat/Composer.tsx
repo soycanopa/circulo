@@ -30,6 +30,7 @@ import { useAppStore } from "@/lib/agent/store";
 import { cn } from "@/lib/utils";
 import type {
   CommandInfo,
+  CommandScope,
   FileHit,
   FormInfo,
   ModelInfo,
@@ -498,14 +499,16 @@ const chipBtn =
 
 /** Tag color per command source (variantTagClass palette): skills green,
  * custom yellow, extension orange, builtin neutral. */
-function commandTagClass(source?: string): string {
-  switch (source) {
+// Chip colour by neutral scope. The provider's own word never reaches here;
+// omp's "custom" and opencode's "file" both arrive as scopes.
+function commandTagClass(scope?: CommandScope): string {
+  switch (scope) {
     case "skill":
       return "bg-[#243D2E] border-diff-add text-success";
-    case "custom":
+    case "user":
       return "bg-[#47381A] border-[#8C661F] text-[#EBB847]";
     case "extension":
-    case "file":
+    case "projectFile":
       return "bg-[#522014] border-[#9E5214] text-[#FA9E47]";
     default:
       return "bg-bg-hover border-border text-text-secondary";
@@ -1274,10 +1277,10 @@ export function Composer() {
             : buildChip({
                 kind: "command",
                 name: segment.name,
-                source: segment.source,
+                scope: segment.scope,
                 label: `/${segment.name}`,
-                title: `/${segment.name} (${segment.source || "builtin"})`,
-                className: commandTagClass(segment.source),
+                title: `/${segment.name} (${segment.scope || "builtin"})`,
+                className: commandTagClass(segment.scope),
                 onRemove: syncFromDom,
               });
         insertChipAt(root, chip, end, end);
@@ -1384,10 +1387,10 @@ export function Composer() {
       buildChip({
         kind: "command",
         name: picked.name,
-        source: picked.source,
+        scope: picked.scope,
         label: `/${picked.name}`,
-        title: `${picked.description || picked.name} (${picked.source || "builtin"})`,
-        className: commandTagClass(picked.source),
+        title: `${picked.description || picked.name} (${picked.scope || "builtin"})`,
+        className: commandTagClass(picked.scope),
         onRemove: syncFromDom,
       }),
       start,
@@ -1605,8 +1608,8 @@ export function Composer() {
                     <span className="min-w-0 flex-1 truncate text-sm/tight text-text-secondary">
                       {c.description || c.argsHint}
                     </span>
-                    {c.source && c.source !== "builtin" && (
-                      <span className="shrink-0 text-[11px] text-text-tertiary">{c.source}</span>
+                    {c.scope && c.scope !== "builtin" && (
+                      <span className="shrink-0 text-[11px] text-text-tertiary">{c.scope}</span>
                     )}
                   </button>
                 ))}

@@ -7,6 +7,7 @@ import {
   saveDraft,
   type DraftStorage,
 } from "./drafts";
+import type { CommandScope } from "@/lib/agent/protocol";
 import type { Segment } from "./richInput";
 
 /** In-memory Storage, so these tests run without a DOM. */
@@ -27,7 +28,7 @@ function memStore(): DraftStorage & { map: Map<string, string> } {
 const seg = {
   text: (value: string): Segment => ({ kind: "text", value }),
   file: (path: string): Segment => ({ kind: "file", path }),
-  command: (name: string, source?: string): Segment => ({ kind: "command", name, source }),
+  command: (name: string, scope?: CommandScope): Segment => ({ kind: "command", name, scope }),
 };
 
 describe("draftKey", () => {

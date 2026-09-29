@@ -1,3 +1,5 @@
+import type { CommandScope } from "@/lib/agent/protocol";
+
 /**
  * DOM bridge for the composer's rich input: a contenteditable whose content
  * is plain text runs plus atomic chip spans ("/cmd", "@file") rendered with
@@ -12,7 +14,7 @@
 
 export type Segment =
   | { kind: "text"; value: string }
-  | { kind: "command"; name: string; source?: string }
+  | { kind: "command"; name: string; scope?: CommandScope }
   | { kind: "file"; path: string };
 
 export const isChip = (n: Node): n is HTMLElement =>
@@ -41,7 +43,7 @@ export function readSegments(root: HTMLElement): Segment[] {
       flush();
       const ds = node.dataset;
       if (ds.chip === "command") {
-        out.push({ kind: "command", name: ds.name ?? "", source: ds.source || undefined });
+        out.push({ kind: "command", name: ds.name ?? "", scope: (ds.scope as CommandScope) || undefined });
       } else {
         out.push({ kind: "file", path: ds.path ?? "" });
       }
@@ -237,7 +239,7 @@ export interface ChipSpec {
   className: string;
   name?: string;
   path?: string;
-  source?: string;
+  scope?: CommandScope;
   onRemove: () => void;
 }
 
@@ -250,7 +252,7 @@ export function buildChip(spec: ChipSpec): HTMLElement {
   el.dataset.chip = spec.kind;
   if (spec.name !== undefined) el.dataset.name = spec.name;
   if (spec.path !== undefined) el.dataset.path = spec.path;
-  if (spec.source) el.dataset.source = spec.source;
+  if (spec.scope) el.dataset.scope = spec.scope;
   el.className = `mr-0.5 inline-flex shrink-0 items-center gap-1 self-center rounded-full border px-1.5 py-0.5 text-xs leading-[14px] font-medium align-baseline ${spec.className}`;
   el.title = spec.title;
   const label = document.createElement("span");
