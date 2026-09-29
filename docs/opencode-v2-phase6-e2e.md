@@ -77,14 +77,24 @@ it to the ruleset — verified via `GET /api/config`).
 
 ## 5. Decisions awaiting the owner (do NOT act without approval)
 
-1. `AGENTS.md` OpenCode-traps section still describes v1 (full-part updates,
-   `permission.asked`, 1.18.25 fixtures) — rewrite for v2 is drafted in conversation,
-   not applied.
-2. SIGTERM/SIGINT handler so `kill` routes through graceful shutdown (today `pkill`
-   orphans the managed server — happened repeatedly during the v2 work).
+Status as of 2026-09-29 (see the version-audit amendment in
+[implement.md](implement.md)):
+
+1. ~~`AGENTS.md` OpenCode-traps section describes v1.~~ **Done** — rewritten for v2
+   on branch `docs/agent-rules-sync`, along with the dependency diagram and project
+   map that still omitted `internal/omp`.
+2. ~~SIGTERM/SIGINT handler so `kill` routes through graceful shutdown.~~ **No action
+   needed — this item was wrong.** Wails v3.0.0-beta.16 installs a default handler for
+   SIGINT+SIGTERM (`internal/signal`) that routes `App.Quit()` → `cleanup()` →
+   `shutdownServices()` → `ServiceShutdown()`, and Circulo never sets
+   `DisableDefaultSignalHandler`. The managed server is therefore stopped on `kill`.
+   What was never actually verified is whether the ObjC teardown completes before the
+   process exits; that is E2E checklist §3 step 6 (`pgrep` after quit), which is
+   still pending. Do not add a signal handler on the strength of this section.
 3. Import v1 sessions (`/api/experimental/migration/v1`) or start clean.
-4. Switch the global CLI to v2 (`npm i -g @opencode/cli`) or keep v1 for daily use.
-5. Merge the branch stack to `main` (order as listed in §1).
+4. ~~Switch the global CLI to v2.~~ **Moot** — the global `opencode` is already v2
+   (2.0.18 as of 2026-09-29); the 2.0.8 side-by-side install is stale.
+5. ~~Merge the branch stack to `main`.~~ **Done** — merged, including the omp adapter.
 
 ## 6. Definition of done
 

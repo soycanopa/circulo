@@ -38,15 +38,26 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
 
 - One responsibility per **Go package** and per **TS module**.
 - Dependency direction is one-way:
-  `frontend → internal/agent/protocol (contract) ← internal/orchestrator ← internal/opencode`.
+  `frontend → internal/agent/protocol (contract) ← internal/orchestrator ← {internal/opencode, internal/omp}`.
+  The orchestrator holds N adapters behind one `agent.Adapter` interface; a third
+  adapter slots in beside them without touching the two above.
 - The UI does not import adapters: frontend code knows only the neutral protocol
-  (`frontend/src/lib/agent/protocol.ts`) and the relay API (`/agent/...`). It must never
-  see OpenCode types, ports, or URLs.
-- Adapters do not know the UI: `internal/opencode` (and every future
-  `internal/<provider>`) must not import `wails` packages, `internal/relay`, or
-  `internal/orchestrator`. It exposes an `agent.AgentAdapter` and a channel of
-  `agent/protocol` events — nothing else.
+  (`frontend/src/lib/agent/protocol.ts`) and the relay API (`/agent/...`). It must
+  never see OpenCode or omp types, ports, or URLs. The provider name
+  (`"opencode" | "omp"`) is the only provider vocabulary that crosses this line.
+- Adapters do not know the UI: `internal/opencode` and `internal/omp` must not
+  import `wails` packages, `internal/relay`, or `internal/orchestrator`. Each
+  exposes an `agent.AgentAdapter` and a channel of `agent/protocol` events —
+  nothing else.
+- The two adapters differ in transport on purpose: OpenCode is HTTP+SSE against
+  a spawned `opencode serve`, omp is newline-delimited JSON over a child's stdio
+  (`omp --mode rpc`). Nothing above them may learn that difference — if a change
+  makes the orchestrator or the UI aware of *how* an adapter talks, the neutral
+  protocol has been breached.
 - `internal/relay` translates HTTP ⇄ orchestrator calls and holds **no business logic**.
+- `main.go` is the only composition root: it is the one place that maps a
+  `store.Project.Provider` to a concrete adapter. Adding adapter #3 means editing
+  that switch and nothing else.
 
 ## Git & delivery
 
@@ -68,19 +79,66 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
 - **Wails v3 traps (beta — pinned, currently v3.0.0-beta.16):**
   - `ServiceShutdown() error` — no `context.Context` parameter, or it is silently
     never called.
+  - **There is no missing SIGTERM handler.** Wails installs a default one
+    (`internal/signal`) for SIGINT+SIGTERM that routes to `App.Quit()` →
+    `cleanup()` → `shutdownServices()` → `ServiceShutdown()`. Managed child
+    processes therefore *do* die on `kill`, as long as the app never sets
+    `Options.DisableDefaultSignalHandler`. A previous handoff doc claimed
+    otherwise and it was wrong. The open question is not routing but whether the
+    ObjC teardown finishes before the process exits — that is what E2E checklist
+    step 6 (`pgrep` after quit) proves, so do not re-open the design question
+    until that check has actually been run.
   - `frontend/bindings/` is generated. Never hand-edit; regenerate via
     `wails3 generate bindings` / build.
   - `Events.Off(name)` removes **all** listeners for that name — keep and call the
     unsubscribe function returned by `Events.On` instead.
   - The webview origin is `wails://localhost` (macOS/Linux), so cross-origin fetch to
     `http://127.0.0.1` needs the `/agent` route-mounted relay — not direct webview calls.
-- **OpenCode traps:**
-  - `message.part.updated` carries the **full part** — treat every update as replace,
-    use `message.part.delta` only as an optimization.
-  - Ignore-list events (`server.heartbeat`, `plugin.added`, `catalog.updated`, …) must
-    be skipped, never crash: unknown event/part types are forward compatibility.
-  - Fixture files in `internal/opencode/testdata/` are real captured SSE from a
-    specific opencode version — record the version in the fixture header comment.
+- **OpenCode traps** — the adapter speaks **v2 only** (`internal/opencode`,
+  contract verified against **2.0.18** on 2026-09-29):
+  - Events are `session.*`, never v1's `message.*`. Text streams as
+    `session.text.{started,delta,ended}` (and `session.reasoning.*`), tools as
+    `session.tool.{called,input.started,input.ended,progress,success,error}`,
+    accounting in `session.step.ended` / `session.usage.updated`. **There is no
+    `message.part.updated` and no `message.part.delta`** — do not write code
+    against v1 names.
+  - **Part identity is synthesized, not server-given.** Text and reasoning parts
+    use `<assistantMessageID>:text` and `:reasoning` (`streamPart` in
+    `translate_v2.go`); tool parts carry the server's own id. Hydration and the
+    live stream must agree on these ids or reopening a session silently loses the
+    transcript.
+  - Updates are full replacements; deltas are an optimization only. The reducer
+    upserts by part id, which is what makes a missed frame self-heal (FR-20).
+  - Responses are envelope-wrapped: single objects arrive as `{"data": …}`.
+    `GET /api/session/{id}/message` items carry **`type`** (`user|assistant|system|idle`),
+    not `role`; assistant text lives in `content[]`, user text at top-level `text`.
+  - The prompt body is `{text, files[]}` — **`parts[]` is rejected**. Each file
+    must be an absolute `file://` URI; relative paths fail server-side.
+  - Every route needs Basic auth: user `opencode`, password from the
+    `server password <random>` line the managed server prints at boot.
+  - Unknown events are forward compatibility, not errors (NFR-3): the server emits
+    a constant stream of `*.updated`, `mcp.*`, `model.*`, `provider.*` noise. Skip
+    them silently — but remember that a silently skipped event is a part the user
+    never sees, so when something goes missing, check the event name against the
+    spec before suspecting the UI.
+  - **Fixtures cannot detect drift.** `internal/opencode/testdata/*.sse` are real
+    captures with the version in the header comment; they freeze a shape, they do
+    not tell you a newer server moved it. That is what
+    `CIRCULOGO_OPENCODE_LIVE=1 go test ./internal/opencode/ -run TestLiveSmoke`
+    is for — run it after any opencode version bump, before trusting the fixtures.
+- **omp traps** (`internal/omp`, verified against **18.4.2**):
+  - Frames are NDJSON over the child's stdio, and protocol **v2** frames are
+    chunked — oversized stdout arrives as reassembled chunks against an advertised
+    ceiling, not as one line. Validate the full chunk, do not trust a prefix.
+  - The wire carries **no message id** and streamed content grows, so message ids
+    are chronological ordinals per role (`a1`, `u1`, …). They must stay identical
+    across live frames, `get_messages` hydration, and adapter restarts — same
+    invariant as the OpenCode side, different mechanism.
+  - **No permission round-trip exists over RPC.** Tool approvals resolve inside
+    omp per its `tools.approvalMode`, headless prompts fail closed, and
+    `ReplyPermission` returns an explicit error. Do not "fix" this by inventing a
+    neutral event; the gap is upstream and is recorded in trd.md §3A.
+  - Live smoke: `CIRCULOGO_OMP_LIVE=1 go test ./internal/omp/ -run TestLiveSmoke`.
 - **[adjusted]** Original rule "UI does not import adapters. Adapters do not UI."
   is enforced per the Architecture invariants above.
 
@@ -90,4 +148,15 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
   PR as the behavior they describe.
 - `internal/agent/protocol` — the neutral wire contract. Changing it means changing
   `frontend/src/lib/agent/protocol.ts` and reducer tests in the same commit.
-- `internal/opencode/` — the only place allowed to speak OpenCode.
+- `internal/agent` — the `Adapter` interface both backends implement. It is
+  deliberately the smallest useful surface; grow it only when a real backend needs it.
+- `internal/opencode/` — adapter #1. The only place allowed to speak OpenCode.
+  HTTP+SSE, v2 API only.
+- `internal/omp/` — adapter #2 (`omp --mode rpc`, stdio NDJSON). The only place
+  allowed to speak omp. Same contract, different transport.
+- `internal/orchestrator/` — project registry, adapter lifecycle fan-in, event hub.
+  Knows adapters only as `agent.Adapter`.
+- `internal/relay/` — the `/agent` HTTP+SSE surface the webview talks to.
+- `internal/store/` — `settings.json` persistence (projects, provider, mode). Atomic writes.
+- `internal/term/` — PTY terminals (creack/pty), one per project. I/O rides SSE +
+  write/resize POSTs; it is transport-agnostic to the provider, not to the relay.
