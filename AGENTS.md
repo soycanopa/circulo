@@ -91,15 +91,15 @@ Original "Always modular: one responsibility per crate" maps to this codebase as
 - **Wails v3 traps (beta — pinned, currently v3.0.0-beta.16):**
   - `ServiceShutdown() error` — no `context.Context` parameter, or it is silently
     never called.
-  - **There is no missing SIGTERM handler.** Wails installs a default one
-    (`internal/signal`) for SIGINT+SIGTERM that routes to `App.Quit()` →
-    `cleanup()` → `shutdownServices()` → `ServiceShutdown()`. Managed child
-    processes therefore *do* die on `kill`, as long as the app never sets
-    `Options.DisableDefaultSignalHandler`. A previous handoff doc claimed
-    otherwise and it was wrong. The open question is not routing but whether the
-    ObjC teardown finishes before the process exits — that is what E2E checklist
-    step 6 (`pgrep` after quit) proves, so do not re-open the design question
-    until that check has actually been run.
+  - **The Wails signal handler routes correctly but does not finish in time.**
+    It handles SIGINT+SIGTERM and reaches `ServiceShutdown()` — that part was
+    verified by reading the code and it is true. But the graceful teardown does
+    not complete before the process exits, so the managed agent servers survive
+    as orphans still holding their ports. Measured twice on 2026-09-29 with
+    opencode 2.0.18: after SIGTERM the app was gone and `opencode serve` was
+    still listening. `main.go` therefore installs `shutdownOnSignal`, which
+    stops the adapters synchronously and then exits. Do not "simplify" it away by
+    trusting the default handler — that is what this note is for.
   - `frontend/bindings/` is generated. Never hand-edit; regenerate via
     `wails3 generate bindings` / build.
   - `Events.Off(name)` removes **all** listeners for that name — keep and call the
