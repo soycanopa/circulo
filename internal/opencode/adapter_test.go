@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -198,6 +201,30 @@ func v2Event(typ string, data map[string]any) string {
 	raw, _ := json.Marshal(map[string]any{"id": "evt_x", "type": typ, "data": data})
 	return string(raw)
 }
+
+// binaryMajorVersion reports the major version a CLI prints for --version, so
+// tests can skip a backend that cannot serve the contract under test instead
+// of failing on an unrelated shape mismatch. CLIs prefix the version with
+// their own name ("opencode v2.0.18"), so the number is extracted, not assumed.
+func binaryMajorVersion(t *testing.T, bin string) (major int, raw string) {
+	t.Helper()
+	out, err := exec.Command(bin, "--version").Output()
+	if err != nil {
+		return 0, "unknown"
+	}
+	raw = strings.TrimSpace(string(out))
+	m := versionRe.FindStringSubmatch(raw)
+	if m == nil {
+		return 0, raw
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0, raw
+	}
+	return n, raw
+}
+
+var versionRe = regexp.MustCompile(`v(\d+)\.\d+\.\d+`)
 
 func TestAdapter_Attach_LifecycleAndTurn(t *testing.T) {
 	f := startFake(t)
@@ -449,11 +476,17 @@ func TestAdapter_Managed_Integration_OpencodeV2(t *testing.T) {
 	}
 	bin := os.Getenv("CIRCULOGO_OPENCODE_BIN")
 	if bin == "" {
-		candidate := os.ExpandEnv("$HOME/.local/opencode-v2/node_modules/@opencode/cli-darwin-arm64/bin/opencode")
-		if _, err := os.Stat(candidate); err != nil {
-			t.Skip("no opencode v2 binary available")
+		// Prefer whatever PATH serves — that is the binary the app spawns by
+		// default, so it is the one worth auditing. Skip with a reason rather
+		// than silently passing against a stale side-by-side install.
+		resolved, err := exec.LookPath("opencode")
+		if err != nil {
+			t.Skip("no opencode binary on PATH and CIRCULOGO_OPENCODE_BIN unset")
 		}
-		bin = candidate
+		if major, raw := binaryMajorVersion(t, resolved); major != 2 {
+			t.Skipf("opencode on PATH is %q; this adapter speaks v2 only", raw)
+		}
+		bin = resolved
 	}
 	a := NewAdapter(AdapterConfig{ProjectID: "p", Mode: ModeManaged, Dir: t.TempDir(), Binary: bin})
 	if err := a.Start(context.Background()); err != nil {
