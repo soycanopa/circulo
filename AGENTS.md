@@ -9,13 +9,14 @@ marked **[adjusted]**. Everything else is verbatim intent from the project owner
 - Be direct and technical.
 - Explain the *why* with documentation (OpenCode, Wails and more) when you propose
   something. Primary sources: [opencode.ai/docs](https://opencode.ai/docs/) and the
-  OpenAPI spec the server itself serves at `GET /doc`; [v3.wails.io](https://v3.wails.io/).
+  OpenAPI spec the running server serves at **`GET /openapi.json`** (on v2 `/doc` is
+  the webview HTML, not the spec); [v3.wails.io](https://v3.wails.io/).
 - If a human decision contradicts best practice or the quality bar, raise your hand.
   Do not comply just to please. Build it solid.
 - If you have a better idea, propose it and explain why we should pick it.
 - **Do not invent APIs.** If it is not in the harness's official docs, it does not
   exist. Read the docs before writing code. **[adjusted]** For OpenCode the source of
-  truth is the OpenAPI 3.1 spec served by the running server (`GET /doc`) plus
+  truth is the OpenAPI 3.1 spec served by the running server (`GET /openapi.json`) plus
   opencode.ai/docs — re-verify endpoints/schemas whenever the pinned `opencode`
   version changes. For Wails, v3.wails.io only; v2 docs do not apply.
 - **Do not assume. Ask.** If product, protocol, or permission is unclear, ask before

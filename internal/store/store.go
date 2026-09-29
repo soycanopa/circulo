@@ -30,13 +30,13 @@ type Project struct {
 
 // Settings is the whole settings file.
 type Settings struct {
-	Projects []Project        `json:"projects"`
-	UI       map[string]any   `json:"ui,omitempty"`
+	Projects []Project      `json:"projects"`
+	UI       map[string]any `json:"ui,omitempty"`
 }
 
 // Store is a file-backed settings store. Safe for concurrent use.
 type Store struct {
-	mu  sync.Mutex
+	mu   sync.Mutex
 	path string
 }
 

@@ -647,7 +647,7 @@ func TranslateV2(projectID string, env V2Event) ([]protocol.Envelope, error) {
 
 	case "session.usage.updated":
 		var p struct {
-			SessionID string `json:"sessionID"`
+			SessionID string  `json:"sessionID"`
 			Cost      float64 `json:"cost"`
 			Tokens    *struct {
 				Input     int64 `json:"input"`
