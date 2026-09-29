@@ -78,7 +78,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case rest == "meta" && r.Method == http.MethodGet:
 		s.withAdapter(w, id, func(a agent.Adapter) {
 			meta, err := a.Meta(r.Context())
-			s.writeJSONOrErr(w, meta, err)
+			if err != nil {
+				s.writeErr(w, err)
+				return
+			}
+			// Collapsing same-name commands is a neutral concern — it merges
+			// sources from any backend — so it belongs here rather than in an
+			// adapter that only sees its own list.
+			meta.Commands = protocol.ResolveCommands(meta.Commands)
+			s.writeJSON(w, http.StatusOK, meta)
 		})
 		return
 	case rest == "access" && r.Method == http.MethodGet:

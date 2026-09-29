@@ -241,3 +241,47 @@ func TestRewind_UnknownProject(t *testing.T) {
 		t.Error("expected an error for an unknown project")
 	}
 }
+
+// Commands arrive collapsed and ordered: a same-name collision must not reach
+// the picker twice, and the winner is decided by scope rather than by
+// whichever entry the backend happened to list first.
+func TestMeta_ResolvesCommandCollisions(t *testing.T) {
+	srv, ff := newServer(t)
+	dir := gitProject(t)
+	pv := addProject(t, srv, dir)
+	id := pv["id"].(string)
+	a := adapterFor(t, ff, dir)
+	a.commands = []protocol.CommandInfo{
+		{Name: "review", Scope: protocol.ScopeBuiltin},
+		{Name: "review", Scope: protocol.ScopeProject},
+		{Name: "deploy", Scope: protocol.ScopeSkill},
+	}
+
+	var meta struct {
+		Commands []protocol.CommandInfo `json:"commands"`
+	}
+	if code := getJSON(t, fmt.Sprintf("%s/agent/projects/%s/meta", srv.URL, id), &meta); code != http.StatusOK {
+		t.Fatalf("meta status = %d", code)
+	}
+	if len(meta.Commands) != 2 {
+		t.Fatalf("got %d commands, want the collision collapsed: %+v", len(meta.Commands), meta.Commands)
+	}
+	var review *protocol.CommandInfo
+	for i := range meta.Commands {
+		if meta.Commands[i].Name == "review" {
+			review = &meta.Commands[i]
+		}
+	}
+	if review == nil {
+		t.Fatalf("review missing: %+v", meta.Commands)
+	}
+	if review.Scope != protocol.ScopeProject {
+		t.Errorf("review resolved to %q, want the project command to shadow the builtin", review.Scope)
+	}
+	// Display order is by scope rank, and the surviving review is now a
+	// project command (rank 1) while deploy is a skill (rank 3) — so review
+	// lists first even though it won a collision.
+	if meta.Commands[0].Name != "review" || meta.Commands[1].Name != "deploy" {
+		t.Errorf("display order = %+v, want review then deploy", meta.Commands)
+	}
+}

@@ -7,7 +7,10 @@
 // (AGENTS.md: Project map).
 package protocol
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"sort"
+)
 
 // Event types carried by Envelope.Type.
 const (
@@ -531,13 +534,132 @@ type SetAccessRequest struct {
 // CommandInfo is one slash command the provider exposes (built-ins, skills,
 // user commands). ArgsHint documents the expected arguments, empty when the
 // command takes none.
+// CommandScope is the neutral origin of a slash command. It replaces the raw
+// provider vocabulary that used to cross in CommandInfo.Source: "skill" is
+// omp's word, "file" is opencode's, and the UI should not need to know which
+// backend it is talking to in order to colour a chip.
+type CommandScope string
+
+const (
+	// ScopeBuiltin is shipped by the backend itself.
+	ScopeBuiltin CommandScope = "builtin"
+	// ScopeProject comes from the project the agent is working in.
+	ScopeProject CommandScope = "project"
+	// ScopeProjectFile is a command file in the project (opencode's "file").
+	ScopeProjectFile CommandScope = "projectFile"
+	// ScopeUser comes from the user's own command directory.
+	ScopeUser CommandScope = "user"
+	// ScopeExtension is contributed by a plugin or extension.
+	ScopeExtension CommandScope = "extension"
+	// ScopeSkill is a skill-provided command.
+	ScopeSkill CommandScope = "skill"
+)
+
+// displayRank orders the picker. Backends first because they are always
+// available; the user's own commands last because those are the ones they
+// wrote. This is deliberately NOT the same as ResolveCommands' precedence.
+func (c CommandScope) displayRank() int {
+	switch c {
+	case ScopeBuiltin:
+		return 0
+	case ScopeProject:
+		return 1
+	case ScopeUser:
+		return 2
+	case ScopeSkill:
+		return 3
+	case ScopeExtension:
+		return 4
+	case ScopeProjectFile:
+		return 5
+	}
+	return 6
+}
+
+// resolutionRank decides which command wins a name collision. A user's own
+// project command should shadow a backend builtin, or the builtin would make
+// the project's command unreachable — which is the opposite of intent. It is
+// intentionally the reverse of displayRank in places: the winner of a
+// collision is not the one shown first.
+func (c CommandScope) resolutionRank() int {
+	switch c {
+	case ScopeProject:
+		return 5
+	case ScopeUser:
+		return 4
+	case ScopeProjectFile:
+		return 3
+	case ScopeExtension:
+		return 2
+	case ScopeSkill:
+		return 1
+	case ScopeBuiltin:
+		return 0
+	}
+	return -1
+}
+
+// NormalizeScope maps a backend's own vocabulary onto the neutral scope. An
+// unrecognized value becomes ScopeBuiltin rather than crossing the boundary
+// as an unknown string the UI has to guess about.
+func NormalizeScope(raw string) CommandScope {
+	switch raw {
+	case "project":
+		return ScopeProject
+	case "user":
+		return ScopeUser
+	case "skill":
+		return ScopeSkill
+	case "custom", "extension":
+		return ScopeExtension
+	case "file", "projectFile":
+		return ScopeProjectFile
+	case "builtin", "waku", "":
+		return ScopeBuiltin
+	}
+	return ScopeBuiltin
+}
+
 type CommandInfo struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	ArgsHint    string `json:"argsHint,omitempty"`
-	// Source: builtin|skill|custom|extension|file (provider vocabulary,
-	// rendered as-is; unknown values fall back to a neutral chip).
-	Source string `json:"source,omitempty"`
+	// Scope is the neutral origin of the command. The provider's own word
+	// does not cross.
+	Scope CommandScope `json:"scope,omitempty"`
+}
+
+// ResolveCommands collapses same-name commands to the one that wins by
+// resolution precedence, then orders the result for display. The two orderings
+// are different on purpose: a project command outranks a builtin so it can
+// shadow it, while the picker still lists the builtin first. Getting this
+// backwards produces either unreachable commands or a picker in which the
+// shadowed entry appears to be the winner.
+//
+// Input order does not matter: the result depends only on names and scopes.
+func ResolveCommands(in []CommandInfo) []CommandInfo {
+	best := make(map[string]CommandInfo, len(in))
+	for _, c := range in {
+		if c.Name == "" {
+			continue
+		}
+		prev, seen := best[c.Name]
+		if !seen || c.Scope.resolutionRank() > prev.Scope.resolutionRank() {
+			best[c.Name] = c
+		}
+	}
+	out := make([]CommandInfo, 0, len(best))
+	for _, c := range best {
+		out = append(out, c)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		ri, rj := out[i].Scope.displayRank(), out[j].Scope.displayRank()
+		if ri != rj {
+			return ri < rj
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
 }
 
 // CommandRequest is the body of POST /projects/{id}/sessions/{sid}/command.

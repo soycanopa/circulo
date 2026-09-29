@@ -596,6 +596,10 @@ func (a *Adapter) Meta(ctx context.Context) (protocol.Meta, error) {
 			meta.Commands = append(meta.Commands, protocol.CommandInfo{
 				Name:        cmd.Name,
 				Description: cmd.Description,
+				// GET /api/command merges project and user commands without
+				// saying which is which, so everything is reported at the
+				// lowest scope that is honest rather than guessed upward.
+				Scope: protocol.ScopeProject,
 			})
 		}
 	}

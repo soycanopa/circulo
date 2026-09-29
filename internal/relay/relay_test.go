@@ -28,6 +28,8 @@ type fakeAdapter struct {
 	renamed  [2]string // sessionID, new title
 	startErr error
 	events   chan protocol.Envelope
+	// commands lets a test drive the command list that Meta returns.
+	commands []protocol.CommandInfo
 }
 
 func newFakeAdapter() *fakeAdapter { return &fakeAdapter{events: make(chan protocol.Envelope, 64)} }
@@ -89,8 +91,10 @@ func (f *fakeAdapter) SetBranch(_ context.Context, _, _ string) error { return n
 
 func (f *fakeAdapter) Meta(_ context.Context) (protocol.Meta, error) {
 	return protocol.Meta{
-		Agents: []protocol.AgentInfo{{Name: "build", Mode: "primary"}},
-		Models: []protocol.ModelInfo{{ID: "glm-5.3", Provider: "zai-coding-plan"}},
+		Agents:       []protocol.AgentInfo{{Name: "build", Mode: "primary"}},
+		Models:       []protocol.ModelInfo{{ID: "glm-5.3", Provider: "zai-coding-plan"}},
+		Commands:     f.commands,
+		Capabilities: f.Capabilities(),
 	}, nil
 }
 

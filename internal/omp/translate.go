@@ -153,7 +153,9 @@ func ompCommandsToNeutral(in []ompCommand) []protocol.CommandInfo {
 		ci := protocol.CommandInfo{
 			Name:        c.Name,
 			Description: c.Description,
-			Source:      c.Source,
+			// omp's own vocabulary (skill|user|project|...) does not cross
+			// the boundary; the neutral scope is what the UI reads.
+			Scope: protocol.NormalizeScope(c.Source),
 		}
 		if c.Input != nil {
 			ci.ArgsHint = c.Input.Hint
