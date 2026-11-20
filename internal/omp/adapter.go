@@ -276,6 +276,16 @@ func (a *Adapter) onFrame(raw json.RawMessage, typ frameType) {
 }
 
 func (a *Adapter) emit(env protocol.Envelope) {
+	// Stopped takes precedence over the stream: the read loop can still be
+	// in flight while Stop closes a.events, and sending on a closed channel
+	// panics even inside select/default. Both branches serialize on a.mu
+	// with the close in Stop, so an emit either lands before the close or
+	// is dropped after it — never on a dead channel.
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.stopped {
+		return
+	}
 	select {
 	case a.events <- env:
 	default:
@@ -312,7 +322,11 @@ func (a *Adapter) Stop(_ context.Context) error {
 		// exits 0 (rpc.md). Kill only if it hangs.
 		proc.stop(2 * time.Second)
 	}
+	// The close serializes with emit on a.mu: emit checks stopped under the
+	// same lock, so no in-flight read-loop frame can send on a dead channel.
+	a.mu.Lock()
 	close(a.events)
+	a.mu.Unlock()
 	return nil
 }
 

@@ -442,3 +442,42 @@ func TestAdapterPromptQueuesAsSteerWhileStreaming(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestStopDropsPostStopFrames pins the Stop/ReadLoop contract: a frame
+// arriving after Stop must be dropped, never panic (send on closed channel),
+// and the event stream stays closed. agent_start is the smallest frame that
+// always translates (status envelope, no payload decode).
+func TestStopDropsPostStopFrames(t *testing.T) {
+	a := NewAdapter(AdapterConfig{ProjectID: "p", Dir: t.TempDir()})
+	a.mu.Lock()
+	a.sessionID = "sess1"
+	a.mu.Unlock()
+
+	if err := a.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	a.onFrame(json.RawMessage(`{"type":"agent_start"}`), frameAgentStart)
+
+	if _, ok := <-a.Events(); ok {
+		t.Fatal("event stream must stay closed after Stop")
+	}
+}
+
+// TestStopRacesInflightFrames widens the same defect into its real shape:
+// the read loop emits while Stop closes the stream. Every interleaving must
+// survive; run with -race to also prove no data race on the stream.
+func TestStopRacesInflightFrames(t *testing.T) {
+	frame := json.RawMessage(`{"type":"agent_start"}`)
+	for i := 0; i < 25; i++ {
+		a := NewAdapter(AdapterConfig{ProjectID: "p", Dir: t.TempDir()})
+		a.mu.Lock()
+		a.sessionID = "sess1"
+		a.mu.Unlock()
+		go a.onFrame(frame, frameAgentStart)
+		if err := a.Stop(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		for range a.Events() {
+		}
+	}
+}
