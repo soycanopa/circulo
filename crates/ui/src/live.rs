@@ -4,12 +4,26 @@
 //! daemon's history when that exists; for now it grows from the messages of one
 //! turn at a time and holds nothing else.
 
-use circulo_protocol::{FinishReason, Part, ServerMessage, ToolState};
+use std::collections::VecDeque;
+
+use circulo_protocol::{FinishReason, Part, PermissionOption, ServerMessage, ToolState};
 
 #[derive(Default)]
 pub struct Transcript {
     pub turns: Vec<Turn>,
     pub status: Status,
+    /// Cards waiting for an answer, oldest first. Parallel tool calls can ask
+    /// twice; the transcript shows one card at a time and pops on answer.
+    pub permissions: VecDeque<PendingPermission>,
+}
+
+/// One open permission request, as the daemon described it.
+#[derive(Clone)]
+pub struct PendingPermission {
+    pub id: String,
+    pub title: String,
+    pub detail: String,
+    pub options: Vec<PermissionOption>,
 }
 
 #[derive(Default)]
@@ -61,6 +75,14 @@ impl Transcript {
                 if let Some(turn) = self.turns.last_mut() {
                     turn.push(part);
                 }
+            }
+            ServerMessage::PermissionRequested { id, request, .. } => {
+                self.permissions.push_back(PendingPermission {
+                    id,
+                    title: request.title,
+                    detail: request.detail,
+                    options: request.options,
+                });
             }
             ServerMessage::TurnFinished { reason, .. } => {
                 self.status.running = false;

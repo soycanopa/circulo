@@ -324,15 +324,15 @@ fn table(
 
     if !head.is_empty() {
         grid = grid.child(table_row(
-            &head,
+            head,
             &ratios,
-            &aligns,
+            aligns,
             theme,
             FontWeight::SEMIBOLD,
         ));
     }
     for row in rows {
-        grid = grid.child(table_row(&row, &ratios, &aligns, theme, FontWeight::NORMAL));
+        grid = grid.child(table_row(row, &ratios, aligns, theme, FontWeight::NORMAL));
     }
 
     grid.into_any_element()

@@ -15,6 +15,7 @@ mod icons;
 mod live;
 mod markdown;
 mod mock;
+mod permission;
 mod shell;
 mod sidebar;
 mod theme;
