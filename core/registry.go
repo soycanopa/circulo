@@ -126,6 +126,8 @@ func (r *Registry) handle(ctx context.Context, e protocol.Envelope) error {
 		return r.UseModel(ctx, e.ID, driver.Model{ID: e.ModelID, ProviderID: e.Provider, Variant: e.Variant})
 	case protocol.TypeAbort:
 		return r.Abort(ctx, e.ID)
+	case protocol.TypePermitReply:
+		return r.Decide(ctx, e)
 	default:
 		return nil
 	}
@@ -315,6 +317,19 @@ func (r *Registry) UseModel(ctx context.Context, sessionID string, model driver.
 	return nil
 }
 
+// Decide forwards a permission choice when the session's provider can answer one.
+func (r *Registry) Decide(ctx context.Context, e protocol.Envelope) error {
+	drv, err := r.sessionDriver(e.Session)
+	if err != nil {
+		return err
+	}
+	approver, ok := drv.(driver.Approver)
+	if !ok {
+		return fmt.Errorf("%s does not take permission replies", e.Session)
+	}
+	return approver.Decide(ctx, e.Session, e.ID, e.Requirement, e.Text)
+}
+
 // Abort interrupts the provider turn for one session.
 func (r *Registry) Abort(ctx context.Context, sessionID string) error {
 	drv, err := r.sessionDriver(sessionID)
@@ -348,6 +363,11 @@ func (r *Registry) onEvent(e driver.Event) {
 		}
 		r.status(e.Text)
 		r.finishTurn(e.SessionID, "")
+	case driver.KindPermit:
+		r.emit(protocol.Envelope{
+			Type: protocol.TypePermit, ID: e.ApprovalID, Session: e.SessionID,
+			Name: e.Tool, Text: e.Text, Requirement: e.RequirementID, Variants: e.Choices,
+		})
 	case driver.KindModel:
 		ref := driver.Model{ID: e.ModelID, ProviderID: e.ProviderID, Variant: e.Variant}
 		r.noteChoice(e.SessionID, ref)
