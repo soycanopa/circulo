@@ -14,9 +14,13 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
 
+use std::path::PathBuf;
+
 use circulo_core::Core;
 use circulo_protocol::{ClientRequest, Hello, PROTOCOL_VERSION, ProtocolError, ServerMessage};
+use circulo_provider::Driver;
 use circulo_provider_demo::DemoDriver;
+use circulo_provider_opencode::OpenCode;
 use tungstenite::{Message, WebSocket};
 use uuid::Uuid;
 
@@ -27,9 +31,10 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    /// A daemon with the demo provider, on an ephemeral loopback port.
+    /// A daemon on an ephemeral loopback port, with the provider named by
+    /// `CIRCULO_PROVIDER` (`opencode` today) or the demo provider otherwise.
     pub fn bind() -> Result<Self, ProtocolError> {
-        Self::with_core(Arc::new(Core::new(Arc::new(DemoDriver::new()))))
+        Self::with_core(Arc::new(Core::new(driver())))
     }
 
     pub fn with_core(core: Arc<Core>) -> Result<Self, ProtocolError> {
@@ -80,6 +85,21 @@ impl Daemon {
                 Err(error) => eprintln!("circulo-daemon: accept failed: {error}"),
             }
         }
+    }
+}
+
+/// Which provider turns prompts into parts. The project directory comes from
+/// `CIRCULO_PROJECT`, or the daemon's own directory until projects are real.
+fn driver() -> Arc<dyn Driver> {
+    match std::env::var("CIRCULO_PROVIDER").as_deref() {
+        Ok("opencode") => {
+            let cwd = std::env::var("CIRCULO_PROJECT")
+                .map(PathBuf::from)
+                .or_else(|_| std::env::current_dir())
+                .unwrap_or_else(|_| PathBuf::from("."));
+            Arc::new(OpenCode::new(cwd))
+        }
+        _ => Arc::new(DemoDriver::new()),
     }
 }
 

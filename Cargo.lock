@@ -869,6 +869,7 @@ dependencies = [
  "circulo-protocol",
  "circulo-provider",
  "circulo-provider-demo",
+ "circulo-provider-opencode",
  "thiserror 2.0.21",
  "tungstenite",
  "uuid",
@@ -905,6 +906,16 @@ version = "0.1.0"
 dependencies = [
  "circulo-protocol",
  "circulo-provider",
+]
+
+[[package]]
+name = "circulo-provider-opencode"
+version = "0.1.0"
+dependencies = [
+ "circulo-protocol",
+ "circulo-provider",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
