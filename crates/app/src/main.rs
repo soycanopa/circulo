@@ -8,8 +8,8 @@
 
 use circulo_ui::{Assets, Shell};
 use gpui::{
-    App, AppContext, Application, Bounds, TitlebarOptions, WindowBackgroundAppearance,
-    WindowBounds, WindowOptions, point, px, size,
+    App, AppContext, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions, point, px,
+    size,
 };
 
 fn main() {
@@ -22,11 +22,8 @@ fn main() {
                 titlebar: Some(TitlebarOptions {
                     title: Some("Circulo".into()),
                     appears_transparent: true,
-                    traffic_light_position: Some(point(px(20.), px(18.))),
+                    traffic_light_position: Some(point(px(16.), px(18.))),
                 }),
-                // The sidebar is a translucent material over the desktop,
-                // as in the reference. The main column paints over it.
-                window_background: WindowBackgroundAppearance::Blurred,
                 window_min_size: Some(size(px(980.), px(680.))),
                 ..Default::default()
             },

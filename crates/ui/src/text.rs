@@ -100,22 +100,22 @@ fn parse(text: &str) -> Vec<Span<'_>> {
             continue;
         }
 
-        if bytes[i] == b'`' {
-            if let Some(close) = find(bytes, i + 1, b"`") {
-                if i > start {
-                    spans.push(Span {
-                        kind: Kind::Normal,
-                        text: &text[start..i],
-                    });
-                }
+        if bytes[i] == b'`'
+            && let Some(close) = find(bytes, i + 1, b"`")
+        {
+            if i > start {
                 spans.push(Span {
-                    kind: Kind::Code,
-                    text: &text[i + 1..close],
+                    kind: Kind::Normal,
+                    text: &text[start..i],
                 });
-                i = close + 1;
-                start = i;
-                continue;
             }
+            spans.push(Span {
+                kind: Kind::Code,
+                text: &text[i + 1..close],
+            });
+            i = close + 1;
+            start = i;
+            continue;
         }
 
         i += 1;
