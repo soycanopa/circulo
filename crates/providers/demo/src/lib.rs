@@ -7,14 +7,19 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::BTreeMap;
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-use circulo_protocol::{Part, ToolState};
+use circulo_protocol::{ConfigChoice, ConfigOption, Part, ToolState};
 use circulo_provider::{Asker, Driver, DriverError};
 
 pub struct DemoDriver {
     chunk_delay: Duration,
+    /// Choices the window made, re-applied to every turn the way a real
+    /// provider re-applies what its agent forgets.
+    overrides: Mutex<BTreeMap<String, String>>,
 }
 
 impl DemoDriver {
@@ -22,6 +27,7 @@ impl DemoDriver {
     pub fn new() -> Self {
         Self {
             chunk_delay: Duration::from_millis(18),
+            overrides: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -29,6 +35,7 @@ impl DemoDriver {
     pub fn instant() -> Self {
         Self {
             chunk_delay: Duration::ZERO,
+            overrides: Mutex::new(BTreeMap::new()),
         }
     }
 }
@@ -104,6 +111,78 @@ impl Driver for DemoDriver {
 
         Ok(())
     }
+
+    fn options(&self) -> Result<Vec<ConfigOption>, DriverError> {
+        Ok(demo_options(&self.overrides()))
+    }
+
+    fn set_option(&self, id: &str, value: &str) -> Result<Vec<ConfigOption>, DriverError> {
+        let options = demo_options(&self.overrides());
+        let option = options
+            .iter()
+            .find(|option| option.id == id)
+            .ok_or_else(|| DriverError::new(format!("unknown option {id}")))?;
+        if !option.options.iter().any(|choice| choice.id == value) {
+            return Err(DriverError::new(format!("{value} is not a {id}")));
+        }
+
+        self.overrides()
+            .insert(id.to_owned(), value.to_owned());
+        Ok(demo_options(&self.overrides()))
+    }
+}
+
+impl DemoDriver {
+    fn overrides(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, String>> {
+        self.overrides.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+/// The demo's two settings, with the window's choices applied. The ids match
+/// the composer's pickers the way the real agent's categories do.
+fn demo_options(overrides: &BTreeMap<String, String>) -> Vec<ConfigOption> {
+    vec![
+        ConfigOption {
+            id: "model".into(),
+            label: "Model".into(),
+            current: overrides
+                .get("model")
+                .cloned()
+                .unwrap_or_else(|| "demo-fast".into()),
+            options: vec![
+                ConfigChoice {
+                    id: "demo-fast".into(),
+                    label: "Demo Fast".into(),
+                },
+                ConfigChoice {
+                    id: "demo-deep".into(),
+                    label: "Demo Deep".into(),
+                },
+            ],
+        },
+        ConfigOption {
+            id: "effort".into(),
+            label: "Effort".into(),
+            current: overrides
+                .get("effort")
+                .cloned()
+                .unwrap_or_else(|| "medium".into()),
+            options: vec![
+                ConfigChoice {
+                    id: "low".into(),
+                    label: "Low".into(),
+                },
+                ConfigChoice {
+                    id: "medium".into(),
+                    label: "Medium".into(),
+                },
+                ConfigChoice {
+                    id: "high".into(),
+                    label: "High".into(),
+                },
+            ],
+        },
+    ]
 }
 
 #[cfg(test)]
@@ -160,5 +239,33 @@ mod tests {
         assert!(text.contains("## What the transcript renders"));
         assert!(text.contains("```rust"));
         assert!(text.contains("- `inline code`"));
+    }
+
+    #[test]
+    fn a_choice_survives_and_a_bad_one_is_refused() {
+        let driver = DemoDriver::instant();
+
+        let options = driver.options().expect("options");
+        assert_eq!(options.len(), 2);
+
+        let options = driver.set_option("effort", "high").expect("set");
+        let effort = options
+            .iter()
+            .find(|option| option.id == "effort")
+            .expect("effort");
+        assert_eq!(effort.current, "high");
+
+        // The choice is still there on the next read: this is what lets a
+        // per-turn process keep the user's pick.
+        let options = driver.options().expect("options again");
+        let effort = options
+            .iter()
+            .find(|option| option.id == "effort")
+            .expect("effort");
+        assert_eq!(effort.current, "high");
+
+        assert!(driver.set_option("effort", "ludicrous").is_err());
+        assert!(driver.set_option("model", "high").is_err());
+        assert!(driver.set_option("nope", "high").is_err());
     }
 }

@@ -362,6 +362,18 @@ mod tests {
             });
             Ok(())
         }
+
+        fn options(&self) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Ok(Vec::new())
+        }
+
+        fn set_option(
+            &self,
+            _id: &str,
+            _value: &str,
+        ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Err(DriverError::new("this agent has no settings"))
+        }
     }
 
     /// A driver that asks a question and reports what it was told.
@@ -400,6 +412,18 @@ mod tests {
             emit(Part::Text { delta });
             Ok(())
         }
+
+        fn options(&self) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Ok(Vec::new())
+        }
+
+        fn set_option(
+            &self,
+            _id: &str,
+            _value: &str,
+        ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Err(DriverError::new("this agent has no settings"))
+        }
     }
 
     struct Broken;
@@ -416,6 +440,18 @@ mod tests {
             _: &mut dyn FnMut(Part),
         ) -> Result<(), DriverError> {
             Err(DriverError::new("no"))
+        }
+
+        fn options(&self) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Ok(Vec::new())
+        }
+
+        fn set_option(
+            &self,
+            _id: &str,
+            _value: &str,
+        ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Err(DriverError::new("this agent has no settings"))
         }
     }
 
@@ -529,6 +565,18 @@ mod tests {
             };
             emit(Part::Text { delta });
             Ok(())
+        }
+
+        fn options(&self) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Ok(Vec::new())
+        }
+
+        fn set_option(
+            &self,
+            _id: &str,
+            _value: &str,
+        ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Err(DriverError::new("this agent has no settings"))
         }
     }
 

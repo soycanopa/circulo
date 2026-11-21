@@ -15,7 +15,7 @@
 
 use std::collections::BTreeMap;
 
-use circulo_protocol::{Part, PermissionRequest, Question, QuestionAction};
+use circulo_protocol::{ConfigOption, Part, PermissionRequest, Question, QuestionAction};
 
 pub trait Driver: Send + Sync {
     /// The provider name shown in the UI, e.g. `opencode`.
@@ -32,6 +32,16 @@ pub trait Driver: Send + Sync {
         ask: &mut dyn Asker,
         emit: &mut dyn FnMut(Part),
     ) -> Result<(), DriverError>;
+
+    /// The agent's current settings, with their current values. Starts no
+    /// turn; a provider that needs an agent process starts a short-lived one.
+    /// Empty when the provider has no settings.
+    fn options(&self) -> Result<Vec<ConfigOption>, DriverError>;
+
+    /// Applies the user's choice and returns the refreshed list, as the agent
+    /// reports it. The choice survives later turns: a provider whose agent
+    /// forgets between processes re-applies it.
+    fn set_option(&self, id: &str, value: &str) -> Result<Vec<ConfigOption>, DriverError>;
 }
 
 /// The user, as the provider sees it. The core implements this; a provider only
