@@ -94,6 +94,7 @@ Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group la
 - [x] Right-aligned user bubble.
 - [x] `Worked for …` divider with hairline rules and a disclosure chevron.
 - [x] Assistant blocks: heading, paragraph, bullet, inline code, bold.
+- [x] Live parts from the daemon: reasoning row, tool row that updates from running to done, streamed text with paragraphs.
 - [x] Collapsed reasoning and tool rows: icon, label, target, and a disclosure chevron or a spinner.
 - [x] Empty state: coral mark, title, subtitle, primary button and the quiet way out.
 - [ ] Expanded reasoning, tool output and live status; the rows are static.
