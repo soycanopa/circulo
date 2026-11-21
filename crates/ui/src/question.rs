@@ -5,16 +5,20 @@
 //! message, one block per field, and the answer options as full-width rows with
 //! the chosen one tinted in the accent colour.
 //!
-//! Only choice fields can be answered here. A field that needs free text shows
-//! what it wants and the card falls back to Decline, because typing lives in
-//! the composer that does not exist yet.
+//! Choice fields are option rows; a free-text field is the same input the
+//! composer uses (`crate::input`), with its own focus. `Submit` waits until
+//! every required field has an answer, whichever kind it is.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use circulo_protocol::{QuestionField, QuestionKind};
-use gpui::{AnyElement, App, FocusHandle, IntoElement, SharedString, Window, div, prelude::*, px};
+use gpui::{
+    AnyElement, App, FocusHandle, IntoElement, KeyDownEvent, SharedString, Window, div, prelude::*,
+    px,
+};
 
+use crate::input::{self, TextInput};
 use crate::live::PendingQuestion;
 use crate::theme::Theme;
 
@@ -27,24 +31,50 @@ pub(crate) enum QuestionEvent {
 }
 
 pub(crate) type QuestionHandler = Rc<dyn Fn(QuestionEvent, &mut Window, &mut App)>;
+/// Editing keys inside a text field, tagged with the field they belong to.
+pub(crate) type TextKeyHandler = Rc<dyn Fn(&str, &KeyDownEvent, &mut Window, &mut App)>;
+
+pub(crate) struct Handlers {
+    pub event: QuestionHandler,
+    pub text_key: TextKeyHandler,
+}
+
+/// What the reader has answered so far: a value per choice field and a buffer
+/// per text field.
+pub(crate) struct Draft<'a> {
+    pub choices: &'a BTreeMap<String, String>,
+    pub texts: &'a BTreeMap<String, TextInput>,
+    pub focuses: &'a BTreeMap<String, FocusHandle>,
+}
+
+impl Draft<'_> {
+    fn value(&self, field: &QuestionField) -> Option<&str> {
+        match &field.kind {
+            QuestionKind::Choice { .. } => self.choices.get(&field.id).map(String::as_str),
+            QuestionKind::Text => self
+                .texts
+                .get(&field.id)
+                .map(TextInput::text)
+                .filter(|text| !text.is_empty()),
+        }
+    }
+}
 
 pub(crate) fn question_card(
     theme: &Theme,
     request: &PendingQuestion,
-    answers: &BTreeMap<String, String>,
+    draft: &Draft<'_>,
     focus: &FocusHandle,
-    on: QuestionHandler,
+    window: &Window,
+    handlers: &Handlers,
 ) -> AnyElement {
-    let needs_typing = request
-        .fields
-        .iter()
-        .any(|field| !matches!(field.kind, QuestionKind::Choice { .. }));
-    let ready = !needs_typing && complete(request, answers);
+    let on = handlers.event.clone();
+    let ready = complete(request, draft);
 
     let mut fields = div().flex().flex_col().gap(px(10.)).mt(px(10.));
 
     for field in &request.fields {
-        fields = fields.child(field_block(theme, field, answers, on.clone()));
+        fields = fields.child(field_block(theme, field, draft, window, handlers));
     }
 
     let submit_button = div()
@@ -118,15 +148,17 @@ pub(crate) fn question_card(
         .px(px(24.))
         .pb(px(8.))
         .track_focus(focus)
-        .on_key_down(move |event, window, cx| match event.keystroke.key.as_str() {
-            "enter" => {
-                if is_ready {
-                    on_key(QuestionEvent::Submit, window, cx);
+        .on_key_down(
+            move |event, window, cx| match event.keystroke.key.as_str() {
+                "enter" => {
+                    if is_ready {
+                        on_key(QuestionEvent::Submit, window, cx);
+                    }
                 }
-            }
-            "escape" => on_key(QuestionEvent::Cancel, window, cx),
-            _ => {}
-        })
+                "escape" => on_key(QuestionEvent::Cancel, window, cx),
+                _ => {}
+            },
+        )
         .child(
             div()
                 .w_full()
@@ -143,15 +175,6 @@ pub(crate) fn question_card(
                         .text_color(theme.text)
                         .child(SharedString::from(request.message.clone())),
                 )
-                .when(needs_typing, |card| {
-                    card.child(
-                        div()
-                            .mt(px(8.))
-                            .text_size(px(12.))
-                            .text_color(theme.text_faint)
-                            .child("This question needs a typed answer. Decline it and ask in the chat."),
-                    )
-                })
                 .child(fields)
                 .child(
                     div()
@@ -170,8 +193,9 @@ pub(crate) fn question_card(
 fn field_block(
     theme: &Theme,
     field: &QuestionField,
-    answers: &BTreeMap<String, String>,
-    on: QuestionHandler,
+    draft: &Draft<'_>,
+    window: &Window,
+    handlers: &Handlers,
 ) -> AnyElement {
     let mut block = div().flex().flex_col().gap(px(4.)).child(
         div()
@@ -182,16 +206,12 @@ fn field_block(
 
     let QuestionKind::Choice { options } = &field.kind else {
         return block
-            .child(
-                div()
-                    .text_size(px(12.))
-                    .text_color(theme.text_faint)
-                    .child("A text answer is not available in this card."),
-            )
+            .child(text_field(theme, field, draft, window, handlers))
             .into_any_element();
     };
 
-    let selected = answers.get(&field.id).cloned();
+    let on = handlers.event.clone();
+    let selected = draft.choices.get(&field.id).cloned();
 
     for option in options {
         let on = Rc::clone(&on);
@@ -247,17 +267,58 @@ fn field_block(
     block.into_any_element()
 }
 
-/// Every required field has an answer, and no field is unanswered by choice.
-fn complete(request: &PendingQuestion, answers: &BTreeMap<String, String>) -> bool {
-    let answered: BTreeSet<&str> = answers
-        .iter()
-        .filter(|(_, value)| !value.is_empty())
-        .map(|(field, _)| field.as_str())
-        .collect();
-
+/// Every required field has an answer, whatever its kind.
+fn complete(request: &PendingQuestion, draft: &Draft<'_>) -> bool {
     request
         .fields
         .iter()
         .filter(|field| field.required)
-        .all(|field| answered.contains(field.id.as_str()))
+        .all(|field| {
+            draft
+                .value(field)
+                .is_some_and(|value| !value.trim().is_empty())
+        })
+}
+
+/// One free-text answer. The input, the caret and the keys are the composer's,
+/// so both read the same.
+fn text_field(
+    theme: &Theme,
+    field: &QuestionField,
+    draft: &Draft<'_>,
+    window: &Window,
+    handlers: &Handlers,
+) -> AnyElement {
+    let input = draft.texts.get(&field.id);
+    let handle = draft.focuses.get(&field.id);
+    let (Some(input), Some(handle)) = (input, handle) else {
+        return div().into_any_element();
+    };
+
+    let on_key = handlers.text_key.clone();
+    let id = field.id.clone();
+
+    div()
+        .id(SharedString::from(format!("question-text-{}", field.id)))
+        .min_h(px(30.))
+        .px(px(10.))
+        .py(px(4.))
+        .rounded(px(8.))
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.surface)
+        .text_size(px(12.5))
+        .track_focus(handle)
+        .on_key_down(move |event, window, cx| on_key(&id, event, window, cx))
+        .on_click({
+            let handle = handle.clone();
+            move |_, window, _| handle.focus(window)
+        })
+        .child(input::field(
+            theme,
+            input,
+            handle.is_focused(window),
+            "Type an answer…",
+        ))
+        .into_any_element()
 }

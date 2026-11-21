@@ -6,13 +6,10 @@
 
 use std::rc::Rc;
 
-use gpui::{
-    AnyElement, App, Div, FocusHandle, Font, FontFeatures, FontStyle, FontWeight, IntoElement,
-    KeyDownEvent, StyledText, TextRun, Window, div, prelude::*, px,
-};
+use gpui::{App, Div, FocusHandle, IntoElement, KeyDownEvent, Window, div, prelude::*, px};
 
 use crate::icons::icon;
-use crate::input::TextInput;
+use crate::input::{self, TextInput};
 use crate::live::Transcript;
 use crate::mock::Workspace;
 use crate::theme::Theme;
@@ -85,7 +82,7 @@ fn input_box(
                 .max_h(px(FIELD_MAX_HEIGHT))
                 .overflow_y_scroll()
                 .whitespace_normal()
-                .child(text_field(theme, field.input, focused)),
+                .child(input::field(theme, field.input, focused, "Do anything...")),
         )
         .child(
             div()
@@ -103,77 +100,6 @@ fn input_box(
                 .child(div().flex_1())
                 .child(send(theme, running, can_send, on_send)),
         )
-}
-
-/// The text, with the caret as a block behind the next character. Runs are the
-/// only way to colour part of a `StyledText`, and a caret is exactly that.
-fn text_field(theme: &Theme, input: &TextInput, focused: bool) -> AnyElement {
-    if input.is_blank() && input.text().is_empty() {
-        if focused {
-            return caret(theme).into_any_element();
-        }
-        return div()
-            .text_color(theme.text_faint)
-            .child("Do anything...")
-            .into_any_element();
-    }
-
-    let text = input.text();
-    let caret = input.caret().min(text.len());
-    let mut styled = Vec::new();
-    let mut runs = Vec::new();
-
-    if caret > 0 {
-        styled.push(text[..caret].to_owned());
-        runs.push(run(&text[..caret], theme.text, None));
-    }
-
-    if focused {
-        // Highlight the character the caret sits on; at the end, a space.
-        let next = text[caret..].chars().next();
-        let marked: String = match next {
-            Some(character) => character.to_string(),
-            None => " ".to_owned(),
-        };
-        styled.push(marked.clone());
-        runs.push(run(&marked, theme.canvas, Some(theme.accent)));
-
-        if next.is_some() {
-            let rest = &text[caret + marked.len()..];
-            if !rest.is_empty() {
-                styled.push(rest.to_owned());
-                runs.push(run(rest, theme.text, None));
-            }
-        }
-    } else if caret < text.len() {
-        styled.push(text[caret..].to_owned());
-        runs.push(run(&text[caret..], theme.text, None));
-    }
-
-    StyledText::new(styled.concat())
-        .with_runs(runs)
-        .into_any_element()
-}
-
-fn run(text: &str, color: gpui::Rgba, background: Option<gpui::Rgba>) -> TextRun {
-    TextRun {
-        len: text.len(),
-        font: Font {
-            family: ".SystemUIFont".into(),
-            features: FontFeatures::default(),
-            fallbacks: None,
-            weight: FontWeight::NORMAL,
-            style: FontStyle::Normal,
-        },
-        color: color.into(),
-        background_color: background.map(Into::into),
-        underline: None,
-        strikethrough: None,
-    }
-}
-
-fn caret(theme: &Theme) -> impl IntoElement {
-    div().h(px(17.)).w(px(1.5)).bg(theme.text)
 }
 
 fn picker(theme: &Theme, path: Option<&'static str>, label: &'static str) -> impl IntoElement {

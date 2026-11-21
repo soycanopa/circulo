@@ -2,7 +2,7 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-21, after the sidebar started drawing real sessions.
+Last updated: 2026-11-21, after free-text answers closed the question card.
 
 ## 1. What works today
 
@@ -30,20 +30,19 @@ Checks: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets`, `ca
 
 Real-provider test (spends a model call): `cargo test -p circulo-provider-opencode --test real -- --ignored`.
 
-## 2. Next task: free-text answers in the question card
+## 2. Next task: model and mode pickers
 
-**Why:** `TextInput` exists now, so the last hole in `docs/permissions.md` §2 closes:
-a question whose schema has a free-text property can be answered instead of
-declined.
+**Why:** `docs/implement.md` Phase 2 starts here, and the composer already draws
+pickers that do nothing. ACP's `session/new` returns `configOptions` (models,
+modes); switching uses `session/set_config_option`.
 
 **Plan:**
-1. The question card renders a `TextInput` per `QuestionKind::Text` field, with
-   its own caret and focus; one focus at a time, tab or click moves between
-   fields.
-2. `Submit` sends the typed values in the same `answers` map; drop the "needs a
-   typed answer, decline it" branch and `needs_typing`.
-3. Verify with the scripted ACP agent: add a second schema property of type
-   string (no enum) and assert the value reaches the agent.
+1. OpenCode adapter: keep `configOptions` from `session/new`, expose the lists
+   and a way to set one; the protocol needs both directions.
+2. UI: turn the two mock pickers into menus fed by the daemon, and show the
+   selected value from the agent instead of `mock.rs`.
+3. Verify against OpenCode 2.3.2: switch model, send a turn, check the agent
+   reports the new model.
 
 ## 3. Pending after permissions, in priority order
 

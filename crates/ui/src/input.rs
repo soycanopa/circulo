@@ -10,6 +10,13 @@
 //! vertical movement. Those come with the editor work, not with sending a
 //! prompt.
 
+use gpui::{
+    AnyElement, Font, FontFeatures, FontStyle, FontWeight, IntoElement, StyledText, TextRun, div,
+    prelude::*, px,
+};
+
+use crate::theme::Theme;
+
 pub(crate) struct TextInput {
     text: String,
     /// Byte offset into `text`, always on a character boundary.
@@ -98,6 +105,85 @@ impl TextInput {
         let text = std::mem::take(&mut self.text);
         self.caret = 0;
         text
+    }
+}
+
+/// The field as the window paints it: the text with a block caret behind the
+/// character it sits on, or the placeholder when empty and not focused.
+///
+/// Shared by the composer and by a question card's text answer, so both read
+/// the same.
+pub(crate) fn field(
+    theme: &Theme,
+    input: &TextInput,
+    focused: bool,
+    placeholder: &str,
+) -> AnyElement {
+    if input.text().is_empty() {
+        if focused {
+            return div()
+                .h(px(17.))
+                .w(px(1.5))
+                .bg(theme.text)
+                .into_any_element();
+        }
+        return div()
+            .text_color(theme.text_faint)
+            .child(placeholder.to_owned())
+            .into_any_element();
+    }
+
+    let text = input.text();
+    let caret = input.caret().min(text.len());
+    let mut styled = Vec::new();
+    let mut runs = Vec::new();
+
+    if caret > 0 {
+        styled.push(text[..caret].to_owned());
+        runs.push(run(&text[..caret], theme.text, None));
+    }
+
+    if focused {
+        // Highlight the character the caret sits on; at the end, a space.
+        let next = text[caret..].chars().next();
+        let marked: String = match next {
+            Some(character) => character.to_string(),
+            None => " ".to_owned(),
+        };
+        styled.push(marked.clone());
+        runs.push(run(&marked, theme.canvas, Some(theme.accent)));
+
+        if next.is_some() {
+            let rest = &text[caret + marked.len()..];
+            if !rest.is_empty() {
+                styled.push(rest.to_owned());
+                runs.push(run(rest, theme.text, None));
+            }
+        }
+    } else if caret < text.len() {
+        styled.push(text[caret..].to_owned());
+        runs.push(run(&text[caret..], theme.text, None));
+    }
+
+    StyledText::new(styled.concat())
+        .with_runs(runs)
+        .into_any_element()
+}
+
+fn run(text: &str, color: gpui::Rgba, background: Option<gpui::Rgba>) -> TextRun {
+    TextRun {
+        len: text.len(),
+        font: Font {
+            family: ".SystemUIFont".into(),
+            features: FontFeatures::default(),
+            fallbacks: None,
+            weight: FontWeight::NORMAL,
+            style: FontStyle::Normal,
+        },
+        color: color.into(),
+        background_color: background.map(Into::into),
+        underline: None,
+        strikethrough: None,
     }
 }
 

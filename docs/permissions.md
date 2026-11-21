@@ -48,13 +48,17 @@ agent may ask, and answers with `accept` (+ `content`), `decline` or `cancel`.
 
 The card shows the agent's message, one block per field with its label, and the
 enum values as full-width rows; the chosen one is tinted in the accent colour.
-`Submit` stays disabled until every required field has an answer, and the spec's
-two ways out are both present: `Decline` and `Cancel`.
+`Submit` stays disabled until every required field has an answer, choice or
+typed, and the spec's two ways out are both present: `Decline` and `Cancel`.
 
-**Free text is not supported yet.** A field without an enum renders as a note
-and the card falls back to Decline, because typing needs the text field the
-composer still does not have. Declining is safe: the spec requires agents to
-handle `decline` by falling back or failing the operation.
+A field without an enum is a free-text answer, using the same input the composer
+uses (`crates/ui/src/input.rs`): its own buffer, focus and caret. The first text
+field of a card takes the keyboard when it appears; clicking another one moves
+focus. Enter submits the card from inside a field, Escape cancels it.
+
+Field order is the agent's: the OpenCode provider enables `serde_json`'s
+`preserve_order`, so a schema's properties come back in the order they were
+written instead of alphabetically.
 
 ## 3. What ACP actually asks
 
