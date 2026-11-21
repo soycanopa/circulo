@@ -12,21 +12,23 @@ import (
 const Version = 1
 
 const (
-	TypeHello   = "hello"
-	TypeDelta   = "part.delta"
-	TypeDone    = "turn.done"
-	TypeProject = "project.upsert"
-	TypeSession = "session.upsert"
-	TypeFocus   = "session.focus"
-	TypeStatus  = "session.status"
-	TypeAdd     = "project.add"
-	TypeCreate  = "session.create"
-	TypeOpen    = "session.open"
-	TypePrompt  = "prompt.send"
-	TypeModel   = "model.upsert"
-	TypeCurrent = "model.current"
-	TypeUse     = "model.set"
-	TypeAbort   = "session.abort"
+	TypeHello      = "hello"
+	TypeDelta      = "part.delta"
+	TypeDone       = "turn.done"
+	TypeProject    = "project.upsert"
+	TypeSession    = "session.upsert"
+	TypeFocus      = "session.focus"
+	TypeStatus     = "session.status"
+	TypeAdd        = "project.add"
+	TypeCreate     = "session.create"
+	TypeOpen       = "session.open"
+	TypePrompt     = "prompt.send"
+	TypeModel      = "model.upsert"
+	TypeCurrent    = "model.current"
+	TypeUse        = "model.set"
+	TypeAbort      = "session.abort"
+	TypeCheckpoint = "checkpoint.upsert"
+	TypeRewind     = "checkpoint.rewind"
 )
 
 // Envelope is one versioned event on the loopback connection.
@@ -49,6 +51,8 @@ type Envelope struct {
 	Variants string `json:"variants,omitempty"`
 	// Delivery is empty for a normal prompt, or steer or queue while a turn is running.
 	Delivery string `json:"delivery,omitempty"`
+	// Agent is the provider that owns a project or session: opencode or muse.
+	Agent string `json:"agent,omitempty"`
 }
 
 func (e Envelope) Validate() error {
@@ -107,6 +111,16 @@ func (e Envelope) Validate() error {
 	case TypeAbort:
 		if e.ID == "" {
 			return fmt.Errorf("protocol: session.abort requires id")
+		}
+		return nil
+	case TypeCheckpoint:
+		if e.ID == "" || e.Session == "" || e.Text == "" {
+			return fmt.Errorf("protocol: checkpoint.upsert requires id, session, and text")
+		}
+		return nil
+	case TypeRewind:
+		if e.ID == "" || e.Session == "" {
+			return fmt.Errorf("protocol: checkpoint.rewind requires id and session")
 		}
 		return nil
 	default:
