@@ -65,7 +65,7 @@ impl Driver for DemoDriver {
             "The daemon received: {prompt}\n\nThis turn travelled from the provider, through the \
              core, over the protocol, and into the client. The text is streamed in deltas, the \
              reasoning and the tool call are separate parts, and the turn ends with a finish \
-             reason."
+             reason.\n\nMarkdown check: **bold**, `code`, and a list:\n\n- one\n- two"
         );
 
         for word in answer.split_inclusive(' ') {
@@ -115,5 +115,9 @@ mod tests {
             .collect();
         assert!(text.contains("hello"), "the prompt is acknowledged");
         assert!(text.contains("streamed in deltas"));
+        assert!(
+            text.contains("**bold**") && text.contains("`code`"),
+            "the demo exercises the markdown renderer"
+        );
     }
 }
