@@ -1,14 +1,15 @@
 # Circulo — Product Requirements Document (v1.0)
 
-- **Status:** Draft v1.0 (2026-11-20)
+- **Status:** Draft v1.0 (2026-11-21)
 - **Owner:** soycanopa
 - **Related:** [TRD](trd.md) · [UX](ux.md) · [Flow](flow.md) · [UI](ui.md) · [Implementation Plan](implement.md)
 - **Reference:** [egoist/waku](https://github.com/egoist/waku) — feature parity goal, no code copy (GPL-3.0)
+- **Stack:** Rust + GPUI (same technology as Waku)
 
 ## 1. Vision
 
 Circulo is a local-first native desktop app for working with coding-agent CLIs.  
-v1.0 goal: reach **feature parity with Waku’s initial capabilities** while being built entirely in **MyGo** (Go, native UI).
+v1.0 goal: reach **feature parity with Waku’s initial capabilities** while being built entirely in **Rust + GPUI**.
 
 One native window where a developer manages projects, runs independent agent sessions, watches work live (streaming transcripts, tool calls, reasoning), switches models/reasoning effort, steers or queues messages mid-turn, and rewinds Git-backed work with conversation-aware checkpoints — all staying on the machine.
 
@@ -30,7 +31,7 @@ A developer who already uses one or more agent CLIs (Claude Code, Codex, OpenCod
 | Git | Rewind Git-backed tasks with conversation-aware checkpoints |
 | Local-first | Everything stored locally (no account, no remote service required) |
 | Architecture | Strong modular separation (UI / core / providers / protocol / persistence as independent puzzle pieces) |
-| Platform | Desktop first (macOS primary, Linux/Windows via MyGo). Mobile after v1.0 |
+| Platform | Desktop first (macOS primary, Linux/Windows via GPUI). Mobile after v1.0 |
 
 ### Explicit non-goals for v1.0
 
@@ -67,23 +68,19 @@ A developer who already uses one or more agent CLIs (Claude Code, Codex, OpenCod
 ## 5. Non-functional requirements
 
 - **Streaming latency**: text deltas reach the UI quickly (< 100 ms p95 after receipt)
-- **Smoothness**: long transcripts stay scrollable at high frame rates
+- **Smoothness**: long transcripts stay scrollable at high frame rates (GPUI virtualization)
 - **Local-only**: binds to loopback; no telemetry
 - **Startup**: interactive window in a few seconds
 - **Robustness**: unknown provider events ignored gracefully
 
 ## 6. Success criteria for v1.0
 
-- Can start a session with at least two different agent CLIs, stream work, switch models, steer/queue, and rewind a Git task — all inside the MyGo app.
+- Can start a session with at least two different agent CLIs, stream work, switch models, steer/queue, and rewind a Git task — all inside the GPUI app.
 - No dependency on external cloud services for core operation.
 - Architecture clean enough that mobile can be added later with the same core.
 
-## 7. Decisions (2026-11-20)
+## 7. Open questions
 
-- **Native UI.** The window is MyGo `ui`, including the transcript (`ui/markdown`). A web frontend is not the app. A later Browser tab may embed `Window.NewWebView` under the native view. That does not move the transcript, sidebar, or composer into a page.
-- **Core is its own process.** The UI process holds presentation state and the protocol client. Projects, sessions, providers, Git, and storage live in the core process. Packages stay independent inside that split.
-
-## 8. Open questions
-
-- Decided for the second provider: Muse Code (`muse serve`, MSP). Claude Code and Codex stay later.
+- Daemon process vs single-process with clear internal crate boundaries. Prefer clear process or crate boundaries so pieces stay independent.
+- Exact set of providers for day-one v1.0 (OpenCode + Claude Code + Codex is the recommended minimum).
 - Final graphite token values once Waku screenshots are captured and adjusted.

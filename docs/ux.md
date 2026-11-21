@@ -1,6 +1,6 @@
 # Circulo — UX Specification (v1.0)
 
-- **Status:** Draft v1.0 (2026-11-20)
+- **Status:** Draft v1.0 (2026-11-21)
 - **Related:** [PRD](prd.md) · [UI](ui.md) · [Flow](flow.md)
 - **Design source:** Replicate Waku’s UX and interaction patterns as closely as possible. Later personal adjustments are expected. Ideas and UX patterns only — no code copy (GPL-3.0).
 

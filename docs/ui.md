@@ -1,9 +1,9 @@
 # Circulo — UI Specification (v1.0)
 
-- **Status:** Draft v1.0 (2026-11-20)
+- **Status:** Draft v1.0 (2026-11-21)
 - **Related:** [UX](ux.md) · [PRD](prd.md)
-- **Design source:** Match the visual design and layout of [Waku](https://github.com/egoist/waku). Later personal adjustments expected. Visual language and interaction patterns only — no code copy (GPL-3.0).
-- **Implementation:** MyGo native UI (`ui` package), including `ui/markdown` for the transcript. The window is not a web frontend. A later Browser tab may use `Window.NewWebView` under the native view.
+- **Design source:** Copy / closely replicate Waku’s visual design and layout. Later personal adjustments expected. Visual language and interaction patterns only — no code copy (GPL-3.0).
+- **Implementation:** Native GPUI (same as Waku) for performance and native feel.
 
 ## 1. Design language (Waku graphite)
 
@@ -45,7 +45,7 @@
 
 ### Right panel
 - Tabbed: Files (worktree), Diff, Terminal (PTY), Browser (optional), File Editor.
-- Native integration where MyGo allows it.
+- Native integration where GPUI allows it.
 
 ### Other
 - Settings (searchable sidebar + content).

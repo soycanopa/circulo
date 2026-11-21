@@ -1,6 +1,6 @@
 # Circulo — Flows (v1.0)
 
-- **Status:** Draft v1.0 (2026-11-20)
+- **Status:** Draft v1.0 (2026-11-21)
 - **Related:** [TRD](trd.md) · [UX](ux.md)
 
 All flows use the neutral event protocol defined in the TRD.
