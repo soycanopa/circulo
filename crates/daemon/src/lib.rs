@@ -194,7 +194,14 @@ fn handle(
         match ClientRequest::decode(&line)? {
             Some(ClientRequest::StartSession { project }) => {
                 let session = core.start_session(project);
-                emit(&outbound, ServerMessage::SessionStarted { session });
+                emit(
+                    &outbound,
+                    ServerMessage::SessionStarted {
+                        session: session.clone(),
+                    },
+                );
+                // Asking the agent takes a moment; the read loop stays free.
+                push_options(Arc::clone(&core), outbound.clone(), session);
             }
             Some(ClientRequest::Prompt { session, text }) => {
                 // A turn blocks on its own thread, so this loop stays free to
@@ -246,7 +253,14 @@ fn handle(
                 let reopened = core.reopen_session(&session);
                 match (reopened, core.transcript(&session)) {
                     (Ok(true), Ok(turns)) => {
-                        emit(&outbound, ServerMessage::History { session, turns })
+                        emit(
+                            &outbound,
+                            ServerMessage::History {
+                                session: session.clone(),
+                                turns,
+                            },
+                        );
+                        push_options(Arc::clone(&core), outbound.clone(), session);
                     }
                     (Ok(false), _) => emit(
                         &outbound,
@@ -261,6 +275,16 @@ fn handle(
                         },
                     ),
                 }
+            }
+            Some(ClientRequest::SetOption { session, id, value }) => {
+                // The driver spawns an agent for this; the read loop stays
+                // free, and the refreshed list lands as `Options`.
+                let core = Arc::clone(&core);
+                let outbound = outbound.clone();
+                thread::spawn(move || match core.set_option(&session, &id, &value) {
+                    Ok(options) => emit(&outbound, ServerMessage::Options { session, options }),
+                    Err(message) => emit(&outbound, ServerMessage::Error { message }),
+                });
             }
             None => {
                 emit(
@@ -281,6 +305,15 @@ fn handle(
 
 fn emit(outbound: &Sender<ServerMessage>, message: ServerMessage) {
     let _ = outbound.send(message);
+}
+
+/// Asks the agent for its settings on its own thread and pushes what it
+/// reports. The daemon owns the thread; the core owns the session check.
+fn push_options(core: Arc<Core>, outbound: Sender<ServerMessage>, session: String) {
+    thread::spawn(move || match core.load_options(&session) {
+        Ok(options) => emit(&outbound, ServerMessage::Options { session, options }),
+        Err(message) => emit(&outbound, ServerMessage::Error { message }),
+    });
 }
 
 fn next(socket: &mut WebSocket<TcpStream>) -> Result<Option<String>, ConnectionError> {
