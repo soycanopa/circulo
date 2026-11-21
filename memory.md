@@ -10,17 +10,19 @@ Last updated: 2026-11-21, after the markdown, tool-id and pin-to-bottom work mer
 - **Daemon** (`circulo-daemon`): owns the core, prints `{"url":"ws://127.0.0.1:PORT","token":"…"}`, serves the protocol over WebSocket.
 - **Client** (`circulo-client`): handshake, requests, streamed messages. The desktop uses it; mobile/remote will reuse it.
 - **Real provider**: OpenCode over **Agent Client Protocol** (`opencode acp`, stdio JSON-RPC). Verified against OpenCode 2.3.2. Reasoning, tool calls and text stream into the window.
-- **Markdown in the transcript** (`crates/ui/src/markdown.rs`): `pulldown-cmark` → blocks and spans → `StyledText` with one `TextRun` per span. Paragraphs, headings, bullet and ordered lists, quotes, fenced code, rules, bold, italic, inline code, strikethrough, links (coloured, not clickable). Partial input is safe: the fence or `**` marker that has not arrived yet does not break the parse. 15 fixtures in the module, and the demo provider's canned turn exercises the shapes.
+- **Markdown in the transcript** (`crates/ui/src/markdown.rs`): `pulldown-cmark` → blocks and spans → `StyledText` with one `TextRun` per span. Paragraphs, headings, bullet and ordered lists, quotes, fenced code, tables, rules, bold, italic, inline code, strikethrough, links (coloured, not clickable). Partial input is safe: the fence or `**` marker that has not arrived yet does not break the parse. 19 fixtures in the module, and the demo provider's canned turn exercises the shapes.
+- **Markdown tables** get weighted column widths and the delimiter row's alignment; verified against a real OpenCode answer (Crate / What it owns / right-aligned Files).
 - **Tool rows are correlated by call id**: `Part::Tool` carries the provider's `id`, so an update finds the row its call opened even when another tool started in between. Verified with a real OpenCode turn: no spinners left behind, no duplicate rows.
 - **The transcript follows the stream**: the list is `ListAlignment::Bottom`, so a streaming turn stays on its newest row; scrolling up sticks and shows a jump-to-latest button above the composer.
 - **Lifecycle**: the app spawns the daemon and holds its stdin open; the daemon exits on EOF, so nothing survives the app (verified with SIGKILL).
-- 42 tests green; CI runs fmt + clippy + test on macOS.
+- 46 tests green; CI runs fmt + clippy + test on macOS.
 
 Run it:
 
 ```sh
 cargo run -p circulo                                       # demo provider, no auth needed
 CIRCULO_PROVIDER=opencode CIRCULO_PROJECT="$PWD" cargo run -p circulo   # real agent
+CIRCULO_PROMPT="…" CIRCULO_PROVIDER=opencode … cargo run -p circulo     # a different ask until the composer is wired
 cargo run -p circulo-daemon                                # daemon alone
 ```
 
@@ -44,7 +46,7 @@ Real-provider test (spends a model call): `cargo test -p circulo-provider-openco
 2. **Model / agent picker.** `session/new` returns `configOptions` (model list, agents). Wire `session/set_config_option` and the existing pickers.
 3. **Session continuity.** One `opencode acp` process per session instead of per turn, and ACP `session/load` (the agent advertises `loadSession: true`).
 4. **Persistence (SQLite)** in `crates/persistence`, owned by the core. Then the sidebar shows real sessions instead of `mock.rs`.
-5. **Markdown, second pass.** Tables (a real OpenCode answer wrote one and it renders as pipes), footnotes and clickable links; parse results are rebuilt every frame today, so cache them per segment if transcripts get long.
+5. **Markdown, third pass.** Footnotes and clickable links (inline hit-testing needs a retained text layout); parse results are rebuilt every frame today, so cache them per segment if transcripts get long.
 6. **Remote/pairing.** Decisions in `docs/remote.md`: QR with a saved tailcat key + `--allow`; the desktop owns the tunnel and starts it with the daemon. `tailcat` is **not installed** on this machine. Open question: what the QR payload carries (bare address vs address + token + node key).
 
 ## 4. Architecture map
