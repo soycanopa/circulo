@@ -62,10 +62,20 @@ impl Driver for DemoDriver {
         });
 
         let answer = format!(
-            "The daemon received: {prompt}\n\nThis turn travelled from the provider, through the \
-             core, over the protocol, and into the client. The text is streamed in deltas, the \
-             reasoning and the tool call are separate parts, and the turn ends with a finish \
-             reason."
+            "The daemon received: {prompt}\n\n\
+             This turn travelled from the provider, through the core, over the protocol, and \
+             into the client. The text is streamed in deltas, the reasoning and the tool call \
+             are separate parts, and the turn ends with a finish reason.\n\n\
+             ## What the transcript renders\n\n\
+             - `**bold**` and `*italic*` become weight and slant\n\
+             - `inline code` becomes a mono run on a chip\n\
+             - fenced blocks keep their lines\n\n\
+             ```rust\n\
+             let part = Part::Text {{ delta }};\n\
+             emit(part);\n\
+             ```\n\n\
+             > A quote is indented behind a rule.\n\n\
+             That is the whole markdown subset for now."
         );
 
         for word in answer.split_inclusive(' ') {
@@ -115,5 +125,10 @@ mod tests {
             .collect();
         assert!(text.contains("hello"), "the prompt is acknowledged");
         assert!(text.contains("streamed in deltas"));
+        // The canned turn is also the renderer's fixture: it must carry the
+        // markdown shapes the transcript styles.
+        assert!(text.contains("## What the transcript renders"));
+        assert!(text.contains("```rust"));
+        assert!(text.contains("- `inline code`"));
     }
 }
