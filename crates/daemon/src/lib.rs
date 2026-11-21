@@ -206,6 +206,20 @@ fn handle(
                     );
                 }
             }
+            Some(ClientRequest::AnswerQuestion {
+                id,
+                action,
+                answers,
+            }) => {
+                if !core.answer_question(&id, action, answers) {
+                    emit(
+                        &outbound,
+                        ServerMessage::Error {
+                            message: format!("no question {id}"),
+                        },
+                    );
+                }
+            }
             None => {
                 emit(
                     &outbound,

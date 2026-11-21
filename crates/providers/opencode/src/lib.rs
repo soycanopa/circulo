@@ -27,7 +27,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use circulo_protocol::{
-    Part, PermissionOption, PermissionOptionKind, PermissionRequest, ToolState,
+    Part, PermissionOption, PermissionOptionKind, PermissionRequest, Question, QuestionField,
+    QuestionKind, ToolState,
 };
 use circulo_provider::{Asker, Decision, Driver, DriverError};
 use serde_json::{Value, json};
@@ -77,7 +78,10 @@ impl Driver for OpenCode {
             json!({
                 "protocolVersion": ACP_VERSION,
                 "clientCapabilities": {
-                    "fs": {"readTextFile": false, "writeTextFile": false}
+                    "fs": {"readTextFile": false, "writeTextFile": false},
+                    // Form questions are supported; an agent must not ask for
+                    // a mode the client has not advertised.
+                    "elicitation": {"form": {}}
                 }
             }),
             ask,
@@ -225,6 +229,32 @@ impl Agent {
             return Ok(());
         };
 
+        if message.get("method").and_then(Value::as_str) == Some("elicitation/create") {
+            let params = message.get("params").cloned().unwrap_or(Value::Null);
+            let mode = params.get("mode").and_then(Value::as_str);
+
+            // Only form mode is advertised (`clientCapabilities.elicitation`).
+            if mode != Some("form") {
+                self.send(json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {"code": -32602, "message": "only form elicitation is supported"}
+                }))?;
+                return Ok(());
+            }
+
+            let answer = ask.question(question_from(&params));
+            let result = match answer.action {
+                circulo_protocol::QuestionAction::Accept => {
+                    json!({"action": "accept", "content": answer.values})
+                }
+                circulo_protocol::QuestionAction::Decline => json!({"action": "decline"}),
+                circulo_protocol::QuestionAction::Cancel => json!({"action": "cancel"}),
+            };
+            self.send(json!({"jsonrpc": "2.0", "id": id, "result": result}))?;
+            return Ok(());
+        }
+
         if message.get("method").and_then(Value::as_str) == Some("session/request_permission") {
             let request = permission_request(message.get("params"));
 
@@ -348,6 +378,92 @@ fn permission_request(params: Option<&Value>) -> PermissionRequest {
         title,
         detail,
         options,
+    }
+}
+
+/// A question from an ACP form elicitation. The schema is a flat object; each
+/// property becomes one field, an enum becomes a choice, anything else needs a
+/// text field this client does not have yet.
+fn question_from(params: &Value) -> Question {
+    let message = params
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or("The agent is asking a question")
+        .to_owned();
+
+    let required: Vec<&str> = params
+        .pointer("/requestedSchema/required")
+        .and_then(Value::as_array)
+        .map(|required| required.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+
+    let fields = params
+        .pointer("/requestedSchema/properties")
+        .and_then(Value::as_object)
+        .map(|properties| {
+            properties
+                .iter()
+                .map(|(id, schema)| {
+                    let label = schema
+                        .get("title")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| humanize(id));
+
+                    let options: Vec<String> = schema
+                        .get("enum")
+                        .and_then(Value::as_array)
+                        .map(|options| {
+                            options
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .map(str::to_owned)
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
+                    let kind = if options.is_empty() {
+                        QuestionKind::Text
+                    } else {
+                        QuestionKind::Choice { options }
+                    };
+
+                    QuestionField {
+                        id: id.clone(),
+                        label,
+                        kind,
+                        required: required.contains(&id.as_str()),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Question { message, fields }
+}
+
+/// `code_style` becomes `Code style`: agents write schema property names, and
+/// a card should not show a raw identifier.
+fn humanize(id: &str) -> String {
+    let mut label = String::with_capacity(id.len());
+    for (index, word) in id
+        .split(['_', '-'])
+        .filter(|word| !word.is_empty())
+        .enumerate()
+    {
+        if index > 0 {
+            label.push(' ');
+        }
+        let mut chars = word.chars();
+        if let Some(first) = chars.next() {
+            label.extend(first.to_uppercase());
+            label.push_str(chars.as_str());
+        }
+    }
+    if label.is_empty() {
+        id.to_owned()
+    } else {
+        label
     }
 }
 

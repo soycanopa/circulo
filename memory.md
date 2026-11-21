@@ -30,33 +30,29 @@ Checks: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets`, `ca
 
 Real-provider test (spends a model call): `cargo test -p circulo-provider-opencode --test real -- --ignored`.
 
-## 2. Next task: question cards
+## 2. Next task: composer text input
 
-**Why:** an agent sometimes needs an answer, not an approval. ACP models that as
-`elicitation/create` (form mode: `message` + a flat `requestedSchema`), and the
-client must advertise `clientCapabilities.elicitation.form` during `initialize`
-before an agent may ask.
+**Why:** it unblocks three things at once — sending a prompt from the window,
+answering free-text questions (`docs/permissions.md` §2), and steering. It is
+the last piece that keeps the app a demo instead of a usable client.
 
 **Plan:**
-1. Protocol: `QuestionAsked { session, turn, id, question }` and
-   `AnswerQuestion { id, action, content }`, mirroring the permission pair.
-2. Driver trait: `Asker` gains `ask_question`, blocking the same way.
-3. OpenCode adapter: advertise elicitation, answer `elicitation/create` with
-   `accept | decline | cancel` plus content.
-4. UI: the same slot as the permission card. Enum properties render as the
-   option rows Waku uses; other property types need the text field the composer
-   does not have yet, so the first version covers choice questions and declines
-   the rest with a message.
-5. Verify with a scripted ACP agent; OpenCode 2.3.2 does not elicit on its own.
+1. A `TextInput` in `crates/ui`: buffer, caret, focus, key handling (chars,
+   backspace, arrows, paste), Enter to send, Shift+Enter for a newline. GPUI has
+   no text input element, so this is ours; keep it in one module with tests for
+   the buffer and caret.
+2. Send through the writer half of the connection (it already exists for
+   answers) as a `Prompt` request; the transcript starts a new turn.
+3. Then reuse the same input inside the question card for `Text` fields, and
+   drop the "decline when typing is needed" path.
 
 ## 3. Pending after permissions, in priority order
 
-1. **Composer text input.** The prompt is currently sent automatically at startup (`PROMPT` in `crates/app/src/main.rs`). Needs a real text field, Enter to send, Shift+Enter for newline.
-2. **Model / agent picker.** `session/new` returns `configOptions` (model list, agents). Wire `session/set_config_option` and the existing pickers.
-3. **Session continuity.** One `opencode acp` process per session instead of per turn, and ACP `session/load` (the agent advertises `loadSession: true`).
-4. **Persistence (SQLite)** in `crates/persistence`, owned by the core. Then the sidebar shows real sessions instead of `mock.rs`.
-5. **Clickable links.** GPUI 0.2.2 has no text hit-testing (`index_for_point`) and mouse events carry window coordinates, so a link click needs either a retained text layout plus element bounds, or an inline layout built from word-sized elements. Math rendering is the other gap.
-6. **Remote/pairing.** Decisions in `docs/remote.md`: QR with a saved tailcat key + `--allow`; the desktop owns the tunnel and starts it with the daemon. `tailcat` is **not installed** on this machine. Open question: what the QR payload carries (bare address vs address + token + node key).
+1. **Model / agent picker.** `session/new` returns `configOptions` (model list, agents). Wire `session/set_config_option` and the existing pickers.
+2. **Session continuity.** One `opencode acp` process per session instead of per turn, and ACP `session/load` (the agent advertises `loadSession: true`).
+3. **Persistence (SQLite)** in `crates/persistence`, owned by the core. Then the sidebar shows real sessions instead of `mock.rs`.
+4. **Clickable links.** GPUI 0.2.2 has no text hit-testing (`index_for_point`) and mouse events carry window coordinates, so a link click needs either a retained text layout plus element bounds, or an inline layout built from word-sized elements. Math rendering is the other gap.
+5. **Remote/pairing.** Decisions in `docs/remote.md`: QR with a saved tailcat key + `--allow`; the desktop owns the tunnel and starts it with the daemon. `tailcat` is **not installed** on this machine. Open question: what the QR payload carries (bare address vs address + token + node key).
 
 ## 4. Architecture map
 

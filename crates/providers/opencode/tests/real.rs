@@ -5,8 +5,8 @@
 //! --ignored` when touching the wire mapping.
 
 use circulo_protocol::Part;
-use circulo_protocol::PermissionRequest;
-use circulo_provider::{Asker, Decision, Driver};
+use circulo_protocol::{PermissionRequest, Question};
+use circulo_provider::{Answer, Asker, Decision, Driver};
 use circulo_provider_opencode::OpenCode;
 
 /// A real turn that stops for approval has no user here. Refuse loudly instead
@@ -16,6 +16,10 @@ struct NoAsker;
 impl Asker for NoAsker {
     fn permission(&mut self, request: PermissionRequest) -> Decision {
         panic!("the agent asked for permission: {}", request.title);
+    }
+
+    fn question(&mut self, question: Question) -> Answer {
+        panic!("the agent asked a question: {}", question.message);
     }
 }
 

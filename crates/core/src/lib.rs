@@ -17,8 +17,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use circulo_protocol::{FinishReason, PermissionRequest, ServerMessage};
-use circulo_provider::{Asker, Decision, Driver};
+use circulo_protocol::{FinishReason, PermissionRequest, Question, QuestionAction, ServerMessage};
+use circulo_provider::{Answer, Asker, Decision, Driver};
 use uuid::Uuid;
 
 pub struct Session {
@@ -30,7 +30,8 @@ pub struct Core {
     driver: Arc<dyn Driver>,
     sessions: Mutex<Vec<Session>>,
     turns: AtomicU64,
-    permissions: PermissionBroker,
+    permissions: Broker<Decision>,
+    questions: Broker<Answer>,
 }
 
 impl Core {
@@ -39,7 +40,8 @@ impl Core {
             driver,
             sessions: Mutex::new(Vec::new()),
             turns: AtomicU64::new(0),
-            permissions: PermissionBroker::default(),
+            permissions: Broker::new("p"),
+            questions: Broker::new("q"),
         }
     }
 
@@ -54,10 +56,26 @@ impl Core {
         self.permissions.answer(id, decision)
     }
 
+    /// Answers a pending question. Returns false for an id that is not open.
+    pub fn answer_question(
+        &self,
+        id: &str,
+        action: QuestionAction,
+        answers: std::collections::BTreeMap<String, String>,
+    ) -> bool {
+        let answer = match action {
+            QuestionAction::Accept => Answer::accept(answers),
+            QuestionAction::Decline => Answer::decline(),
+            QuestionAction::Cancel => Answer::cancel(),
+        };
+        self.questions.answer(id, answer)
+    }
+
     /// Drops every open request: the client is gone, so nothing can answer.
     /// The waiting drivers read that as cancelled and end their turns.
     pub fn cancel_permissions(&self) {
         self.permissions.cancel_all();
+        self.questions.cancel_all();
     }
 
     pub fn driver_name(&self) -> &'static str {
@@ -108,7 +126,8 @@ impl Core {
             });
         };
         let mut asker = TurnAsker {
-            broker: &self.permissions,
+            permissions: &self.permissions,
+            questions: &self.questions,
             session,
             turn,
             emit: &emit,
@@ -143,7 +162,8 @@ impl Core {
 
 /// The driver's view of the user: sends a card and waits for the answer.
 struct TurnAsker<'a, F: FnMut(ServerMessage)> {
-    broker: &'a PermissionBroker,
+    permissions: &'a Broker<Decision>,
+    questions: &'a Broker<Answer>,
     session: &'a str,
     turn: u64,
     emit: &'a RefCell<F>,
@@ -151,7 +171,7 @@ struct TurnAsker<'a, F: FnMut(ServerMessage)> {
 
 impl<F: FnMut(ServerMessage)> Asker for TurnAsker<'_, F> {
     fn permission(&mut self, request: PermissionRequest) -> Decision {
-        let (id, answer) = self.broker.open();
+        let (id, answer) = self.permissions.open();
 
         (self.emit.borrow_mut())(ServerMessage::PermissionRequested {
             session: self.session.to_owned(),
@@ -163,29 +183,57 @@ impl<F: FnMut(ServerMessage)> Asker for TurnAsker<'_, F> {
         // A closed channel means the request was dropped: the client left, or
         // the daemon cancelled it. Either way the tool must not run.
         let decision = answer.recv().unwrap_or(Decision::Cancelled);
-        self.broker.close(&id);
+        self.permissions.close(&id);
         decision
+    }
+
+    fn question(&mut self, question: Question) -> Answer {
+        let (id, answer) = self.questions.open();
+
+        (self.emit.borrow_mut())(ServerMessage::QuestionAsked {
+            session: self.session.to_owned(),
+            turn: self.turn,
+            id: id.clone(),
+            question,
+        });
+
+        let answer = answer.recv().unwrap_or(Answer::cancel());
+        self.questions.close(&id);
+        answer
     }
 }
 
-/// Open permission requests, keyed by the id the client saw.
-#[derive(Default)]
-pub struct PermissionBroker {
+/// Open requests of one kind, keyed by the id the client saw. The prefix keeps
+/// permissions and questions apart on the wire ("p-3", "q-4").
+struct Broker<T> {
+    prefix: &'static str,
     next: AtomicU64,
-    pending: Mutex<HashMap<String, Sender<Decision>>>,
+    pending: Mutex<HashMap<String, Sender<T>>>,
 }
 
-impl PermissionBroker {
-    fn open(&self) -> (String, Receiver<Decision>) {
-        let id = format!("p-{}", self.next.fetch_add(1, Ordering::Relaxed) + 1);
+impl<T> Broker<T> {
+    fn new(prefix: &'static str) -> Self {
+        Self {
+            prefix,
+            next: AtomicU64::new(0),
+            pending: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn open(&self) -> (String, Receiver<T>) {
+        let id = format!(
+            "{}-{}",
+            self.prefix,
+            self.next.fetch_add(1, Ordering::Relaxed) + 1
+        );
         let (send, receive) = channel();
         self.pending().insert(id.clone(), send);
         (id, receive)
     }
 
-    fn answer(&self, id: &str, decision: Decision) -> bool {
+    fn answer(&self, id: &str, answer: T) -> bool {
         let sender = self.pending().remove(id);
-        sender.is_some_and(|sender| sender.send(decision).is_ok())
+        sender.is_some_and(|sender| sender.send(answer).is_ok())
     }
 
     fn close(&self, id: &str) {
@@ -198,7 +246,7 @@ impl PermissionBroker {
         self.pending().clear();
     }
 
-    fn pending(&self) -> std::sync::MutexGuard<'_, HashMap<String, Sender<Decision>>> {
+    fn pending(&self) -> std::sync::MutexGuard<'_, HashMap<String, Sender<T>>> {
         self.pending.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
@@ -225,6 +273,44 @@ mod tests {
             emit(Part::Text {
                 delta: prompt.to_owned(),
             });
+            Ok(())
+        }
+    }
+
+    /// A driver that asks a question and reports what it was told.
+    struct AsksQuestion;
+
+    impl Driver for AsksQuestion {
+        fn name(&self) -> &'static str {
+            "asks-question"
+        }
+
+        fn start_turn(
+            &self,
+            _: &str,
+            ask: &mut dyn Asker,
+            emit: &mut dyn FnMut(Part),
+        ) -> Result<(), DriverError> {
+            let answer = ask.question(Question {
+                message: "How should I approach this?".into(),
+                fields: vec![circulo_protocol::QuestionField {
+                    id: "strategy".into(),
+                    label: "Strategy".into(),
+                    kind: circulo_protocol::QuestionKind::Choice {
+                        options: vec!["conservative".into(), "balanced".into()],
+                    },
+                    required: true,
+                }],
+            });
+
+            let delta = match answer.action {
+                QuestionAction::Accept => format!(
+                    "accepted {}",
+                    answer.values.get("strategy").cloned().unwrap_or_default()
+                ),
+                other => format!("{other:?}").to_lowercase(),
+            };
+            emit(Part::Text { delta });
             Ok(())
         }
     }
@@ -385,6 +471,63 @@ mod tests {
         }
 
         assert_eq!(text.as_deref(), Some("cancelled"), "nothing ran");
+    }
+
+    #[test]
+    fn a_question_blocks_the_turn_until_it_is_answered() {
+        let core = Arc::new(core_with(Arc::new(AsksQuestion)));
+        let session = core.start_session(None);
+        let messages = run_in_background(Arc::clone(&core), session);
+
+        let mut answered = false;
+        let mut text = None;
+        while let Ok(message) = messages.recv() {
+            match message {
+                ServerMessage::QuestionAsked { id, question, .. } => {
+                    assert_eq!(question.message, "How should I approach this?");
+                    assert_eq!(question.fields[0].id, "strategy");
+                    let answers = std::collections::BTreeMap::from([(
+                        "strategy".to_string(),
+                        "balanced".to_string(),
+                    )]);
+                    assert!(core.answer_question(&id, QuestionAction::Accept, answers));
+                    answered = true;
+                }
+                ServerMessage::Part {
+                    part: Part::Text { delta },
+                    ..
+                } => text = Some(delta),
+                ServerMessage::TurnFinished { .. } => break,
+                _ => {}
+            }
+        }
+
+        assert!(answered);
+        assert_eq!(text.as_deref(), Some("accepted balanced"));
+    }
+
+    #[test]
+    fn a_declined_question_tells_the_agent_so() {
+        let core = Arc::new(core_with(Arc::new(AsksQuestion)));
+        let session = core.start_session(None);
+        let messages = run_in_background(Arc::clone(&core), session);
+
+        let mut text = None;
+        while let Ok(message) = messages.recv() {
+            match message {
+                ServerMessage::QuestionAsked { id, .. } => {
+                    assert!(core.answer_question(&id, QuestionAction::Decline, Default::default()));
+                }
+                ServerMessage::Part {
+                    part: Part::Text { delta },
+                    ..
+                } => text = Some(delta),
+                ServerMessage::TurnFinished { .. } => break,
+                _ => {}
+            }
+        }
+
+        assert_eq!(text.as_deref(), Some("decline"));
     }
 
     #[test]

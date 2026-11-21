@@ -1,7 +1,6 @@
 # Permission cards
 
-- **Status:** implemented 2026-11-21 (permissions). Questions are the next
-  slice: ACP `elicitation/create`, form mode.
+- **Status:** implemented 2026-11-21 (permissions and choice questions).
 - **Related:** [UX](ux.md) · [UI](ui.md) · [Providers](providers/opencode.md) · [TRD](trd.md)
 
 An agent asks before it does something the user has not allowed: run a command,
@@ -39,7 +38,25 @@ Two lessons worth keeping: the card never invents options of its own, and the
 detail block shows the command or path **in full** — the decision is about what
 will actually run.
 
-## 2. What ACP actually asks
+## 2. Questions
+
+The agent sometimes needs an answer, not an approval. ACP models that as
+`elicitation/create` with `mode: "form"`: a `message` and a `requestedSchema`
+(flat object; each property is a primitive or an enum). The client must
+advertise `clientCapabilities.elicitation.form` during `initialize` before an
+agent may ask, and answers with `accept` (+ `content`), `decline` or `cancel`.
+
+The card shows the agent's message, one block per field with its label, and the
+enum values as full-width rows; the chosen one is tinted in the accent colour.
+`Submit` stays disabled until every required field has an answer, and the spec's
+two ways out are both present: `Decline` and `Cancel`.
+
+**Free text is not supported yet.** A field without an enum renders as a note
+and the card falls back to Decline, because typing needs the text field the
+composer still does not have. Declining is safe: the spec requires agents to
+handle `decline` by falling back or failing the operation.
+
+## 3. What ACP actually asks
 
 `session/request_permission` (agent → client):
 
@@ -68,7 +85,7 @@ Security notes we follow: describe the operation from `kind`, `locations` and
 the tool call's input; present `title` as agent-authored text; show commands and
 paths in full; never auto-approve from a title or an option name.
 
-## 3. The wire (protocol v1, additive)
+## 4. The wire (protocol v1, additive)
 
 ```jsonc
 // daemon → client
@@ -79,7 +96,21 @@ paths in full; never auto-approve from a title or an option name.
 
 // client → daemon
 { "type": "answer_permission", "id": "p-1", "option": "allow-once" }   // null = cancelled
+
+// daemon → client
+{ "type": "question_asked", "session": "s1", "turn": 3, "id": "q-1",
+  "question": { "message": "How should I approach this?",
+                "fields": [ { "id": "strategy", "label": "Strategy", "required": true,
+                              "kind": { "kind": "choice",
+                                        "options": ["conservative", "balanced"] } } ] } }
+
+// client → daemon
+{ "type": "answer_question", "id": "q-1", "action": "accept",
+  "answers": { "strategy": "balanced" } }
 ```
+
+Question ids are prefixed `q-`, permission ids `p-`, so a stale answer can never
+hit the wrong kind of request.
 
 `id` is the daemon's own, not the provider's: one turn may ask twice, and a
 provider that restarts must not collide. Unknown ids are answered with an error
@@ -89,13 +120,13 @@ message and change nothing.
 
 | Piece | Change |
 |---|---|
-| `crates/protocol` | `PermissionRequested`, `AnswerPermission`, `PermissionOption*`; both types are additive and older peers skip them |
-| `crates/providers/driver` | `Asker` trait: `ask(&mut self, request) -> Decision`; `start_turn` takes one more argument |
+| `crates/protocol` | `PermissionRequested`, `AnswerPermission`, `QuestionAsked`, `AnswerQuestion`, `PermissionOption*`, `Question*`; all additive, older peers skip them |
+| `crates/providers/driver` | `Asker` trait: `permission(...) -> Decision` and `question(...) -> Answer`; `start_turn` takes it as an argument |
 | `crates/core` | `PermissionBroker`: id, pending senders, `answer(id, decision)`. `run_turn` builds an asker that emits the message and **blocks** on the reply channel; a closed channel (client gone) reads as cancelled |
 | `crates/providers/opencode` | turns the ACP request into a `PermissionRequest` (title from `toolCall.title`, detail from the command/path in `rawInput`/`locations`), and answers ACP with the chosen `optionId` |
 | `crates/daemon` | while a turn runs the connection must keep reading, so writes move to a writer thread over a cloned socket (`WebSocket::from_raw_socket`); the reader loop stays on the connection thread and routes `AnswerPermission` to the broker |
 | `crates/client` | `answer_permission(id, option)` |
-| `crates/ui` | `permission.rs` card; `live::Transcript` holds a queue of pending requests; rendered between transcript and composer; Enter allows the first allow-kind option, Escape rejects with the first reject-kind one |
+| `crates/ui` | `permission.rs` and `question.rs`; `live::Transcript` holds one queue of cards so a permission and a question keep their order; rendered between transcript and composer; Enter allows / submits, Escape rejects / cancels |
 
 ## 5. Failure modes
 
@@ -117,10 +148,15 @@ answered. Checked against a scratch project with a real turn: the card showed
 the path, Enter allowed it, the file appeared and the agent finished.
 
 The ACP round trip also has a deterministic test, `tests/permission.rs` in the
-opencode crate: a scripted ACP agent asks, the driver turns that into a
-`PermissionRequest`, the chosen `optionId` goes back verbatim, and a cancelled
-answer reads as `cancelled` on the agent's side. That test exists because a
-provider's policy can change under us; the wire should not depend on it.
+opencode crate: a scripted ACP agent asks (permission or question, by
+`FAKE_ACP_MODE`), the driver turns that into the card's data, the answer goes
+back verbatim, and a cancelled permission reads as `cancelled` on the agent's
+side. That test exists because a provider's policy can change under us; the wire
+should not depend on it, and OpenCode 2.3.2 does not elicit on its own.
+
+The question card was checked the same way, in the app: choose an option,
+`Submit` enables, the card goes away and the scripted agent reports
+`accept:conservative`.
 
 ## 7. Not in this slice
 

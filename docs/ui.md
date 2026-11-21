@@ -126,6 +126,7 @@ Agent text is CommonMark plus the GitHub extensions agents actually write (table
 - **Tables** are rows of cells with a 1 px hairline above and between rows, no vertical rules. Each column takes a share of the width in proportion to the longest text it holds (floored at 6 characters, so a narrow "N" column stays readable), and the delimiter row's alignment is honoured through `text_align`.
 - **Partial input never fails**: an unclosed fence is already a code block, an unclosed `**` stays literal until its marker arrives. Footnotes, math and raw HTML are not rendered yet (HTML is dropped); links are coloured but not clickable, because a click would have to hit-test a byte range inside a text layout this renderer rebuilds every frame.
 - [x] Collapsed reasoning and tool rows: icon, label, target, and a disclosure chevron or a spinner.
+- [x] Question card: the agent's message, a label per field, choice rows with the chosen one tinted, Submit disabled until every required field is answered, and Decline and Cancel as the two ways out. Free-text fields are declined: they need the composer's text field.
 - [x] Permission card between the transcript and the composer: warning glyph, the agent's title, the command or path in full, and one button per option the agent offered. Enter allows, Escape rejects. Design in `docs/permissions.md`.
 - [x] Empty state: coral mark, title, subtitle, primary button and the quiet way out.
 - [ ] Expanded reasoning, tool output and live status; the rows are static.

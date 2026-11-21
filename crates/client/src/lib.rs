@@ -15,7 +15,11 @@
 
 use std::net::TcpStream;
 
-use circulo_protocol::{ClientRequest, Hello, PROTOCOL_VERSION, ProtocolError, ServerMessage};
+use std::collections::BTreeMap;
+
+use circulo_protocol::{
+    ClientRequest, Hello, PROTOCOL_VERSION, ProtocolError, QuestionAction, ServerMessage,
+};
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket};
 
@@ -124,6 +128,24 @@ impl ClientWriter {
     /// Answers a permission request over the writer half of a split.
     pub fn answer_permission(&mut self, id: &str, option: Option<&str>) -> Result<(), ClientError> {
         send(&mut self.socket, &answer(id, option).encode()?)
+    }
+
+    /// Answers a question over the writer half of a split.
+    pub fn answer_question(
+        &mut self,
+        id: &str,
+        action: QuestionAction,
+        answers: BTreeMap<String, String>,
+    ) -> Result<(), ClientError> {
+        send(
+            &mut self.socket,
+            &ClientRequest::AnswerQuestion {
+                id: id.to_owned(),
+                action,
+                answers,
+            }
+            .encode()?,
+        )
     }
 }
 
