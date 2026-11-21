@@ -85,5 +85,5 @@ A developer who already uses one or more agent CLIs (Claude Code, Codex, OpenCod
 
 ## 8. Open questions
 
-- Exact set of providers for day-one v1.0 (OpenCode + Claude Code + Codex is the recommended minimum).
+- Decided for the second provider: Muse Code (`muse serve`, MSP). Claude Code and Codex stay later.
 - Final graphite token values once Waku screenshots are captured and adjusted.

@@ -20,9 +20,10 @@ type Message struct {
 
 // Project is a folder shown in the sidebar.
 type Project struct {
-	ID   string
-	Path string
-	Name string
+	ID    string
+	Path  string
+	Name  string
+	Agent string
 }
 
 // SessionInfo is one conversation in a project.
@@ -30,6 +31,7 @@ type SessionInfo struct {
 	ID      string
 	Project string
 	Title   string
+	Agent   string
 }
 
 // Catalog is one model the picker can offer.
@@ -58,6 +60,7 @@ type Model struct {
 	Messages  []Message
 	Models    []Catalog
 	choice    map[string]Choice
+	rewind    map[string]string
 	index     map[string]int
 }
 
@@ -76,12 +79,19 @@ func (m *Model) Apply(e protocol.Envelope) error {
 	case protocol.TypeStatus:
 		m.Status = e.Text
 	case protocol.TypeProject:
-		m.upsertProject(Project{ID: e.ID, Path: e.Path, Name: e.Name})
+		m.upsertProject(Project{ID: e.ID, Path: e.Path, Name: e.Name, Agent: e.Agent})
 	case protocol.TypeSession:
-		m.upsertSession(SessionInfo{ID: e.ID, Project: e.Project, Title: e.Name})
+		m.upsertSession(SessionInfo{ID: e.ID, Project: e.Project, Title: e.Name, Agent: e.Agent})
 	case protocol.TypeFocus:
 		m.Selected = e.ID
 		m.dropSession(e.ID)
+		m.Models = nil
+		delete(m.rewind, e.ID)
+	case protocol.TypeCheckpoint:
+		if m.rewind == nil {
+			m.rewind = map[string]string{}
+		}
+		m.rewind[e.Session] = e.ID
 	case protocol.TypeDelta:
 		m.append(e)
 		if e.Role != "user" {
@@ -127,6 +137,14 @@ func (m *Model) append(e protocol.Envelope) {
 	}
 	m.index[e.ID] = len(m.Messages)
 	m.Messages = append(m.Messages, Message{ID: e.ID, Session: e.Session, Role: e.Role, Text: e.Text})
+}
+
+// RewindID is the message whose checkpoint can restore the selected session.
+func (m *Model) RewindID() string {
+	if m.rewind == nil {
+		return ""
+	}
+	return m.rewind[m.Selected]
 }
 
 // Busy is true while a turn is being sent or streamed.
