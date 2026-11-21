@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/app",
+    "crates/app",
     "crates/core",
     "crates/git",
     "crates/persistence",
@@ -21,4 +22,8 @@ repository = "https://github.com/soycanopa/circulo"
 # no web view in the transcript, the sidebar or the composer.
 gpui = "0.2.2"
 
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+# Puzzle pieces. Dependencies point one way only.
 circulo-ui = { path = "crates/ui" }

@@ -837,8 +837,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "circulo-client"
+version = "0.1.0"
+dependencies = [
+ "circulo-protocol",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "circulo-core"
 version = "0.1.0"
+dependencies = [
+ "circulo-protocol",
+ "circulo-provider",
+ "uuid",
+]
+
+[[package]]
+name = "circulo-daemon"
+version = "0.1.0"
+dependencies = [
+ "circulo-client",
+ "circulo-core",
+ "circulo-protocol",
+ "circulo-provider",
+ "circulo-provider-demo",
+ "uuid",
+]
 
 [[package]]
 name = "circulo-git"
@@ -851,10 +876,27 @@ version = "0.1.0"
 [[package]]
 name = "circulo-protocol"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "circulo-provider"
 version = "0.1.0"
+dependencies = [
+ "circulo-protocol",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "circulo-provider-demo"
+version = "0.1.0"
+dependencies = [
+ "circulo-protocol",
+ "circulo-provider",
+]
 
 [[package]]
 name = "circulo-ui"
