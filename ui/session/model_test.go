@@ -28,6 +28,24 @@ func TestApplyStreamsThenSettles(t *testing.T) {
 	}
 }
 
+func TestApplySelectsAModel(t *testing.T) {
+	var m Model
+	steps := []protocol.Envelope{
+		{V: 1, Type: protocol.TypeSession, Seq: 1, ID: "ses_a", Project: "p", Name: "a"},
+		{V: 1, Type: protocol.TypeModel, Seq: 2, ID: "big-pickle", Provider: "opencode", Name: "Big Pickle", Variants: "low,high"},
+		{V: 1, Type: protocol.TypeCurrent, Seq: 3, ID: "ses_a", Provider: "opencode", ModelID: "big-pickle", Variant: "low"},
+	}
+	for _, e := range steps {
+		if err := m.Apply(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	label, variant := m.Selection()
+	if label != "Big Pickle" || variant != "low" || len(m.Models[0].Variants) != 2 {
+		t.Fatalf("%q %q %#v", label, variant, m.Models)
+	}
+}
+
 func TestFocusReplaysASession(t *testing.T) {
 	var m Model
 	steps := []protocol.Envelope{

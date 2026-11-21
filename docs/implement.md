@@ -20,9 +20,9 @@
 - The existing transcript renders that session. `cmd/core -demo` still plays the canned script.
 
 ## Phase 2 — Shared control surface
-- Model / reasoning effort discovery and switching
-- Message queue + steering
-- Abort
+- The core lists enabled chat models (`GET /api/model`) and the session's current model. The window's pickers send `model.set`.
+- Reasoning effort is the OpenCode model variant (`low`, `high`, and whatever else the model lists).
+- While a turn is streaming, Steer and Queue send `prompt.send` with `delivery` `steer` or `queue`. Stop sends `session.abort`, which interrupts the OpenCode turn.
 
 ## Phase 3 — Second provider + Git
 - Claude Code or Codex adapter

@@ -53,7 +53,26 @@ func TestSendPrompt(t *testing.T) {
 	if err := tt.Click("Send"); err != nil {
 		t.Fatal(err)
 	}
-	if got.Type != protocol.TypePrompt || got.ID != "ses_1" || got.Text != "hello" {
+	if got.Type != protocol.TypePrompt || got.ID != "ses_1" || got.Text != "hello" || got.Delivery != "" {
+		t.Fatalf("%#v", got)
+	}
+}
+
+func TestSteerAndStop(t *testing.T) {
+	var got []protocol.Envelope
+	app := NewApp(&Model{Selected: "ses_1", Status: "Streaming"})
+	app.draft = "wait"
+	app.Send = func(e protocol.Envelope) { got = append(got, e) }
+	tt := ui.NewTester(app.View, 980, 680)
+	if err := tt.Click("Steer"); err != nil {
+		t.Fatal(err)
+	}
+	app.draft = "next"
+	tt = ui.NewTester(app.View, 980, 680)
+	if err := tt.Click("Stop"); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Delivery != "steer" || got[0].Text != "wait" || got[1].Type != protocol.TypeAbort {
 		t.Fatalf("%#v", got)
 	}
 }
