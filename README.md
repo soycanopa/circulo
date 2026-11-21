@@ -52,6 +52,21 @@ The system is split into independent pieces. Dependency direction is one way.
 
 The UI never talks to a CLI. Providers never import the UI. The protocol package is the only shared contract. Core owns state, Git, and processes.
 
+## Run the prototype
+
+The window is a native MyGo app. On launch it starts `cmd/core` as another process, bound to loopback, and streams a canned history plus one live reply.
+
+```sh
+go tool mygo dev
+```
+
+To run the core yourself, start it and point the window at the address it prints:
+
+```sh
+go run ./cmd/core
+CIRCULO_CORE_ADDR=127.0.0.1:PORT go tool mygo dev
+```
+
 ## Documentation
 
 | Doc | What it decides |
