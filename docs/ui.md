@@ -105,6 +105,8 @@ Two rules, learned the hard way and worth keeping:
 2. **Every row is `w_full` and does not shrink.** A row measured at its minimum width reports a shorter height than it paints, so the next row lands on top of it. Turn rows mark `flex_shrink_0` on each block.
 
 Streaming changes a row's height without changing the row count; the list is reset while a turn runs so it measures the turn again instead of keeping last frame's height. Bottom-pinning is an explicit scroll, not a list alignment.
+
+Assistant text is CommonMark (`crates/ui/src/markdown.rs`, `pulldown-cmark`). Each text part parses into paragraph, heading, bullet list, code block and rule blocks; inline bold and code render through `StyledText::with_default_highlights` over the plain text's byte offsets. Base style is `TextStyle::default()` with the theme's text color at 13/20; inline code sits on the chip background. Unknown constructs keep their inner text so a newer agent cannot break the transcript.
 - [x] Collapsed reasoning and tool rows: icon, label, target, and a disclosure chevron or a spinner.
 - [x] Empty state: coral mark, title, subtitle, primary button and the quiet way out.
 - [ ] Expanded reasoning, tool output and live status; the rows are static.
