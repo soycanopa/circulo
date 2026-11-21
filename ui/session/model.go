@@ -50,18 +50,36 @@ type Choice struct {
 	Variant  string
 }
 
+// PermitChoice is one answer the provider offered for a permission card.
+type PermitChoice struct {
+	ID       string
+	Label    string
+	Decision string
+}
+
+// Permission is a tool approval waiting above the composer.
+type Permission struct {
+	ID          string
+	Session     string
+	Tool        string
+	Text        string
+	Requirement string
+	Choices     []PermitChoice
+}
+
 // Model is presentation state. Apply it on the UI thread only.
 type Model struct {
-	Connected bool
-	Status    string
-	Projects  []Project
-	Sessions  []SessionInfo
-	Selected  string
-	Messages  []Message
-	Models    []Catalog
-	choice    map[string]Choice
-	rewind    map[string]string
-	index     map[string]int
+	Connected  bool
+	Status     string
+	Projects   []Project
+	Sessions   []SessionInfo
+	Selected   string
+	Messages   []Message
+	Models     []Catalog
+	choice     map[string]Choice
+	rewind     map[string]string
+	Permission *Permission
+	index      map[string]int
 }
 
 // Apply folds one envelope into the transcript.
@@ -87,6 +105,14 @@ func (m *Model) Apply(e protocol.Envelope) error {
 		m.dropSession(e.ID)
 		m.Models = nil
 		delete(m.rewind, e.ID)
+		if m.Permission != nil && m.Permission.Session != e.ID {
+			m.Permission = nil
+		}
+	case protocol.TypePermit:
+		m.Permission = &Permission{
+			ID: e.ID, Session: e.Session, Tool: e.Name, Text: e.Text,
+			Requirement: e.Requirement, Choices: parseChoices(e.Variants),
+		}
 	case protocol.TypeCheckpoint:
 		if m.rewind == nil {
 			m.rewind = map[string]string{}
@@ -180,6 +206,25 @@ func (m *Model) Lookup(label string) (Catalog, bool) {
 		}
 	}
 	return Catalog{}, false
+}
+
+func parseChoices(raw string) []PermitChoice {
+	if raw == "" {
+		return nil
+	}
+	var out []PermitChoice
+	for _, line := range strings.Split(raw, "\n") {
+		parts := strings.Split(line, "\t")
+		if len(parts) < 2 || parts[0] == "" {
+			continue
+		}
+		ch := PermitChoice{ID: parts[0], Label: parts[1]}
+		if len(parts) > 2 {
+			ch.Decision = parts[2]
+		}
+		out = append(out, ch)
+	}
+	return out
 }
 
 func (m *Model) upsertCatalog(e protocol.Envelope) {

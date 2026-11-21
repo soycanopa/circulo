@@ -30,11 +30,10 @@
 - Before a normal prompt in a Git worktree, the core stores a checkpoint (`git stash create`, or HEAD when the tree is clean) tied to that message. Rewind runs `git reset --hard` to that revision and drops the local transcript from that message on. The provider session still has the later turns.
 
 ## Phase 4 — UI polish
-- Full sidebar (projects + sessions)
-- Beautiful markdown transcript
-- Permission cards
-- Status banners
-- Keyboard shortcuts
+- The window hides the system title bar and keeps a drag strip with the project, the session, and a calm status. The sidebar lists projects with their sessions and a filter. Files, Diff, and Terminal are an empty rail until a later phase fills them.
+- The transcript is markdown at 15pt. A status that is not idle, sending, streaming, connected, or the rewind sentence is a banner.
+- Enter sends. Shift+Enter inserts a newline. Cmd+Enter (Ctrl off macOS) steers while a turn is busy. Escape stops that turn. Steer, Queue, Stop, Send, and Rewind stay as buttons.
+- A Muse `approval/requested` notification becomes `permission.request`. The card's buttons are the choices Muse sent. `permission.reply` echoes that choice id and the requirement id into `approval/decide`. New Muse sessions still start `allowAll`, so a card only appears when the host asks.
 
 ## Phase 5 — Hardening & packaging
 - Performance pass on long transcripts

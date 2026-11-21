@@ -2,7 +2,7 @@
 
 - **Status:** Draft v1.0 (2026-11-20)
 - **Related:** [UX](ux.md) · [PRD](prd.md)
-- **Design source:** Copy / closely replicate Waku’s visual design and layout. Later personal adjustments expected. Visual language and interaction patterns only — no code copy (GPL-3.0).
+- **Design source:** Match the visual design and layout of [Waku](https://github.com/egoist/waku). Later personal adjustments expected. Visual language and interaction patterns only — no code copy (GPL-3.0).
 - **Implementation:** MyGo native UI (`ui` package), including `ui/markdown` for the transcript. The window is not a web frontend. A later Browser tab may use `Window.NewWebView` under the native view.
 
 ## 1. Design language (Waku graphite)
