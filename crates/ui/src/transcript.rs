@@ -267,6 +267,13 @@ fn segment_view(segment: &Segment, id: SharedString, theme: &Theme) -> AnyElemen
     }
 }
 
+/// A reasoning part and a shell command both can carry newlines. The collapsed
+/// row shows one line, and GPUI paints every line of a `\n`-bearing string from
+/// the same origin, so the text is joined with single spaces first.
+fn flatten(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn tool_icon(name: &str) -> &'static str {
     match name {
         "Read" => "icons/file-text.svg",
@@ -278,6 +285,12 @@ fn tool_icon(name: &str) -> &'static str {
 
 /// One collapsed activity row: icon, label, what it acted on, and a chevron or
 /// a spinner. Expanded output arrives with streaming.
+///
+/// The row hugs its content (`min_h`, no fixed height) and the detail is
+/// flattened to one line before it is painted. A provider may send reasoning
+/// with paragraphs and a shell command with newlines, and GPUI breaks text on
+/// `\n` whatever `white_space` says: a fixed-height row would paint those lines
+/// outside its box, over the rows below it.
 fn activity(
     id: &SharedString,
     theme: &Theme,
@@ -294,7 +307,7 @@ fn activity(
         .flex()
         .items_center()
         .gap(px(6.))
-        .h(px(26.))
+        .min_h(px(26.))
         .text_size(px(12.))
         .child(icon(path, 13., theme.text_faint))
         .when_some(name, |row, name| {
@@ -308,11 +321,12 @@ fn activity(
         .child(
             div()
                 .flex_1()
+                .min_w(px(0.))
                 .overflow_hidden()
                 .whitespace_nowrap()
                 .text_ellipsis()
                 .text_color(theme.text_faint)
-                .child(detail.to_owned()),
+                .child(flatten(detail)),
         )
         .child(if done {
             icon("icons/chevron-right.svg", 11., theme.text_faint)
@@ -379,4 +393,18 @@ fn empty(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
                 .child("×")
                 .child(copy.secondary),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::flatten;
+
+    #[test]
+    fn an_activity_detail_is_flattened_to_one_line() {
+        // GPUI breaks a text element on every `\n` it finds, whatever the white
+        // space says, so a multi-line detail must never reach the collapsed row.
+        assert_eq!(flatten("a\nb\r\n\n c\t d "), "a b c d");
+        assert_eq!(flatten("single line"), "single line");
+        assert_eq!(flatten("   "), "");
+    }
 }

@@ -104,6 +104,11 @@ Two rules, learned the hard way and worth keeping:
 1. **The scroll container is a `List`, not a flex column.** A `div` that is both the scrolling viewport and the column measures its children against the viewport and they shrink into each other. The list virtualizes, owns the offset and gives every row a stable id (`row-{index}`, `row-{index}-segment-{index}`).
 2. **Every row is `w_full` and does not shrink.** A row measured at its minimum width reports a shorter height than it paints, so the next row lands on top of it. Turn rows mark `flex_shrink_0` on each block.
 
+Two more, learned from a real OpenCode turn rather than from the demo one:
+
+3. **No fixed heights on a row that carries provider text.** The reasoning and tool rows use `min_h`, never `h`: a row is allowed to grow with its content and push the rows below it. A fixed height only works while the content fits.
+4. **A collapsed row's text is flattened to one line before it is painted.** GPUI splits any text element on `\n` regardless of `white_space`, so a reasoning part with paragraphs, or a shell command written on two lines, painted every line from one 26 px box and straight over the next rows. `transcript::flatten` joins whitespace runs with single spaces; `whitespace_nowrap` and `text_ellipsis` then do their job.
+
 Streaming changes a row's height without changing the row count; the list is reset while a turn runs so it measures the turn again instead of keeping last frame's height. Bottom-pinning is an explicit scroll, not a list alignment.
 
 ### How markdown is rendered

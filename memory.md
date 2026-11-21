@@ -12,7 +12,7 @@ Last updated: 2026-11-21, markdown rendering in the transcript (`feature/markdow
 - **Real provider**: OpenCode over **Agent Client Protocol** (`opencode acp`, stdio JSON-RPC). Verified against OpenCode 2.3.2. Reasoning, tool calls and text stream into the window.
 - **Markdown in the transcript** (`crates/ui/src/markdown.rs`): `pulldown-cmark` → blocks and spans → `StyledText` with one `TextRun` per span. Paragraphs, headings, bullet and ordered lists, quotes, fenced code, rules, bold, italic, inline code, strikethrough, links (coloured, not clickable). Partial input is safe: the fence or `**` marker that has not arrived yet does not break the parse. 15 fixtures in the module, and the demo provider's canned turn exercises the shapes.
 - **Lifecycle**: the app spawns the daemon and holds its stdin open; the daemon exits on EOF, so nothing survives the app (verified with SIGKILL).
-- 39 tests green; CI runs fmt + clippy + test on macOS.
+- 40 tests green; CI runs fmt + clippy + test on macOS.
 
 Run it:
 
@@ -38,13 +38,14 @@ Real-provider test (spends a model call): `cargo test -p circulo-provider-openco
 
 ## 3. Pending after permissions, in priority order
 
-1. **Composer text input.** The prompt is currently sent automatically at startup (`PROMPT` in `crates/app/src/main.rs`). Needs a real text field, Enter to send, Shift+Enter for newline.
-2. **Model / agent picker.** `session/new` returns `configOptions` (model list, agents). Wire `session/set_config_option` and the existing pickers.
-3. **Session continuity.** One `opencode acp` process per session instead of per turn, and ACP `session/load` (the agent advertises `loadSession: true`).
-4. **Persistence (SQLite)** in `crates/persistence`, owned by the core. Then the sidebar shows real sessions instead of `mock.rs`.
-5. **Pin-to-bottom / scroll UX.** The transcript list resets while a turn runs (needed for correct heights), and is `ListAlignment::Top`; add a scroll-to-bottom affordance like the reference.
-6. **Markdown, second pass.** Tables, footnotes and clickable links; parse results are rebuilt every frame today, so cache them per segment if transcripts get long.
-7. **Remote/pairing.** Decisions in `docs/remote.md`: QR with a saved tailcat key + `--allow`; the desktop owns the tunnel and starts it with the daemon. `tailcat` is **not installed** on this machine. Open question: what the QR payload carries (bare address vs address + token + node key).
+1. **Tool rows never finish with OpenCode (found 2026-11-21).** A real turn ends with several rows still showing the spinner: some tool calls never get `Part::Tool { state: Done }`. Check the ACP `tool_call_update` statuses in `crates/providers/opencode` — the adapter is dropping a terminal state.
+2. **Composer text input.** The prompt is currently sent automatically at startup (`PROMPT` in `crates/app/src/main.rs`). Needs a real text field, Enter to send, Shift+Enter for newline.
+3. **Model / agent picker.** `session/new` returns `configOptions` (model list, agents). Wire `session/set_config_option` and the existing pickers.
+4. **Session continuity.** One `opencode acp` process per session instead of per turn, and ACP `session/load` (the agent advertises `loadSession: true`).
+5. **Persistence (SQLite)** in `crates/persistence`, owned by the core. Then the sidebar shows real sessions instead of `mock.rs`.
+6. **Pin-to-bottom / scroll UX.** The transcript list resets while a turn runs (needed for correct heights), and is `ListAlignment::Top`; a long answer grows under the composer. Add a scroll-to-bottom affordance like the reference.
+7. **Markdown, second pass.** Tables, footnotes and clickable links; parse results are rebuilt every frame today, so cache them per segment if transcripts get long.
+8. **Remote/pairing.** Decisions in `docs/remote.md`: QR with a saved tailcat key + `--allow`; the desktop owns the tunnel and starts it with the daemon. `tailcat` is **not installed** on this machine. Open question: what the QR payload carries (bare address vs address + token + node key).
 
 ## 4. Architecture map
 
@@ -68,7 +69,9 @@ Written up in `docs/ui.md` §"How the transcript is rendered". Short version:
 
 1. The scroll container is a GPUI `List` of **turn rows**, not a flex column. A scrolling flex column measures children against the viewport and compresses them.
 2. Rows are `w_full` + `min_w_0`; segments inside a row are `flex_shrink_0`. A row measured at minimum width reports less height than it paints, and the next row lands on top.
-3. A streaming turn changes its row height without changing the row count, so the list is reset while `status.running`.
+3. Reasoning and tool rows use `min_h`, never a fixed `h`: they hug their content and push what follows.
+4. GPUI splits a text element on `\n` **whatever `white_space` says**, so a collapsed row's text is flattened to one line (`transcript::flatten`) before painting. This is what actually caused the overlap that survived PR #27: reasoning with paragraphs painted every line from a 26 px box. The demo turn never showed it because its reasoning had no newlines; only a real OpenCode turn did.
+5. A streaming turn changes its row height without changing its row count, so the list is reset while `status.running`.
 
 Waku uses the same shape (`List`, one id per row). Waku is **GPL-3.0** and Circulo is **MIT**: study the approach, never copy a file, function or type.
 

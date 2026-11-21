@@ -107,7 +107,12 @@ pub(crate) fn markdown(text: &str, theme: &Theme) -> AnyElement {
 
         // The margin lives on a wrapper so every block kind can use it without
         // repeating the call.
-        column = column.child(div().mt(px(top)).child(block_view(block, theme)));
+        column = column.child(
+            div()
+                .flex_shrink_0()
+                .mt(px(top))
+                .child(block_view(block, theme)),
+        );
     }
 
     column.into_any_element()
