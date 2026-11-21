@@ -8,12 +8,16 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use async_channel::{Receiver, Sender};
-use circulo_protocol::{ClientRequest, HistoryTurn, QuestionAction, ServerMessage, SessionSummary};
+use circulo_protocol::{
+    ClientRequest, ConfigOption, HistoryTurn, QuestionAction, ServerMessage, SessionSummary,
+};
 use gpui::{
     Context, FocusHandle, IntoElement, KeyDownEvent, ListState, Render, Window, div, prelude::*, px,
 };
 
-use crate::composer::{Field, KeyHandler, SendHandler, composer};
+use crate::composer::{
+    ChooseHandler, Field, KeyHandler, Pickers, SendHandler, ToggleHandler, composer,
+};
 use crate::input::TextInput;
 use crate::live::{Card, Transcript};
 use crate::mock::{self, Workspace};
@@ -52,6 +56,10 @@ pub struct Shell {
     /// The field to put the keyboard on when a card appears.
     focus_text: Option<String>,
     question_shown: Option<String>,
+    /// The daemon's settings for the open session: what the pickers draw.
+    options: Vec<ConfigOption>,
+    /// The option id whose menu is open above the composer, if any.
+    open_picker: Option<String>,
 }
 
 impl Shell {
@@ -86,6 +94,8 @@ impl Shell {
             question_focuses: BTreeMap::new(),
             focus_text: None,
             question_shown: None,
+            options: Vec::new(),
+            open_picker: None,
         };
 
         cx.spawn(async move |this, cx| {
@@ -124,12 +134,27 @@ impl Shell {
             ServerMessage::SessionStarted { session } => {
                 self.session = session;
                 self.transcript = Transcript::default();
+                self.clear_options();
                 self.request(ClientRequest::ListSessions);
+            }
+            ServerMessage::Options { session, options } => {
+                // A late list for a session already left behind is not drawn.
+                if session != self.session {
+                    return;
+                }
+                self.options = options;
+                // The open menu may name an option the new list does not have.
+                if let Some(open) = &self.open_picker
+                    && !self.options.iter().any(|option| &option.id == open)
+                {
+                    self.open_picker = None;
+                }
             }
             ServerMessage::History { session, turns } => {
                 self.session = session;
                 self.transcript = Transcript::default();
                 self.transcript.hydrate(turns);
+                self.clear_options();
             }
             ServerMessage::TurnFinished { .. } => {
                 self.transcript.apply(message);
@@ -157,6 +182,31 @@ impl Shell {
 
     fn request(&self, request: ClientRequest) {
         let _ = self.requests.send_blocking(request);
+    }
+
+    /// The options belong to the open session; a new one starts with none
+    /// until the daemon reports them.
+    fn clear_options(&mut self) {
+        self.options.clear();
+        self.open_picker = None;
+    }
+
+    /// Opens the option's menu, or closes it when it is already open.
+    fn toggle_picker(&mut self, id: Option<String>, cx: &mut Context<Self>) {
+        self.open_picker = id;
+        cx.notify();
+    }
+
+    /// Sends the choice to the daemon and closes the menu. The refreshed list
+    /// comes back as `Options`; until then the picker keeps its old value.
+    fn choose_option(&mut self, id: String, value: String, cx: &mut Context<Self>) {
+        self.open_picker = None;
+        self.request(ClientRequest::SetOption {
+            session: self.session.clone(),
+            id,
+            value,
+        });
+        cx.notify();
     }
 
     /// Drops the card and sends the answer to the daemon. The daemon validates
@@ -209,12 +259,19 @@ impl Shell {
         cx.notify();
     }
 
-    /// Editing keys for the composer. Enter sends, Shift+Enter breaks the line,
-    /// and everything else is the buffer's own business.
+    /// Editing keys for the composer. Escape closes an open option menu,
+    /// Enter sends, Shift+Enter breaks the line, and everything else is the
+    /// buffer's own business.
     fn input_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         let key = event.keystroke.key.as_str();
         let modifiers = event.keystroke.modifiers;
         let plain = !modifiers.control && !modifiers.alt && !modifiers.platform;
+
+        if key == "escape" && self.open_picker.is_some() {
+            self.open_picker = None;
+            cx.notify();
+            return;
+        }
 
         match key {
             "enter" if !modifiers.shift => {
@@ -421,12 +478,26 @@ impl Render for Shell {
                 let on_send: SendHandler = Rc::new(move |_window, cx| {
                     shell.update(cx, |shell, cx| shell.submit(cx));
                 });
+                let shell = cx.entity();
+                let on_toggle: ToggleHandler = Rc::new(move |id, _window, cx| {
+                    shell.update(cx, |shell, cx| shell.toggle_picker(id, cx));
+                });
+                let shell = cx.entity();
+                let on_choose: ChooseHandler = Rc::new(move |id, value, _window, cx| {
+                    shell.update(cx, |shell, cx| shell.choose_option(id, value, cx));
+                });
                 let focused = self.composer_focus.is_focused(window);
 
                 column.child(composer(
                     &theme,
                     &self.workspace,
                     &self.transcript,
+                    Pickers {
+                        options: &self.options,
+                        open: self.open_picker.as_deref(),
+                        on_toggle,
+                        on_choose,
+                    },
                     Field {
                         input: &self.input,
                         focus: &self.composer_focus,
