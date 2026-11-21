@@ -1,0 +1,8 @@
+{
+  "name": "Circulo",
+  "slug": "circulo",
+  "identifier": "work.dosmas.circulo",
+  "version": "0.1.0",
+  "main": "cmd/circulo",
+  "linux": { "webview": false }
+}

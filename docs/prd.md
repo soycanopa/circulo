@@ -8,7 +8,7 @@
 ## 1. Vision
 
 Circulo is a local-first native desktop app for working with coding-agent CLIs.  
-v1.0 goal: reach **feature parity with Waku’s initial capabilities** while being built entirely in **MyGo** (Go, native UI or web frontend).
+v1.0 goal: reach **feature parity with Waku’s initial capabilities** while being built entirely in **MyGo** (Go, native UI).
 
 One native window where a developer manages projects, runs independent agent sessions, watches work live (streaming transcripts, tool calls, reasoning), switches models/reasoning effort, steers or queues messages mid-turn, and rewinds Git-backed work with conversation-aware checkpoints — all staying on the machine.
 
@@ -78,9 +78,12 @@ A developer who already uses one or more agent CLIs (Claude Code, Codex, OpenCod
 - No dependency on external cloud services for core operation.
 - Architecture clean enough that mobile can be added later with the same core.
 
-## 7. Open questions
+## 7. Decisions (2026-11-20)
 
-- Native UI (MyGo `ui` package) vs web frontend inside MyGo webview for the transcript-heavy main view? Prefer native.
+- **Native UI.** The window is MyGo `ui`, including the transcript (`ui/markdown`). A web frontend is not the app. A later Browser tab may embed `Window.NewWebView` under the native view. That does not move the transcript, sidebar, or composer into a page.
+- **Core is its own process.** The UI process holds presentation state and the protocol client. Projects, sessions, providers, Git, and storage live in the core process. Packages stay independent inside that split.
+
+## 8. Open questions
+
 - Exact set of providers for day-one v1.0 (OpenCode + Claude Code + Codex is the recommended minimum).
-- Daemon process vs single-process with clear internal boundaries. Prefer clear process or package boundaries so pieces stay independent.
 - Final graphite token values once Waku screenshots are captured and adjusted.
