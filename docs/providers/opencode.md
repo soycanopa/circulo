@@ -34,6 +34,7 @@ documented message set, so it is the honest integration.
 | `agent_thought_chunk` | `Reasoning { delta }` |
 | `tool_call`, `tool_call_update` | `Tool { id, name, detail, state }`, one row per `toolCallId` |
 | `session/request_permission` | a permission card; the answer goes back as the chosen `optionId` |
+| `elicitation/create` (form) | a question card; `accept` returns the values keyed by schema property |
 
 `detail` prefers the tool's first location path, then `rawInput.path`. A tool is
 `Running` while pending or in progress, `Done` when completed or failed; a

@@ -18,7 +18,9 @@ use crate::input::TextInput;
 use crate::live::{Card, Transcript};
 use crate::mock::{self, Workspace};
 use crate::permission::{Answer, permission_card};
-use crate::question::{QuestionEvent, QuestionHandler, question_card};
+use crate::question::{
+    Draft, Handlers, QuestionEvent, QuestionHandler, TextKeyHandler, question_card,
+};
 use crate::sidebar::sidebar;
 use crate::theme::Theme;
 use crate::transcript::{new_list_state, transcript};
@@ -43,6 +45,12 @@ pub struct Shell {
     /// Choices made on the question card that is showing. Cleared when a new
     /// question takes the slot.
     question_answers: BTreeMap<String, String>,
+    /// One buffer per free-text field of that card.
+    question_inputs: BTreeMap<String, TextInput>,
+    /// One focus handle per free-text field, so a click lands in the right one.
+    question_focuses: BTreeMap<String, FocusHandle>,
+    /// The field to put the keyboard on when a card appears.
+    focus_text: Option<String>,
     question_shown: Option<String>,
 }
 
@@ -74,6 +82,9 @@ impl Shell {
             card_focus: cx.focus_handle(),
             focus_card: false,
             question_answers: BTreeMap::new(),
+            question_inputs: BTreeMap::new(),
+            question_focuses: BTreeMap::new(),
+            focus_text: None,
             question_shown: None,
         };
 
@@ -166,7 +177,14 @@ impl Shell {
                 self.question_answers.insert(field, value);
             }
             QuestionEvent::Submit => {
-                let answers = std::mem::take(&mut self.question_answers);
+                // Choices and typed answers travel in one map: the agent's
+                // schema decides how each field is read.
+                let mut answers = std::mem::take(&mut self.question_answers);
+                for (field, input) in std::mem::take(&mut self.question_inputs) {
+                    if !input.text().is_empty() {
+                        answers.insert(field, input.text().to_owned());
+                    }
+                }
                 self.pop_card(&request.id);
                 self.request(ClientRequest::AnswerQuestion {
                     id: request.id,
@@ -236,6 +254,43 @@ impl Shell {
         cx.notify();
     }
 
+    /// Editing keys for a free-text answer. Enter submits the card, the way it
+    /// sends the composer.
+    fn question_text_key(&mut self, field: &str, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        let key = event.keystroke.key.as_str();
+        let modifiers = event.keystroke.modifiers;
+        let plain = !modifiers.control && !modifiers.alt && !modifiers.platform;
+
+        match key {
+            "enter" => {
+                self.on_question(QuestionEvent::Submit, cx);
+                return;
+            }
+            "escape" => {
+                self.on_question(QuestionEvent::Cancel, cx);
+                return;
+            }
+            _ => {}
+        }
+
+        let input = self.question_inputs.entry(field.to_owned()).or_default();
+        match key {
+            "backspace" => input.backspace(),
+            "delete" => input.delete(),
+            "left" => input.left(),
+            "right" => input.right(),
+            "home" => input.home(),
+            "end" => input.end(),
+            _ if plain => match &event.keystroke.key_char {
+                Some(text) => input.insert(text),
+                None => return,
+            },
+            _ => return,
+        }
+
+        cx.notify();
+    }
+
     fn pop_card(&mut self, id: &str) {
         if let Some(index) = self
             .transcript
@@ -246,6 +301,9 @@ impl Shell {
             self.transcript.cards.remove(index);
         }
         self.question_answers.clear();
+        self.question_inputs.clear();
+        self.question_focuses.clear();
+        self.focus_text = None;
         self.question_shown = None;
     }
 }
@@ -277,12 +335,31 @@ impl Render for Shell {
 
         let front = self.transcript.cards.front().cloned();
 
-        // A question starts with no choices; answers belong to the card showing.
+        // A question starts empty; answers belong to the card showing. Its text
+        // fields get a focus handle each, and the first one takes the keyboard.
         if let Some(Card::Question(request)) = &front
             && self.question_shown.as_deref() != Some(request.id.as_str())
         {
             self.question_shown = Some(request.id.clone());
             self.question_answers.clear();
+            self.question_inputs.clear();
+            self.question_focuses.clear();
+
+            for field in &request.fields {
+                if matches!(field.kind, circulo_protocol::QuestionKind::Text) {
+                    self.question_focuses
+                        .insert(field.id.clone(), cx.focus_handle());
+                    self.question_inputs
+                        .insert(field.id.clone(), TextInput::default());
+                }
+            }
+            self.focus_text = self.question_focuses.keys().next().cloned();
+        }
+
+        if let Some(field) = self.focus_text.take()
+            && let Some(handle) = self.question_focuses.get(&field)
+        {
+            handle.focus(window);
         }
 
         let focus = self.card_focus.clone();
@@ -301,7 +378,21 @@ impl Render for Shell {
                     let on: QuestionHandler = Rc::new(move |event, _window, cx| {
                         shell.update(cx, |shell, cx| shell.on_question(event, cx));
                     });
-                    question_card(&theme, &request, &self.question_answers, &focus, on)
+                    let shell = cx.entity();
+                    let text_key: TextKeyHandler = Rc::new(move |field, event, _window, cx| {
+                        let field = field.to_owned();
+                        shell.update(cx, |shell, cx| shell.question_text_key(&field, event, cx));
+                    });
+                    let handlers = Handlers {
+                        event: on,
+                        text_key,
+                    };
+                    let draft = Draft {
+                        choices: &self.question_answers,
+                        texts: &self.question_inputs,
+                        focuses: &self.question_focuses,
+                    };
+                    question_card(&theme, &request, &draft, &focus, window, &handlers)
                 }
             }
         });
