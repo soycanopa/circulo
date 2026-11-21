@@ -15,9 +15,14 @@
 //! Tables are laid out as rows of weighted cells, so a two-column table with one
 //! long column does not waste half the width.
 //!
-//! What is deliberately not supported yet: footnotes, math, raw HTML (dropped),
-//! and links are coloured but not clickable: a click would have to hit-test a
-//! byte range inside a text layout this renderer rebuilds every frame.
+//! Footnotes parse into superscript references and a numbered list at the end.
+//!
+//! What is deliberately not supported yet: math and raw HTML (dropped). Links
+//! are coloured but not clickable: GPUI 0.2.2 exposes no text hit-testing (no
+//! `index_for_point`) and a mouse event carries window coordinates, not an
+//! element-local point, so opening a URL would need a different inline layout.
+
+use std::rc::Rc;
 
 use gpui::{
     AnyElement, Font, FontFeatures, FontStyle, FontWeight, Hsla, IntoElement, SharedString,
@@ -53,6 +58,9 @@ pub(crate) struct Inline {
     pub code: bool,
     pub strike: bool,
     pub link: bool,
+    /// A footnote reference, painted in the accent colour. The number is kept
+    /// here rather than parsed back out of the glyphs.
+    pub note: Option<usize>,
 }
 
 /// A run of text with one inline style.
@@ -100,13 +108,43 @@ pub(crate) enum Block {
         head: Vec<Vec<Span>>,
         rows: Vec<Vec<Vec<Span>>>,
     },
+    /// A footnote definition, painted like an ordered list item with its number.
+    Footnote {
+        number: usize,
+        spans: Vec<Span>,
+    },
     Rule,
 }
 
-/// Parse a message into blocks and paint them.
-pub(crate) fn markdown(text: &str, theme: &Theme) -> AnyElement {
-    let blocks = blocks(text);
+/// The parsed form of one streamed text segment, kept between frames.
+///
+/// A finished message only changes when the window re-renders (scroll, hover,
+/// resize), and re-parsing it every time is waste. The length is the version:
+/// streamed text only ever grows, and the cache dies with the segment that owns
+/// it, so a new session cannot read a stale parse.
+#[derive(Default)]
+pub(crate) struct Cached {
+    seen: std::cell::Cell<usize>,
+    blocks: std::cell::RefCell<Option<Rc<Vec<Block>>>>,
+}
 
+impl Cached {
+    pub(crate) fn blocks(&self, text: &str) -> Rc<Vec<Block>> {
+        if let Some(blocks) = self.blocks.borrow().as_ref()
+            && self.seen.get() == text.len()
+        {
+            return blocks.clone();
+        }
+
+        let blocks = Rc::new(blocks(text));
+        *self.blocks.borrow_mut() = Some(blocks.clone());
+        self.seen.set(text.len());
+        blocks
+    }
+}
+
+/// Paint parsed blocks.
+pub(crate) fn markdown(blocks: &[Block], theme: &Theme) -> AnyElement {
     let mut column = div().w_full().min_w(px(0.)).flex().flex_col();
     let mut previous = None;
     let mut first = true;
@@ -136,7 +174,7 @@ pub(crate) fn markdown(text: &str, theme: &Theme) -> AnyElement {
     column.into_any_element()
 }
 
-fn block_view(block: Block, theme: &Theme) -> AnyElement {
+fn block_view(block: &Block, theme: &Theme) -> AnyElement {
     match block {
         Block::Paragraph(spans) => text_block(
             spans,
@@ -175,7 +213,7 @@ fn block_view(block: Block, theme: &Theme) -> AnyElement {
                         .text_color(theme.text_muted)
                         .text_size(px(BODY_SIZE))
                         .line_height(px(BODY_LINE))
-                        .child(marker_text(marker, depth)),
+                        .child(marker_text(*marker, *depth)),
                 )
                 .child(
                     div()
@@ -215,6 +253,29 @@ fn block_view(block: Block, theme: &Theme) -> AnyElement {
             .child(StyledText::new(text))
             .into_any_element(),
         Block::Table { aligns, head, rows } => table(aligns, head, rows, theme),
+        Block::Footnote { number, spans } => div()
+            .w_full()
+            .min_w(px(0.))
+            .flex()
+            .child(
+                div()
+                    .w(px(LIST_INDENT))
+                    .flex_shrink_0()
+                    .text_size(px(12.))
+                    .line_height(px(BODY_LINE))
+                    .text_color(theme.text_faint)
+                    .child(SharedString::from(format!("{number}."))),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .text_size(px(12.))
+                    .line_height(px(BODY_LINE))
+                    .text_color(theme.text_muted)
+                    .child(styled(spans, theme, theme.text_muted, FontWeight::NORMAL)),
+            )
+            .into_any_element(),
         Block::Rule => div()
             .w_full()
             .h(px(1.))
@@ -228,9 +289,9 @@ fn block_view(block: Block, theme: &Theme) -> AnyElement {
 /// flex basis, weighted by the longest text the column holds, so a two-column
 /// table with one long column does not waste half the width on the short one.
 fn table(
-    aligns: Vec<Align>,
-    head: Vec<Vec<Span>>,
-    rows: Vec<Vec<Vec<Span>>>,
+    aligns: &[Align],
+    head: &[Vec<Span>],
+    rows: &[Vec<Vec<Span>>],
     theme: &Theme,
 ) -> AnyElement {
     let columns = head.len().max(rows.iter().map(Vec::len).max().unwrap_or(0));
@@ -241,7 +302,7 @@ fn table(
     // Weight per column: the longest cell text, floored so a narrow "N" column
     // still gets a readable share.
     let mut weights = vec![6_usize; columns];
-    for row in std::iter::once(&head).chain(rows.iter()) {
+    for row in std::iter::once(head).chain(rows.iter().map(Vec::as_slice)) {
         for (index, cell) in row.iter().enumerate() {
             let length: usize = cell.iter().map(|span| span.text.chars().count()).sum();
             weights[index] = weights[index].max(length);
@@ -310,7 +371,7 @@ fn table_row(
                 .line_height(px(18.))
                 .text_align(text_align)
                 .child(styled(
-                    cells.get(index).cloned().unwrap_or_default(),
+                    cells.get(index).map(Vec::as_slice).unwrap_or(&[]),
                     theme,
                     theme.text,
                     weight,
@@ -322,7 +383,7 @@ fn table_row(
 }
 
 fn text_block(
-    spans: Vec<Span>,
+    spans: &[Span],
     theme: &Theme,
     color: gpui::Rgba,
     weight: FontWeight,
@@ -336,6 +397,37 @@ fn text_block(
         .line_height(px(line))
         .child(styled(spans, theme, color, weight))
         .into_any_element()
+}
+
+/// Superscript digits for a footnote reference. A bare `[1]` breaks across a
+/// line: GPUI treats a closing bracket as a break opportunity.
+fn superscript(number: usize) -> String {
+    const DIGITS: [char; 10] = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
+    let digits: String = number
+        .to_string()
+        .chars()
+        .filter_map(|digit| digit.to_digit(10).map(|digit| DIGITS[digit as usize]))
+        .collect();
+    digits
+}
+
+/// Every span vector a block owns, for the passes that rewrite text after the
+/// parse (today: dropping notes that were never defined).
+fn block_spans_mut(block: &mut Block) -> Vec<&mut Vec<Span>> {
+    match block {
+        Block::Paragraph(spans) | Block::Quote(spans) | Block::Footnote { spans, .. } => {
+            vec![spans]
+        }
+        Block::Heading { spans, .. } => vec![spans],
+        Block::Item { spans, marker, .. } => {
+            let _ = marker;
+            vec![spans]
+        }
+        Block::Table { head, rows, .. } => {
+            head.iter_mut().chain(rows.iter_mut().flatten()).collect()
+        }
+        Block::Code(_) | Block::Rule => Vec::new(),
+    }
 }
 
 fn align_of(align: pulldown_cmark::Alignment) -> Align {
@@ -356,7 +448,7 @@ fn marker_text(marker: Option<Marker>, depth: usize) -> SharedString {
 
 /// One text element with a run per span. The runs must cover the text exactly;
 /// `StyledText::with_runs` asserts it.
-fn styled(spans: Vec<Span>, theme: &Theme, color: gpui::Rgba, weight: FontWeight) -> StyledText {
+fn styled(spans: &[Span], theme: &Theme, color: gpui::Rgba, weight: FontWeight) -> StyledText {
     let mut plain = String::new();
     let mut runs = Vec::with_capacity(spans.len());
 
@@ -365,7 +457,7 @@ fn styled(spans: Vec<Span>, theme: &Theme, color: gpui::Rgba, weight: FontWeight
             continue;
         }
         plain.push_str(&span.text);
-        runs.push(text_run(&span, theme, color, weight));
+        runs.push(text_run(span, theme, color, weight));
     }
 
     StyledText::new(plain).with_runs(runs)
@@ -373,7 +465,7 @@ fn styled(spans: Vec<Span>, theme: &Theme, color: gpui::Rgba, weight: FontWeight
 
 fn text_run(span: &Span, theme: &Theme, color: gpui::Rgba, weight: FontWeight) -> TextRun {
     let style = span.style;
-    let color: Hsla = if style.link {
+    let color: Hsla = if style.link || style.note.is_some() {
         theme.accent.into()
     } else {
         color.into()
@@ -413,6 +505,7 @@ pub(crate) fn blocks(text: &str) -> Vec<Block> {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_FOOTNOTES
         | Options::ENABLE_GFM;
     let mut builder = Builder::default();
 
@@ -440,6 +533,21 @@ struct Builder {
     heading: Option<u8>,
     /// The table being built, if the parser is inside one.
     table: Option<TableState>,
+    /// Footnote labels in the order they were first referenced. The position
+    /// plus one is the number both the reference and the definition paint.
+    notes: Vec<NoteEntry>,
+    /// The footnote definition being collected.
+    footnote: Option<FootnoteState>,
+}
+
+struct FootnoteState {
+    number: usize,
+    spans: Vec<Span>,
+}
+
+struct NoteEntry {
+    label: String,
+    defined: bool,
 }
 
 #[derive(Default)]
@@ -497,9 +605,17 @@ impl Builder {
                 };
                 self.push_span(&text, style);
             }
-            // Raw HTML and footnote references are dropped rather than shown
-            // as markup: an agent's `<br>` is noise, not content.
-            Event::Html(_) | Event::InlineHtml(_) | Event::FootnoteReference(_) => {}
+            // Raw HTML is dropped rather than shown as markup: an agent's
+            // `<br>` is noise, not content.
+            Event::Html(_) | Event::InlineHtml(_) => {}
+            Event::FootnoteReference(label) => {
+                let number = self.note_number(&label);
+                let style = Inline {
+                    note: Some(number),
+                    ..self.style
+                };
+                self.push_span(&superscript(number), style);
+            }
         }
     }
 
@@ -514,6 +630,14 @@ impl Builder {
                     aligns: alignment.iter().map(|align| align_of(*align)).collect(),
                     ..TableState::default()
                 })
+            }
+            Tag::FootnoteDefinition(label) => {
+                let number = self.note_number(&label);
+                self.notes[number - 1].defined = true;
+                self.footnote = Some(FootnoteState {
+                    number,
+                    spans: Vec::new(),
+                });
             }
             Tag::TableHead => {}
             Tag::TableRow => {
@@ -596,6 +720,14 @@ impl Builder {
                     });
                 }
             }
+            TagEnd::FootnoteDefinition => {
+                if let Some(footnote) = self.footnote.take() {
+                    self.blocks.push(Block::Footnote {
+                        number: footnote.number,
+                        spans: footnote.spans,
+                    });
+                }
+            }
             TagEnd::Item => {
                 // A tight list has no paragraph wrapper, so text still sitting
                 // in the buffer belongs to the item that is closing.
@@ -645,6 +777,18 @@ impl Builder {
 
         let spans = std::mem::take(&mut self.spans);
 
+        if let Some(footnote) = &mut self.footnote {
+            // A definition may hold several paragraphs; they read as one note.
+            if !footnote.spans.is_empty() {
+                footnote.spans.push(Span {
+                    text: " ".into(),
+                    style: Inline::default(),
+                });
+            }
+            footnote.spans.extend(spans);
+            return;
+        }
+
         if let Some(level) = self.heading.take() {
             self.blocks.push(Block::Heading { level, spans });
             return;
@@ -674,8 +818,72 @@ impl Builder {
         self.blocks.push(Block::Paragraph(spans));
     }
 
+    /// The number a footnote label paints as: its place in the reference order,
+    /// one-based. A definition that was never referenced takes the next number,
+    /// so a note still renders instead of vanishing.
+    fn note_number(&mut self, label: &str) -> usize {
+        match self.notes.iter().position(|note| note.label == label) {
+            Some(index) => index + 1,
+            None => {
+                self.notes.push(NoteEntry {
+                    label: label.to_owned(),
+                    defined: false,
+                });
+                self.notes.len()
+            }
+        }
+    }
+
+    /// A reference with no definition is not a note: GitHub leaves the literal
+    /// `[^label]` in place, so a dangling number never points at nothing.
+    fn drop_dangling_notes(&mut self) {
+        if self.notes.iter().all(|note| note.defined) {
+            return;
+        }
+
+        for block in &mut self.blocks {
+            for spans in block_spans_mut(block) {
+                for span in spans {
+                    let Some(number) = span.style.note else {
+                        continue;
+                    };
+                    if let Some(note) = self.notes.get(number.wrapping_sub(1))
+                        && !note.defined
+                    {
+                        span.text = format!("[^{}]", note.label);
+                        span.style.note = None;
+                    }
+                }
+            }
+        }
+    }
+
     fn finish(&mut self) {
         self.flush();
+        self.drop_dangling_notes();
+        self.notes_to_the_end();
+    }
+
+    /// A definition may sit anywhere in the message; notes read as a block at
+    /// the end, in reference order, the way CommonMark renderers show them.
+    fn notes_to_the_end(&mut self) {
+        let mut body = Vec::with_capacity(self.blocks.len());
+        let mut notes = Vec::new();
+
+        for block in std::mem::take(&mut self.blocks) {
+            match block {
+                Block::Footnote { .. } => notes.push(block),
+                other => body.push(other),
+            }
+        }
+
+        notes.sort_by_key(|block| match block {
+            Block::Footnote { number, .. } => *number,
+            _ => usize::MAX,
+        });
+
+        body.extend(notes);
+        self.blocks = body;
     }
 }
 
@@ -986,6 +1194,99 @@ mod tests {
             blocks("a | b"),
             vec![Block::Paragraph(vec![plain("a | b")])]
         );
+    }
+
+    #[test]
+    fn a_footnote_reference_and_its_definition_share_a_number() {
+        assert_eq!(
+            blocks("see [^why]\n\n[^why]: because."),
+            vec![
+                Block::Paragraph(vec![
+                    plain("see "),
+                    inline(
+                        "¹",
+                        Inline {
+                            note: Some(1),
+                            ..Inline::default()
+                        }
+                    ),
+                ]),
+                Block::Footnote {
+                    number: 1,
+                    spans: vec![plain("because.")],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn footnotes_are_numbered_in_reference_order() {
+        assert_eq!(
+            blocks("a[^b] c[^a]\n\n[^a]: A\n[^b]: B"),
+            vec![
+                Block::Paragraph(vec![
+                    plain("a"),
+                    inline(
+                        "¹",
+                        Inline {
+                            note: Some(1),
+                            ..Inline::default()
+                        }
+                    ),
+                    plain(" c"),
+                    inline(
+                        "²",
+                        Inline {
+                            note: Some(2),
+                            ..Inline::default()
+                        }
+                    ),
+                ]),
+                Block::Footnote {
+                    number: 1,
+                    spans: vec![plain("B")],
+                },
+                Block::Footnote {
+                    number: 2,
+                    spans: vec![plain("A")],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_reference_without_a_definition_stays_literal() {
+        assert_eq!(
+            blocks("see [^missing] and [^there]\n\n[^there]: here"),
+            vec![
+                Block::Paragraph(vec![
+                    plain("see [^missing] and "),
+                    inline(
+                        "¹",
+                        Inline {
+                            note: Some(1),
+                            ..Inline::default()
+                        }
+                    ),
+                ]),
+                Block::Footnote {
+                    number: 1,
+                    spans: vec![plain("here")],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_parsed_message_is_reused_until_the_text_grows() {
+        let cache = Cached::default();
+        let first = cache.blocks("hello");
+        let again = cache.blocks("hello");
+        assert!(Rc::ptr_eq(&first, &again), "the parse is reused");
+
+        let grown = cache.blocks("hello world");
+        assert!(!Rc::ptr_eq(&first, &grown));
+        assert_eq!(grown.len(), 1);
     }
 
     #[test]

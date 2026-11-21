@@ -40,7 +40,12 @@ pub enum Segment {
         detail: String,
         done: bool,
     },
-    Text(String),
+    Text {
+        text: String,
+        /// The parsed markdown, rebuilt only when the text grows. It lives with
+        /// the segment, so it cannot leak across sessions.
+        parsed: crate::markdown::Cached,
+    },
 }
 
 impl Transcript {
@@ -79,8 +84,11 @@ impl Turn {
     fn push(&mut self, part: Part) {
         match part {
             Part::Text { delta } => match self.parts.last_mut() {
-                Some(Segment::Text(text)) => text.push_str(&delta),
-                _ => self.parts.push(Segment::Text(delta)),
+                Some(Segment::Text { text, .. }) => text.push_str(&delta),
+                _ => self.parts.push(Segment::Text {
+                    text: delta,
+                    parsed: crate::markdown::Cached::default(),
+                }),
             },
             Part::Reasoning { delta } => match self.parts.last_mut() {
                 Some(Segment::Reasoning(text)) => text.push_str(&delta),
@@ -174,7 +182,7 @@ mod tests {
         let parts = &transcript.turns[0].parts;
         assert_eq!(parts.len(), 1);
         match &parts[0] {
-            Segment::Text(text) => assert_eq!(text, "Hello world"),
+            Segment::Text { text, .. } => assert_eq!(text, "Hello world"),
             _ => panic!("expected text"),
         }
         assert!(transcript.status.running);
