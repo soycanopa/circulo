@@ -4,6 +4,7 @@ Rules for any agent (or human) working in this repository.
 
 **Current approach (2026-11-20):**  
 Native desktop app built entirely with [MyGo](https://mygo.run/) (Go).  
+The window is native UI (`ui`, including `ui/markdown`). The core is a separate process.  
 v1.0 goal = feature parity with [egoist/waku](https://github.com/egoist/waku) (ideas and UX only — never copy code, GPL-3.0).  
 Strong modular separation: UI, core, providers, protocol, persistence and Git are independent puzzle pieces.
 
@@ -65,7 +66,7 @@ We work with small, reviewable, incremental changes.
 - Comments explain non-obvious *why* and invariants, not what the code already says.
 - Unknown provider events are ignored gracefully (forward compatibility).
 - Never block the UI thread. Heavy work (process spawn, Git, network, parsing) stays off the UI path.
-- Prefer MyGo native UI for performance and native feel. Web frontend is acceptable only when native cannot deliver the required experience.
+- The window is MyGo native UI. Do not move the transcript, sidebar, or composer into a web frontend. A Browser tab may embed a WebView under the native view later.
 
 ## Project map (target)
 
@@ -74,7 +75,7 @@ We work with small, reviewable, incremental changes.
 - `core/` — registry, orchestrator, Git checkpoints, persistence.
 - `providers/` — one package per agent (opencode, claude, codex, …).
 - `ui/` — MyGo views (sidebar, transcript, composer, right panel).
-- `cmd/` — composition roots (desktop app, optional daemon binary).
+- `cmd/` — composition roots: the desktop app and the core process.
 
 ## Quality bar
 

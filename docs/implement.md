@@ -6,9 +6,10 @@
 
 ## Phase 0 — Foundation
 - Finalize these docs + AGENTS.md
-- Decide native UI vs web frontend for the main transcript (prototype both if needed)
-- Repo scaffold with MyGo
-- Define package boundaries: ui, core, protocol, providers, persistence, git (puzzle pieces)
+- Decided (2026-11-20): native UI for the whole window, including the transcript. Core is its own process. WebView only for a later Browser tab, under the native view.
+- Transcript prototype: high-frequency streaming, a long history, pin-to-bottom, and selection (`ui/markdown` + list or scroll)
+- Repo scaffold with MyGo (native template)
+- Define package boundaries: ui, core, protocol, providers, persistence, git (puzzle pieces), with the UI and the core in separate processes
 - Set up GitHub workflow (branch protection, PR template if desired)
 
 ## Phase 1 — Core + first provider

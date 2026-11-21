@@ -2,14 +2,14 @@
 
 - **Status:** Draft v1.0 (2026-11-20)
 - **Related:** [PRD](prd.md) · [Flow](flow.md) · [Implementation Plan](implement.md)
-- **Stack decision:** Fully built with [MyGo](https://mygo.run/) (Go). Native UI preferred for performance; web frontend available if needed for complex markdown/streaming.
+- **Stack decision:** Fully built with [MyGo](https://mygo.run/) (Go). The window is native UI (`ui`, including `ui/markdown` for streaming replies). The core is a separate process. A WebView is reserved for a later Browser tab, under the native view.
 - **Architecture principle:** Everything is separated like puzzle pieces. UI, core, providers, protocol, persistence and Git are independent modules with clear boundaries. This makes the system easy to maintain, test and scale (including future mobile and remote).
 
 ## 1. Stack
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Shell & UI | MyGo | Native GPU UI (`ui` package) or webview frontend. Pure Go, no cgo on desktop. |
+| Shell & UI | MyGo native UI | GPU UI (`ui` package), including `ui/markdown`. Pure Go, no cgo on desktop. No web frontend for the app. |
 | Language | Go | ≥ 1.22+ |
 | Persistence | SQLite + JSON files | Local-first (same spirit as Waku) |
 | Protocol | Neutral internal events + provider adapters | Versioned contract (WebSocket, HTTP or channels) |
@@ -29,7 +29,7 @@
                   │ versioned protocol
                   ▼
 ┌─────────────────────────────────────┐
-│  Core / Daemon process (or package) │
+│  Core process                         │
 │  - project & session registry       │
 │  - provider drivers                 │
 │  - Git / worktree / checkpoints     │
@@ -92,6 +92,6 @@ Normalized events travel only through the protocol.
 
 ## 8. Risks
 
-- MyGo native UI performance under high-frequency streaming (early prototype required)
+- MyGo native UI performance under high-frequency streaming (measure on the transcript prototype: long history, pin-to-bottom, selection). A virtualized list only contains the paragraphs it has built, so selecting a whole transcript needs a regular scroll.
 - Provider protocol drift (tolerant parsers + live smokes)
 - GPL boundary: never copy Waku code; reimplement concepts only

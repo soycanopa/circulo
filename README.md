@@ -29,7 +29,7 @@ Outside v1.0: mobile, remote access, and computer-use or browser automation.
 
 ## How it is built
 
-MyGo (Go) for the shell and UI. Native UI is preferred. A web frontend inside a MyGo webview is a fallback only if native UI cannot carry the transcript.
+MyGo (Go) for the shell and the window. The UI is native (`ui`, including `ui/markdown` for streaming replies). The core runs in its own process. A WebView is reserved for a later Browser tab, under the native view.
 
 The system is split into independent pieces. Dependency direction is one way.
 
@@ -41,7 +41,7 @@ The system is split into independent pieces. Dependency direction is one way.
                   │ versioned protocol
                   ▼
 ┌─────────────────────────────────────┐
-│  Core                               │
+│  Core process                       │
 │  projects, sessions, Git, storage   │
 └─────────────────────────────────────┘
          │
