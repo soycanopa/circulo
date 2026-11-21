@@ -32,7 +32,7 @@ Order matters: prove the pipe before adding a real provider to it.
 - Conversation-aware Git checkpoints and rewind
 
 ## Phase 4 — UI polish
-- Full sidebar (projects + sessions) — today `mock.rs`
+- [x] Sidebar from the database: sessions grouped by day (Today / Yesterday / This Month / month), title, project and relative time, the open session marked; a row opens its history, `New Task` starts a session
 - [x] Beautiful markdown transcript: headings, lists, tables, fenced code, quotes, footnotes, weighted columns, cached parse
 - [x] Permission cards, and question cards from ACP elicitation
 - [x] Typeable composer: Enter sends, Shift+Enter breaks the line, prompts travel mid-turn

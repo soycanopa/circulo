@@ -8,6 +8,8 @@ repository.workspace = true
 
 [dependencies]
 anyhow = "1"
+# Local dates for the sidebar's day groups and relative times.
+chrono = "0.4"
 async-channel.workspace = true
 circulo-protocol.workspace = true
 gpui.workspace = true
