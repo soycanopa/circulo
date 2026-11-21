@@ -21,14 +21,15 @@
 
 #![forbid(unsafe_code)]
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::Mutex;
 
 use circulo_protocol::{
-    Part, PermissionOption, PermissionOptionKind, PermissionRequest, Question, QuestionField,
-    QuestionKind, ToolState,
+    ConfigChoice, ConfigOption, Part, PermissionOption, PermissionOptionKind, PermissionRequest,
+    Question, QuestionField, QuestionKind, ToolState,
 };
 use circulo_provider::{Asker, Decision, Driver, DriverError};
 use serde_json::{Value, json};
@@ -40,6 +41,10 @@ const ACP_VERSION: u64 = 1;
 pub struct OpenCode {
     cwd: PathBuf,
     binary: PathBuf,
+    /// Choices the user made, keyed by option id. A set only lasts for the
+    /// agent session that received it — the probe showed a fresh `session/new`
+    /// resets `effort` to `default` — so every new session re-applies these.
+    overrides: Mutex<BTreeMap<String, String>>,
 }
 
 impl OpenCode {
@@ -47,6 +52,7 @@ impl OpenCode {
         Self {
             cwd: cwd.into(),
             binary: PathBuf::from("opencode"),
+            overrides: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -56,7 +62,43 @@ impl OpenCode {
         Self {
             cwd: cwd.into(),
             binary: binary.into(),
+            overrides: Mutex::new(BTreeMap::new()),
         }
+    }
+
+    fn overrides(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, String>> {
+        self.overrides
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Re-applies the user's choices to a fresh agent session and returns the
+    /// list the agent reports afterwards. A choice the agent refuses is
+    /// dropped: the option is gone, and the rest still apply.
+    fn recall(&self, agent: &mut Agent, session: &str, ask: &mut dyn Asker) -> Vec<ConfigOption> {
+        let mut options = config_options(&agent.last_config);
+        let mut stored = self.overrides().clone();
+
+        stored.retain(|id, value| {
+            match agent.request(
+                "session/set_config_option",
+                json!({
+                    "sessionId": session,
+                    "configId": id,
+                    "value": value,
+                }),
+                ask,
+            ) {
+                Ok(result) => {
+                    options = config_options(&result);
+                    true
+                }
+                Err(_) => false,
+            }
+        });
+
+        *self.overrides() = stored;
+        options
     }
 }
 
@@ -72,45 +114,156 @@ impl Driver for OpenCode {
         emit: &mut dyn FnMut(Part),
     ) -> Result<(), DriverError> {
         let mut agent = Agent::spawn(&self.binary, &self.cwd)?;
-
-        let welcome = agent.request(
-            "initialize",
-            json!({
-                "protocolVersion": ACP_VERSION,
-                "clientCapabilities": {
-                    "fs": {"readTextFile": false, "writeTextFile": false},
-                    // Form questions are supported; an agent must not ask for
-                    // a mode the client has not advertised.
-                    "elicitation": {"form": {}}
-                }
-            }),
-            ask,
-        )?;
-
-        let version = welcome.get("protocolVersion").and_then(Value::as_u64);
-        if version != Some(ACP_VERSION) {
-            return Err(DriverError::new(format!(
-                "opencode speaks ACP version {version:?}, this driver speaks {ACP_VERSION}"
-            )));
-        }
-
-        let session = agent.request(
-            "session/new",
-            json!({
-                "cwd": self.cwd.to_string_lossy(),
-                "mcpServers": []
-            }),
-            ask,
-        )?;
-        let session = session
-            .get("sessionId")
-            .and_then(Value::as_str)
-            .ok_or_else(|| DriverError::new("opencode did not return a session id"))?
-            .to_owned();
+        let session = open_session(&mut agent, &self.cwd, ask)?;
+        self.recall(&mut agent, &session, ask);
 
         let mut tools = HashMap::new();
         agent.prompt(&session, prompt, &mut tools, ask, emit)
     }
+
+    fn options(&self) -> Result<Vec<ConfigOption>, DriverError> {
+        let mut agent = Agent::spawn(&self.binary, &self.cwd)?;
+        let mut refuse = RefuseAll;
+        let session = open_session(&mut agent, &self.cwd, &mut refuse)?;
+        Ok(self.recall(&mut agent, &session, &mut refuse))
+    }
+
+    fn set_option(&self, id: &str, value: &str) -> Result<Vec<ConfigOption>, DriverError> {
+        let mut agent = Agent::spawn(&self.binary, &self.cwd)?;
+        let mut refuse = RefuseAll;
+        let session = open_session(&mut agent, &self.cwd, &mut refuse)?;
+
+        // Check against what the agent just reported, so a stale picker gets a
+        // clear error instead of a refused call.
+        let fresh = config_options(&agent.last_config);
+        let option = fresh
+            .iter()
+            .find(|option| option.id == id)
+            .ok_or_else(|| DriverError::new(format!("unknown option {id}")))?;
+        if !option.options.iter().any(|choice| choice.id == value) {
+            return Err(DriverError::new(format!("{value} is not a {id}")));
+        }
+
+        let result = agent.request(
+            "session/set_config_option",
+            json!({
+                "sessionId": session,
+                "configId": id,
+                "value": value,
+            }),
+            &mut refuse,
+        )?;
+        let options = config_options(&result);
+        self.overrides().insert(id.to_owned(), value.to_owned());
+        Ok(options)
+    }
+}
+
+/// The agent refused nothing: out-of-turn calls never prompt, so a permission
+/// or elicitation request here means the agent is confused, and the turn it
+/// belongs to does not exist to answer it.
+struct RefuseAll;
+
+impl Asker for RefuseAll {
+    fn permission(&mut self, _: PermissionRequest) -> Decision {
+        Decision::Cancelled
+    }
+
+    fn question(&mut self, _: Question) -> circulo_provider::Answer {
+        circulo_provider::Answer::cancel()
+    }
+}
+
+/// `initialize` plus `session/new`, checked the way a turn checks them.
+/// Returns the agent's session id and remembers the reported config list on
+/// the agent for the caller to validate against.
+fn open_session(
+    agent: &mut Agent,
+    cwd: &Path,
+    ask: &mut dyn Asker,
+) -> Result<String, DriverError> {
+    let welcome = agent.request(
+        "initialize",
+        json!({
+            "protocolVersion": ACP_VERSION,
+            "clientCapabilities": {
+                "fs": {"readTextFile": false, "writeTextFile": false},
+                // Form questions are supported; an agent must not ask for
+                // a mode the client has not advertised.
+                "elicitation": {"form": {}}
+            }
+        }),
+        ask,
+    )?;
+
+    let version = welcome.get("protocolVersion").and_then(Value::as_u64);
+    if version != Some(ACP_VERSION) {
+        return Err(DriverError::new(format!(
+            "opencode speaks ACP version {version:?}, this driver speaks {ACP_VERSION}"
+        )));
+    }
+
+    let session = agent.request(
+        "session/new",
+        json!({
+            "cwd": cwd.to_string_lossy(),
+            "mcpServers": []
+        }),
+        ask,
+    )?;
+    agent.last_config = session.clone();
+    let session = session
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| DriverError::new("opencode did not return a session id"))?
+        .to_owned();
+    Ok(session)
+}
+
+/// The agent's settings as `session/new` or `session/set_config_option`
+/// reported them. Only `select` lists become options; anything else is a
+/// setting this client has no control for, and is skipped the way unknown
+/// updates are.
+fn config_options(value: &Value) -> Vec<ConfigOption> {
+    value
+        .get("configOptions")
+        .and_then(Value::as_array)
+        .map(|options| {
+            options
+                .iter()
+                .filter_map(|option| {
+                    if option.get("type").and_then(Value::as_str) != Some("select") {
+                        return None;
+                    }
+                    let choices = option
+                        .get("options")
+                        .and_then(Value::as_array)?
+                        .iter()
+                        .filter_map(|choice| {
+                            Some(ConfigChoice {
+                                id: choice.get("value")?.as_str()?.to_owned(),
+                                label: choice.get("name")?.as_str()?.to_owned(),
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    Some(ConfigOption {
+                        id: option.get("id")?.as_str()?.to_owned(),
+                        label: option
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_owned(),
+                        current: option
+                            .get("currentValue")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_owned(),
+                        options: choices,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// One `opencode acp` process: a JSON-RPC peer on stdin and stdout.
@@ -119,6 +272,9 @@ struct Agent {
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
     next_id: u64,
+    /// The last `session/new` result, so a caller can validate a choice
+    /// against what the agent reported.
+    last_config: Value,
 }
 
 impl Agent {
@@ -149,6 +305,7 @@ impl Agent {
             stdin,
             stdout: BufReader::new(stdout),
             next_id: 1,
+            last_config: Value::Null,
         })
     }
 
