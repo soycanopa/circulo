@@ -1,0 +1,8 @@
+[package]
+name = "circulo-core"
+description = "Projects, sessions and the provider lifecycle for Circulo"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]

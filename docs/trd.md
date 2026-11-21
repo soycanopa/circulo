@@ -1,26 +1,26 @@
 # Circulo — Technical Requirements Document (v1.0)
 
-- **Status:** Draft v1.0 (2026-11-20)
+- **Status:** Draft v1.0 (2026-11-21)
 - **Related:** [PRD](prd.md) · [Flow](flow.md) · [Implementation Plan](implement.md)
-- **Stack decision:** Fully built with [MyGo](https://mygo.run/) (Go). The window is native UI (`ui`, including `ui/markdown` for streaming replies). The core is a separate process. A WebView is reserved for a later Browser tab, under the native view.
-- **Architecture principle:** Everything is separated like puzzle pieces. UI, core, providers, protocol, persistence and Git are independent modules with clear boundaries. This makes the system easy to maintain, test and scale (including future mobile and remote).
+- **Stack decision:** Rust + GPUI (same technology as Waku). Native GPU-accelerated UI.
+- **Architecture principle:** Everything is separated like puzzle pieces. UI, core, providers, protocol, persistence and Git are independent crates/modules with clear boundaries. This makes the system easy to maintain, test and scale (including future mobile and remote).
 
 ## 1. Stack
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Shell & UI | MyGo native UI | GPU UI (`ui` package), including `ui/markdown`. Pure Go, no cgo on desktop. No web frontend for the app. |
-| Language | Go | ≥ 1.22+ |
+| Shell & UI | GPUI | GPU-accelerated native UI (same as Waku / Zed). |
+| Language | Rust | Stable, edition 2021 or later |
 | Persistence | SQLite + JSON files | Local-first (same spirit as Waku) |
-| Protocol | Neutral internal events + provider adapters | Versioned contract (WebSocket, HTTP or channels) |
+| Protocol | Neutral internal events + provider adapters | Versioned contract (channels, HTTP or WebSocket) |
 | Providers | Adapter per CLI | Native structured protocols (not terminal scraping) |
-| Build | `mygo` CLI | Desktop bundles, later mobile |
+| Build | cargo | Desktop bundles (macOS .app, Linux, Windows) |
 
 ## 2. Architecture — puzzle pieces
 
 ```
 ┌─────────────────────────────────────┐
-│  UI process (MyGo app)              │
+│  UI (GPUI app)                      │
 │  - presentation state only          │
 │  - sidebar / transcript / composer  │
 │  - right panel views                │
@@ -29,7 +29,7 @@
                   │ versioned protocol
                   ▼
 ┌─────────────────────────────────────┐
-│  Core process                         │
+│  Core / Daemon (crate or process)   │
 │  - project & session registry       │
 │  - provider drivers                 │
 │  - Git / worktree / checkpoints     │
@@ -37,22 +37,22 @@
 │  - filesystem operations            │
 └─────────────────────────────────────┘
          │
-         ├── Provider adapters (independent packages)
+         ├── Provider adapters (independent crates)
          │     OpenCode, Claude Code, Codex, …
-         ├── Protocol package (shared wire types)
-         └── Persistence package
+         ├── Protocol crate (shared wire types)
+         └── Persistence crate
 ```
 
 **Separation rules (enforced):**
 - The UI never imports provider-specific code or talks directly to CLIs.
-- Providers never import UI or MyGo.
-- The protocol package is the only shared contract.
+- Providers never import UI or GPUI.
+- The protocol crate is the only shared contract.
 - Core owns all state, Git and processes. UI owns only presentation and a disposable cache.
 - New providers, new UI views or future mobile clients can be added without touching the other pieces.
 
 ## 3. Provider driver system
 
-Each provider is its own package implementing a common `Driver` interface:
+Each provider is its own crate implementing a common `Driver` trait:
 - Start / attach session
 - Send prompt / steer / queue
 - Stream normalized events
@@ -66,12 +66,12 @@ Normalized events travel only through the protocol.
 - SQLite for sessions, messages, parts, projects
 - JSON for app settings
 - Content-addressed blobs for attachments
-- Owned exclusively by the core process
+- Owned exclusively by the core
 
 ## 5. Key technical goals for v1.0
 
-- Strong modular boundaries (puzzle style)
-- Streaming latency and efficient transcript
+- Strong modular boundaries (puzzle style, crates)
+- Streaming latency and efficient GPUI virtualized transcript
 - Conversation-aware Git checkpoints
 - Model switching and reasoning effort across providers
 - Message queue + steering
@@ -92,6 +92,6 @@ Normalized events travel only through the protocol.
 
 ## 8. Risks
 
-- MyGo native UI performance under high-frequency streaming (measure on the transcript prototype: long history, pin-to-bottom, selection). A virtualized list only contains the paragraphs it has built, so selecting a whole transcript needs a regular scroll.
+- GPUI learning curve and high-frequency streaming performance (early prototype required)
 - Provider protocol drift (tolerant parsers + live smokes)
 - GPL boundary: never copy Waku code; reimplement concepts only

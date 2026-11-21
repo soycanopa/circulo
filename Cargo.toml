@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/app",
+    "crates/core",
+    "crates/git",
+    "crates/persistence",
+    "crates/protocol",
+    "crates/providers/driver",
+    "crates/ui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+repository = "https://github.com/soycanopa/circulo"
+
+[workspace.dependencies]
+# GPUI is the window, layout and rendering layer. The UI is native; there is
+# no web view in the transcript, the sidebar or the composer.
+gpui = "0.2.2"
+
+circulo-ui = { path = "crates/ui" }

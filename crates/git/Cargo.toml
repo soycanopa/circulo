@@ -1,0 +1,8 @@
+[package]
+name = "circulo-git"
+description = "Git worktrees and conversation-aware checkpoints for Circulo"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
