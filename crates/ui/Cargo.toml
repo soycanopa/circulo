@@ -1,0 +1,9 @@
+[package]
+name = "circulo-ui"
+description = "GPUI views for Circulo: sidebar, transcript, composer and right panel"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+gpui.workspace = true

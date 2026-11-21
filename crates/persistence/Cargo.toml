@@ -1,0 +1,8 @@
+[package]
+name = "circulo-persistence"
+description = "Local storage for Circulo: projects, sessions, transcripts and settings"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]

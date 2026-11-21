@@ -1,0 +1,10 @@
+[package]
+name = "circulo"
+description = "Circulo, a local-first native desktop app for coding agents"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+gpui.workspace = true
+circulo-ui.workspace = true
