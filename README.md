@@ -6,7 +6,7 @@ One window for projects, independent sessions, and live work: streaming transcri
 
 Circulo is **inspired by** [Waku](https://github.com/egoist/waku). The product idea, the calm layout, and the way you watch an agent work are the reference. Circulo is its own application, built entirely in **Rust + GPUI** — the same GPU-accelerated UI framework behind Zed. Waku is GPL-3.0; none of its code is copied here.
 
-**Status:** the interface is in place and the daemon runs end to end. A client connects, opens a session, sends a prompt and receives a streamed turn — reasoning, tool calls and text — through the protocol. The demo provider produces that turn; the desktop still renders sample data and gets wired to the daemon next. See [the implementation plan](docs/implement.md).
+**Status:** the desktop streams a real turn. The app starts the daemon, connects over the WebSocket, opens a session, sends a prompt and renders the parts as they arrive — reasoning, tool calls, text. The demo provider produces the turn; OpenCode and persistence are next. The sidebar still shows sample tasks until sessions are stored. See [the implementation plan](docs/implement.md).
 
 ## Who it is for
 

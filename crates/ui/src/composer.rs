@@ -1,25 +1,32 @@
 //! The composer: input surface, the shared controls and the footer.
 //!
-//! Static for now. The pickers become real menus when the drivers can report
-//! models and reasoning effort; the send button becomes active with the core.
+//! The input is not editable yet: text entry arrives with the session input
+//! work. The send affordance and the footer reflect the live turn.
 
 use gpui::{IntoElement, div, prelude::*, px};
 
 use crate::icons::icon;
+use crate::live::Transcript;
 use crate::mock::Workspace;
 use crate::theme::Theme;
 
-pub(crate) fn composer(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
+pub(crate) fn composer(
+    theme: &Theme,
+    workspace: &Workspace,
+    transcript: &Transcript,
+) -> impl IntoElement {
+    let running = transcript.status.running;
+
     div()
         .flex()
         .flex_col()
         .px(px(24.))
         .pb(px(10.))
-        .child(input(theme, workspace))
-        .child(footer(theme, workspace))
+        .child(input(theme, workspace, running))
+        .child(footer(theme, workspace, running))
 }
 
-fn input(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
+fn input(theme: &Theme, workspace: &Workspace, running: bool) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
@@ -45,7 +52,7 @@ fn input(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
                     workspace.agent_mode,
                 ))
                 .child(div().flex_1())
-                .child(send(theme)),
+                .child(send(theme, running)),
         )
 }
 
@@ -67,7 +74,7 @@ fn picker(theme: &Theme, path: Option<&'static str>, label: &'static str) -> imp
         .hover(move |style| style.bg(theme.hover))
 }
 
-fn send(theme: &Theme) -> impl IntoElement {
+fn send(theme: &Theme, running: bool) -> impl IntoElement {
     div()
         .flex()
         .items_center()
@@ -75,10 +82,14 @@ fn send(theme: &Theme) -> impl IntoElement {
         .size(px(28.))
         .rounded_full()
         .bg(theme.chip)
-        .child(icon("icons/arrow-up.svg", 14., theme.text_faint))
+        .child(if running {
+            icon("icons/loader-circle.svg", 14., theme.text_faint)
+        } else {
+            icon("icons/arrow-up.svg", 14., theme.text_faint)
+        })
 }
 
-fn footer(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
+fn footer(theme: &Theme, workspace: &Workspace, running: bool) -> impl IntoElement {
     div()
         .flex()
         .items_center()
@@ -99,7 +110,9 @@ fn footer(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
                 .child(icon("icons/chevron-down.svg", 10., theme.text_faint)),
         )
         .child(div().flex_1())
-        .child(icon("icons/loader-circle.svg", 12., theme.text_faint))
+        .when(running, |row| {
+            row.child(icon("icons/loader-circle.svg", 12., theme.text_faint))
+        })
 }
 
 fn meta(theme: &Theme, path: &'static str, label: &'static str) -> impl IntoElement {

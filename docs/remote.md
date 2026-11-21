@@ -1,6 +1,11 @@
 # Circulo — Remote access (proposal)
 
-- **Status:** Proposal (2026-11-21). Nothing here is implemented yet.
+- **Status:** Direction decided 2026-11-21. Nothing here is implemented yet.
+
+## 0. Decisions
+
+- **Pairing: a QR code with a saved key.** The address and the client key are shown once, scanned by the phone, and stored on both sides. `tailcat genkey` gives the daemon a stable address, and `serve --allow=<phone node key>` admits only that client, so the phone reconnects without pairing again.
+- **The desktop owns the tunnel process.** It starts `tailcat` together with `circulo-daemon` and stops both on quit, so there is one lifecycle to reason about and no listener outliving the app. The supervisor reports whether the tunnel is up, and the setting that enables remote is off until the user turns it on.
 - **Related:** [TRD](trd.md) · [PRD](prd.md) · [Flow](flow.md)
 
 ## 1. What we need
@@ -50,18 +55,17 @@ A user with a VPS, a reverse proxy or a private network can terminate TLS in fro
 ## 5. Recommendation
 
 1. **Keep the daemon loopback-only and the token mandatory.** Remote is a tunnel; the protocol and the daemon stay as they are.
-2. **Make tailcat the recommended path**, because it keeps the product account-free and it has a native path to iOS. Pairing would: start `tailcat serve` for the daemon port, show the address (a QR code is the natural pairing surface), and store it with the saved key and the `--allow` node key.
+2. **Make tailcat the recommended path**, because it keeps the product account-free and it has a native path to iOS. Pairing: a saved key, `serve --allow=<phone node key>`, and a QR code carrying the address; both sides store it so the phone reconnects by itself.
 3. **Keep `wss://` working** for tailnets, reverse proxies and LAN use. No code change.
 4. **Treat the address as a secret.** Pairing UI must say so, and the stable setup must use a saved key plus `--allow`.
 5. **Isolate tailcat at the edge**: a supervisor that starts and stops the tunnel process with the daemon, and a client that only knows a URL. If tailcat's format changes, nothing inside Circulo does.
 
 ## 6. Open questions
 
-- Pairing UX: QR code, copyable address, or both. Does the phone keep the address, or re-pair each time?
-- Where does the tunnel process live: inside the desktop app, inside a future daemon setting, or as a documented `tailcat` the user runs?
+- Which QR payload: the bare tailcat address, or address + token + client key in one JSON blob? The second is one scan; the first keeps the token out of the QR.
 - Do we embed `TailcatKit` in an iOS client, or start with a web client and revisit native?
-- Does the tailcat CLI's lifetime match the daemon's? A tunnel that outlives the daemon is a dangling listener; one that dies early drops the phone.
 - If a relayed path is the only one, is the throughput acceptable for a long transcript? Measure before promising.
+- The tunnel needs `tailcat` on `PATH` (or bundled). Decide how we detect, install and report its absence.
 
 ## 7. Sources
 
