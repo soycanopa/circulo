@@ -23,6 +23,35 @@ impl Asker for NoAsker {
     }
 }
 
+/// Lists and switches the real agent's config without prompting: no model
+/// call, but it needs the installed CLI.
+#[test]
+#[ignore = "spawns the real opencode CLI"]
+fn a_real_switch_applies_and_holds() {
+    let driver = OpenCode::new(std::env::temp_dir());
+
+    let options = driver.options().expect("options");
+    assert!(
+        options.iter().any(|option| option.id == "model"),
+        "the agent reports its models"
+    );
+
+    let options = driver.set_option("effort", "low").expect("set");
+    let current = options
+        .iter()
+        .find(|option| option.id == "effort")
+        .map(|option| option.current.as_str());
+    assert_eq!(current, Some("low"));
+
+    // A fresh session resets the agent; the driver re-applies the choice.
+    let options = driver.options().expect("options again");
+    let current = options
+        .iter()
+        .find(|option| option.id == "effort")
+        .map(|option| option.current.as_str());
+    assert_eq!(current, Some("low"));
+}
+
 #[test]
 #[ignore = "spawns the real opencode CLI and spends a model call"]
 fn a_real_turn_streams_text() {

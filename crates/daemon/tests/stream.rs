@@ -6,7 +6,7 @@ use std::thread;
 use circulo_client::{Client, ClientError};
 use circulo_core::Core;
 use circulo_daemon::Daemon;
-use circulo_protocol::{FinishReason, Part, ServerMessage, ToolState};
+use circulo_protocol::{ConfigOption, FinishReason, Part, ServerMessage, ToolState};
 use circulo_provider_demo::DemoDriver;
 
 fn daemon() -> (Daemon, String, String) {
@@ -60,6 +60,65 @@ fn a_client_streams_a_turn_from_the_daemon() {
     );
     assert!(text.contains("streamed in deltas"));
     assert_eq!(finished, Some(FinishReason::Completed));
+}
+
+/// Reads until the daemon reports the session's options. The list is pushed
+/// from the daemon's own thread, so it lands after the synchronous answers.
+fn wait_options(client: &mut Client, session: &str) -> Vec<ConfigOption> {
+    for _ in 0..100 {
+        match client.next_message().expect("message") {
+            Some(ServerMessage::Options {
+                session: got,
+                options,
+            }) if got == session => return options,
+            Some(_) => continue,
+            None => panic!("the daemon closed the connection"),
+        }
+    }
+    panic!("no options for {session}");
+}
+
+#[test]
+fn options_round_trip_through_the_daemon() {
+    let (daemon, url, token) = daemon();
+    thread::spawn(move || daemon.serve());
+
+    let mut client = Client::connect(&url, &token).expect("handshake");
+    let session = client.start_session(None).expect("session");
+
+    // The daemon pushes the list after the session opens.
+    let options = wait_options(&mut client, &session);
+    assert!(options.iter().any(|option| option.id == "model"));
+    let effort = options
+        .iter()
+        .find(|option| option.id == "effort")
+        .expect("effort");
+    assert_eq!(effort.current, "medium");
+
+    // A choice comes back refreshed, the way the pickers redraw.
+    client.set_option(&session, "effort", "high").expect("set");
+    let options = wait_options(&mut client, &session);
+    let effort = options
+        .iter()
+        .find(|option| option.id == "effort")
+        .expect("effort");
+    assert_eq!(effort.current, "high");
+
+    // An unknown session reads as an error, not a hang.
+    client
+        .set_option("missing", "effort", "high")
+        .expect("send");
+    for _ in 0..100 {
+        match client.next_message().expect("message") {
+            Some(ServerMessage::Error { message }) => {
+                assert!(message.contains("unknown session"), "{message}");
+                return;
+            }
+            Some(_) => continue,
+            None => panic!("the daemon closed the connection"),
+        }
+    }
+    panic!("no error for a missing session");
 }
 
 #[test]
