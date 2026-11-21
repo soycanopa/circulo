@@ -4,9 +4,9 @@ A local-first native desktop app for working with coding-agent CLIs.
 
 One window for projects, independent sessions, and live work: streaming transcripts, tool calls, reasoning, model and reasoning-effort controls, mid-turn steering, and conversation-aware Git checkpoints. Everything stays on the machine. No account. No cloud of its own.
 
-Circulo is **inspired by** [Waku](https://github.com/egoist/waku). The product idea, the calm layout, and the way you watch an agent work are the reference. Circulo is its own application, written in Go with [MyGo](https://mygo.run/). Waku is GPL-3.0; none of its code is copied here.
+Circulo is **inspired by** [Waku](https://github.com/egoist/waku). The product idea, the calm layout, and the way you watch an agent work are the reference. Circulo is its own application, built entirely in **Rust + GPUI** — the same GPU-accelerated UI framework behind Zed. Waku is GPL-3.0; none of its code is copied here.
 
-**Status:** v1.0 is specified and not yet implemented. This repository currently holds the product and technical documents.
+**Status:** the specification is written and the workspace is scaffolded. The app opens a native window with the shell of the interface; the core loop and the first provider are next. See [the implementation plan](docs/implement.md).
 
 ## Who it is for
 
@@ -23,19 +23,17 @@ A developer who already uses one or more agent CLIs (Claude Code, Codex, OpenCod
 | Steering | Queue a follow-up or steer an agent mid-turn. |
 | Git | Rewind Git-backed work with conversation-aware checkpoints. |
 | Local-first | Projects, sessions, transcripts, attachments, and settings on disk. |
-| Platform | Desktop first. macOS is the primary target. Linux and Windows through MyGo. Mobile comes after v1.0. |
+| Platform | Desktop first. macOS is the primary target. Linux and Windows through GPUI. Mobile comes after v1.0. |
 
 Outside v1.0: mobile, remote access, and computer-use or browser automation.
 
 ## How it is built
 
-MyGo (Go) for the shell and the window. The UI is native (`ui`, including `ui/markdown` for streaming replies). The core runs in its own process. A WebView is reserved for a later Browser tab, under the native view.
-
-The system is split into independent pieces. Dependency direction is one way.
+Everything is a separate piece with a one-way dependency direction. A new provider, a new panel, or a future mobile client can be added without rewriting the rest.
 
 ```
 ┌─────────────────────────────────────┐
-│  UI (MyGo app)                      │
+│  UI (GPUI app)                      │
 │  presentation only · protocol client│
 └─────────────────┬───────────────────┘
                   │ versioned protocol
@@ -45,28 +43,41 @@ The system is split into independent pieces. Dependency direction is one way.
 │  projects, sessions, Git, storage   │
 └─────────────────────────────────────┘
          │
-         ├── Provider adapters (one package each)
-         ├── Protocol (the only shared contract)
-         └── Persistence
+         ├── Provider crates (one per agent, behind the Driver trait)
+         ├── Protocol crate (the only shared contract)
+         ├── Persistence crate
+         └── Git crate
 ```
 
-The UI never talks to a CLI. Providers never import the UI. The protocol package is the only shared contract. Core owns state, Git, and processes.
+The UI never talks to a CLI. Providers never import the UI or the core. The protocol crate is the only shared contract. The core owns state, Git, and processes.
 
-## Run the prototype
+| Crate | Owns |
+|---|---|
+| `crates/protocol` | The neutral wire contract: events, parts, envelopes. Shared by the UI and the core. |
+| `crates/core` | Projects, sessions, provider lifecycle and orchestration. |
+| `crates/providers/driver` | The `Driver` trait each provider implements. |
+| `crates/persistence` | SQLite, settings and blobs. Used only by the core. |
+| `crates/git` | Worktrees and conversation-aware checkpoints. Used only by the core. |
+| `crates/ui` | GPUI views: sidebar, transcript, composer, right panel. Presentation only. |
+| `crates/app` | Composition root: wires the pieces and owns the window. |
 
-The window is a native MyGo app, with a hidden title bar, a project sidebar, the transcript, and a composer. On launch it starts `cmd/core` as another process, bound to loopback. The core starts `opencode serve` when `opencode` is on `PATH`, stores projects and sessions in SQLite, and streams the reply into the transcript. Type a folder path, choose the agent, choose Add, then send a prompt. Enter sends; Shift+Enter adds a line; Escape stops a turn that is still running. The model and reasoning pickers switch the session. While a reply is streaming, Steer, Queue, and Stop are available. The sidebar chooses OpenCode or Muse Code before adding a folder. In a Git repository, Rewind restores the files and the local transcript to the checkpoint taken before a prompt. When Muse asks for approval, the card uses the choices Muse sent.
+## Requirements
 
-`cmd/core -demo` still plays a canned transcript and does not start OpenCode.
+- macOS with Xcode and its command line tools (GPUI renders with Metal).
+- Rust stable, installed with [rustup](https://rustup.rs). The repository pins the `stable` channel in `rust-toolchain.toml`.
+
+## Build and run
 
 ```sh
-go tool mygo dev
+cargo run -p circulo
 ```
 
-To run the core yourself, start it and point the window at the address it prints:
+Checks to run before contributing:
 
 ```sh
-go run ./cmd/core
-CIRCULO_CORE_ADDR=127.0.0.1:PORT go tool mygo dev
+cargo fmt --all --check
+cargo clippy --workspace --all-targets
+cargo test --workspace
 ```
 
 ## Documentation
@@ -74,7 +85,7 @@ CIRCULO_CORE_ADDR=127.0.0.1:PORT go tool mygo dev
 | Doc | What it decides |
 |---|---|
 | [Product requirements](docs/prd.md) | Vision, scope, and success criteria for v1.0 |
-| [Technical requirements](docs/trd.md) | Stack, module boundaries, persistence, and risks |
+| [Technical requirements](docs/trd.md) | Stack, crate boundaries, persistence, and risks |
 | [UX](docs/ux.md) | Principles, layout, and interactions |
 | [UI](docs/ui.md) | Visual language, surfaces, and tokens |
 | [Flows](docs/flow.md) | Start, prompt, steering, permissions, checkpoints, quit |
@@ -83,6 +94,6 @@ CIRCULO_CORE_ADDR=127.0.0.1:PORT go tool mygo dev
 
 ## Repository
 
-Work happens on branches (`feature/…`, `fix/…`, `docs/…`) and lands through small pull requests. Commit messages use `type(scope): summary`.
+The owner works directly on `main`, one small commit at a time. External collaborators work on `feature/…`, `fix/…` or `docs/…` branches and open a pull request. Commit messages use `type(scope): summary`; local checks must pass before anything is pushed.
 
-The previous desktop app (Go, Wails, and React) is preserved on the [`legacy`](https://github.com/soycanopa/circulo/tree/legacy) branch, including its tags.
+Earlier attempts are kept for reference, with their full history and tags: [`legacy2`](https://github.com/soycanopa/circulo/tree/legacy2) holds the Go/MyGo application, and [`legacy`](https://github.com/soycanopa/circulo/tree/legacy) holds the Wails + React application before it.
