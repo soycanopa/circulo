@@ -27,7 +27,7 @@ func main() {
 			StateKey: "main",
 			Content:  ui.View(app.View),
 		})
-		go connect(ctx, win, model)
+		go connect(ctx, win, app)
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)

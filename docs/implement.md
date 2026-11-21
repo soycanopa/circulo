@@ -13,11 +13,11 @@
 - GitHub workflow: `main` requires a pull request and rejects force pushes. Approving reviews are not required, so a solo self-review can merge. The body comes from `.github/pull_request_template.md`.
 
 ## Phase 1 — Core + first provider
-- Project/session registry (core package)
-- Neutral protocol package
-- OpenCode adapter (independent package)
-- Local persistence (SQLite package)
-- Basic streaming transcript (minimal UI that talks only to protocol)
+- Project/session registry in `core.Registry`. The UI adds a folder, opens a session, and sends a prompt over the protocol.
+- Protocol carries `project.add`, `session.create`, `session.open`, `prompt.send`, and the snapshots the core sends back.
+- OpenCode adapter in `providers/opencode`: `POST /api/session`, `POST /api/session/{id}/prompt`, and `GET /api/event` (`session.text.delta`).
+- SQLite in `persistence`, file `~/Library/Application Support/Circulo/circulo.db` on macOS (`os.UserConfigDir`).
+- The existing transcript renders that session. `cmd/core -demo` still plays the canned script.
 
 ## Phase 2 — Shared control surface
 - Model / reasoning effort discovery and switching

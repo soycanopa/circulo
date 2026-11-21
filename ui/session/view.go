@@ -3,11 +3,18 @@ package session
 import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
+
+	"github.com/soycanopa/circulo/protocol"
 )
 
-// App is the native window: a sidebar placeholder and the transcript.
+// App is the native window: projects, the transcript, and the composer.
 type App struct {
 	Model *Model
+	// Send delivers a request to the core. It is safe to call from the UI thread.
+	Send  func(protocol.Envelope)
+	path  string
+	draft string
+	seq   int64
 	md    markdown.Options
 	list  ui.ListState
 }
@@ -34,8 +41,32 @@ func (a *App) View(c *ui.Context) {
 func (a *App) sidebar(c *ui.Context) {
 	ui.Column(c).Width(240).Padding(16).Gap(8).Background(ui.Hex("#141414")).Children(func() {
 		ui.Text(c, "Circulo").Bold().FontSize(18)
-		ui.Text(c, "Transcript").TextColor(ui.Hex("#E2795B"))
-		ui.Text(c, "Projects and sessions land in the next phase.").TextColor(c.Theme().TextMuted)
+		ui.TextInput(c, &a.path).Placeholder("Project folder")
+		if ui.Button(c, "Add").Clicked() {
+			a.request(protocol.Envelope{Type: protocol.TypeAdd, Path: a.path})
+		}
+		for _, sess := range a.Model.Sessions {
+			title := sess.Title
+			if title == "" {
+				title = sess.ID
+			}
+			if ui.Button(c, title).Clicked() {
+				a.request(protocol.Envelope{Type: protocol.TypeOpen, ID: sess.ID})
+			}
+		}
+		if len(a.Model.Projects) > 0 {
+			project := a.Model.Projects[0].ID
+			if a.Model.Selected != "" {
+				for _, sess := range a.Model.Sessions {
+					if sess.ID == a.Model.Selected {
+						project = sess.Project
+					}
+				}
+			}
+			if ui.Button(c, "New session").Clicked() {
+				a.request(protocol.Envelope{Type: protocol.TypeCreate, Project: project})
+			}
+		}
 	})
 }
 
@@ -47,7 +78,10 @@ func (a *App) transcript(c *ui.Context) {
 		}
 		ui.Text(c, status).TextColor(c.Theme().TextMuted)
 
-		msgs := a.Model.Messages
+		msgs := a.Model.Visible()
+		if a.Model.Selected == "" {
+			msgs = a.Model.Messages
+		}
 		a.list.Key = func(i int) any { return msgs[i].ID }
 		a.list.Label = func(i int) string { return roleLabel(msgs[i].Role) }
 		a.list.FollowEnd = true
@@ -59,7 +93,24 @@ func (a *App) transcript(c *ui.Context) {
 		if !a.list.AtEnd() && ui.Button(c, "Jump to latest").Clicked() {
 			a.list.ScrollToEnd()
 		}
+		ui.Row(c).Gap(8).Children(func() {
+			ui.TextInput(c, &a.draft).Placeholder("Message").Grow(1)
+			if ui.PrimaryButton(c, "Send").Clicked() && a.draft != "" && a.Model.Selected != "" {
+				a.request(protocol.Envelope{Type: protocol.TypePrompt, ID: a.Model.Selected, Text: a.draft})
+				a.draft = ""
+			}
+		})
 	})
+}
+
+func (a *App) request(e protocol.Envelope) {
+	if a.Send == nil {
+		return
+	}
+	a.seq++
+	e.V = protocol.Version
+	e.Seq = a.seq
+	a.Send(e)
 }
 
 func (a *App) message(c *ui.Context, m Message) {

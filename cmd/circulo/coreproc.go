@@ -18,7 +18,8 @@ import (
 	"github.com/soycanopa/circulo/ui/session"
 )
 
-func connect(ctx context.Context, win *mygo.Window, model *session.Model) {
+func connect(ctx context.Context, win *mygo.Window, app *session.App) {
+	model := app.Model
 	addr, stop, err := startCore(ctx)
 	if err != nil {
 		log.Printf("core: %v", err)
@@ -36,6 +37,28 @@ func connect(ctx context.Context, win *mygo.Window, model *session.Model) {
 		return
 	}
 	defer conn.Close()
+
+	out := make(chan protocol.Envelope, 32)
+	win.Update(func() {
+		app.Send = func(e protocol.Envelope) {
+			select {
+			case <-ctx.Done():
+			case out <- e:
+			}
+		}
+	})
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case e := <-out:
+				if err := protocol.Write(conn, e); err != nil {
+					return
+				}
+			}
+		}
+	}()
 
 	r := protocol.NewReader(conn)
 	for {
