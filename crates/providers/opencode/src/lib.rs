@@ -177,11 +177,7 @@ impl Asker for RefuseAll {
 /// `initialize` plus `session/new`, checked the way a turn checks them.
 /// Returns the agent's session id and remembers the reported config list on
 /// the agent for the caller to validate against.
-fn open_session(
-    agent: &mut Agent,
-    cwd: &Path,
-    ask: &mut dyn Asker,
-) -> Result<String, DriverError> {
+fn open_session(agent: &mut Agent, cwd: &Path, ask: &mut dyn Asker) -> Result<String, DriverError> {
     let welcome = agent.request(
         "initialize",
         json!({

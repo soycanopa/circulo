@@ -126,15 +126,16 @@ impl Driver for DemoDriver {
             return Err(DriverError::new(format!("{value} is not a {id}")));
         }
 
-        self.overrides()
-            .insert(id.to_owned(), value.to_owned());
+        self.overrides().insert(id.to_owned(), value.to_owned());
         Ok(demo_options(&self.overrides()))
     }
 }
 
 impl DemoDriver {
     fn overrides(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, String>> {
-        self.overrides.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.overrides
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
