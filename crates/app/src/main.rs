@@ -13,6 +13,7 @@ use std::process::ExitCode;
 use std::thread;
 
 use circulo_client::Client;
+use circulo_protocol::ClientRequest;
 use circulo_ui::{Assets, Shell};
 use gpui::{
     App, AppContext, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions, point, px,
@@ -62,9 +63,35 @@ fn main() -> ExitCode {
     // The client is blocking, so it lives on its own thread and hands messages
     // to the UI. Dropping the receiver ends the thread with the window.
     let (sender, receiver) = async_channel::unbounded();
+
+    // A turn can block on a permission card, and the answer has to reach the
+    // daemon while the reader is blocked, so the connection splits in two.
+    let (answers_tx, answers_rx) = async_channel::unbounded::<ClientRequest>();
+    let (mut client, mut writer) = match client.split() {
+        Ok(halves) => halves,
+        Err(error) => {
+            eprintln!("circulo: cannot split the connection: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
     thread::spawn(move || {
         while let Ok(Some(message)) = client.next_message() {
             if sender.send_blocking(message).is_err() {
+                break;
+            }
+        }
+    });
+
+    thread::spawn(move || {
+        while let Ok(request) = answers_rx.recv_blocking() {
+            let sent = match request {
+                ClientRequest::AnswerPermission { id, option } => {
+                    writer.answer_permission(&id, option.as_deref())
+                }
+                _ => Ok(()),
+            };
+            if sent.is_err() {
                 break;
             }
         }
@@ -86,7 +113,11 @@ fn main() -> ExitCode {
                     window_min_size: Some(size(px(980.), px(680.))),
                     ..Default::default()
                 },
-                |_, cx| cx.new(|cx| Shell::new(cx, receiver.clone(), prompt.clone())),
+                |_, cx| {
+                    cx.new(|cx| {
+                        Shell::new(cx, receiver.clone(), answers_tx.clone(), prompt.clone())
+                    })
+                },
             )
             .expect("the Circulo window should open");
 

@@ -11,11 +11,14 @@
 
 #![forbid(unsafe_code)]
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use circulo_protocol::{FinishReason, ServerMessage};
-use circulo_provider::Driver;
+use circulo_protocol::{FinishReason, PermissionRequest, ServerMessage};
+use circulo_provider::{Asker, Decision, Driver};
 use uuid::Uuid;
 
 pub struct Session {
@@ -27,6 +30,7 @@ pub struct Core {
     driver: Arc<dyn Driver>,
     sessions: Mutex<Vec<Session>>,
     turns: AtomicU64,
+    permissions: PermissionBroker,
 }
 
 impl Core {
@@ -35,7 +39,25 @@ impl Core {
             driver,
             sessions: Mutex::new(Vec::new()),
             turns: AtomicU64::new(0),
+            permissions: PermissionBroker::default(),
         }
+    }
+
+    /// Answers a pending permission request. `None` cancels it, which is only
+    /// right when the turn itself is going away. Returns false for an id that
+    /// is not open, so a late answer changes nothing.
+    pub fn answer_permission(&self, id: &str, option: Option<String>) -> bool {
+        let decision = match option {
+            Some(option) => Decision::Selected(option),
+            None => Decision::Cancelled,
+        };
+        self.permissions.answer(id, decision)
+    }
+
+    /// Drops every open request: the client is gone, so nothing can answer.
+    /// The waiting drivers read that as cancelled and end their turns.
+    pub fn cancel_permissions(&self) {
+        self.permissions.cancel_all();
     }
 
     pub fn driver_name(&self) -> &'static str {
@@ -74,26 +96,39 @@ impl Core {
             turn,
         });
 
+        // The driver gets two callbacks into the same emit: parts and
+        // questions. `RefCell` keeps that honest without cloning the wire.
+        let emit = RefCell::new(emit);
         let part_session = session.to_owned();
-        let result = self.driver.start_turn(prompt, &mut |part| {
-            emit(ServerMessage::Part {
+        let mut parts = |part| {
+            (emit.borrow_mut())(ServerMessage::Part {
                 session: part_session.clone(),
                 turn,
                 part,
-            })
-        });
+            });
+        };
+        let mut asker = TurnAsker {
+            broker: &self.permissions,
+            session,
+            turn,
+            emit: &emit,
+        };
+
+        let result = self.driver.start_turn(prompt, &mut asker, &mut parts);
+
+        let send = |message| (emit.borrow_mut())(message);
 
         let reason = match result {
             Ok(()) => FinishReason::Completed,
             Err(error) => {
-                emit(ServerMessage::Error {
+                send(ServerMessage::Error {
                     message: error.to_string(),
                 });
                 FinishReason::Failed
             }
         };
 
-        emit(ServerMessage::TurnFinished {
+        send(ServerMessage::TurnFinished {
             session: session.to_owned(),
             turn,
             reason,
@@ -103,6 +138,68 @@ impl Core {
     fn sessions(&self) -> std::sync::MutexGuard<'_, Vec<Session>> {
         // A panicking thread must not take the daemon down with it.
         self.sessions.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// The driver's view of the user: sends a card and waits for the answer.
+struct TurnAsker<'a, F: FnMut(ServerMessage)> {
+    broker: &'a PermissionBroker,
+    session: &'a str,
+    turn: u64,
+    emit: &'a RefCell<F>,
+}
+
+impl<F: FnMut(ServerMessage)> Asker for TurnAsker<'_, F> {
+    fn permission(&mut self, request: PermissionRequest) -> Decision {
+        let (id, answer) = self.broker.open();
+
+        (self.emit.borrow_mut())(ServerMessage::PermissionRequested {
+            session: self.session.to_owned(),
+            turn: self.turn,
+            id: id.clone(),
+            request,
+        });
+
+        // A closed channel means the request was dropped: the client left, or
+        // the daemon cancelled it. Either way the tool must not run.
+        let decision = answer.recv().unwrap_or(Decision::Cancelled);
+        self.broker.close(&id);
+        decision
+    }
+}
+
+/// Open permission requests, keyed by the id the client saw.
+#[derive(Default)]
+pub struct PermissionBroker {
+    next: AtomicU64,
+    pending: Mutex<HashMap<String, Sender<Decision>>>,
+}
+
+impl PermissionBroker {
+    fn open(&self) -> (String, Receiver<Decision>) {
+        let id = format!("p-{}", self.next.fetch_add(1, Ordering::Relaxed) + 1);
+        let (send, receive) = channel();
+        self.pending().insert(id.clone(), send);
+        (id, receive)
+    }
+
+    fn answer(&self, id: &str, decision: Decision) -> bool {
+        let sender = self.pending().remove(id);
+        sender.is_some_and(|sender| sender.send(decision).is_ok())
+    }
+
+    fn close(&self, id: &str) {
+        self.pending().remove(id);
+    }
+
+    fn cancel_all(&self) {
+        // Dropping the senders is the cancellation: every waiting asker wakes
+        // with a closed channel and answers the agent with cancelled.
+        self.pending().clear();
+    }
+
+    fn pending(&self) -> std::sync::MutexGuard<'_, HashMap<String, Sender<Decision>>> {
+        self.pending.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -119,7 +216,12 @@ mod tests {
             "echo"
         }
 
-        fn start_turn(&self, prompt: &str, emit: &mut dyn FnMut(Part)) -> Result<(), DriverError> {
+        fn start_turn(
+            &self,
+            prompt: &str,
+            _: &mut dyn Asker,
+            emit: &mut dyn FnMut(Part),
+        ) -> Result<(), DriverError> {
             emit(Part::Text {
                 delta: prompt.to_owned(),
             });
@@ -134,7 +236,12 @@ mod tests {
             "broken"
         }
 
-        fn start_turn(&self, _: &str, _: &mut dyn FnMut(Part)) -> Result<(), DriverError> {
+        fn start_turn(
+            &self,
+            _: &str,
+            _: &mut dyn Asker,
+            _: &mut dyn FnMut(Part),
+        ) -> Result<(), DriverError> {
             Err(DriverError::new("no"))
         }
     }
@@ -167,6 +274,117 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    /// A driver that stops for the user before it answers.
+    struct AsksOnce;
+
+    impl Driver for AsksOnce {
+        fn name(&self) -> &'static str {
+            "asks"
+        }
+
+        fn start_turn(
+            &self,
+            _: &str,
+            ask: &mut dyn Asker,
+            emit: &mut dyn FnMut(Part),
+        ) -> Result<(), DriverError> {
+            let answer = ask.permission(PermissionRequest {
+                title: "Run cargo test".into(),
+                detail: "cargo test --workspace".into(),
+                options: vec![
+                    circulo_protocol::PermissionOption {
+                        id: "allow-once".into(),
+                        label: "Allow once".into(),
+                        kind: circulo_protocol::PermissionOptionKind::AllowOnce,
+                    },
+                    circulo_protocol::PermissionOption {
+                        id: "reject-once".into(),
+                        label: "Reject".into(),
+                        kind: circulo_protocol::PermissionOptionKind::RejectOnce,
+                    },
+                ],
+            });
+
+            let delta = match answer {
+                Decision::Selected(option) => format!("chose {option}"),
+                Decision::Cancelled => "cancelled".into(),
+            };
+            emit(Part::Text { delta });
+            Ok(())
+        }
+    }
+
+    /// Runs a turn on its own thread and hands back its messages as they come,
+    /// so the test can answer while the turn is blocked.
+    fn run_in_background(
+        core: Arc<Core>,
+        session: String,
+    ) -> std::sync::mpsc::Receiver<ServerMessage> {
+        let (send, receive) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            core.run_turn(&session, "go", move |message| {
+                let _ = send.send(message);
+            })
+        });
+        receive
+    }
+
+    #[test]
+    fn a_permission_request_blocks_the_turn_until_it_is_answered() {
+        let core = Arc::new(core_with(Arc::new(AsksOnce)));
+        let session = core.start_session(None);
+        let messages = run_in_background(Arc::clone(&core), session);
+
+        let mut answered = false;
+        let mut text = None;
+        let mut finished = false;
+
+        while let Ok(message) = messages.recv() {
+            match message {
+                ServerMessage::PermissionRequested { id, .. } => {
+                    assert!(core.answer_permission(&id, Some("allow-once".into())));
+                    answered = true;
+                }
+                ServerMessage::Part {
+                    part: Part::Text { delta },
+                    ..
+                } => text = Some(delta),
+                ServerMessage::TurnFinished { .. } => {
+                    finished = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        assert!(answered, "the card reached the client");
+        assert!(finished, "the turn ended after the answer");
+        assert_eq!(text.as_deref(), Some("chose allow-once"));
+    }
+
+    #[test]
+    fn a_client_that_goes_away_cancels_the_request() {
+        let core = Arc::new(core_with(Arc::new(AsksOnce)));
+        let session = core.start_session(None);
+        let messages = run_in_background(Arc::clone(&core), session);
+
+        let mut text = None;
+        while let Ok(message) = messages.recv() {
+            match message {
+                // The client is gone the moment the card would have appeared.
+                ServerMessage::PermissionRequested { .. } => core.cancel_permissions(),
+                ServerMessage::Part {
+                    part: Part::Text { delta },
+                    ..
+                } => text = Some(delta),
+                ServerMessage::TurnFinished { .. } => break,
+                _ => {}
+            }
+        }
+
+        assert_eq!(text.as_deref(), Some("cancelled"), "nothing ran");
     }
 
     #[test]

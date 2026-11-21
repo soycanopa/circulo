@@ -13,7 +13,7 @@
 
 #![forbid(unsafe_code)]
 
-use circulo_protocol::Part;
+use circulo_protocol::{Part, PermissionRequest};
 
 pub trait Driver: Send + Sync {
     /// The provider name shown in the UI, e.g. `opencode`.
@@ -21,7 +21,30 @@ pub trait Driver: Send + Sync {
 
     /// Runs one turn and emits its parts in order. Returning an error ends the
     /// turn as failed; parts already emitted stay emitted.
-    fn start_turn(&self, prompt: &str, emit: &mut dyn FnMut(Part)) -> Result<(), DriverError>;
+    ///
+    /// A provider that needs the user before it acts calls `ask.permission`
+    /// and blocks: the core sends the card and waits for the answer.
+    fn start_turn(
+        &self,
+        prompt: &str,
+        ask: &mut dyn Asker,
+        emit: &mut dyn FnMut(Part),
+    ) -> Result<(), DriverError>;
+}
+
+/// The user, as the provider sees it. The core implements this; a provider only
+/// knows the question and the answer.
+pub trait Asker {
+    /// Blocks until the user answers or the client goes away; a closed channel
+    /// reads as `Cancelled`.
+    fn permission(&mut self, request: PermissionRequest) -> Decision;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Decision {
+    /// The provider's own option id, sent back verbatim.
+    Selected(String),
+    Cancelled,
 }
 
 #[derive(Debug, thiserror::Error)]

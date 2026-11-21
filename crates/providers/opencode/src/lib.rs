@@ -15,9 +15,9 @@
 //! shared mutable process, no half-dead session to recover. Keeping one agent
 //! per session (ACP `session/load`) lands when sessions are persisted.
 //!
-//! Permissions: the protocol has no permission card yet, so a
-//! `session/request_permission` is answered as cancelled and the tool does not
-//! run. OpenCode's defaults still allow reads, which is enough to watch a turn.
+//! Permissions: a `session/request_permission` becomes a card in the client.
+//! The driver blocks on the answer, then tells the agent which option the user
+//! chose; a client that goes away answers as cancelled.
 
 #![forbid(unsafe_code)]
 
@@ -26,8 +26,10 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
-use circulo_protocol::{Part, ToolState};
-use circulo_provider::{Driver, DriverError};
+use circulo_protocol::{
+    Part, PermissionOption, PermissionOptionKind, PermissionRequest, ToolState,
+};
+use circulo_provider::{Asker, Decision, Driver, DriverError};
 use serde_json::{Value, json};
 
 /// ACP version this driver speaks. `initialize` returns the same number or the
@@ -36,11 +38,24 @@ const ACP_VERSION: u64 = 1;
 
 pub struct OpenCode {
     cwd: PathBuf,
+    binary: PathBuf,
 }
 
 impl OpenCode {
     pub fn new(cwd: impl Into<PathBuf>) -> Self {
-        Self { cwd: cwd.into() }
+        Self {
+            cwd: cwd.into(),
+            binary: PathBuf::from("opencode"),
+        }
+    }
+
+    /// Points the driver at another ACP agent: a pinned build, or the scripted
+    /// agent a test uses to exercise the permission round trip.
+    pub fn with_binary(cwd: impl Into<PathBuf>, binary: impl Into<PathBuf>) -> Self {
+        Self {
+            cwd: cwd.into(),
+            binary: binary.into(),
+        }
     }
 }
 
@@ -49,8 +64,13 @@ impl Driver for OpenCode {
         "opencode"
     }
 
-    fn start_turn(&self, prompt: &str, emit: &mut dyn FnMut(Part)) -> Result<(), DriverError> {
-        let mut agent = Agent::spawn(&self.cwd)?;
+    fn start_turn(
+        &self,
+        prompt: &str,
+        ask: &mut dyn Asker,
+        emit: &mut dyn FnMut(Part),
+    ) -> Result<(), DriverError> {
+        let mut agent = Agent::spawn(&self.binary, &self.cwd)?;
 
         let welcome = agent.request(
             "initialize",
@@ -60,6 +80,7 @@ impl Driver for OpenCode {
                     "fs": {"readTextFile": false, "writeTextFile": false}
                 }
             }),
+            ask,
         )?;
 
         let version = welcome.get("protocolVersion").and_then(Value::as_u64);
@@ -75,6 +96,7 @@ impl Driver for OpenCode {
                 "cwd": self.cwd.to_string_lossy(),
                 "mcpServers": []
             }),
+            ask,
         )?;
         let session = session
             .get("sessionId")
@@ -83,7 +105,7 @@ impl Driver for OpenCode {
             .to_owned();
 
         let mut tools = HashMap::new();
-        agent.prompt(&session, prompt, &mut tools, emit)
+        agent.prompt(&session, prompt, &mut tools, ask, emit)
     }
 }
 
@@ -96,8 +118,8 @@ struct Agent {
 }
 
 impl Agent {
-    fn spawn(cwd: &Path) -> Result<Self, DriverError> {
-        let mut child = Command::new("opencode")
+    fn spawn(binary: &Path, cwd: &Path) -> Result<Self, DriverError> {
+        let mut child = Command::new(binary)
             .arg("acp")
             .current_dir(cwd)
             .stdin(Stdio::piped())
@@ -105,7 +127,9 @@ impl Agent {
             // The agent's own diagnostics belong on our stderr.
             .stderr(Stdio::inherit())
             .spawn()
-            .map_err(|error| DriverError::new(format!("cannot start `opencode acp`: {error}")))?;
+            .map_err(|error| {
+                DriverError::new(format!("cannot start `{}`: {error}", binary.display()))
+            })?;
 
         let stdin = child
             .stdin
@@ -126,7 +150,12 @@ impl Agent {
 
     /// Sends a request and waits for its response, answering the agent's own
     /// requests in between.
-    fn request(&mut self, method: &str, params: Value) -> Result<Value, DriverError> {
+    fn request(
+        &mut self,
+        method: &str,
+        params: Value,
+        ask: &mut dyn Asker,
+    ) -> Result<Value, DriverError> {
         let id = self.next_id;
         self.next_id += 1;
         self.send(json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))?;
@@ -139,7 +168,7 @@ impl Agent {
             }
 
             if message.get("method").is_some() {
-                self.answer(&message)?;
+                self.answer(&message, ask)?;
             }
         }
     }
@@ -150,6 +179,7 @@ impl Agent {
         session: &str,
         text: &str,
         tools: &mut HashMap<String, Tool>,
+        ask: &mut dyn Asker,
         emit: &mut dyn FnMut(Part),
     ) -> Result<(), DriverError> {
         let id = self.next_id;
@@ -181,25 +211,38 @@ impl Agent {
                         apply_update(update, tools, emit);
                     }
                 }
-                Some(_) => self.answer(&message)?,
+                Some(_) => self.answer(&message, ask)?,
                 None => {}
             }
         }
     }
 
-    /// Replies to a request the agent made: permission is cancelled until the
-    /// protocol has a card for it.
-    fn answer(&mut self, message: &Value) -> Result<(), DriverError> {
+    /// Replies to a request the agent made. A permission request becomes a
+    /// card and blocks the turn until the user answers; anything else is
+    /// refused as unsupported.
+    fn answer(&mut self, message: &Value, ask: &mut dyn Asker) -> Result<(), DriverError> {
         let Some(id) = message.get("id") else {
             return Ok(());
         };
 
         if message.get("method").and_then(Value::as_str) == Some("session/request_permission") {
-            self.send(json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": {"outcome": {"outcome": "cancelled"}}
-            }))?;
+            let request = permission_request(message.get("params"));
+
+            // No options means there is nothing to choose; answering cancelled
+            // is better than a card with no buttons.
+            let outcome = if request.options.is_empty() {
+                Decision::Cancelled
+            } else {
+                ask.permission(request)
+            };
+
+            let result = match outcome {
+                Decision::Selected(option) => json!({
+                    "outcome": {"outcome": "selected", "optionId": option}
+                }),
+                Decision::Cancelled => json!({"outcome": {"outcome": "cancelled"}}),
+            };
+            self.send(json!({"jsonrpc": "2.0", "id": id, "result": result}))?;
         } else {
             self.send(json!({
                 "jsonrpc": "2.0",
@@ -262,6 +305,60 @@ fn response(message: Value) -> Result<Value, DriverError> {
     }
 
     Ok(message.get("result").cloned().unwrap_or(Value::Null))
+}
+
+/// The card, built from the ACP request. The title is the agent's own wording;
+/// the detail is the command or path in full, because the decision is about what
+/// will actually run.
+fn permission_request(params: Option<&Value>) -> PermissionRequest {
+    let params = params.cloned().unwrap_or(Value::Null);
+    let tool = params.get("toolCall").cloned().unwrap_or(Value::Null);
+
+    let title = tool
+        .get("title")
+        .and_then(Value::as_str)
+        .unwrap_or("The agent wants to run a tool")
+        .to_owned();
+    let detail = tool
+        .pointer("/rawInput/command")
+        .and_then(Value::as_str)
+        .or_else(|| tool.pointer("/locations/0/path").and_then(Value::as_str))
+        .or_else(|| tool.pointer("/rawInput/path").and_then(Value::as_str))
+        .unwrap_or_default()
+        .to_owned();
+
+    let options = params
+        .get("options")
+        .and_then(Value::as_array)
+        .map(|options| {
+            options
+                .iter()
+                .filter_map(|option| {
+                    Some(PermissionOption {
+                        id: option.get("optionId").and_then(Value::as_str)?.to_owned(),
+                        label: option.get("name").and_then(Value::as_str)?.to_owned(),
+                        kind: permission_kind(option.get("kind").and_then(Value::as_str)),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    PermissionRequest {
+        title,
+        detail,
+        options,
+    }
+}
+
+fn permission_kind(kind: Option<&str>) -> PermissionOptionKind {
+    match kind {
+        Some("allow_once") => PermissionOptionKind::AllowOnce,
+        Some("allow_always") => PermissionOptionKind::AllowAlways,
+        Some("reject_once") => PermissionOptionKind::RejectOnce,
+        Some("reject_always") => PermissionOptionKind::RejectAlways,
+        _ => PermissionOptionKind::Other,
+    }
 }
 
 /// What we remember about a tool call so its updates keep the same row.

@@ -78,9 +78,59 @@ impl Client {
         )
     }
 
+    /// Answers a permission request. `option` is one of the ids the daemon
+    /// offered; `None` cancels, which is only right when the turn is going
+    /// away.
+    pub fn answer_permission(&mut self, id: &str, option: Option<&str>) -> Result<(), ClientError> {
+        send(&mut self.socket, &answer(id, option).encode()?)
+    }
+
+    /// Splits the connection so a reader can block while a writer sends: a
+    /// turn asks a question and the answer has to reach the daemon without
+    /// waiting for the turn to end. One instance only reads, the other only
+    /// writes, over the same TCP stream.
+    pub fn split(self) -> Result<(Self, ClientWriter), ClientError> {
+        // Loopback is what ships, and a plain stream is the one that can be
+        // cloned. A TLS connection is split when remote lands, with the client
+        // rewritten around it.
+        let stream = match self.socket.get_ref() {
+            MaybeTlsStream::Plain(stream) => MaybeTlsStream::Plain(stream.try_clone()?),
+            _ => {
+                return Err(ClientError::Unexpected(
+                    "only a plain connection can be split".into(),
+                ));
+            }
+        };
+        let writer = WebSocket::from_raw_socket(
+            stream,
+            tungstenite::protocol::Role::Client,
+            Some(tungstenite::protocol::WebSocketConfig::default()),
+        );
+        Ok((self, ClientWriter { socket: writer }))
+    }
+
     /// Reads the next message. `None` means the daemon closed the connection.
     pub fn next_message(&mut self) -> Result<Option<ServerMessage>, ClientError> {
         next(&mut self.socket)
+    }
+}
+
+/// The other half of a split connection: sends requests, never reads.
+pub struct ClientWriter {
+    socket: Socket,
+}
+
+impl ClientWriter {
+    /// Answers a permission request over the writer half of a split.
+    pub fn answer_permission(&mut self, id: &str, option: Option<&str>) -> Result<(), ClientError> {
+        send(&mut self.socket, &answer(id, option).encode()?)
+    }
+}
+
+fn answer(id: &str, option: Option<&str>) -> ClientRequest {
+    ClientRequest::AnswerPermission {
+        id: id.to_owned(),
+        option: option.map(str::to_owned),
     }
 }
 
@@ -113,6 +163,8 @@ fn next(socket: &mut Socket) -> Result<Option<ServerMessage>, ClientError> {
 pub enum ClientError {
     #[error("transport: {0}")]
     Transport(#[from] tungstenite::Error),
+    #[error("i/o: {0}")]
+    Io(#[from] std::io::Error),
     #[error("protocol: {0}")]
     Protocol(#[from] ProtocolError),
     #[error("the daemon refused the connection: {0}")]

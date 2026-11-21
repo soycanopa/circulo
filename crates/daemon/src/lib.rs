@@ -12,6 +12,7 @@
 
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
+use std::sync::mpsc::{Sender, channel};
 use std::thread;
 
 use std::path::PathBuf;
@@ -21,6 +22,7 @@ use circulo_protocol::{ClientRequest, Hello, PROTOCOL_VERSION, ProtocolError, Se
 use circulo_provider::Driver;
 use circulo_provider_demo::DemoDriver;
 use circulo_provider_opencode::OpenCode;
+use tungstenite::protocol::{Role, WebSocketConfig};
 use tungstenite::{Message, WebSocket};
 use uuid::Uuid;
 
@@ -77,7 +79,7 @@ impl Daemon {
                     let core = Arc::clone(&self.core);
 
                     thread::spawn(move || {
-                        if let Err(error) = handle(stream, peer, &token, &core) {
+                        if let Err(error) = handle(stream, peer, &token, core) {
                             eprintln!("circulo-daemon: {peer}: {error}");
                         }
                     });
@@ -97,7 +99,12 @@ fn driver() -> Arc<dyn Driver> {
                 .map(PathBuf::from)
                 .or_else(|_| std::env::current_dir())
                 .unwrap_or_else(|_| PathBuf::from("."));
-            Arc::new(OpenCode::new(cwd))
+            // A development hook: point the driver at another ACP agent, such
+            // as the scripted one that asks for permission.
+            match std::env::var("CIRCULO_OPENCODE_BIN") {
+                Ok(binary) => Arc::new(OpenCode::with_binary(cwd, binary)),
+                Err(_) => Arc::new(OpenCode::new(cwd)),
+            }
         }
         _ => Arc::new(DemoDriver::new()),
     }
@@ -107,10 +114,31 @@ fn handle(
     stream: TcpStream,
     _peer: SocketAddr,
     token: &str,
-    core: &Core,
+    core: Arc<Core>,
 ) -> Result<(), ConnectionError> {
+    // Two instances over one TCP stream: this thread only reads, the writer
+    // thread only writes. A turn can then ask a question and keep reading the
+    // answer, which a single blocking loop could not do.
+    let writer_stream = stream.try_clone()?;
     let mut socket = tungstenite::accept(stream)
         .map_err(|error| ConnectionError::Handshake(error.to_string()))?;
+    let mut writer = WebSocket::from_raw_socket(
+        writer_stream,
+        Role::Server,
+        Some(WebSocketConfig::default()),
+    );
+
+    let (outbound, inbox) = channel::<ServerMessage>();
+    thread::spawn(move || {
+        while let Ok(message) = inbox.recv() {
+            let Ok(line) = message.encode() else {
+                continue;
+            };
+            if writer.send(Message::text(line)).is_err() {
+                break;
+            }
+        }
+    });
 
     // Handshake: protocol version first, then the token.
     let Some(line) = next(&mut socket)? else {
@@ -119,65 +147,84 @@ fn handle(
     let hello = Hello::decode(&line)?;
 
     if hello.protocol != PROTOCOL_VERSION {
-        send(
-            &mut socket,
-            &ServerMessage::Error {
+        emit(
+            &outbound,
+            ServerMessage::Error {
                 message: format!(
                     "protocol version {} does not match {}",
                     hello.protocol, PROTOCOL_VERSION
                 ),
             },
-        )?;
+        );
         return Ok(());
     }
 
     if hello.token != token {
-        send(
-            &mut socket,
-            &ServerMessage::Error {
+        emit(
+            &outbound,
+            ServerMessage::Error {
                 message: "bad token".into(),
             },
-        )?;
+        );
         return Ok(());
     }
 
-    send(
-        &mut socket,
-        &ServerMessage::Welcome {
+    emit(
+        &outbound,
+        ServerMessage::Welcome {
             protocol: PROTOCOL_VERSION,
             daemon: core.driver_name().to_owned(),
         },
-    )?;
+    );
 
     while let Some(line) = next(&mut socket)? {
         match ClientRequest::decode(&line)? {
             Some(ClientRequest::StartSession { project }) => {
                 let session = core.start_session(project);
-                send(&mut socket, &ServerMessage::SessionStarted { session })?;
+                emit(&outbound, ServerMessage::SessionStarted { session });
             }
             Some(ClientRequest::Prompt { session, text }) => {
-                core.run_turn(&session, &text, |message| {
-                    // A client that walks away mid-turn ends the turn for this
-                    // connection only; the write error is reported there.
-                    let _ = send(&mut socket, &message);
+                // A turn blocks on its own thread, so this loop stays free to
+                // read the answer to a permission card.
+                let core = Arc::clone(&core);
+                let outbound = outbound.clone();
+                thread::spawn(move || {
+                    core.run_turn(&session, &text, |message| {
+                        // A client that walks away ends the turn; the writer
+                        // thread notices and stops.
+                        let _ = outbound.send(message);
+                    });
                 });
             }
+            Some(ClientRequest::AnswerPermission { id, option }) => {
+                if !core.answer_permission(&id, option) {
+                    emit(
+                        &outbound,
+                        ServerMessage::Error {
+                            message: format!("no permission request {id}"),
+                        },
+                    );
+                }
+            }
             None => {
-                send(
-                    &mut socket,
-                    &ServerMessage::Error {
+                emit(
+                    &outbound,
+                    ServerMessage::Error {
                         message: "unknown request".into(),
                     },
-                )?;
+                );
             }
         }
     }
 
+    // The connection is going away with requests still open; every waiting
+    // driver has to stop waiting.
+    core.cancel_permissions();
     Ok(())
 }
 
-fn send(socket: &mut WebSocket<TcpStream>, message: &ServerMessage) -> Result<(), ConnectionError> {
-    Ok(socket.send(Message::text(message.encode()?))?)
+fn emit(outbound: &Sender<ServerMessage>, message: ServerMessage) {
+    let _ = outbound.send(message);
 }
 
 fn next(socket: &mut WebSocket<TcpStream>) -> Result<Option<String>, ConnectionError> {
@@ -201,6 +248,8 @@ enum ConnectionError {
     Protocol(#[from] ProtocolError),
     #[error("websocket: {0}")]
     WebSocket(#[from] tungstenite::Error),
+    #[error("i/o: {0}")]
+    Io(#[from] std::io::Error),
     #[error("handshake: {0}")]
     Handshake(String),
 }
