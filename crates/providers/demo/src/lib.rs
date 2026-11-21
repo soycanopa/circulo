@@ -53,18 +53,21 @@ impl Driver for DemoDriver {
         });
 
         emit(Part::Tool {
+            id: "demo-read".into(),
             name: "Read".into(),
             detail: "crates/ui/src/transcript.rs".into(),
             state: ToolState::Running,
         });
         thread::sleep(self.chunk_delay);
         emit(Part::Tool {
+            id: "demo-read".into(),
             name: "Read".into(),
             detail: "crates/ui/src/transcript.rs".into(),
             state: ToolState::Done,
         });
         thread::sleep(self.chunk_delay);
         emit(Part::Tool {
+            id: "demo-bash".into(),
             name: "Bash".into(),
             detail: "cargo test --workspace\ncargo clippy --workspace --all-targets".into(),
             state: ToolState::Done,

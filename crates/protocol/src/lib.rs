@@ -123,7 +123,13 @@ pub enum Part {
     /// Streamed reasoning, collapsed in the transcript by default.
     Reasoning { delta: String },
     /// A tool call and its state. Output arrives with the tool renderer.
+    ///
+    /// `id` is the provider's own call id, and it is what lets a later update
+    /// find the row its call opened. Providers that do not have one send an
+    /// empty string and the transcript falls back to matching by name.
     Tool {
+        #[serde(default)]
+        id: String,
         name: String,
         detail: String,
         state: ToolState,
@@ -204,6 +210,7 @@ mod tests {
                 session: "s1".into(),
                 turn: 7,
                 part: Part::Tool {
+                    id: "call-1".into(),
                     name: "Read".into(),
                     detail: "crates/core/src/lib.rs".into(),
                     state: ToolState::Done,
