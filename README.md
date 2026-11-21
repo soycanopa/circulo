@@ -54,7 +54,9 @@ The UI never talks to a CLI. Providers never import the UI. The protocol package
 
 ## Run the prototype
 
-The window is a native MyGo app. On launch it starts `cmd/core` as another process, bound to loopback, and streams a canned history plus one live reply.
+The window is a native MyGo app. On launch it starts `cmd/core` as another process, bound to loopback. The core starts `opencode serve` when `opencode` is on `PATH`, stores projects and sessions in SQLite, and streams the reply into the transcript. Type a folder path, choose Add, then send a prompt.
+
+`cmd/core -demo` still plays a canned transcript and does not start OpenCode.
 
 ```sh
 go tool mygo dev

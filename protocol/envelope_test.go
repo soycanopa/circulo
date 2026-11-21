@@ -28,6 +28,13 @@ func TestRejectsOtherVersion(t *testing.T) {
 	}
 }
 
+func TestProjectAddNeedsPath(t *testing.T) {
+	err := Write(io.Discard, Envelope{V: Version, Type: TypeAdd, Seq: 1})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestUnknownTypePasses(t *testing.T) {
 	var buf bytes.Buffer
 	in := Envelope{V: Version, Type: "future.event", Seq: 4}

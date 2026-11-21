@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"github.com/soycanopa/circulo/protocol"
 )
 
 func TestViewShowsSettledMessage(t *testing.T) {
@@ -39,5 +41,19 @@ func TestViewShowsStreamingText(t *testing.T) {
 	}
 	if !tt.HasText("Streaming") {
 		t.Fatalf("texts %q", tt.Texts())
+	}
+}
+
+func TestSendPrompt(t *testing.T) {
+	var got protocol.Envelope
+	app := NewApp(&Model{Selected: "ses_1"})
+	app.draft = "hello"
+	app.Send = func(e protocol.Envelope) { got = e }
+	tt := ui.NewTester(app.View, 980, 680)
+	if err := tt.Click("Send"); err != nil {
+		t.Fatal(err)
+	}
+	if got.Type != protocol.TypePrompt || got.ID != "ses_1" || got.Text != "hello" {
+		t.Fatalf("%#v", got)
 	}
 }
