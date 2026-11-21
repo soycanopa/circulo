@@ -10,7 +10,7 @@
 - Transcript prototype: `ui/session` shows history plus one live reply from `cmd/core` over the loopback protocol. `go tool mygo dev` starts both. The list follows the end; "Jump to latest" appears after scrolling away.
 - Repo scaffold with MyGo: `mygo.json` points at `cmd/circulo`. `cmd/core` is the core process.
 - Package boundaries: `ui/session`, `core`, `protocol`, `providers`, `persistence`, `git`. The UI and the core are separate processes. `arch/imports_test.go` fails the build if the UI imports the core, or the core imports MyGo.
-- Set up GitHub workflow (branch protection, PR template if desired)
+- GitHub workflow: `main` requires a pull request and rejects force pushes. Approving reviews are not required, so a solo self-review can merge. The body comes from `.github/pull_request_template.md`.
 
 ## Phase 1 — Core + first provider
 - Project/session registry (core package)
