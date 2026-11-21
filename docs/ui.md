@@ -2,7 +2,7 @@
 
 - **Status:** Draft v1.0 (2026-11-21)
 - **Related:** [UX](ux.md) · [PRD](prd.md)
-- **Design source:** the published Waku screenshots (Waku 0.1.20, [`app-screenshot-dark.png`](https://waku.sh/app-screenshot-dark.png) and [`app-screenshot-light.png`](https://waku.sh/app-screenshot-light.png)). We replicate the visual design and the layout: geometry, palette, type steps and component order are measured from those captures and reimplemented in GPUI.
+- **Design source:** Waku 0.1.20. The ground truth is a capture of the app running on this machine (1380 × 880, dark appearance); the published screenshots ([`app-screenshot-dark.png`](https://waku.sh/app-screenshot-dark.png), [`app-screenshot-light.png`](https://waku.sh/app-screenshot-light.png)) fill in states the empty app does not show, and are the 2× scale reference for spacing.
 - **Rule:** Waku is GPL-3.0. We copy the *look*, never a file, a function or a type. `AGENTS.md` holds the rule; this document holds the measurements.
 - **Implementation:** native GPUI. One window, no embedded web view.
 
@@ -10,10 +10,11 @@
 
 - Neutral **graphite** palette. Colour is reserved for meaning (status, selection, streaming, gauges); the interface itself is monochrome.
 - Accent: coral / warm tone, used for primary actions and status once the core can report them.
-- Dark, light and system appearance. The palette below is the measured pair.
-- macOS: the window is transparent to the desktop with a blurred background; the sidebar is a translucent material, the main column paints an opaque canvas.
+- Dark, light and system appearance. Dark is measured; light is still an approximation (§ 3).
 - High information density, calm, keyboard-first.
 - Transcript content is selectable; chrome is not.
+
+**No vibrancy.** The marketing screenshots show a sidebar tinted by a blue wallpaper, which looks like a vibrancy material. It is not what the app does: the live capture reads a flat `#252525` over a `#1A1A1A` canvas. GPUI exposes `WindowBackgroundAppearance::Blurred`, which inserts an `NSVisualEffectView`; on macOS 27 it tints nothing here, and Waku does not rely on it. The sidebar is painted opaque, as the app does it.
 
 ## 2. Layout geometry (measured, in points)
 
@@ -21,10 +22,10 @@
 |---|---|
 | Window, default | 1000 × 740 |
 | Window, minimum | 980 × 680 |
-| Sidebar | 252 wide, full height, translucent |
-| Sidebar top row (window controls) | 46 high; traffic lights at 20 / 18; controls start at 92 |
-| Sidebar horizontal inset (list) | 12, rows inset 12 more |
-| Task row | radius 8, padding 12 × 8, two lines with a 3 gap |
+| Sidebar | 252 wide, full height, opaque |
+| Sidebar top row (window controls) | 46 high; traffic lights at 16 / 18; controls start at 82 |
+| Sidebar list inset | 4; group label inset 14; row inset 14 |
+| Task row | 51 high, radius 8, padding 14 × 8, two lines with a 3 gap |
 | Main header row | 46 high, 24 horizontal inset |
 | Transcript | 34 horizontal padding, no narrower reading column |
 | User bubble | max 520 wide, radius 12, padding 15 × 9, right-aligned |
@@ -34,43 +35,47 @@
 
 The transcript scrolls under the composer; the composer and its footer stay at the bottom of the main column.
 
-## 3. Tokens (measured from the reference)
+## 3. Tokens (measured from the live app)
 
 Dark:
 
 | Role | Value | Where it is used |
 |---|---|---|
-| Canvas | `#141414` | Transcript and composer background |
-| Sidebar | translucent graphite (reads `#1A1E20` over a blue wallpaper) | Sidebar material over the window blur |
-| Selection | `#FFFFFF` at 7% | Selected task row |
-| Hover | `#FFFFFF` at 4% | Rows, icon buttons, pickers |
-| Surface | `#191919` | Composer |
+| Canvas | `#1A1A1A` | Transcript background |
+| Sidebar | `#252525` | Sidebar surface |
+| Selection | `#FFFFFF` at 4% | Selected task row |
+| Hover | `#FFFFFF` at 3% | Rows, icon buttons, pickers |
+| Surface | `#1F1F1F` | Composer |
 | Border | `#FFFFFF` at 8% | Composer outline |
-| Chip | `#242424` | User bubble, inline code, send button |
-| Text | `#DCDCDC` | Titles, transcript body |
-| Text muted | `#9A9A9A` | Picker labels, group labels |
-| Text faint | `#6F6F6F` | Metadata, times, icons |
+| Chip | `#2A2A2A` | User bubble, inline code, send button |
+| Text | `#E2E2E2` | Titles, transcript body |
+| Text muted | `#A3A3A3` | Actions, group labels, picker labels |
+| Text faint | `#747474` | Metadata, times, icons |
 | Hairline | `#FFFFFF` at 10% | Worked divider |
 | Accent | `#E2795B` | Status and the active send state |
+
+`Surface`, `Border`, `Chip`, `Selection` and `Hairline` are derived from the offsets between canvas and component in the 2× capture, applied to the live palette. The empty app does not show them.
 
 Light:
 
 | Role | Value |
 |---|---|
-| Canvas | `#F5F4F5` |
-| Sidebar | translucent light material (reads `#E9EFF1` over the same wallpaper) |
-| Selection | `#000000` at 5% |
-| Hover | `#000000` at 3% |
+| Canvas | `#F5F5F5` |
+| Sidebar | `#ECECEC` |
+| Selection | `#000000` at 4% |
+| Hover | `#000000` at 2% |
 | Surface | `#FFFFFF` |
-| Border | `#000000` at 10% |
-| Chip | `#E6E5E6` |
+| Border | `#000000` at 8% |
+| Chip | `#E9E9E9` |
 | Text | `#1B1B1B` |
-| Text muted | `#6B6B6B` |
-| Text faint | `#8E8E8E` |
+| Text muted | `#6F6F6F` |
+| Text faint | `#9A9A9A` |
 | Hairline | `#000000` at 8% |
 | Accent | `#D9663F` |
 
-Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group labels, metadata and times. Inline code is one step smaller in a monospace face.
+Light has not been captured from the live app yet; these values follow the published light screenshot and are corrected the first time we take a light capture.
+
+Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group labels, metadata and times. Task rows use 17 / 15 line height, transcript blocks 20. Inline code is one step smaller in a monospace face.
 
 ## 4. Surfaces and components (replication checklist)
 
@@ -80,6 +85,7 @@ Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group la
 - [x] Date-grouped task list. Group label with the folder affordance on the group that holds the open task.
 - [x] Task row: one-line title, project with folder icon, relative time right-aligned, selected and hover states.
 - [x] Settings at the bottom.
+- [ ] Group filter affordance (the live app shows one next to the folder when a group is active).
 - [ ] Search field, context menus, drag-reorder, pinning and archiving.
 
 ### Transcript
@@ -90,20 +96,31 @@ Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group la
 - [ ] Reasoning and tool-activity rows (collapsed by default).
 - [ ] Virtualized list, pin-to-bottom and the jump-to-latest pill.
 - [ ] Streaming caret and reduced-motion behaviour.
+- [ ] Empty state: coral mark, title, subtitle, primary button and the “don’t work in a project” link.
 
 ### Composer
 - [x] Input surface with placeholder.
 - [x] Shared controls: model, reasoning effort, access mode, agent mode; send button.
 - [x] Footer: project, `Local`, branch, activity indicator.
+- [ ] Provider glyph in the model picker.
 - [ ] Real menus, queue and steer affordances, usage gauge, attachments.
 
 ### Missing for v1.0
-Permission cards, checkpoint and rewind UI, the right panel tabs (files, diff, terminal, browser, editor), settings, command palette, empty state.
+Permission cards, checkpoint and rewind UI, the right panel tabs (files, diff, terminal, browser, editor), settings, command palette.
 
 ## 5. Motion
 
 Subtle, purposeful. Honor system reduced-motion. No decorative blink unless an agent is working. Streaming text reveals without a caret when reduced motion is on.
 
-## 6. How we keep it faithful
+## 6. How we check fidelity
 
-Every change to this screen is checked against the reference captures side by side, at the same window size and appearance, before it merges. Deviations are deliberate and recorded here: layout adjustments by the owner later, never accidental drift.
+1. Run the app: `cargo run -p circulo`. It opens at 1000 × 740, the size the reference measurements use.
+2. Find the window id and capture it alone:
+
+   ```sh
+   # window id for the process named "circulo", then
+   screencapture -l<id> -x -o capture.png
+   ```
+
+3. Compare side by side with the Waku capture at the same size, and with the 2× screenshot for states the app does not show (halve its pixel values).
+4. Any deliberate deviation is written in this file. No accidental drift.

@@ -46,13 +46,18 @@ fn header(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
         .items_center()
         .h(px(46.))
         .px(px(24.))
-        .child(div().text_size(px(13.)).child(workspace.title))
+        .child(
+            div()
+                .text_size(px(13.))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .child(workspace.title),
+        )
         .child(div().flex_1())
         .child(icon("icons/panel-right.svg", 16., theme.text_faint))
 }
 
 fn user_message(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
-    div().flex().justify_end().pt(px(24.)).pb(px(26.)).child(
+    div().flex().justify_end().pt(px(30.)).pb(px(26.)).child(
         div()
             .max_w(px(520.))
             .px(px(15.))
@@ -79,7 +84,7 @@ fn worked(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
                 .text_size(px(11.5))
                 .text_color(theme.text_faint)
                 .child(workspace.worked)
-                .child(icon("icons/chevron-down.svg", 11., theme.text_faint)),
+                .child(icon("icons/chevron-right.svg", 11., theme.text_faint)),
         )
         .child(div().flex_1().h(px(1.)).bg(theme.hairline))
 }
@@ -89,6 +94,7 @@ fn block_view(theme: &Theme, block: &Block) -> impl IntoElement {
         Block::Heading(text) => div()
             .py(px(7.))
             .text_size(px(13.))
+            .line_height(px(20.))
             .font_weight(gpui::FontWeight::SEMIBOLD)
             .child(*text),
         Block::Paragraph(text) => div()
@@ -100,6 +106,7 @@ fn block_view(theme: &Theme, block: &Block) -> impl IntoElement {
             .gap(px(8.))
             .py(px(4.))
             .text_size(px(13.))
+            .line_height(px(20.))
             .child(div().child("•"))
             .child(div().flex_1().child(inline(text, theme))),
     }

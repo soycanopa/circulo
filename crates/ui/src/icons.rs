@@ -22,6 +22,7 @@ icon_assets!(
     "arrow-right.svg",
     "arrow-up.svg",
     "chevron-down.svg",
+    "chevron-right.svg",
     "folder-plus.svg",
     "folder.svg",
     "git-branch.svg",

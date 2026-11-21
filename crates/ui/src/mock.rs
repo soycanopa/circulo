@@ -94,9 +94,9 @@ pub(crate) fn workspace() -> Workspace {
         blocks: vec![
             Block::Heading("Done. The window now matches the reference layout."),
             Block::Paragraph(
-                "The shell is a **three-region frame**: a translucent sidebar of 252pt, the \
-                 transcript with 34pt of padding, and a composer that floats above the bottom \
-                 edge over the same canvas.",
+                "The shell is a **three-region frame**: an opaque sidebar of 252pt, the transcript \
+                 with 34pt of padding, and a composer that floats above the bottom edge over the \
+                 same canvas.",
             ),
             Block::Paragraph("What is in place:"),
             Block::Bullet(
