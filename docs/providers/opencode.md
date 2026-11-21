@@ -21,7 +21,9 @@ documented message set, so it is the honest integration.
 1. `initialize` with `protocolVersion: 1`. The agent must answer with the same
    version; anything else fails the turn instead of guessing.
 2. `session/new` with `cwd` and an empty `mcpServers` list. The answer carries a
-   `sessionId` and `configOptions` (models, agents) that the pickers will use.
+   `sessionId` and `configOptions` (models, effort, modes) behind the pickers.
+   The stored choices are re-applied with `session/set_config_option`, because
+   a set lasts only for the session that received it.
 3. `session/prompt` with one text part. Updates stream as
    `session/update` notifications until the response arrives.
 4. The process is killed when the turn ends.
@@ -59,11 +61,14 @@ a duplicate row for it.
 - **One process per turn.** No shared mutable process and no half-dead session.
   `session/load` (the agent advertises `loadSession: true`) is how a session will
   be resumed once sessions are persisted.
-- **Permissions are cancelled.** There is no permission card in the protocol
-  yet, so `session/request_permission` is answered as cancelled and the tool
-  does not run. Reads still work: OpenCode's defaults allow them.
-- **No model or agent selection.** `session/new` returns `configOptions`; wiring
-  them into `session/set_config_option` is the picker slice.
+- **Permissions ask the user.** `session/request_permission` becomes a card and
+  the turn blocks on the answer; a client that leaves reads as cancelled.
+  Reads still work without asking: OpenCode's defaults allow them.
+- **No per-turn memory.** A set lasts for the agent session that received it: a
+  fresh `session/new` resets `effort` to `default` (probed on 2.3.2). The
+  driver stores the user's choices and re-applies them after every
+  `session/new`, so a switch survives the per-turn process. A stale choice the
+  agent refuses is dropped.
 - **No timeouts.** A wedged agent blocks its connection thread; the daemon has
   one thread per connection, so it does not block another client.
 - **`opencode` must be on `PATH`.** The daemon reports the spawn failure as a
