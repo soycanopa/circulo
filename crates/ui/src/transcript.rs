@@ -42,7 +42,8 @@ pub(crate) enum Row {
 
 /// Owned copy of a streamed part, so the list can render rows lazily.
 pub(crate) enum Segment {
-    Text(String),
+    /// Parsed once per text version and shared with the live transcript.
+    Text(Rc<Vec<crate::markdown::Block>>),
     Reasoning(String),
     Tool {
         name: String,
@@ -195,7 +196,7 @@ fn rows(workspace: &Workspace, transcript: &Transcript, prompt: &str) -> Vec<Row
             .parts
             .iter()
             .map(|segment| match segment {
-                crate::live::Segment::Text(text) => Segment::Text(text.clone()),
+                crate::live::Segment::Text { text, parsed } => Segment::Text(parsed.blocks(text)),
                 crate::live::Segment::Reasoning(text) => Segment::Reasoning(text.clone()),
                 crate::live::Segment::Tool {
                     name, detail, done, ..
@@ -296,13 +297,13 @@ fn segment_view(segment: &Segment, id: SharedString, theme: &Theme) -> AnyElemen
     match segment {
         // Agent text is CommonMark while it streams: markers become weight,
         // mono runs, list indent and code surfaces.
-        Segment::Text(text) => div()
+        Segment::Text(blocks) => div()
             .id(id)
             .w_full()
             .min_w(px(0.))
             .flex_shrink_0()
             .py(px(7.))
-            .child(crate::markdown::markdown(text, theme))
+            .child(crate::markdown::markdown(blocks, theme))
             .into_any_element(),
         Segment::Reasoning(text) => activity(&id, theme, "icons/brain.svg", None, text, true),
         Segment::Tool { name, detail, done } => {
