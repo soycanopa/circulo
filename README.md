@@ -54,7 +54,7 @@ The UI never talks to a CLI. Providers never import the UI. The protocol package
 
 ## Run the prototype
 
-The window is a native MyGo app. On launch it starts `cmd/core` as another process, bound to loopback. The core starts `opencode serve` when `opencode` is on `PATH`, stores projects and sessions in SQLite, and streams the reply into the transcript. Type a folder path, choose Add, then send a prompt. The model and reasoning pickers switch the OpenCode session. While a reply is streaming, Steer, Queue, and Stop are available.
+The window is a native MyGo app. On launch it starts `cmd/core` as another process, bound to loopback. The core starts `opencode serve` when `opencode` is on `PATH`, stores projects and sessions in SQLite, and streams the reply into the transcript. Type a folder path, choose Add, then send a prompt. The model and reasoning pickers switch the session. While a reply is streaming, Steer, Queue, and Stop are available. The sidebar chooses OpenCode or Muse Code before adding a folder. In a Git repository, Rewind restores the files and the local transcript to the checkpoint taken before a prompt.
 
 `cmd/core -demo` still plays a canned transcript and does not start OpenCode.
 

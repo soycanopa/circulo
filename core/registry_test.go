@@ -161,7 +161,7 @@ func TestRegistryModelAndAbort(t *testing.T) {
 	defer db.Close()
 	fake := &fakeDriver{ev: make(chan driver.Event, 1)}
 	reg := NewRegistry(db, fake, nil)
-	if err := reg.AddProject(context.Background(), dir); err != nil {
+	if err := reg.AddProject(context.Background(), dir, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := reg.UseModel(context.Background(), "ses_fake", driver.Model{ID: "big-pickle", ProviderID: "opencode", Variant: "high"}); err != nil {

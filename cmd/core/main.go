@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/soycanopa/circulo/core"
+	"github.com/soycanopa/circulo/driver"
 	"github.com/soycanopa/circulo/persistence"
 )
 
@@ -50,9 +52,28 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	drv, stopDrv, boot := startOpenCode(ctx)
-	defer stopDrv()
-	if err := core.NewRegistry(db, drv, boot).Serve(ctx, ln); err != nil {
+	opencodeDrv, stopOpenCode, errOpenCode := startOpenCode(ctx)
+	defer stopOpenCode()
+	museDrv, stopMuse, errMuse := startMuse(ctx)
+	defer stopMuse()
+	drivers := map[string]driver.Driver{}
+	if opencodeDrv != nil {
+		drivers["opencode"] = opencodeDrv
+	} else {
+		log.Printf("opencode: %v", errOpenCode)
+	}
+	if museDrv != nil {
+		drivers["muse"] = museDrv
+	} else {
+		log.Printf("muse: %v", errMuse)
+	}
+	var boot error
+	if len(drivers) == 0 {
+		boot = errors.Join(errOpenCode, errMuse)
+	}
+	reg := core.NewRegistry(db, nil, boot)
+	reg.Drivers = drivers
+	if err := reg.Serve(ctx, ln); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -25,8 +25,9 @@
 - While a turn is streaming, Steer and Queue send `prompt.send` with `delivery` `steer` or `queue`. Stop sends `session.abort`, which interrupts the OpenCode turn.
 
 ## Phase 3 — Second provider + Git
-- Claude Code or Codex adapter
-- Conversation-aware Git checkpoints and rewind
+- Muse Code adapter in `providers/muse`. `muse serve` speaks MSP over stdio: `session/start`, `turn/start` (`ifBusy` steer or queue), `turn/interrupt`, `model/list`, and `session/setReasoningEffort`. New Muse sessions start in `allowAll` so a turn is not blocked on a permission card.
+- The sidebar picks `opencode` or `muse` before Add. Each session keeps its provider.
+- Before a normal prompt in a Git worktree, the core stores a checkpoint (`git stash create`, or HEAD when the tree is clean) tied to that message. Rewind runs `git reset --hard` to that revision and drops the local transcript from that message on. The provider session still has the later turns.
 
 ## Phase 4 — UI polish
 - Full sidebar (projects + sessions)

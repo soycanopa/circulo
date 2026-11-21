@@ -13,6 +13,7 @@ type App struct {
 	// Send delivers a request to the core. It is safe to call from the UI thread.
 	Send         func(protocol.Envelope)
 	path         string
+	agent        string
 	draft        string
 	modelLabel   string
 	variantLabel string
@@ -24,7 +25,7 @@ type App struct {
 
 // NewApp builds the window state. Model is updated on the UI thread.
 func NewApp(m *Model) *App {
-	a := &App{Model: m}
+	a := &App{Model: m, agent: "opencode"}
 	a.md.ShareSelection = true
 	a.md.Theme = &markdown.Theme{
 		FontSize: 15,
@@ -45,13 +46,20 @@ func (a *App) sidebar(c *ui.Context) {
 	ui.Column(c).Width(240).Padding(16).Gap(8).Background(ui.Hex("#141414")).Children(func() {
 		ui.Text(c, "Circulo").Bold().FontSize(18)
 		ui.TextInput(c, &a.path).Placeholder("Project folder")
+		if a.agent == "" {
+			a.agent = "opencode"
+		}
+		ui.Combobox(c, &a.agent, []string{"opencode", "muse"}).Label("Agent")
 		if ui.Button(c, "Add").Clicked() {
-			a.request(protocol.Envelope{Type: protocol.TypeAdd, Path: a.path})
+			a.request(protocol.Envelope{Type: protocol.TypeAdd, Path: a.path, Agent: a.agent})
 		}
 		for _, sess := range a.Model.Sessions {
 			title := sess.Title
 			if title == "" {
 				title = sess.ID
+			}
+			if sess.Agent != "" {
+				title += " · " + sess.Agent
 			}
 			if ui.Button(c, title).Clicked() {
 				a.request(protocol.Envelope{Type: protocol.TypeOpen, ID: sess.ID})
@@ -111,6 +119,9 @@ func (a *App) transcript(c *ui.Context) {
 				}
 			} else if ui.PrimaryButton(c, "Send").Clicked() {
 				a.sendDraft("")
+			}
+			if id := a.Model.RewindID(); id != "" && ui.Button(c, "Rewind").Clicked() {
+				a.request(protocol.Envelope{Type: protocol.TypeRewind, ID: id, Session: a.Model.Selected})
 			}
 		})
 	})

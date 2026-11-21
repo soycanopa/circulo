@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/soycanopa/circulo/driver"
+	"github.com/soycanopa/circulo/git"
 	"github.com/soycanopa/circulo/persistence"
 	"github.com/soycanopa/circulo/protocol"
 )
@@ -22,9 +23,10 @@ import (
 // Registry is the core's project and session state.
 // It speaks protocol to UI connections and driver to the provider.
 type Registry struct {
-	DB     *persistence.Store
-	Driver driver.Driver
-	Boot   error
+	DB      *persistence.Store
+	Driver  driver.Driver
+	Drivers map[string]driver.Driver
+	Boot    error
 
 	mu       sync.Mutex
 	seq      int64
@@ -46,8 +48,10 @@ func NewRegistry(db *persistence.Store, drv driver.Driver, boot error) *Registry
 // Serve accepts loopback clients and watches the provider until ctx is canceled.
 func (r *Registry) Serve(ctx context.Context, ln net.Listener) error {
 	defer ln.Close()
-	if r.Driver != nil {
-		go r.Driver.Watch(ctx, r.onEvent)
+	for _, d := range r.allDrivers() {
+		go d.Watch(ctx, r.onEvent)
+	}
+	if len(r.allDrivers()) > 0 {
 		go r.refresh(ctx)
 	}
 	go func() {
@@ -109,7 +113,9 @@ func (r *Registry) handle(ctx context.Context, e protocol.Envelope) error {
 	}
 	switch e.Type {
 	case protocol.TypeAdd:
-		return r.AddProject(ctx, e.Path)
+		return r.AddProject(ctx, e.Path, e.Agent)
+	case protocol.TypeRewind:
+		return r.Rewind(e.Session, e.ID)
 	case protocol.TypeCreate:
 		return r.NewSession(ctx, e.Project)
 	case protocol.TypeOpen:
@@ -126,7 +132,10 @@ func (r *Registry) handle(ctx context.Context, e protocol.Envelope) error {
 }
 
 // AddProject stores a folder and opens the first session there.
-func (r *Registry) AddProject(ctx context.Context, path string) error {
+func (r *Registry) AddProject(ctx context.Context, path, agent string) error {
+	if agent == "" {
+		agent = "opencode"
+	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return err
@@ -138,34 +147,28 @@ func (r *Registry) AddProject(ctx context.Context, path string) error {
 	if !info.IsDir() {
 		return fmt.Errorf("%s is not a directory", abs)
 	}
-	if r.Driver == nil {
+	if r.driverFor(agent) == nil {
 		if r.Boot != nil {
 			return r.Boot
 		}
-		return errors.New("no provider")
+		return fmt.Errorf("no %s provider", agent)
 	}
 	id := projectID(abs)
 	name := filepath.Base(abs)
 	now := time.Now()
-	if err := r.DB.UpsertProject(persistence.Project{ID: id, Path: abs, Name: name, Created: now}); err != nil {
+	if err := r.DB.UpsertProject(persistence.Project{ID: id, Path: abs, Name: name, Provider: agent, Created: now}); err != nil {
 		return err
 	}
 	stored, err := r.DB.ProjectByPath(abs)
 	if err != nil {
 		return err
 	}
-	r.emit(protocol.Envelope{Type: protocol.TypeProject, ID: stored.ID, Path: stored.Path, Name: stored.Name})
+	r.emit(protocol.Envelope{Type: protocol.TypeProject, ID: stored.ID, Path: stored.Path, Name: stored.Name, Agent: stored.Provider})
 	return r.NewSession(ctx, stored.ID)
 }
 
 // NewSession asks the provider for a session in the project's directory.
 func (r *Registry) NewSession(ctx context.Context, projectID string) error {
-	if r.Driver == nil {
-		if r.Boot != nil {
-			return r.Boot
-		}
-		return errors.New("no provider")
-	}
 	projects, err := r.DB.ListProjects()
 	if err != nil {
 		return err
@@ -180,15 +183,26 @@ func (r *Registry) NewSession(ctx context.Context, projectID string) error {
 	if project.ID == "" {
 		return fmt.Errorf("unknown project %s", projectID)
 	}
-	sid, err := r.Driver.CreateSession(ctx, project.Path, project.Name)
+	agent := project.Provider
+	if agent == "" {
+		agent = "opencode"
+	}
+	drv := r.driverFor(agent)
+	if drv == nil {
+		if r.Boot != nil {
+			return r.Boot
+		}
+		return fmt.Errorf("no %s provider", agent)
+	}
+	sid, err := drv.CreateSession(ctx, project.Path, project.Name)
 	if err != nil {
 		return err
 	}
-	sess := persistence.Session{ID: sid, ProjectID: project.ID, Title: project.Name, Created: time.Now()}
+	sess := persistence.Session{ID: sid, ProjectID: project.ID, Title: project.Name, Provider: agent, Created: time.Now()}
 	if err := r.DB.UpsertSession(sess); err != nil {
 		return err
 	}
-	r.emit(protocol.Envelope{Type: protocol.TypeSession, ID: sess.ID, Project: sess.ProjectID, Name: sess.Title})
+	r.emit(protocol.Envelope{Type: protocol.TypeSession, ID: sess.ID, Project: sess.ProjectID, Name: sess.Title, Agent: agent})
 	if err := r.ensureCatalog(ctx, project); err != nil {
 		r.status(err.Error())
 	}
@@ -198,7 +212,8 @@ func (r *Registry) NewSession(ctx context.Context, projectID string) error {
 
 // Focus tells the UI to show one session and replays its stored turns.
 func (r *Registry) Focus(sessionID string) error {
-	if _, err := r.DB.SessionByID(sessionID); err != nil {
+	sess, err := r.DB.SessionByID(sessionID)
+	if err != nil {
 		return err
 	}
 	msgs, err := r.DB.ListMessages(sessionID)
@@ -206,6 +221,9 @@ func (r *Registry) Focus(sessionID string) error {
 		return err
 	}
 	r.emit(protocol.Envelope{Type: protocol.TypeFocus, ID: sessionID})
+	if cp, err := r.DB.LatestCheckpoint(sessionID); err == nil {
+		r.emit(protocol.Envelope{Type: protocol.TypeCheckpoint, ID: cp.MessageID, Session: sessionID, Text: cp.Rev})
+	}
 	for _, m := range msgs {
 		r.emit(protocol.Envelope{
 			Type: protocol.TypeDelta, ID: m.ID, Session: m.SessionID, Role: m.Role, Text: m.Text,
@@ -214,18 +232,14 @@ func (r *Registry) Focus(sessionID string) error {
 			r.emit(protocol.Envelope{Type: protocol.TypeDone, ID: m.ID, Session: m.SessionID})
 		}
 	}
+	r.emitStoredCatalog(sess.ProjectID)
 	return nil
 }
 
 // Prompt stores the user turn and asks the provider to run it.
 func (r *Registry) Prompt(ctx context.Context, sessionID, text, delivery string) error {
-	if r.Driver == nil {
-		if r.Boot != nil {
-			return r.Boot
-		}
-		return errors.New("no provider")
-	}
-	if _, err := r.DB.SessionByID(sessionID); err != nil {
+	drv, err := r.sessionDriver(sessionID)
+	if err != nil {
 		return err
 	}
 	text = strings.TrimSpace(text)
@@ -236,30 +250,64 @@ func (r *Registry) Prompt(ctx context.Context, sessionID, text, delivery string)
 		return fmt.Errorf("unknown delivery %s", delivery)
 	}
 	id := "usr_" + randomID()
+	var rev string
+	if delivery == "" {
+		if project, err := r.projectOf(sessionID); err == nil {
+			if got, err := git.Checkpoint(project.Path); err == nil {
+				rev = got
+			}
+		}
+	}
 	msg := persistence.Message{ID: id, SessionID: sessionID, Role: "user", Text: text, Done: true}
 	if err := r.DB.SaveMessage(msg); err != nil {
 		return err
+	}
+	if rev != "" {
+		cp := persistence.Checkpoint{ID: "cp_" + id, SessionID: sessionID, MessageID: id, Rev: rev, Created: time.Now()}
+		if err := r.DB.SaveCheckpoint(cp); err != nil {
+			return err
+		}
+		r.emit(protocol.Envelope{Type: protocol.TypeCheckpoint, ID: id, Session: sessionID, Text: rev})
 	}
 	r.emit(protocol.Envelope{Type: protocol.TypeDelta, ID: id, Session: sessionID, Role: "user", Text: text})
 	r.emit(protocol.Envelope{Type: protocol.TypeDone, ID: id, Session: sessionID})
 	if delivery == "" {
 		r.status("Sending")
 	}
-	return r.Driver.Prompt(ctx, sessionID, text, delivery)
+	return drv.Prompt(ctx, sessionID, text, delivery)
+}
+
+// Rewind restores the worktree to the checkpoint taken before messageID and drops that turn onward.
+// The provider session still contains the later turns.
+func (r *Registry) Rewind(sessionID, messageID string) error {
+	cp, err := r.DB.CheckpointByMessage(messageID)
+	if err != nil {
+		return err
+	}
+	if cp.SessionID != sessionID {
+		return fmt.Errorf("checkpoint is for %s", cp.SessionID)
+	}
+	project, err := r.projectOf(sessionID)
+	if err != nil {
+		return err
+	}
+	if err := git.Rewind(project.Path, cp.Rev); err != nil {
+		return err
+	}
+	if err := r.DB.DeleteFromMessage(messageID); err != nil {
+		return err
+	}
+	r.status("Rewound the files and the transcript")
+	return r.Focus(sessionID)
 }
 
 // UseModel switches the model and reasoning effort for one session.
 func (r *Registry) UseModel(ctx context.Context, sessionID string, model driver.Model) error {
-	if r.Driver == nil {
-		if r.Boot != nil {
-			return r.Boot
-		}
-		return errors.New("no provider")
-	}
-	if _, err := r.DB.SessionByID(sessionID); err != nil {
+	drv, err := r.sessionDriver(sessionID)
+	if err != nil {
 		return err
 	}
-	if err := r.Driver.SetModel(ctx, sessionID, model); err != nil {
+	if err := drv.SetModel(ctx, sessionID, model); err != nil {
 		return err
 	}
 	r.noteChoice(sessionID, model)
@@ -269,13 +317,11 @@ func (r *Registry) UseModel(ctx context.Context, sessionID string, model driver.
 
 // Abort interrupts the provider turn for one session.
 func (r *Registry) Abort(ctx context.Context, sessionID string) error {
-	if r.Driver == nil {
-		if r.Boot != nil {
-			return r.Boot
-		}
-		return errors.New("no provider")
+	drv, err := r.sessionDriver(sessionID)
+	if err != nil {
+		return err
 	}
-	if err := r.Driver.Abort(ctx, sessionID); err != nil {
+	if err := drv.Abort(ctx, sessionID); err != nil {
 		return err
 	}
 	r.status("Idle")
@@ -412,18 +458,10 @@ func (r *Registry) snapshot(ch chan protocol.Envelope) []protocol.Envelope {
 		return append(out, r.next(protocol.Envelope{Type: protocol.TypeStatus, Text: err.Error()}))
 	}
 	for _, p := range projects {
-		out = append(out, r.next(protocol.Envelope{Type: protocol.TypeProject, ID: p.ID, Path: p.Path, Name: p.Name}))
+		out = append(out, r.next(protocol.Envelope{Type: protocol.TypeProject, ID: p.ID, Path: p.Path, Name: p.Name, Agent: p.Provider}))
 	}
 	for _, s := range sessions {
-		out = append(out, r.next(protocol.Envelope{Type: protocol.TypeSession, ID: s.ID, Project: s.ProjectID, Name: s.Title}))
-	}
-	for _, models := range r.catalogs {
-		for _, m := range models {
-			out = append(out, r.next(protocol.Envelope{
-				Type: protocol.TypeModel, ID: m.ID, Provider: m.ProviderID, Name: m.Name,
-				Variants: strings.Join(m.Variants, ","),
-			}))
-		}
+		out = append(out, r.next(protocol.Envelope{Type: protocol.TypeSession, ID: s.ID, Project: s.ProjectID, Name: s.Title, Agent: s.Provider}))
 	}
 	for id, m := range r.chosen {
 		out = append(out, r.next(protocol.Envelope{
@@ -433,6 +471,9 @@ func (r *Registry) snapshot(ch chan protocol.Envelope) []protocol.Envelope {
 	if len(sessions) > 0 {
 		last := sessions[len(sessions)-1]
 		out = append(out, r.next(protocol.Envelope{Type: protocol.TypeFocus, ID: last.ID}))
+		if cp, err := r.DB.LatestCheckpoint(last.ID); err == nil {
+			out = append(out, r.next(protocol.Envelope{Type: protocol.TypeCheckpoint, ID: cp.MessageID, Session: last.ID, Text: cp.Rev}))
+		}
 		msgs, err := r.DB.ListMessages(last.ID)
 		if err == nil {
 			for _, m := range msgs {
@@ -441,6 +482,12 @@ func (r *Registry) snapshot(ch chan protocol.Envelope) []protocol.Envelope {
 					out = append(out, r.next(protocol.Envelope{Type: protocol.TypeDone, ID: m.ID, Session: m.SessionID}))
 				}
 			}
+		}
+		for _, m := range r.catalogs[last.ProjectID] {
+			out = append(out, r.next(protocol.Envelope{
+				Type: protocol.TypeModel, ID: m.ID, Provider: m.ProviderID, Name: m.Name,
+				Variants: strings.Join(m.Variants, ","),
+			}))
 		}
 	}
 	return out
@@ -507,7 +554,8 @@ func (r *Registry) refresh(ctx context.Context) {
 }
 
 func (r *Registry) ensureCatalog(ctx context.Context, project persistence.Project) error {
-	if r.Driver == nil {
+	drv := r.driverFor(project.Provider)
+	if drv == nil {
 		return nil
 	}
 	r.mu.Lock()
@@ -516,7 +564,7 @@ func (r *Registry) ensureCatalog(ctx context.Context, project persistence.Projec
 	if ok {
 		return nil
 	}
-	models, err := r.Driver.Models(ctx, project.Path)
+	models, err := drv.Models(ctx, project.Path)
 	if err != nil {
 		return err
 	}
@@ -532,13 +580,26 @@ func (r *Registry) ensureCatalog(ctx context.Context, project persistence.Projec
 	return nil
 }
 
+func (r *Registry) emitStoredCatalog(projectID string) {
+	r.mu.Lock()
+	models := append([]driver.Model(nil), r.catalogs[projectID]...)
+	r.mu.Unlock()
+	for _, m := range models {
+		r.emit(protocol.Envelope{
+			Type: protocol.TypeModel, ID: m.ID, Provider: m.ProviderID, Name: m.Name,
+			Variants: strings.Join(m.Variants, ","),
+		})
+	}
+}
+
 func (r *Registry) bindModel(ctx context.Context, sessionID, directory string) {
-	if r.Driver == nil {
+	drv, err := r.sessionDriver(sessionID)
+	if err != nil {
 		return
 	}
-	ref, err := r.Driver.SessionModel(ctx, sessionID)
+	ref, err := drv.SessionModel(ctx, sessionID)
 	if err != nil || ref.ID == "" {
-		ref, err = r.Driver.DefaultModel(ctx, directory)
+		ref, err = drv.DefaultModel(ctx, directory)
 	}
 	if err != nil || ref.ID == "" {
 		if err != nil {
@@ -561,6 +622,68 @@ func (r *Registry) emitChoice(sessionID string, model driver.Model) {
 		Type: protocol.TypeCurrent, ID: sessionID,
 		Provider: model.ProviderID, ModelID: model.ID, Variant: model.Variant,
 	})
+}
+
+func (r *Registry) driverFor(agent string) driver.Driver {
+	if agent == "" {
+		agent = "opencode"
+	}
+	if len(r.Drivers) > 0 {
+		return r.Drivers[agent]
+	}
+	return r.Driver
+}
+
+func (r *Registry) allDrivers() []driver.Driver {
+	if len(r.Drivers) == 0 {
+		if r.Driver == nil {
+			return nil
+		}
+		return []driver.Driver{r.Driver}
+	}
+	out := make([]driver.Driver, 0, len(r.Drivers))
+	for _, d := range r.Drivers {
+		if d != nil {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+func (r *Registry) sessionDriver(sessionID string) (driver.Driver, error) {
+	sess, err := r.DB.SessionByID(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	agent := sess.Provider
+	if agent == "" {
+		agent = "opencode"
+	}
+	drv := r.driverFor(agent)
+	if drv == nil {
+		if r.Boot != nil {
+			return nil, r.Boot
+		}
+		return nil, fmt.Errorf("no %s provider", agent)
+	}
+	return drv, nil
+}
+
+func (r *Registry) projectOf(sessionID string) (persistence.Project, error) {
+	sess, err := r.DB.SessionByID(sessionID)
+	if err != nil {
+		return persistence.Project{}, err
+	}
+	projects, err := r.DB.ListProjects()
+	if err != nil {
+		return persistence.Project{}, err
+	}
+	for _, p := range projects {
+		if p.ID == sess.ProjectID {
+			return p, nil
+		}
+	}
+	return persistence.Project{}, fmt.Errorf("unknown project %s", sess.ProjectID)
 }
 
 func projectID(path string) string {

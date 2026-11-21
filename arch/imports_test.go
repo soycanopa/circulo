@@ -42,6 +42,11 @@ func TestBoundaries(t *testing.T) {
 			"github.com/soycanopa/circulo/core",
 			"github.com/soycanopa/circulo/ui",
 		}},
+		{"github.com/soycanopa/circulo/providers/muse", []string{
+			"github.com/egoist/mygo",
+			"github.com/soycanopa/circulo/core",
+			"github.com/soycanopa/circulo/ui",
+		}},
 	}
 	for _, tc := range cases {
 		out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", tc.pkg).CombinedOutput()
