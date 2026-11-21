@@ -3,6 +3,7 @@ name = "circulo-provider"
 description = "The Driver trait every Circulo agent provider implements"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 repository.workspace = true
 
 [dependencies]

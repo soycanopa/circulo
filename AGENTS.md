@@ -35,18 +35,22 @@ Everything is separated like puzzle pieces. Dependency direction is one-way.
 We work with small, reviewable, incremental changes.
 
 ### Solo development (current owner)
-- Work directly on `main` with **granular commits**.
+- `main` is protected and protection applies to admins, so **every change lands through a pull request**, the owner's included. Do not plan around pushing to `main`.
+- Work on a short-lived branch: `feature/<short-topic>`, `fix/<short-topic>` or `docs/<topic>`.
 - One logical change per commit. Prefer many small commits over one big one.
 - Commit messages: `type(scope): summary`  
   Examples: `feat(protocol): add part.delta event`, `fix(opencode): tolerate unknown events`, `docs: update TRD architecture`, `test(core): session registry`.
 - Tests travel with the code. Protocol and adapter changes include fixtures or tests in the same commit (or the one immediately before).
-- Push to `main` after local checks pass (`cargo test`, clippy, fmt).
+- Push the branch, open a PR and self-review the diff. CI and local checks must be green before merging:
+  `cargo fmt --all --check`, `cargo clippy --workspace --all-targets`, `cargo test --workspace`.
+- Merge with a merge commit so the granular commits survive. Never squash a branch into one commit.
+- Delete the branch after it merges. `main` must stay green.
 - Small incremental releases: tag when a meaningful vertical slice works (e.g. “OpenCode streaming works”, “Git checkpoints land”, “v0.1-alpha”).
-- Use semantic versioning (`v0.x` while pre-1.0, then `v1.0` when Waku parity is reached).
+- Use semantic versioning (`v0.x` while pre-1.0, then `v1.0` when Waku parity is reached). The Go application already used `v0.1.0`–`v0.3.1`; the Rust line continues at `v0.4.0` so the tags stay truthful about what each release contained.
 - Release notes summarize user-visible changes.
 
 ### External collaborators
-- All external work happens on branches (`feature/<short-topic>`, `fix/<short-topic>`, `docs/<topic>`).
+- All work happens on branches (`feature/<short-topic>`, `fix/<short-topic>`, `docs/<topic>`).
 - Open a PR for review. Keep PRs small and focused.
 - PR title follows the same `type(scope): summary` style.
 - Description explains *what* and *why*, links the relevant issue or doc section, and lists how to test.
