@@ -12,12 +12,16 @@
 //! unbalanced input: an unclosed fence is still a code block, an unclosed
 //! `**` stays literal text until its closing marker arrives.
 //!
-//! What is deliberately not supported yet: tables, footnotes, math, raw HTML
-//! (dropped), and links are coloured but not clickable.
+//! Tables are laid out as rows of weighted cells, so a two-column table with one
+//! long column does not waste half the width.
+//!
+//! What is deliberately not supported yet: footnotes, math, raw HTML (dropped),
+//! and links are coloured but not clickable: a click would have to hit-test a
+//! byte range inside a text layout this renderer rebuilds every frame.
 
 use gpui::{
     AnyElement, Font, FontFeatures, FontStyle, FontWeight, Hsla, IntoElement, SharedString,
-    StrikethroughStyle, StyledText, TextRun, UnderlineStyle, div, prelude::*, px,
+    StrikethroughStyle, StyledText, TextRun, UnderlineStyle, div, prelude::*, px, relative,
 };
 use pulldown_cmark::{Event, Options, Tag, TagEnd};
 
@@ -64,6 +68,15 @@ pub(crate) enum Marker {
     Ordered(u64),
 }
 
+/// Column alignment from the table's delimiter row. CommonMark's "none" reads
+/// as left, which is what a cell does by default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Align {
+    Left,
+    Center,
+    Right,
+}
+
 /// One block-level element. Everything a message contains lands in one list of
 /// these, in document order.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -82,6 +95,11 @@ pub(crate) enum Block {
     },
     Quote(Vec<Span>),
     Code(String),
+    Table {
+        aligns: Vec<Align>,
+        head: Vec<Vec<Span>>,
+        rows: Vec<Vec<Vec<Span>>>,
+    },
     Rule,
 }
 
@@ -196,6 +214,7 @@ fn block_view(block: Block, theme: &Theme) -> AnyElement {
             // Newlines break lines in GPUI text, so the block needs no runs.
             .child(StyledText::new(text))
             .into_any_element(),
+        Block::Table { aligns, head, rows } => table(aligns, head, rows, theme),
         Block::Rule => div()
             .w_full()
             .h(px(1.))
@@ -203,6 +222,103 @@ fn block_view(block: Block, theme: &Theme) -> AnyElement {
             .bg(theme.hairline)
             .into_any_element(),
     }
+}
+
+/// A table, drawn as rows of cells. Every cell of a column gets the same
+/// flex basis, weighted by the longest text the column holds, so a two-column
+/// table with one long column does not waste half the width on the short one.
+fn table(
+    aligns: Vec<Align>,
+    head: Vec<Vec<Span>>,
+    rows: Vec<Vec<Vec<Span>>>,
+    theme: &Theme,
+) -> AnyElement {
+    let columns = head.len().max(rows.iter().map(Vec::len).max().unwrap_or(0));
+    if columns == 0 {
+        return div().into_any_element();
+    }
+
+    // Weight per column: the longest cell text, floored so a narrow "N" column
+    // still gets a readable share.
+    let mut weights = vec![6_usize; columns];
+    for row in std::iter::once(&head).chain(rows.iter()) {
+        for (index, cell) in row.iter().enumerate() {
+            let length: usize = cell.iter().map(|span| span.text.chars().count()).sum();
+            weights[index] = weights[index].max(length);
+        }
+    }
+    let total: usize = weights.iter().sum();
+    let ratios: Vec<f32> = weights
+        .iter()
+        .map(|weight| *weight as f32 / total as f32)
+        .collect();
+
+    let mut grid = div()
+        .w_full()
+        .min_w(px(0.))
+        .flex()
+        .flex_col()
+        .border_t(px(1.))
+        .border_color(theme.hairline);
+
+    if !head.is_empty() {
+        grid = grid.child(table_row(
+            &head,
+            &ratios,
+            &aligns,
+            theme,
+            FontWeight::SEMIBOLD,
+        ));
+    }
+    for row in rows {
+        grid = grid.child(table_row(&row, &ratios, &aligns, theme, FontWeight::NORMAL));
+    }
+
+    grid.into_any_element()
+}
+
+fn table_row(
+    cells: &[Vec<Span>],
+    ratios: &[f32],
+    aligns: &[Align],
+    theme: &Theme,
+    weight: FontWeight,
+) -> AnyElement {
+    let mut row = div()
+        .w_full()
+        .min_w(px(0.))
+        .flex()
+        .border_b(px(1.))
+        .border_color(theme.hairline);
+
+    for (index, ratio) in ratios.iter().enumerate() {
+        let align = aligns.get(index).copied().unwrap_or(Align::Left);
+        let text_align = match align {
+            Align::Left => gpui::TextAlign::Left,
+            Align::Center => gpui::TextAlign::Center,
+            Align::Right => gpui::TextAlign::Right,
+        };
+
+        row = row.child(
+            div()
+                .flex_basis(relative(*ratio))
+                .flex_grow()
+                .min_w(px(0.))
+                .px(px(8.))
+                .py(px(5.))
+                .text_size(px(12.5))
+                .line_height(px(18.))
+                .text_align(text_align)
+                .child(styled(
+                    cells.get(index).cloned().unwrap_or_default(),
+                    theme,
+                    theme.text,
+                    weight,
+                )),
+        );
+    }
+
+    row.into_any_element()
 }
 
 fn text_block(
@@ -220,6 +336,14 @@ fn text_block(
         .line_height(px(line))
         .child(styled(spans, theme, color, weight))
         .into_any_element()
+}
+
+fn align_of(align: pulldown_cmark::Alignment) -> Align {
+    match align {
+        pulldown_cmark::Alignment::Center => Align::Center,
+        pulldown_cmark::Alignment::Right => Align::Right,
+        pulldown_cmark::Alignment::None | pulldown_cmark::Alignment::Left => Align::Left,
+    }
 }
 
 fn marker_text(marker: Option<Marker>, depth: usize) -> SharedString {
@@ -283,11 +407,13 @@ fn text_run(span: &Span, theme: &Theme, color: gpui::Rgba, weight: FontWeight) -
     }
 }
 
-/// Parse CommonMark into blocks. The only options that change meaning for an
-/// agent's output: strikethrough and task lists are GitHub-flavoured and agents
-/// write them; everything else stays CommonMark.
+/// Parse CommonMark into blocks, with the GitHub extensions agents write:
+/// tables, strikethrough, task lists and callout quotes.
 pub(crate) fn blocks(text: &str) -> Vec<Block> {
-    let options = Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
+    let options = Options::ENABLE_TABLES
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_GFM;
     let mut builder = Builder::default();
 
     for event in pulldown_cmark::Parser::new_ext(text, options) {
@@ -312,6 +438,16 @@ struct Builder {
     quote: usize,
     code: Option<String>,
     heading: Option<u8>,
+    /// The table being built, if the parser is inside one.
+    table: Option<TableState>,
+}
+
+#[derive(Default)]
+struct TableState {
+    aligns: Vec<Align>,
+    head: Vec<Vec<Span>>,
+    rows: Vec<Vec<Vec<Span>>>,
+    row: Vec<Vec<Span>>,
 }
 
 struct ListState {
@@ -373,6 +509,19 @@ impl Builder {
             Tag::Heading { level, .. } => self.heading = Some(level as u8),
             Tag::BlockQuote(_) => self.quote += 1,
             Tag::CodeBlock(_) => self.code = Some(String::new()),
+            Tag::Table(alignment) => {
+                self.table = Some(TableState {
+                    aligns: alignment.iter().map(|align| align_of(*align)).collect(),
+                    ..TableState::default()
+                })
+            }
+            Tag::TableHead => {}
+            Tag::TableRow => {
+                if let Some(table) = &mut self.table {
+                    table.row.clear();
+                }
+            }
+            Tag::TableCell => {}
             Tag::List(start) => self.lists.push(ListState {
                 ordered: start.is_some(),
                 next: start.unwrap_or(1),
@@ -420,6 +569,32 @@ impl Builder {
             }
             TagEnd::List(_) => {
                 self.lists.pop();
+            }
+            TagEnd::TableCell => {
+                if let Some(table) = &mut self.table {
+                    table.row.push(std::mem::take(&mut self.spans));
+                }
+            }
+            TagEnd::TableHead => {
+                if let Some(table) = &mut self.table {
+                    // A header carries its cells without a row tag of its own.
+                    table.head = std::mem::take(&mut table.row);
+                }
+            }
+            TagEnd::TableRow => {
+                if let Some(table) = &mut self.table {
+                    let row = std::mem::take(&mut table.row);
+                    table.rows.push(row);
+                }
+            }
+            TagEnd::Table => {
+                if let Some(table) = self.table.take() {
+                    self.blocks.push(Block::Table {
+                        aligns: table.aligns,
+                        head: table.head,
+                        rows: table.rows,
+                    });
+                }
             }
             TagEnd::Item => {
                 // A tight list has no paragraph wrapper, so text still sitting
@@ -745,6 +920,71 @@ mod tests {
                     spans: vec![plain("☐ todo")],
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn a_table_becomes_a_head_and_rows() {
+        assert_eq!(
+            blocks("| Crate | Owns |\n|---|---|\n| `core` | sessions |"),
+            vec![Block::Table {
+                aligns: vec![Align::Left, Align::Left],
+                head: vec![vec![plain("Crate")], vec![plain("Owns")]],
+                rows: vec![vec![
+                    vec![inline(
+                        "core",
+                        Inline {
+                            code: true,
+                            ..Inline::default()
+                        }
+                    )],
+                    vec![plain("sessions")],
+                ]],
+            }]
+        );
+    }
+
+    #[test]
+    fn a_table_keeps_its_column_alignment() {
+        assert_eq!(
+            blocks("| a | b | c |\n|:--|:-:|--:|\n| 1 | 2 | 3 |"),
+            vec![Block::Table {
+                aligns: vec![Align::Left, Align::Center, Align::Right],
+                head: vec![vec![plain("a")], vec![plain("b")], vec![plain("c")]],
+                rows: vec![vec![vec![plain("1")], vec![plain("2")], vec![plain("3")]]],
+            }]
+        );
+    }
+
+    #[test]
+    fn a_table_cell_carries_inline_formatting() {
+        assert_eq!(
+            blocks("| **bold** |\n|---|\n| `code` |"),
+            vec![Block::Table {
+                aligns: vec![Align::Left],
+                head: vec![vec![inline(
+                    "bold",
+                    Inline {
+                        bold: true,
+                        ..Inline::default()
+                    }
+                )]],
+                rows: vec![vec![vec![inline(
+                    "code",
+                    Inline {
+                        code: true,
+                        ..Inline::default()
+                    }
+                )]]],
+            }]
+        );
+    }
+
+    #[test]
+    fn a_pipe_line_without_a_delimiter_stays_a_paragraph() {
+        assert_eq!(
+            blocks("a | b"),
+            vec![Block::Paragraph(vec![plain("a | b")])]
         );
     }
 

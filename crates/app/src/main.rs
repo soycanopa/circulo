@@ -21,6 +21,13 @@ use gpui::{
 
 const PROMPT: &str = "Give me a quick overview of this workspace.";
 
+/// The composer is not typeable yet, so the app sends one fixed prompt. The
+/// override exists so a real provider can be exercised with a different ask
+/// (a table, a code block) without a rebuild.
+fn prompt() -> String {
+    std::env::var("CIRCULO_PROMPT").unwrap_or_else(|_| PROMPT.to_owned())
+}
+
 fn main() -> ExitCode {
     let daemon = match supervisor::Daemon::start() {
         Ok(daemon) => daemon,
@@ -46,7 +53,8 @@ fn main() -> ExitCode {
         }
     };
 
-    if let Err(error) = client.prompt(&session, PROMPT) {
+    let prompt = prompt();
+    if let Err(error) = client.prompt(&session, &prompt) {
         eprintln!("circulo: cannot send the prompt: {error}");
         return ExitCode::FAILURE;
     }
@@ -78,7 +86,7 @@ fn main() -> ExitCode {
                     window_min_size: Some(size(px(980.), px(680.))),
                     ..Default::default()
                 },
-                |_, cx| cx.new(|cx| Shell::new(cx, receiver.clone(), PROMPT.into())),
+                |_, cx| cx.new(|cx| Shell::new(cx, receiver.clone(), prompt.clone())),
             )
             .expect("the Circulo window should open");
 

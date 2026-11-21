@@ -115,13 +115,14 @@ The list is **bottom-anchored** (`ListAlignment::Bottom`). That is what makes a 
 
 ### How markdown is rendered
 
-Agent text is CommonMark, and it streams, so the renderer has to accept partial input. `crates/ui/src/markdown.rs` parses with `pulldown-cmark` (no `html` or `getopts` features) into `Block`s — paragraph, heading, list item, quote, code, rule — each holding `Span`s with inline flags (bold, italic, code, strike, link).
+Agent text is CommonMark plus the GitHub extensions agents actually write (tables, strikethrough, task lists), and it streams, so the renderer has to accept partial input. `crates/ui/src/markdown.rs` parses with `pulldown-cmark` (no `html` or `getopts` features) into `Block`s — paragraph, heading, list item, quote, code, table, rule — each holding `Span`s with inline flags (bold, italic, code, strike, link).
 
 - **Drawing uses `StyledText` with one `TextRun` per span**, not `with_default_highlights`. Highlights can change weight, colour and decoration but not the font family, and inline code needs the monospace family. Each run carries its own `Font`, colour and background.
 - **Inline code is a mono run on the `chip` colour**; the paper has no padding inside a run, so the chip hugs the glyphs.
 - **Lists** use a fixed 18 px marker column and indent one level by 18 px, so wrapped lines stay aligned with the text above them. Items of the same list sit 4 px apart; every other block 9 px.
 - **Fenced blocks** paint their own chip surface at 12 / 18 in `Menlo`; GPUI splits a text element on `\n`, so the block needs no per-line layout.
-- **Partial input never fails**: an unclosed fence is already a code block, an unclosed `**` stays literal until its marker arrives. Tables, footnotes, math and raw HTML are not rendered yet (HTML is dropped); links are coloured but not clickable.
+- **Tables** are rows of cells with a 1 px hairline above and between rows, no vertical rules. Each column takes a share of the width in proportion to the longest text it holds (floored at 6 characters, so a narrow "N" column stays readable), and the delimiter row's alignment is honoured through `text_align`.
+- **Partial input never fails**: an unclosed fence is already a code block, an unclosed `**` stays literal until its marker arrives. Footnotes, math and raw HTML are not rendered yet (HTML is dropped); links are coloured but not clickable, because a click would have to hit-test a byte range inside a text layout this renderer rebuilds every frame.
 - [x] Collapsed reasoning and tool rows: icon, label, target, and a disclosure chevron or a spinner.
 - [x] Empty state: coral mark, title, subtitle, primary button and the quiet way out.
 - [ ] Expanded reasoning, tool output and live status; the rows are static.
