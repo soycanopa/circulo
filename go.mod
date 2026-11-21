@@ -4,6 +4,7 @@ go 1.27.4
 
 require (
 	github.com/egoist/mygo v0.10.0
+	github.com/google/uuid v1.6.0
 	modernc.org/sqlite v1.39.1
 )
 
@@ -13,7 +14,6 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.11.1 // indirect
 	github.com/go-text/typesetting v0.3.5 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
