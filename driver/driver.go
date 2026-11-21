@@ -15,17 +15,24 @@ const (
 	KindFailed = "exec.failed"
 	// KindModel means the session's model or reasoning effort changed.
 	KindModel = "model.selected"
+	// KindPermit means the provider is waiting for the user to approve a tool.
+	KindPermit = "approval.requested"
 )
 
 // Event is one normalized provider event.
 type Event struct {
-	Kind       string
-	SessionID  string
-	MessageID  string
-	Text       string
-	ModelID    string
-	ProviderID string
-	Variant    string
+	Kind          string
+	SessionID     string
+	MessageID     string
+	Text          string
+	ModelID       string
+	ProviderID    string
+	Variant       string
+	Tool          string
+	ApprovalID    string
+	RequirementID string
+	// Choices is one option per line: choiceID, label, decision, separated by tabs.
+	Choices string
 }
 
 // Model is a provider model the user can select.
@@ -49,4 +56,9 @@ type Driver interface {
 	SetModel(ctx context.Context, sessionID string, model Model) error
 	Abort(ctx context.Context, sessionID string) error
 	Watch(ctx context.Context, fn func(Event)) error
+}
+
+// Approver answers a permission card. Providers that never ask do not implement it.
+type Approver interface {
+	Decide(ctx context.Context, sessionID, approvalID, requirementID, choiceID string) error
 }
