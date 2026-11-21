@@ -7,9 +7,10 @@ All flows use the neutral event protocol defined in the TRD.
 
 ## 1. App start
 
-- Load persisted projects and sessions
-- Start or attach provider drivers for managed projects
-- Open SSE / channel subscription for live events
+- The supervisor starts `circulo-daemon`, or attaches to one already running.
+- The daemon prints `{"address": …, "token": …}` once and begins serving.
+- The client connects, presents the protocol version and the token, and gets a welcome.
+- The client loads persisted projects and sessions from the daemon, then subscribes to live events.
 
 ## 2. Add project
 
@@ -48,5 +49,6 @@ All flows use the neutral event protocol defined in the TRD.
 
 ## 8. Quit
 
-- Graceful shutdown of all provider processes
+- Graceful shutdown of all provider processes inside the daemon
 - Persist any pending state
+- The supervisor stops the daemon it started; an attached daemon keeps running

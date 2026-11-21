@@ -71,11 +71,13 @@ We work with small, reviewable, incremental changes.
 ## Project map (target)
 
 - `docs/` — PRD, TRD, UX, UI, Flow, Implementation Plan, this file.
-- `crates/protocol/` — neutral wire contract (events, parts). Shared by UI and core.
-- `crates/core/` — registry, orchestrator, Git checkpoints, persistence.
-- `crates/providers/` — one crate per agent (opencode, claude, codex, …).
+- `crates/protocol/` — neutral wire contract (messages, parts, framing). Shared by every client and the core.
+- `crates/core/` — sessions, turn orchestration, Git checkpoints, persistence.
+- `crates/daemon/` — the daemon process: loopback listener, handshake, protocol loop.
+- `crates/client/` — the protocol client. The desktop uses it today; mobile and remote use the same crate.
+- `crates/providers/` — `driver` holds the trait; one crate per agent (`demo`, `opencode`, …).
 - `crates/ui/` — GPUI views (sidebar, transcript, composer, right panel).
-- `src/` or `crates/app/` — composition root (desktop app, optional daemon binary).
+- `crates/app/` — composition root: the desktop app.
 
 ## Quality bar
 

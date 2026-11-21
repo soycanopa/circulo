@@ -11,11 +11,16 @@
 - Set up GitHub workflow (branch protection optional; PRs only for external collaborators)
 
 ## Phase 1 — Core + first provider
-- Project/session registry (core package)
-- Neutral protocol package
-- OpenCode adapter (independent package)
-- Local persistence (SQLite package)
-- Basic streaming transcript (minimal UI that talks only to protocol)
+Order matters: prove the pipe before adding a real provider to it.
+
+1. Neutral protocol crate: versioned messages, parts, framing, forward-compatible decode, tests.
+2. Driver trait and a demo provider that emits a canned turn. Nothing real is spawned yet.
+3. Core: session registry and turn orchestration behind the Driver trait.
+4. Daemon process: loopback TCP, token handshake, request loop, announced address.
+5. Client crate: handshake, requests, streamed messages. Integration test against a real daemon.
+6. Wire the desktop: spawn the daemon, stream parts into the transcript. The mock module goes away.
+7. OpenCode adapter behind the same Driver trait.
+8. Local persistence (SQLite), owned by the core.
 
 ## Phase 2 — Shared control surface
 - Model / reasoning effort discovery and switching

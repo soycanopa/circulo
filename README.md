@@ -6,7 +6,7 @@ One window for projects, independent sessions, and live work: streaming transcri
 
 Circulo is **inspired by** [Waku](https://github.com/egoist/waku). The product idea, the calm layout, and the way you watch an agent work are the reference. Circulo is its own application, built entirely in **Rust + GPUI** — the same GPU-accelerated UI framework behind Zed. Waku is GPL-3.0; none of its code is copied here.
 
-**Status:** the specification is written and the workspace is scaffolded. The app opens a native window with the shell of the interface; the core loop and the first provider are next. See [the implementation plan](docs/implement.md).
+**Status:** the interface is in place and the daemon runs end to end. A client connects, opens a session, sends a prompt and receives a streamed turn — reasoning, tool calls and text — through the protocol. The demo provider produces that turn; the desktop still renders sample data and gets wired to the daemon next. See [the implementation plan](docs/implement.md).
 
 ## Who it is for
 
@@ -53,9 +53,12 @@ The UI never talks to a CLI. Providers never import the UI or the core. The prot
 
 | Crate | Owns |
 |---|---|
-| `crates/protocol` | The neutral wire contract: events, parts, envelopes. Shared by the UI and the core. |
-| `crates/core` | Projects, sessions, provider lifecycle and orchestration. |
+| `crates/protocol` | The neutral wire contract: messages, parts, framing. Shared by every client and the core. |
+| `crates/core` | Sessions, turn orchestration, provider lifecycle. |
+| `crates/daemon` | The daemon process: loopback listener, handshake, protocol loop. |
+| `crates/client` | The protocol client used by the desktop, and later by mobile and remote. |
 | `crates/providers/driver` | The `Driver` trait each provider implements. |
+| `crates/providers/demo` | A provider that streams a canned turn, so the pipe is proven before a real CLI. |
 | `crates/persistence` | SQLite, settings and blobs. Used only by the core. |
 | `crates/git` | Worktrees and conversation-aware checkpoints. Used only by the core. |
 | `crates/ui` | GPUI views: sidebar, transcript, composer, right panel. Presentation only. |
@@ -69,8 +72,11 @@ The UI never talks to a CLI. Providers never import the UI or the core. The prot
 ## Build and run
 
 ```sh
-cargo run -p circulo
+cargo run -p circulo          # the desktop window
+cargo run -p circulo-daemon   # the daemon: prints its address and token, then serves
 ```
+
+The daemon is the core process. It prints one line with its loopback address and token; a client presents both in the handshake. Remote and mobile are clients of the same daemon, so nothing needs to move when they arrive.
 
 Checks to run before contributing:
 

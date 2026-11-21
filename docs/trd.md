@@ -12,11 +12,16 @@
 | Shell & UI | GPUI | GPU-accelerated native UI (same as Waku / Zed). |
 | Language | Rust | Stable, edition 2021 or later |
 | Persistence | SQLite + JSON files | Local-first (same spirit as Waku) |
-| Protocol | Neutral internal events + provider adapters | Versioned contract (channels, HTTP or WebSocket) |
+| Protocol | Neutral events + provider adapters | Versioned, transport-agnostic contract |
+| Transport | Loopback TCP, newline-delimited JSON | WS + TLS for remote; same protocol crate, new adapter |
 | Providers | Adapter per CLI | Native structured protocols (not terminal scraping) |
 | Build | cargo | Desktop bundles (macOS .app, Linux, Windows) |
 
 ## 2. Architecture — puzzle pieces
+
+The core runs as its own process (`circulo-daemon`) from day one. The desktop, and later mobile and remote clients, connect to it over the protocol. That is what makes the same core usable everywhere without moving boundaries: a client that can speak the protocol does not care where the daemon runs.
+
+Transport today: loopback TCP with one JSON message per line. The protocol crate owns the message types and the framing, so adding WebSocket + TLS for remote is a transport adapter, not a contract change. The handshake carries the protocol version and a token the daemon prints when it starts.
 
 ```
 ┌─────────────────────────────────────┐
@@ -29,7 +34,7 @@
                   │ versioned protocol
                   ▼
 ┌─────────────────────────────────────┐
-│  Core / Daemon (crate or process)   │
+│  Core / Daemon (own process)        │
 │  - project & session registry       │
 │  - provider drivers                 │
 │  - Git / worktree / checkpoints     │
