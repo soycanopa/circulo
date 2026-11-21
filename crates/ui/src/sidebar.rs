@@ -1,10 +1,14 @@
 //! The sidebar: window controls, the two actions, the grouped task list and
 //! settings. Width and paddings are the measured reference values.
+//!
+//! `New Task` shows the empty state and a task row opens the conversation, so
+//! both screens are reachable before the core exists.
 
-use gpui::{IntoElement, div, prelude::*, px};
+use gpui::{Context, Div, IntoElement, div, prelude::*, px};
 
 use crate::icons::icon;
-use crate::mock::{Group, Workspace};
+use crate::mock::{Group, Task, Workspace};
+use crate::shell::Shell;
 use crate::theme::Theme;
 
 const WIDTH: f32 = 252.;
@@ -12,7 +16,11 @@ const WIDTH: f32 = 252.;
 /// the sidebar toggle starts right after them.
 const TRAFFIC_LIGHTS: f32 = 82.;
 
-pub(crate) fn sidebar(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
+pub(crate) fn sidebar(
+    theme: &Theme,
+    workspace: &Workspace,
+    cx: &mut Context<Shell>,
+) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
@@ -21,8 +29,8 @@ pub(crate) fn sidebar(theme: &Theme, workspace: &Workspace) -> impl IntoElement 
         .flex_shrink_0()
         .bg(theme.sidebar)
         .child(window_controls(theme))
-        .child(actions(theme))
-        .child(task_list(theme, workspace))
+        .child(actions(theme, cx))
+        .child(task_list(theme, workspace, cx))
         .child(settings(theme))
 }
 
@@ -50,18 +58,22 @@ fn tool(theme: &Theme, path: &'static str, tint: gpui::Rgba) -> impl IntoElement
         .hover(move |style| style.bg(theme.hover))
 }
 
-fn actions(theme: &Theme) -> impl IntoElement {
+fn actions(theme: &Theme, cx: &mut Context<Shell>) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
         .gap(px(2.))
         .px(px(4.))
         .pb(px(6.))
-        .child(action(theme, "icons/square-pen.svg", "New Task"))
+        .child(
+            action(theme, "icons/square-pen.svg", "New Task")
+                .id("new-task")
+                .on_click(cx.listener(|shell, _event, _window, cx| shell.show_empty(cx))),
+        )
         .child(action(theme, "icons/search.svg", "Search"))
 }
 
-fn action(theme: &Theme, path: &'static str, label: &'static str) -> impl IntoElement {
+fn action(theme: &Theme, path: &'static str, label: &'static str) -> Div {
     div()
         .flex()
         .items_center()
@@ -76,7 +88,12 @@ fn action(theme: &Theme, path: &'static str, label: &'static str) -> impl IntoEl
         .hover(move |style| style.bg(theme.hover))
 }
 
-fn task_list(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
+fn task_list(theme: &Theme, workspace: &Workspace, cx: &mut Context<Shell>) -> impl IntoElement {
+    let mut groups = Vec::new();
+    for group in &workspace.groups {
+        groups.push(section(theme, group, cx).into_any_element());
+    }
+
     div()
         .flex()
         .flex_col()
@@ -84,10 +101,15 @@ fn task_list(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
         .overflow_hidden()
         .px(px(4.))
         .pt(px(2.))
-        .children(workspace.groups.iter().map(|group| section(theme, group)))
+        .children(groups)
 }
 
-fn section(theme: &Theme, group: &Group) -> impl IntoElement {
+fn section(theme: &Theme, group: &Group, cx: &mut Context<Shell>) -> impl IntoElement {
+    let mut rows = Vec::new();
+    for task in &group.tasks {
+        rows.push(row(theme, task, cx).into_any_element());
+    }
+
     div()
         .flex()
         .flex_col()
@@ -107,10 +129,10 @@ fn section(theme: &Theme, group: &Group) -> impl IntoElement {
                     row.child(icon("icons/folder-plus.svg", 14., theme.text_faint))
                 }),
         )
-        .children(group.tasks.iter().map(|task| row(theme, task)))
+        .children(rows)
 }
 
-fn row(theme: &Theme, task: &crate::mock::Task) -> impl IntoElement {
+fn row(theme: &Theme, task: &Task, cx: &mut Context<Shell>) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
@@ -144,6 +166,8 @@ fn row(theme: &Theme, task: &crate::mock::Task) -> impl IntoElement {
         .when(!task.selected, |row| {
             row.hover(move |style| style.bg(theme.hover))
         })
+        .id(task.title)
+        .on_click(cx.listener(|shell, _event, _window, cx| shell.open_task(cx)))
 }
 
 fn settings(theme: &Theme) -> impl IntoElement {

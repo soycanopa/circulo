@@ -85,6 +85,7 @@ Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group la
 - [x] Date-grouped task list. Group label with the folder affordance on the group that holds the open task.
 - [x] Task row: one-line title, project with folder icon, relative time right-aligned, selected and hover states.
 - [x] Settings at the bottom.
+- [x] `New Task` shows the empty state; a task row opens the conversation. Routing only: no project is created yet.
 - [ ] Group filter affordance (the live app shows one next to the folder when a group is active).
 - [ ] Search field, context menus, drag-reorder, pinning and archiving.
 
@@ -93,10 +94,11 @@ Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group la
 - [x] Right-aligned user bubble.
 - [x] `Worked for …` divider with hairline rules and a disclosure chevron.
 - [x] Assistant blocks: heading, paragraph, bullet, inline code, bold.
-- [ ] Reasoning and tool-activity rows (collapsed by default).
+- [x] Collapsed reasoning and tool rows: icon, label, target, and a disclosure chevron or a spinner.
+- [x] Empty state: coral mark, title, subtitle, primary button and the quiet way out.
+- [ ] Expanded reasoning, tool output and live status; the rows are static.
 - [ ] Virtualized list, pin-to-bottom and the jump-to-latest pill.
 - [ ] Streaming caret and reduced-motion behaviour.
-- [ ] Empty state: coral mark, title, subtitle, primary button and the “don’t work in a project” link.
 
 ### Composer
 - [x] Input surface with placeholder.
@@ -104,6 +106,7 @@ Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group la
 - [x] Footer: project, `Local`, branch, activity indicator.
 - [ ] Provider glyph in the model picker.
 - [ ] Real menus, queue and steer affordances, usage gauge, attachments.
+- [ ] The empty-state folder picker and the “don’t work in a project” action (both need the core).
 
 ### Missing for v1.0
 Permission cards, checkpoint and rewind UI, the right panel tabs (files, diff, terminal, browser, editor), settings, command palette.
