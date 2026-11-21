@@ -7,7 +7,7 @@
 use std::collections::VecDeque;
 
 use circulo_protocol::{
-    FinishReason, Part, PermissionOption, QuestionField, ServerMessage, ToolState,
+    FinishReason, HistoryTurn, Part, PermissionOption, QuestionField, ServerMessage, ToolState,
 };
 
 #[derive(Default)]
@@ -133,9 +133,32 @@ impl Transcript {
                 self.status.error = Some(message);
             }
             // Welcome and session messages are handled before a transcript
-            // exists, or are not transcript content.
-            ServerMessage::Welcome { .. } | ServerMessage::SessionStarted { .. } => {}
+            // exists, or are not transcript content. The session list and a
+            // stored transcript arrive before the window is built.
+            ServerMessage::Welcome { .. }
+            | ServerMessage::SessionStarted { .. }
+            | ServerMessage::Sessions { .. }
+            | ServerMessage::History { .. } => {}
         }
+    }
+
+    /// Draws a stored session again. Every part goes through the same merge the
+    /// live stream uses, so history and a fresh turn read the same.
+    pub fn hydrate(&mut self, turns: Vec<HistoryTurn>) {
+        self.turns = turns
+            .into_iter()
+            .map(|history| {
+                let mut turn = Turn {
+                    prompt: history.prompt,
+                    parts: Vec::new(),
+                };
+                for part in history.parts {
+                    turn.push(part);
+                }
+                turn
+            })
+            .collect();
+        self.status = Status::default();
     }
 
     /// Remembers the prompt the window is about to send, so the turn can show
@@ -235,6 +258,41 @@ mod tests {
         part(Part::Text {
             delta: delta.into(),
         })
+    }
+
+    #[test]
+    fn a_stored_transcript_hydrates_through_the_same_merge() {
+        let mut transcript = Transcript::default();
+        transcript.hydrate(vec![
+            HistoryTurn {
+                turn: 1,
+                prompt: "first".into(),
+                parts: vec![
+                    Part::Text {
+                        delta: "hello ".into(),
+                    },
+                    Part::Text {
+                        delta: "world".into(),
+                    },
+                ],
+            },
+            HistoryTurn {
+                turn: 2,
+                prompt: "second".into(),
+                parts: vec![Part::Text {
+                    delta: "again".into(),
+                }],
+            },
+        ]);
+
+        assert_eq!(transcript.turns.len(), 2);
+        assert_eq!(transcript.turns[0].prompt, "first");
+        assert_eq!(transcript.turns[0].parts.len(), 1, "deltas merge as live");
+        match &transcript.turns[0].parts[0] {
+            Segment::Text { text, .. } => assert_eq!(text, "hello world"),
+            _ => panic!("expected text"),
+        }
+        assert!(!transcript.status.running);
     }
 
     #[test]

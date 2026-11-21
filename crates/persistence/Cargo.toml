@@ -7,3 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+circulo-protocol.workspace = true
+rusqlite = { version = "0.43", features = ["bundled"] }
+serde_json.workspace = true
+thiserror.workspace = true

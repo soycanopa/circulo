@@ -58,6 +58,11 @@ pub enum ClientRequest {
         action: QuestionAction,
         answers: BTreeMap<String, String>,
     },
+    /// The session list, newest first: what a sidebar draws.
+    ListSessions,
+    /// Continue a session the database already holds. The daemon answers with
+    /// its history.
+    OpenSession { session: String },
 }
 
 impl ClientRequest {
@@ -79,6 +84,8 @@ const CLIENT_TYPES: &[&str] = &[
     "prompt",
     "answer_permission",
     "answer_question",
+    "list_sessions",
+    "open_session",
 ];
 const SERVER_TYPES: &[&str] = &[
     "welcome",
@@ -88,6 +95,8 @@ const SERVER_TYPES: &[&str] = &[
     "turn_finished",
     "permission_requested",
     "question_asked",
+    "sessions",
+    "history",
     "error",
 ];
 
@@ -133,9 +142,36 @@ pub enum ServerMessage {
         id: String,
         question: Question,
     },
+    /// The session list, newest first.
+    Sessions {
+        sessions: Vec<SessionSummary>,
+    },
+    /// A stored transcript, so a client can draw a session again. Its parts are
+    /// history, not a live turn: nothing is streaming.
+    History {
+        session: String,
+        turns: Vec<HistoryTurn>,
+    },
     Error {
         message: String,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionSummary {
+    pub id: String,
+    pub project: Option<String>,
+    /// Empty until the first prompt arrives.
+    pub title: String,
+    /// Seconds since the Unix epoch, bumped by every turn.
+    pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryTurn {
+    pub turn: u64,
+    pub prompt: String,
+    pub parts: Vec<Part>,
 }
 
 /// What the agent is asking, in the agent's own words, plus the options the
@@ -363,6 +399,22 @@ mod tests {
                         required: true,
                     }],
                 },
+            },
+            ServerMessage::Sessions {
+                sessions: vec![SessionSummary {
+                    id: "s1".into(),
+                    project: Some("/tmp/project".into()),
+                    title: "Lay out the transcript".into(),
+                    updated_at: 1_763_000_000,
+                }],
+            },
+            ServerMessage::History {
+                session: "s1".into(),
+                turns: vec![HistoryTurn {
+                    turn: 1,
+                    prompt: "hello".into(),
+                    parts: vec![Part::Text { delta: "hi".into() }],
+                }],
             },
             ServerMessage::Error {
                 message: "nope".into(),

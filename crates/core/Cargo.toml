@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+circulo-persistence.workspace = true
 circulo-protocol.workspace = true
 circulo-provider.workspace = true
 uuid.workspace = true

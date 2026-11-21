@@ -45,12 +45,30 @@ fn main() -> ExitCode {
     };
 
     let draft = draft();
-    let session = match client.start_session(None) {
-        Ok(session) => session,
-        Err(error) => {
-            eprintln!("circulo: cannot open a session: {error}");
-            return ExitCode::FAILURE;
-        }
+
+    // Reopen the newest stored session, or start one. A database that cannot be
+    // read is not fatal: the window still works, it just starts empty.
+    let (session, history) = match client.list_sessions() {
+        Ok(sessions) if !sessions.is_empty() => match client.open_session(&sessions[0].id) {
+            Ok(history) => (sessions[0].id.clone(), history),
+            Err(error) => {
+                eprintln!("circulo: cannot reopen the last session: {error}");
+                match client.start_session(None) {
+                    Ok(session) => (session, Vec::new()),
+                    Err(error) => {
+                        eprintln!("circulo: cannot open a session: {error}");
+                        return ExitCode::FAILURE;
+                    }
+                }
+            }
+        },
+        _ => match client.start_session(None) {
+            Ok(session) => (session, Vec::new()),
+            Err(error) => {
+                eprintln!("circulo: cannot open a session: {error}");
+                return ExitCode::FAILURE;
+            }
+        },
     };
 
     // The client is blocking, so it lives on its own thread and hands messages
@@ -114,6 +132,7 @@ fn main() -> ExitCode {
                 },
                 |_, cx| {
                     let session = session.clone();
+                    let history = history.clone();
                     cx.new(|cx| {
                         Shell::new(
                             cx,
@@ -121,6 +140,7 @@ fn main() -> ExitCode {
                             answers_tx.clone(),
                             session,
                             draft.clone(),
+                            history,
                         )
                     })
                 },
