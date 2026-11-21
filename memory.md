@@ -2,7 +2,7 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-21, after SQLite persistence landed; history survives a restart.
+Last updated: 2026-11-21, after the sidebar started drawing real sessions.
 
 ## 1. What works today
 
@@ -30,23 +30,7 @@ Checks: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets`, `ca
 
 Real-provider test (spends a model call): `cargo test -p circulo-provider-opencode --test real -- --ignored`.
 
-## 2. Next task: sidebar from the database
-
-**Why:** the transcript now survives a restart, but the sidebar still draws
-`mock.rs`. The pieces exist: `ClientRequest::ListSessions` → `SessionSummary`
-(id, project, title, updated_at), and the session title comes from the first
-prompt.
-
-**Plan:**
-1. `live`/`Shell` keeps the session list the daemon sends, refreshed on start
-   and after every turn.
-2. Sidebar groups by day from `updated_at` (Today / Yesterday / This Month),
-   rows show the title, project and relative time; the open session is marked.
-3. Clicking a row sends `OpenSession` and hydrates; `New Task` starts a session.
-4. The `mock.rs` workspace keeps only what is not in the database yet (project
-   name, branch, model labels).
-
-## 3. After that: free-text answers in the question card
+## 2. Next task: free-text answers in the question card
 
 **Why:** `TextInput` exists now, so the last hole in `docs/permissions.md` §2 closes:
 a question whose schema has a free-text property can be answered instead of
@@ -61,7 +45,7 @@ declined.
 3. Verify with the scripted ACP agent: add a second schema property of type
    string (no enum) and assert the value reaches the agent.
 
-## 4. Pending after permissions, in priority order
+## 3. Pending after permissions, in priority order
 
 1. **Model / agent picker.** `session/new` returns `configOptions` (model list, agents). Wire `session/set_config_option` and the existing pickers.
 2. **Session continuity.** One `opencode acp` process per session instead of per turn, and ACP `session/load` (the agent advertises `loadSession: true`).

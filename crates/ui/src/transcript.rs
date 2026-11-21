@@ -17,7 +17,6 @@ use gpui::{
 use crate::icons::icon;
 use crate::live::Transcript;
 use crate::mock::Workspace;
-use crate::shell::View;
 use crate::theme::Theme;
 
 /// The reference keeps the transcript text off the panel edges by this much;
@@ -54,31 +53,21 @@ pub(crate) enum Segment {
 
 pub(crate) fn transcript(
     theme: &Theme,
-    view: View,
     workspace: &Workspace,
     transcript: &Transcript,
     list_state: &ListState,
+    title: &str,
 ) -> impl IntoElement {
-    let title = match view {
-        View::Empty => workspace.empty.header,
-        View::Session => workspace.title,
-    };
-
     div()
         .flex()
         .flex_col()
         .flex_1()
         .min_h(px(0.))
         .child(header(theme, title))
-        .child(match view {
-            View::Empty => empty(theme, workspace).into_any_element(),
-            View::Session => {
-                conversation(theme, workspace, transcript, list_state).into_any_element()
-            }
-        })
+        .child(conversation(theme, workspace, transcript, list_state))
 }
 
-fn header(theme: &Theme, title: &'static str) -> impl IntoElement {
+fn header(theme: &Theme, title: &str) -> impl IntoElement {
     div()
         .flex()
         .items_center()
@@ -88,7 +77,7 @@ fn header(theme: &Theme, title: &'static str) -> impl IntoElement {
             div()
                 .text_size(px(13.))
                 .font_weight(FontWeight::SEMIBOLD)
-                .child(title),
+                .child(title.to_owned()),
         )
         .child(div().flex_1())
         .child(icon("icons/panel-right.svg", 16., theme.text_faint))
@@ -379,65 +368,6 @@ fn activity(
             icon("icons/loader-circle.svg", 11., theme.text_faint)
         })
         .into_any_element()
-}
-
-/// The reference empty state: a coral mark, the promise in two lines, one
-/// primary action and one quiet way out. The folder picker arrives with the
-/// core, so neither control is wired yet.
-fn empty(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
-    let copy = &workspace.empty;
-
-    div()
-        .flex()
-        .flex_col()
-        .flex_1()
-        .items_center()
-        .justify_center()
-        .gap(px(10.))
-        .child(icon("icons/asterisk.svg", 24., theme.accent))
-        .child(
-            div()
-                .pt(px(8.))
-                .text_size(px(18.))
-                .font_weight(FontWeight::SEMIBOLD)
-                .child(copy.title),
-        )
-        .child(
-            div()
-                .max_w(px(430.))
-                .text_size(px(13.))
-                .line_height(px(21.))
-                .text_color(theme.text_muted)
-                .text_center()
-                .child(copy.subtitle),
-        )
-        .child(
-            div()
-                .mt(px(8.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .h(px(32.))
-                .px(px(16.))
-                .rounded_full()
-                .bg(theme.text)
-                .text_color(theme.canvas)
-                .text_size(px(13.))
-                .font_weight(FontWeight::MEDIUM)
-                .child(copy.primary)
-                .id("open-project")
-                .hover(|style| style.opacity(0.92)),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .text_size(px(12.))
-                .text_color(theme.text_faint)
-                .child("×")
-                .child(copy.secondary),
-        )
 }
 
 #[cfg(test)]

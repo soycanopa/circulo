@@ -1,14 +1,14 @@
 //! The window frame: the sidebar and the main column, in the reference layout.
 //!
-//! The shell owns which screen the main column shows and the live transcript
-//! the daemon streams into. The sidebar still runs on sample data until
-//! sessions are persisted.
+//! The shell owns the session list, the open session and the live transcript
+//! the daemon streams into. Sessions come from the database through the daemon;
+//! the labels the core does not own yet still come from `mock`.
 
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use async_channel::{Receiver, Sender};
-use circulo_protocol::{ClientRequest, HistoryTurn, QuestionAction, ServerMessage};
+use circulo_protocol::{ClientRequest, HistoryTurn, QuestionAction, ServerMessage, SessionSummary};
 use gpui::{
     Context, FocusHandle, IntoElement, KeyDownEvent, ListState, Render, Window, div, prelude::*, px,
 };
@@ -23,16 +23,7 @@ use crate::sidebar::sidebar;
 use crate::theme::Theme;
 use crate::transcript::{new_list_state, transcript};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum View {
-    /// No project: the onboarding screen, no composer.
-    Empty,
-    /// A task is open: transcript plus composer.
-    Session,
-}
-
 pub struct Shell {
-    view: View,
     workspace: Workspace,
     transcript: Transcript,
     /// The session every prompt goes to. The app opens it once at startup.
@@ -41,9 +32,11 @@ pub struct Shell {
     composer_focus: FocusHandle,
     focus_composer: bool,
     list_state: ListState,
-    /// Requests the UI sends to the daemon, answered through the client's
-    /// writer half. A permission answer travels this way.
-    answers: Sender<ClientRequest>,
+    /// Requests the UI sends to the daemon through the client's writer half:
+    /// prompts, card answers, session opens.
+    requests: Sender<ClientRequest>,
+    /// Newest first, as the daemon returns it.
+    sessions: Vec<SessionSummary>,
     /// The card above the composer owns the keyboard while it is open.
     card_focus: FocusHandle,
     focus_card: bool,
@@ -59,16 +52,16 @@ impl Shell {
     pub fn new(
         cx: &mut Context<Self>,
         receiver: Receiver<ServerMessage>,
-        answers: Sender<ClientRequest>,
+        requests: Sender<ClientRequest>,
         session: String,
         draft: String,
         history: Vec<HistoryTurn>,
+        sessions: Vec<SessionSummary>,
     ) -> Self {
         let mut transcript = Transcript::default();
         transcript.hydrate(history);
 
         let shell = Self {
-            view: View::Session,
             workspace: mock::workspace(),
             transcript,
             session,
@@ -76,7 +69,8 @@ impl Shell {
             composer_focus: cx.focus_handle(),
             focus_composer: true,
             list_state: new_list_state(),
-            answers,
+            requests,
+            sessions,
             card_focus: cx.focus_handle(),
             focus_card: false,
             question_answers: BTreeMap::new(),
@@ -90,7 +84,7 @@ impl Shell {
                     ServerMessage::PermissionRequested { .. } | ServerMessage::QuestionAsked { .. }
                 );
                 let awake = this.update(cx, |shell, cx| {
-                    shell.transcript.apply(message);
+                    shell.receive(message);
                     if asked {
                         // The card is the only thing to do next; put the
                         // keyboard on it so Enter and Escape work at once.
@@ -109,23 +103,56 @@ impl Shell {
         shell
     }
 
-    pub(crate) fn show_empty(&mut self, cx: &mut Context<Self>) {
-        self.view = View::Empty;
+    /// Everything the daemon sends ends up here. Session bookkeeping stays in
+    /// the shell; the rest is transcript content.
+    fn receive(&mut self, message: ServerMessage) {
+        match message {
+            ServerMessage::Sessions { sessions } => {
+                self.sessions = sessions;
+            }
+            ServerMessage::SessionStarted { session } => {
+                self.session = session;
+                self.transcript = Transcript::default();
+                self.request(ClientRequest::ListSessions);
+            }
+            ServerMessage::History { session, turns } => {
+                self.session = session;
+                self.transcript = Transcript::default();
+                self.transcript.hydrate(turns);
+            }
+            ServerMessage::TurnFinished { .. } => {
+                self.transcript.apply(message);
+                // The turn changed the title and the order of the list.
+                self.request(ClientRequest::ListSessions);
+            }
+            other => self.transcript.apply(other),
+        }
+    }
+
+    /// Starts a session. The daemon answers with `SessionStarted`.
+    pub(crate) fn new_session(&mut self, cx: &mut Context<Self>) {
+        self.request(ClientRequest::StartSession { project: None });
         cx.notify();
     }
 
-    pub(crate) fn open_task(&mut self, cx: &mut Context<Self>) {
-        self.view = View::Session;
+    /// Opens a stored session. The daemon answers with its history.
+    pub(crate) fn open_session(&mut self, id: String, cx: &mut Context<Self>) {
+        if id == self.session {
+            return;
+        }
+        self.request(ClientRequest::OpenSession { session: id });
         cx.notify();
+    }
+
+    fn request(&self, request: ClientRequest) {
+        let _ = self.requests.send_blocking(request);
     }
 
     /// Drops the card and sends the answer to the daemon. The daemon validates
     /// the id; a stale one comes back as an error message.
     fn answer_permission(&mut self, id: String, option: Option<String>, cx: &mut Context<Self>) {
         self.pop_card(&id);
-        let _ = self
-            .answers
-            .send_blocking(ClientRequest::AnswerPermission { id, option });
+        self.request(ClientRequest::AnswerPermission { id, option });
         cx.notify();
     }
 
@@ -141,7 +168,7 @@ impl Shell {
             QuestionEvent::Submit => {
                 let answers = std::mem::take(&mut self.question_answers);
                 self.pop_card(&request.id);
-                let _ = self.answers.send_blocking(ClientRequest::AnswerQuestion {
+                self.request(ClientRequest::AnswerQuestion {
                     id: request.id,
                     action: QuestionAction::Accept,
                     answers,
@@ -153,7 +180,7 @@ impl Shell {
                     _ => QuestionAction::Cancel,
                 };
                 self.pop_card(&request.id);
-                let _ = self.answers.send_blocking(ClientRequest::AnswerQuestion {
+                self.request(ClientRequest::AnswerQuestion {
                     id: request.id,
                     action,
                     answers: BTreeMap::new(),
@@ -202,7 +229,7 @@ impl Shell {
 
         let text = self.input.take();
         self.transcript.expect_prompt(text.clone());
-        let _ = self.answers.send_blocking(ClientRequest::Prompt {
+        self.request(ClientRequest::Prompt {
             session: self.session.clone(),
             text,
         });
@@ -226,7 +253,16 @@ impl Shell {
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = Theme::for_appearance(window.appearance());
-        let view = self.view;
+
+        // The header names the open session; a session with no prompt yet has
+        // no title.
+        let title = self
+            .sessions
+            .iter()
+            .find(|session| session.id == self.session)
+            .map(|session| session.title.clone())
+            .filter(|title| !title.is_empty())
+            .unwrap_or_else(|| "New session".to_owned());
 
         // The composer has the keyboard unless a card is asking.
         if self.focus_composer {
@@ -279,13 +315,13 @@ impl Render for Shell {
             .bg(theme.canvas)
             .child(transcript(
                 &theme,
-                view,
                 &self.workspace,
                 &self.transcript,
                 &self.list_state,
+                &title,
             ))
             .children(card)
-            .when(view == View::Session, |column| {
+            .when(true, |column| {
                 let shell = cx.entity();
                 let on_key: KeyHandler = Rc::new(move |event, _window, cx| {
                     shell.update(cx, |shell, cx| shell.input_key(event, cx));
@@ -314,7 +350,7 @@ impl Render for Shell {
             .flex()
             .size_full()
             .text_color(theme.text)
-            .child(sidebar(&theme, &self.workspace, cx))
+            .child(sidebar(&theme, &self.sessions, &self.session, cx))
             .child(main)
     }
 }

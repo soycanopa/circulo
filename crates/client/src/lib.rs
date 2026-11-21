@@ -164,6 +164,13 @@ pub struct ClientWriter {
 }
 
 impl ClientWriter {
+    /// Sends any request over the writer half of a split. The UI needs prompts,
+    /// card answers and the session requests, and one entry point keeps a new
+    /// request from being silently dropped.
+    pub fn send_request(&mut self, request: &ClientRequest) -> Result<(), ClientError> {
+        send(&mut self.socket, &request.encode()?)
+    }
+
     /// Sends a prompt over the writer half of a split, so the composer can send
     /// while the reader is blocked on the previous turn.
     pub fn prompt(&mut self, session: &str, text: &str) -> Result<(), ClientError> {

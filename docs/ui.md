@@ -82,10 +82,10 @@ Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group la
 ### Sidebar
 - [x] Window controls row: traffic lights, sidebar toggle, back and forward.
 - [x] `New Task` and `Search` rows with icons.
-- [x] Date-grouped task list. Group label with the folder affordance on the group that holds the open task.
+- [x] Date-grouped session list from the database: Today / Yesterday / This Month / month name, title from the first prompt, project folder, relative time, selection. The folder affordance marks the group that holds the open session. A row opens its history; `New Task` starts a session.
 - [x] Task row: one-line title, project with folder icon, relative time right-aligned, selected and hover states.
 - [x] Settings at the bottom.
-- [x] `New Task` shows the empty state; a task row opens the conversation. Routing only: no project is created yet.
+- [ ] The no-project onboarding screen was removed when sessions became real: `New Task` starts an empty session. Projects will bring it back with a folder picker.
 - [ ] Group filter affordance (the live app shows one next to the folder when a group is active).
 - [ ] Search field, context menus, drag-reorder, pinning and archiving.
 

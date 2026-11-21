@@ -48,13 +48,13 @@ fn main() -> ExitCode {
 
     // Reopen the newest stored session, or start one. A database that cannot be
     // read is not fatal: the window still works, it just starts empty.
-    let (session, history) = match client.list_sessions() {
+    let (session, history, sessions) = match client.list_sessions() {
         Ok(sessions) if !sessions.is_empty() => match client.open_session(&sessions[0].id) {
-            Ok(history) => (sessions[0].id.clone(), history),
+            Ok(history) => (sessions[0].id.clone(), history, sessions),
             Err(error) => {
                 eprintln!("circulo: cannot reopen the last session: {error}");
                 match client.start_session(None) {
-                    Ok(session) => (session, Vec::new()),
+                    Ok(session) => (session, Vec::new(), Vec::new()),
                     Err(error) => {
                         eprintln!("circulo: cannot open a session: {error}");
                         return ExitCode::FAILURE;
@@ -63,7 +63,7 @@ fn main() -> ExitCode {
             }
         },
         _ => match client.start_session(None) {
-            Ok(session) => (session, Vec::new()),
+            Ok(session) => (session, Vec::new(), Vec::new()),
             Err(error) => {
                 eprintln!("circulo: cannot open a session: {error}");
                 return ExitCode::FAILURE;
@@ -96,18 +96,7 @@ fn main() -> ExitCode {
 
     thread::spawn(move || {
         while let Ok(request) = answers_rx.recv_blocking() {
-            let sent = match request {
-                ClientRequest::Prompt { session, text } => writer.prompt(&session, &text),
-                ClientRequest::AnswerPermission { id, option } => {
-                    writer.answer_permission(&id, option.as_deref())
-                }
-                ClientRequest::AnswerQuestion {
-                    id,
-                    action,
-                    answers,
-                } => writer.answer_question(&id, action, answers),
-                _ => Ok(()),
-            };
+            let sent = writer.send_request(&request);
             if sent.is_err() {
                 break;
             }
@@ -141,6 +130,7 @@ fn main() -> ExitCode {
                             session,
                             draft.clone(),
                             history,
+                            sessions,
                         )
                     })
                 },
