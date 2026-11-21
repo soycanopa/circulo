@@ -46,7 +46,10 @@ impl Driver for DemoDriver {
 
     fn start_turn(&self, prompt: &str, emit: &mut dyn FnMut(Part)) -> Result<(), DriverError> {
         emit(Part::Reasoning {
-            delta: "Reading the request and picking a shape for the answer.".into(),
+            delta: "Reading the request and picking a shape for the answer.\n\n\
+                    The thought arrives with paragraphs of its own, the way a real agent's \
+                    does, and the collapsed row must stay one line."
+                .into(),
         });
 
         emit(Part::Tool {
@@ -58,6 +61,12 @@ impl Driver for DemoDriver {
         emit(Part::Tool {
             name: "Read".into(),
             detail: "crates/ui/src/transcript.rs".into(),
+            state: ToolState::Done,
+        });
+        thread::sleep(self.chunk_delay);
+        emit(Part::Tool {
+            name: "Bash".into(),
+            detail: "cargo test --workspace\ncargo clippy --workspace --all-targets".into(),
             state: ToolState::Done,
         });
 
