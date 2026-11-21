@@ -75,7 +75,7 @@ Light:
 
 Light has not been captured from the live app yet; these values follow the published light screenshot and are corrected the first time we take a light capture.
 
-Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group labels, metadata and times. Task rows use 17 / 15 line height, transcript blocks 20. Inline code is one step smaller in a monospace face.
+Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group labels, metadata and times. Task rows use 17 / 15 line height, transcript blocks 20. Code is a monospace face (`Menlo`): inline runs keep the body size, fenced blocks drop to 12 / 18 on a chip surface.
 
 ## 4. Surfaces and components (replication checklist)
 
@@ -104,7 +104,22 @@ Two rules, learned the hard way and worth keeping:
 1. **The scroll container is a `List`, not a flex column.** A `div` that is both the scrolling viewport and the column measures its children against the viewport and they shrink into each other. The list virtualizes, owns the offset and gives every row a stable id (`row-{index}`, `row-{index}-segment-{index}`).
 2. **Every row is `w_full` and does not shrink.** A row measured at its minimum width reports a shorter height than it paints, so the next row lands on top of it. Turn rows mark `flex_shrink_0` on each block.
 
+Two more, learned from a real OpenCode turn rather than from the demo one:
+
+3. **No fixed heights on a row that carries provider text.** The reasoning and tool rows use `min_h`, never `h`: a row is allowed to grow with its content and push the rows below it. A fixed height only works while the content fits.
+4. **A collapsed row's text is flattened to one line before it is painted.** GPUI splits any text element on `\n` regardless of `white_space`, so a reasoning part with paragraphs, or a shell command written on two lines, painted every line from one 26 px box and straight over the next rows. `transcript::flatten` joins whitespace runs with single spaces; `whitespace_nowrap` and `text_ellipsis` then do their job.
+
 Streaming changes a row's height without changing the row count; the list is reset while a turn runs so it measures the turn again instead of keeping last frame's height. Bottom-pinning is an explicit scroll, not a list alignment.
+
+### How markdown is rendered
+
+Agent text is CommonMark, and it streams, so the renderer has to accept partial input. `crates/ui/src/markdown.rs` parses with `pulldown-cmark` (no `html` or `getopts` features) into `Block`s — paragraph, heading, list item, quote, code, rule — each holding `Span`s with inline flags (bold, italic, code, strike, link).
+
+- **Drawing uses `StyledText` with one `TextRun` per span**, not `with_default_highlights`. Highlights can change weight, colour and decoration but not the font family, and inline code needs the monospace family. Each run carries its own `Font`, colour and background.
+- **Inline code is a mono run on the `chip` colour**; the paper has no padding inside a run, so the chip hugs the glyphs.
+- **Lists** use a fixed 18 px marker column and indent one level by 18 px, so wrapped lines stay aligned with the text above them. Items of the same list sit 4 px apart; every other block 9 px.
+- **Fenced blocks** paint their own chip surface at 12 / 18 in `Menlo`; GPUI splits a text element on `\n`, so the block needs no per-line layout.
+- **Partial input never fails**: an unclosed fence is already a code block, an unclosed `**` stays literal until its marker arrives. Tables, footnotes, math and raw HTML are not rendered yet (HTML is dropped); links are coloured but not clickable.
 - [x] Collapsed reasoning and tool rows: icon, label, target, and a disclosure chevron or a spinner.
 - [x] Empty state: coral mark, title, subtitle, primary button and the quiet way out.
 - [ ] Expanded reasoning, tool output and live status; the rows are static.
