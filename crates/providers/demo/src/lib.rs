@@ -11,7 +11,7 @@ use std::thread;
 use std::time::Duration;
 
 use circulo_protocol::{Part, ToolState};
-use circulo_provider::{Driver, DriverError};
+use circulo_provider::{Asker, Driver, DriverError};
 
 pub struct DemoDriver {
     chunk_delay: Duration,
@@ -44,7 +44,12 @@ impl Driver for DemoDriver {
         "demo"
     }
 
-    fn start_turn(&self, prompt: &str, emit: &mut dyn FnMut(Part)) -> Result<(), DriverError> {
+    fn start_turn(
+        &self,
+        prompt: &str,
+        _: &mut dyn Asker,
+        emit: &mut dyn FnMut(Part),
+    ) -> Result<(), DriverError> {
         emit(Part::Reasoning {
             delta: "Reading the request and picking a shape for the answer.\n\n\
                     The thought arrives with paragraphs of its own, the way a real agent's \
@@ -104,12 +109,21 @@ impl Driver for DemoDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use circulo_protocol::PermissionRequest;
+    use circulo_provider::Decision;
 
     #[test]
     fn a_turn_streams_reasoning_a_tool_and_text() {
+        struct NoAsker;
+        impl Asker for NoAsker {
+            fn permission(&mut self, _: PermissionRequest) -> Decision {
+                Decision::Cancelled
+            }
+        }
+
         let mut parts = Vec::new();
         DemoDriver::instant()
-            .start_turn("hello", &mut |part| parts.push(part))
+            .start_turn("hello", &mut NoAsker, &mut |part| parts.push(part))
             .expect("turn");
 
         assert!(matches!(parts.first(), Some(Part::Reasoning { .. })));

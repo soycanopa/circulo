@@ -2,7 +2,7 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-21, after the markdown, tool-id and pin-to-bottom work merged.
+Last updated: 2026-11-21, after permission cards landed; questions are next.
 
 ## 1. What works today
 
@@ -30,15 +30,24 @@ Checks: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets`, `ca
 
 Real-provider test (spends a model call): `cargo test -p circulo-provider-opencode --test real -- --ignored`.
 
-## 2. Next task: permission card
+## 2. Next task: question cards
 
-**Symptom:** ACP sends `session/request_permission`; the driver answers `cancelled`, so any tool that needs approval never runs.
+**Why:** an agent sometimes needs an answer, not an approval. ACP models that as
+`elicitation/create` (form mode: `message` + a flat `requestedSchema`), and the
+client must advertise `clientCapabilities.elicitation.form` during `initialize`
+before an agent may ask.
 
 **Plan:**
-1. Protocol: a `ServerMessage` for a permission request (id, tool name, options, detail) and a `ClientRequest` carrying the chosen option. Bump the version only if the shape is not additive.
-2. Driver trait: `start_turn` needs a way to ask the UI and wait. The cleanest shape is a callback that blocks on a response channel handed in by the core, so providers never see the protocol.
-3. UI: a card above the composer (design in `docs/ux.md` §4), answerable with the keyboard.
-4. Test with the OpenCode provider on a tool that requires approval, plus a fixture for the ACP request in the adapter.
+1. Protocol: `QuestionAsked { session, turn, id, question }` and
+   `AnswerQuestion { id, action, content }`, mirroring the permission pair.
+2. Driver trait: `Asker` gains `ask_question`, blocking the same way.
+3. OpenCode adapter: advertise elicitation, answer `elicitation/create` with
+   `accept | decline | cancel` plus content.
+4. UI: the same slot as the permission card. Enum properties render as the
+   option rows Waku uses; other property types need the text field the composer
+   does not have yet, so the first version covers choice questions and declines
+   the rest with a message.
+5. Verify with a scripted ACP agent; OpenCode 2.3.2 does not elicit on its own.
 
 ## 3. Pending after permissions, in priority order
 

@@ -45,6 +45,10 @@ pub enum ClientRequest {
     StartSession { project: Option<String> },
     /// Send a prompt and stream the turn back.
     Prompt { session: String, text: String },
+    /// Answer a pending permission request. `option` is the id of one of the
+    /// options the daemon offered; `None` means cancelled, which is only right
+    /// when the turn itself is going away.
+    AnswerPermission { id: String, option: Option<String> },
 }
 
 impl ClientRequest {
@@ -61,13 +65,14 @@ impl ClientRequest {
 
 /// The message types this contract defines. A type outside its list is a
 /// message from a newer peer and is skipped, not an error.
-const CLIENT_TYPES: &[&str] = &["start_session", "prompt"];
+const CLIENT_TYPES: &[&str] = &["start_session", "prompt", "answer_permission"];
 const SERVER_TYPES: &[&str] = &[
     "welcome",
     "session_started",
     "turn_started",
     "part",
     "turn_finished",
+    "permission_requested",
     "error",
 ];
 
@@ -96,9 +101,51 @@ pub enum ServerMessage {
         turn: u64,
         reason: FinishReason,
     },
+    /// The agent is waiting for the user before it runs a tool. The turn stays
+    /// open until `AnswerPermission` arrives.
+    PermissionRequested {
+        session: String,
+        turn: u64,
+        /// The daemon's id for this request, not the provider's.
+        id: String,
+        request: PermissionRequest,
+    },
     Error {
         message: String,
     },
+}
+
+/// What the agent is asking, in the agent's own words, plus the options the
+/// agent offers. The card never invents an option of its own: the agent decides
+/// the scope of an "always" answer and remembers it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionRequest {
+    pub title: String,
+    /// The command, path or diff in full: the decision is about what will run.
+    pub detail: String,
+    pub options: Vec<PermissionOption>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionOption {
+    /// Provider-owned id, sent back verbatim when this option is chosen.
+    pub id: String,
+    /// The agent's wording, shown as-is.
+    pub label: String,
+    pub kind: PermissionOptionKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionOptionKind {
+    AllowOnce,
+    AllowAlways,
+    RejectOnce,
+    RejectAlways,
+    /// A kind this client does not know. It renders as an ordinary option and
+    /// is never treated as an allow.
+    #[serde(other)]
+    Other,
 }
 
 impl ServerMessage {
@@ -220,6 +267,27 @@ mod tests {
                 session: "s1".into(),
                 turn: 7,
                 reason: FinishReason::Completed,
+            },
+            ServerMessage::PermissionRequested {
+                session: "s1".into(),
+                turn: 7,
+                id: "p-1".into(),
+                request: PermissionRequest {
+                    title: "Run cargo test".into(),
+                    detail: "cargo test --workspace".into(),
+                    options: vec![
+                        PermissionOption {
+                            id: "allow-once".into(),
+                            label: "Allow once".into(),
+                            kind: PermissionOptionKind::AllowOnce,
+                        },
+                        PermissionOption {
+                            id: "reject-once".into(),
+                            label: "Reject".into(),
+                            kind: PermissionOptionKind::RejectOnce,
+                        },
+                    ],
+                },
             },
             ServerMessage::Error {
                 message: "nope".into(),
