@@ -9,5 +9,7 @@ Say what changed and why. Link the issue or the section in docs/.
 
 ## Test plan
 
-- [ ] `go test ./...`
-- [ ] 
+- [ ] `cargo fmt --all --check`
+- [ ] `cargo clippy --workspace --all-targets`
+- [ ] `cargo test --workspace`
+- [ ] `cargo run -p circulo` opens the window and behaves as described
