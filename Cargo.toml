@@ -2,11 +2,13 @@
 resolver = "2"
 members = [
     "crates/app",
-    "crates/app",
+    "crates/client",
     "crates/core",
+    "crates/daemon",
     "crates/git",
     "crates/persistence",
     "crates/protocol",
+    "crates/providers/demo",
     "crates/providers/driver",
     "crates/ui",
 ]
@@ -25,5 +27,12 @@ gpui = "0.2.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+
 # Puzzle pieces. Dependencies point one way only.
+circulo-client = { path = "crates/client" }
+circulo-core = { path = "crates/core" }
+circulo-protocol = { path = "crates/protocol" }
+circulo-provider = { path = "crates/providers/driver" }
+circulo-provider-demo = { path = "crates/providers/demo" }
 circulo-ui = { path = "crates/ui" }
