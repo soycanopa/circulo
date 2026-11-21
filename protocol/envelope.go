@@ -23,21 +23,32 @@ const (
 	TypeCreate  = "session.create"
 	TypeOpen    = "session.open"
 	TypePrompt  = "prompt.send"
+	TypeModel   = "model.upsert"
+	TypeCurrent = "model.current"
+	TypeUse     = "model.set"
+	TypeAbort   = "session.abort"
 )
 
 // Envelope is one versioned event on the loopback connection.
 // Text on a part.delta is a chunk appended to message ID, not the whole message.
 type Envelope struct {
-	V       int    `json:"v"`
-	Type    string `json:"type"`
-	Seq     int64  `json:"seq"`
-	ID      string `json:"id,omitempty"`
-	Role    string `json:"role,omitempty"`
-	Text    string `json:"text,omitempty"`
-	Path    string `json:"path,omitempty"`
-	Name    string `json:"name,omitempty"`
-	Project string `json:"project,omitempty"`
-	Session string `json:"session,omitempty"`
+	V        int    `json:"v"`
+	Type     string `json:"type"`
+	Seq      int64  `json:"seq"`
+	ID       string `json:"id,omitempty"`
+	Role     string `json:"role,omitempty"`
+	Text     string `json:"text,omitempty"`
+	Path     string `json:"path,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Project  string `json:"project,omitempty"`
+	Session  string `json:"session,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	ModelID  string `json:"model,omitempty"`
+	Variant  string `json:"variant,omitempty"`
+	// Variants is a comma-separated list of reasoning-effort ids for one model.
+	Variants string `json:"variants,omitempty"`
+	// Delivery is empty for a normal prompt, or steer or queue while a turn is running.
+	Delivery string `json:"delivery,omitempty"`
 }
 
 func (e Envelope) Validate() error {
@@ -78,6 +89,24 @@ func (e Envelope) Validate() error {
 	case TypePrompt:
 		if e.ID == "" || e.Text == "" {
 			return fmt.Errorf("protocol: prompt.send requires id and text")
+		}
+		if e.Delivery != "" && e.Delivery != "steer" && e.Delivery != "queue" {
+			return fmt.Errorf("protocol: prompt.send delivery must be steer or queue")
+		}
+		return nil
+	case TypeModel:
+		if e.ID == "" || e.Provider == "" {
+			return fmt.Errorf("protocol: model.upsert requires id and provider")
+		}
+		return nil
+	case TypeCurrent, TypeUse:
+		if e.ID == "" || e.Provider == "" || e.ModelID == "" {
+			return fmt.Errorf("protocol: %s requires id, provider, and model", e.Type)
+		}
+		return nil
+	case TypeAbort:
+		if e.ID == "" {
+			return fmt.Errorf("protocol: session.abort requires id")
 		}
 		return nil
 	default:
