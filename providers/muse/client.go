@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -221,6 +222,17 @@ func (c *Client) SetModel(ctx context.Context, sessionID string, model driver.Mo
 	}, nil)
 }
 
+// Decide answers one approval with a choice id the host offered.
+func (c *Client) Decide(ctx context.Context, sessionID, approvalID, requirementID, choiceID string) error {
+	return c.call(ctx, "approval/decide", map[string]any{
+		"commandId":     newID(),
+		"sessionId":     sessionID,
+		"approvalId":    approvalID,
+		"requirementId": requirementID,
+		"choiceId":      choiceID,
+	}, nil)
+}
+
 // Abort interrupts the session's current foreground turn.
 func (c *Client) Abort(ctx context.Context, sessionID string) error {
 	return c.call(ctx, "turn/interrupt", map[string]any{
@@ -392,6 +404,38 @@ func (c *Client) translate(n note) (driver.Event, bool) {
 		}
 		c.remember(p.SessionID, driver.Model{ID: p.ModelID, ProviderID: p.ProviderID})
 		return driver.Event{Kind: driver.KindModel, SessionID: p.SessionID, ModelID: p.ModelID, ProviderID: p.ProviderID}, true
+	case "approval/requested":
+		var p struct {
+			ApprovalID  string `json:"approvalId"`
+			SessionID   string `json:"sessionId"`
+			ToolName    string `json:"toolName"`
+			RawArgs     string `json:"rawArgs"`
+			Requirement string `json:"currentRequirementId"`
+			Choices     []struct {
+				ID       string `json:"choiceId"`
+				Label    string `json:"label"`
+				Decision string `json:"decision"`
+			} `json:"availableChoices"`
+		}
+		if err := json.Unmarshal(n.params, &p); err != nil || p.ApprovalID == "" {
+			return driver.Event{}, false
+		}
+		text := p.ToolName
+		if p.RawArgs != "" {
+			args := p.RawArgs
+			if len(args) > 240 {
+				args = args[:240]
+			}
+			text = text + "\n" + args
+		}
+		var lines []string
+		for _, ch := range p.Choices {
+			lines = append(lines, ch.ID+"\t"+strings.ReplaceAll(ch.Label, "\t", " ")+"\t"+ch.Decision)
+		}
+		return driver.Event{
+			Kind: driver.KindPermit, SessionID: p.SessionID, Text: text, Tool: p.ToolName,
+			ApprovalID: p.ApprovalID, RequirementID: p.Requirement, Choices: strings.Join(lines, "\n"),
+		}, true
 	case "session/reasoningEffortChanged":
 		var p struct {
 			SessionID       string `json:"sessionId"`

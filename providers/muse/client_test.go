@@ -107,3 +107,24 @@ func fakeMuse(t *testing.T, r io.Reader, w io.Writer) {
 		}
 	}
 }
+
+func TestApprovalRequestedKeepsTheServersChoice(t *testing.T) {
+	c := &Client{}
+	ev, ok := c.translate(note{
+		method: "approval/requested",
+		params: json.RawMessage(`{
+			"approvalId":"ap_1",
+			"sessionId":"ses_1",
+			"toolName":"bash",
+			"rawArgs":"ls",
+			"currentRequirementId":"req_9",
+			"availableChoices":[{"choiceId":"ch_allow","label":"Allow once","decision":"approved"}]
+		}`),
+	})
+	if !ok || ev.Kind != driver.KindPermit || ev.ApprovalID != "ap_1" || ev.RequirementID != "req_9" {
+		t.Fatalf("%v %#v", ok, ev)
+	}
+	if ev.Choices != "ch_allow\tAllow once\tapproved" {
+		t.Fatalf("choices %q", ev.Choices)
+	}
+}

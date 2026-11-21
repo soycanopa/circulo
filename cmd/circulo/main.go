@@ -21,11 +21,15 @@ func main() {
 
 	mygo.App.WhenReady(func() {
 		win := mygo.NewWindow(mygo.WindowOptions{
-			Title:    "Circulo",
-			Width:    980,
-			Height:   680,
-			StateKey: "main",
-			Content:  ui.View(app.View),
+			Title:         "Circulo",
+			Width:         1100,
+			Height:        720,
+			MinWidth:      980,
+			MinHeight:     680,
+			StateKey:      "main",
+			TitleBarStyle: mygo.TitleBarHidden,
+			Vibrancy:      mygo.VibrancySidebar,
+			Content:       ui.View(app.View),
 		})
 		go connect(ctx, win, app)
 	})

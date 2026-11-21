@@ -12,23 +12,25 @@ import (
 const Version = 1
 
 const (
-	TypeHello      = "hello"
-	TypeDelta      = "part.delta"
-	TypeDone       = "turn.done"
-	TypeProject    = "project.upsert"
-	TypeSession    = "session.upsert"
-	TypeFocus      = "session.focus"
-	TypeStatus     = "session.status"
-	TypeAdd        = "project.add"
-	TypeCreate     = "session.create"
-	TypeOpen       = "session.open"
-	TypePrompt     = "prompt.send"
-	TypeModel      = "model.upsert"
-	TypeCurrent    = "model.current"
-	TypeUse        = "model.set"
-	TypeAbort      = "session.abort"
-	TypeCheckpoint = "checkpoint.upsert"
-	TypeRewind     = "checkpoint.rewind"
+	TypeHello       = "hello"
+	TypeDelta       = "part.delta"
+	TypeDone        = "turn.done"
+	TypeProject     = "project.upsert"
+	TypeSession     = "session.upsert"
+	TypeFocus       = "session.focus"
+	TypeStatus      = "session.status"
+	TypeAdd         = "project.add"
+	TypeCreate      = "session.create"
+	TypeOpen        = "session.open"
+	TypePrompt      = "prompt.send"
+	TypeModel       = "model.upsert"
+	TypeCurrent     = "model.current"
+	TypeUse         = "model.set"
+	TypeAbort       = "session.abort"
+	TypeCheckpoint  = "checkpoint.upsert"
+	TypeRewind      = "checkpoint.rewind"
+	TypePermit      = "permission.request"
+	TypePermitReply = "permission.reply"
 )
 
 // Envelope is one versioned event on the loopback connection.
@@ -48,11 +50,14 @@ type Envelope struct {
 	ModelID  string `json:"model,omitempty"`
 	Variant  string `json:"variant,omitempty"`
 	// Variants is a comma-separated list of reasoning-effort ids for one model.
+	// On permission.request it is one choice per line: id, label, decision, tab-separated.
 	Variants string `json:"variants,omitempty"`
 	// Delivery is empty for a normal prompt, or steer or queue while a turn is running.
 	Delivery string `json:"delivery,omitempty"`
 	// Agent is the provider that owns a project or session: opencode or muse.
 	Agent string `json:"agent,omitempty"`
+	// Requirement is the approval race guard a permission reply must echo.
+	Requirement string `json:"requirement,omitempty"`
 }
 
 func (e Envelope) Validate() error {
@@ -121,6 +126,16 @@ func (e Envelope) Validate() error {
 	case TypeRewind:
 		if e.ID == "" || e.Session == "" {
 			return fmt.Errorf("protocol: checkpoint.rewind requires id and session")
+		}
+		return nil
+	case TypePermit:
+		if e.ID == "" || e.Session == "" || e.Name == "" {
+			return fmt.Errorf("protocol: permission.request requires id, session, and name")
+		}
+		return nil
+	case TypePermitReply:
+		if e.ID == "" || e.Session == "" || e.Text == "" || e.Requirement == "" {
+			return fmt.Errorf("protocol: permission.reply requires id, session, text, and requirement")
 		}
 		return nil
 	default:

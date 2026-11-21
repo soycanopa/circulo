@@ -76,3 +76,55 @@ func TestSteerAndStop(t *testing.T) {
 		t.Fatalf("%#v", got)
 	}
 }
+
+func TestPermissionCardSendsTheOfferedChoice(t *testing.T) {
+	var got protocol.Envelope
+	app := NewApp(&Model{Selected: "ses_1"})
+	if err := app.Model.Apply(protocol.Envelope{
+		V: protocol.Version, Seq: 1,
+		Type: protocol.TypePermit, ID: "ap_1", Session: "ses_1", Name: "bash",
+		Text: "bash\nls", Requirement: "req_1",
+		Variants: "ch_allow\tAllow once\tapproved\nch_deny\tDeny\tdenied",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	app.Send = func(e protocol.Envelope) { got = e }
+	tt := ui.NewTester(app.View, 1100, 720)
+	if !tt.HasText("bash") || !tt.HasText("Allow once") {
+		t.Fatalf("texts %q", tt.Texts())
+	}
+	if err := tt.Click("Allow once"); err != nil {
+		t.Fatal(err)
+	}
+	if got.Type != protocol.TypePermitReply || got.ID != "ap_1" || got.Text != "ch_allow" || got.Requirement != "req_1" {
+		t.Fatalf("%#v", got)
+	}
+	if app.Model.Permission != nil {
+		t.Fatal("card stayed up after the choice")
+	}
+}
+
+func TestEnterSendsAndEscapeStops(t *testing.T) {
+	var got []protocol.Envelope
+	app := NewApp(&Model{Selected: "ses_1"})
+	app.Send = func(e protocol.Envelope) { got = append(got, e) }
+	tt := ui.NewTester(app.View, 1100, 720)
+	if err := tt.Click("Message"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Type("hello")
+	tt.Key(0, ui.KeyEnter)
+	if len(got) != 1 || got[0].Type != protocol.TypePrompt || got[0].Text != "hello" || got[0].Delivery != "" {
+		t.Fatalf("enter: %#v", got)
+	}
+	app.Model.Status = "Streaming"
+	app.draft = "later"
+	tt = ui.NewTester(app.View, 1100, 720)
+	if err := tt.Click("Message"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(0, ui.KeyEscape)
+	if len(got) != 2 || got[1].Type != protocol.TypeAbort {
+		t.Fatalf("escape: %#v", got)
+	}
+}
