@@ -17,7 +17,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use circulo_protocol::{FinishReason, PermissionRequest, Question, QuestionAction, ServerMessage};
+use circulo_persistence::{Store, StoreError};
+use circulo_protocol::{
+    FinishReason, HistoryTurn, PermissionRequest, Question, QuestionAction, ServerMessage,
+    SessionSummary,
+};
 use circulo_provider::{Answer, Asker, Decision, Driver};
 use uuid::Uuid;
 
@@ -29,6 +33,8 @@ pub struct Session {
 pub struct Core {
     driver: Arc<dyn Driver>,
     sessions: Mutex<Vec<Session>>,
+    /// The database. `None` for a memory-only core, which is what a test wants.
+    store: Option<Arc<Store>>,
     turns: AtomicU64,
     permissions: Broker<Decision>,
     questions: Broker<Answer>,
@@ -36,13 +42,77 @@ pub struct Core {
 
 impl Core {
     pub fn new(driver: Arc<dyn Driver>) -> Self {
+        Self::with_store(driver, None)
+    }
+
+    /// A core that also writes sessions, turns and parts to the database.
+    pub fn with_store(driver: Arc<dyn Driver>, store: Option<Arc<Store>>) -> Self {
         Self {
             driver,
             sessions: Mutex::new(Vec::new()),
+            store,
             turns: AtomicU64::new(0),
             permissions: Broker::new("p"),
             questions: Broker::new("q"),
         }
+    }
+
+    /// Sessions from the database, newest first. A memory-only core has none:
+    /// its sessions live and die with the process.
+    pub fn sessions(&self) -> Result<Vec<SessionSummary>, StoreError> {
+        let Some(store) = &self.store else {
+            return Ok(Vec::new());
+        };
+
+        // The core is the one place that knows both shapes, so it translates
+        // here instead of leaking a storage type onto the wire.
+        Ok(store
+            .sessions()?
+            .into_iter()
+            .map(|session| SessionSummary {
+                id: session.id,
+                project: session.project,
+                title: session.title,
+                updated_at: session.updated_at,
+            })
+            .collect())
+    }
+
+    /// Opens a session that already exists in the database so a client can
+    /// continue it. Returns false when there is no such session.
+    pub fn reopen_session(&self, id: &str) -> Result<bool, StoreError> {
+        let Some(store) = &self.store else {
+            return Ok(false);
+        };
+        if !store.has_session(id)? {
+            return Ok(false);
+        }
+
+        let mut open = self.open_sessions();
+        if !open.iter().any(|session| session.id == id) {
+            open.push(Session {
+                id: id.to_owned(),
+                project: None,
+            });
+        }
+        Ok(true)
+    }
+
+    /// The stored transcript of a session, ready for the UI to draw again.
+    pub fn transcript(&self, id: &str) -> Result<Vec<HistoryTurn>, StoreError> {
+        let Some(store) = &self.store else {
+            return Ok(Vec::new());
+        };
+
+        Ok(store
+            .transcript(id)?
+            .into_iter()
+            .map(|turn| HistoryTurn {
+                turn: turn.turn,
+                prompt: turn.prompt,
+                parts: turn.parts,
+            })
+            .collect())
     }
 
     /// Answers a pending permission request. `None` cancels it, which is only
@@ -86,7 +156,12 @@ impl Core {
     /// is started yet: no process, no worktree.
     pub fn start_session(&self, project: Option<String>) -> String {
         let id = Uuid::new_v4().to_string();
-        self.sessions().push(Session {
+        if let Some(store) = &self.store {
+            // The title comes from the first prompt; a failed write must not
+            // stop the session from running in memory.
+            let _ = store.start_session(&id, project.as_deref(), self.driver.name());
+        }
+        self.open_sessions().push(Session {
             id: id.clone(),
             project,
         });
@@ -94,7 +169,7 @@ impl Core {
     }
 
     pub fn has_session(&self, id: &str) -> bool {
-        self.sessions().iter().any(|session| session.id == id)
+        self.open_sessions().iter().any(|session| session.id == id)
     }
 
     /// Runs one turn and emits its messages in order. The turn id is unique per
@@ -117,8 +192,20 @@ impl Core {
         // The driver gets two callbacks into the same emit: parts and
         // questions. `RefCell` keeps that honest without cloning the wire.
         let emit = RefCell::new(emit);
+        if let Some(store) = &self.store {
+            let _ = store.start_turn(session, turn, prompt);
+        }
+
         let part_session = session.to_owned();
+        let mut position = 0;
         let mut parts = |part| {
+            if let Some(store) = &self.store {
+                // The transcript and the client see the same part in the same
+                // order; a write failure must not interrupt the stream.
+                let _ = store.append_part(session, turn, position, &part);
+            }
+            position += 1;
+
             (emit.borrow_mut())(ServerMessage::Part {
                 session: part_session.clone(),
                 turn,
@@ -154,7 +241,7 @@ impl Core {
         });
     }
 
-    fn sessions(&self) -> std::sync::MutexGuard<'_, Vec<Session>> {
+    fn open_sessions(&self) -> std::sync::MutexGuard<'_, Vec<Session>> {
         // A panicking thread must not take the daemon down with it.
         self.sessions.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -334,6 +421,49 @@ mod tests {
 
     fn core_with(driver: Arc<dyn Driver>) -> Core {
         Core::new(driver)
+    }
+
+    fn core_with_store(driver: Arc<dyn Driver>) -> Core {
+        let store = Arc::new(circulo_persistence::Store::in_memory().expect("store"));
+        Core::with_store(driver, Some(store))
+    }
+
+    #[test]
+    fn a_core_with_a_store_writes_what_the_window_draws() {
+        let core = core_with_store(Arc::new(Echo));
+        let session = core.start_session(Some("/tmp/project".into()));
+
+        core.run_turn(&session, "hello", |_| {});
+
+        let sessions = core.sessions().expect("sessions");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, session);
+        assert_eq!(sessions[0].title, "hello", "the first prompt titles it");
+
+        let turns = core.transcript(&session).expect("transcript");
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].prompt, "hello");
+        assert_eq!(
+            turns[0].parts,
+            vec![Part::Text {
+                delta: "hello".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn a_stored_session_can_be_reopened_and_keeps_its_turns() {
+        // One database, two cores: the second is a daemon that restarted.
+        let store = Arc::new(circulo_persistence::Store::in_memory().expect("store"));
+
+        let core = Core::with_store(Arc::new(Echo), Some(Arc::clone(&store)));
+        let session = core.start_session(None);
+        core.run_turn(&session, "one", |_| {});
+
+        let restarted = Core::with_store(Arc::new(Echo), Some(store));
+        assert!(restarted.reopen_session(&session).expect("reopen"));
+        assert!(!restarted.reopen_session("missing").expect("reopen"));
+        assert_eq!(restarted.transcript(&session).expect("transcript").len(), 1);
     }
 
     #[test]

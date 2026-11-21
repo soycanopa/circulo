@@ -18,6 +18,7 @@ use std::thread;
 use std::path::PathBuf;
 
 use circulo_core::Core;
+use circulo_persistence::Store;
 use circulo_protocol::{ClientRequest, Hello, PROTOCOL_VERSION, ProtocolError, ServerMessage};
 use circulo_provider::Driver;
 use circulo_provider_demo::DemoDriver;
@@ -36,7 +37,7 @@ impl Daemon {
     /// A daemon on an ephemeral loopback port, with the provider named by
     /// `CIRCULO_PROVIDER` (`opencode` today) or the demo provider otherwise.
     pub fn bind() -> Result<Self, ProtocolError> {
-        Self::with_core(Arc::new(Core::new(driver())))
+        Self::with_core(Arc::new(Core::with_store(driver(), store())))
     }
 
     pub fn with_core(core: Arc<Core>) -> Result<Self, ProtocolError> {
@@ -86,6 +87,18 @@ impl Daemon {
                 }
                 Err(error) => eprintln!("circulo-daemon: accept failed: {error}"),
             }
+        }
+    }
+}
+
+/// The database, opened where `crates/persistence` decides. A daemon that cannot
+/// open it still serves turns; it just has no history to offer.
+fn store() -> Option<Arc<Store>> {
+    match circulo_persistence::default_path().and_then(|path| Store::open(&path)) {
+        Ok(store) => Some(Arc::new(store)),
+        Err(error) => {
+            eprintln!("circulo-daemon: no history database: {error}");
+            None
         }
     }
 }
@@ -218,6 +231,35 @@ fn handle(
                             message: format!("no question {id}"),
                         },
                     );
+                }
+            }
+            Some(ClientRequest::ListSessions) => match core.sessions() {
+                Ok(sessions) => emit(&outbound, ServerMessage::Sessions { sessions }),
+                Err(error) => emit(
+                    &outbound,
+                    ServerMessage::Error {
+                        message: error.to_string(),
+                    },
+                ),
+            },
+            Some(ClientRequest::OpenSession { session }) => {
+                let reopened = core.reopen_session(&session);
+                match (reopened, core.transcript(&session)) {
+                    (Ok(true), Ok(turns)) => {
+                        emit(&outbound, ServerMessage::History { session, turns })
+                    }
+                    (Ok(false), _) => emit(
+                        &outbound,
+                        ServerMessage::Error {
+                            message: format!("unknown session {session}"),
+                        },
+                    ),
+                    (Err(error), _) | (_, Err(error)) => emit(
+                        &outbound,
+                        ServerMessage::Error {
+                            message: error.to_string(),
+                        },
+                    ),
                 }
             }
             None => {

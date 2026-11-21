@@ -18,7 +18,8 @@ use std::net::TcpStream;
 use std::collections::BTreeMap;
 
 use circulo_protocol::{
-    ClientRequest, Hello, PROTOCOL_VERSION, ProtocolError, QuestionAction, ServerMessage,
+    ClientRequest, Hello, HistoryTurn, PROTOCOL_VERSION, ProtocolError, QuestionAction,
+    ServerMessage, SessionSummary,
 };
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket};
@@ -61,6 +62,44 @@ impl Client {
         loop {
             match self.next_message()? {
                 Some(ServerMessage::SessionStarted { session }) => return Ok(session),
+                Some(ServerMessage::Error { message }) => {
+                    return Err(ClientError::Refused(message));
+                }
+                Some(_) => continue,
+                None => return Err(ClientError::Closed),
+            }
+        }
+    }
+
+    /// Lists the stored sessions, newest first.
+    pub fn list_sessions(&mut self) -> Result<Vec<SessionSummary>, ClientError> {
+        send(&mut self.socket, &ClientRequest::ListSessions.encode()?)?;
+
+        loop {
+            match self.next_message()? {
+                Some(ServerMessage::Sessions { sessions }) => return Ok(sessions),
+                Some(ServerMessage::Error { message }) => {
+                    return Err(ClientError::Refused(message));
+                }
+                Some(_) => continue,
+                None => return Err(ClientError::Closed),
+            }
+        }
+    }
+
+    /// Opens a stored session and returns its transcript.
+    pub fn open_session(&mut self, session: &str) -> Result<Vec<HistoryTurn>, ClientError> {
+        send(
+            &mut self.socket,
+            &ClientRequest::OpenSession {
+                session: session.to_owned(),
+            }
+            .encode()?,
+        )?;
+
+        loop {
+            match self.next_message()? {
+                Some(ServerMessage::History { turns, .. }) => return Ok(turns),
                 Some(ServerMessage::Error { message }) => {
                     return Err(ClientError::Refused(message));
                 }

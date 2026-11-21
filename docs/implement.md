@@ -19,11 +19,11 @@ Order matters: prove the pipe before adding a real provider to it.
 4. [x] Daemon process: loopback WebSocket, token handshake, request loop, announced URL.
 5. [x] Client crate: handshake, requests, streamed messages. Integration test against a real daemon.
 6. [x] Wire the desktop: the app supervises the daemon, streams parts into the transcript, and the daemon exits with the app.
-7. [ ] OpenCode adapter behind the same Driver trait.
-8. [ ] Local persistence (SQLite), owned by the core.
+7. [x] OpenCode adapter behind the same Driver trait (ACP over stdio, one process per turn).
+8. [x] Local persistence (SQLite), owned by the core: sessions, turns and parts in `~/.circulo/circulo.db` (`CIRCULO_HOME` overrides), the app reopens the newest session with its history. Settings and the attachment store still follow.
 
 ## Phase 2 — Shared control surface
-- Model / reasoning effort discovery and switching
+- Model / reasoning effort discovery and switching (`session/new` returns `configOptions`; `session/set_config_option`)
 - Message queue + steering
 - Abort
 
@@ -32,9 +32,11 @@ Order matters: prove the pipe before adding a real provider to it.
 - Conversation-aware Git checkpoints and rewind
 
 ## Phase 4 — UI polish
-- Full sidebar (projects + sessions)
-- Beautiful markdown transcript
-- Permission cards
+- Full sidebar (projects + sessions) — today `mock.rs`
+- [x] Beautiful markdown transcript: headings, lists, tables, fenced code, quotes, footnotes, weighted columns, cached parse
+- [x] Permission cards, and question cards from ACP elicitation
+- [x] Typeable composer: Enter sends, Shift+Enter breaks the line, prompts travel mid-turn
+- [x] Tool rows keyed by the provider's call id; the transcript follows the stream with a jump-to-latest button
 - Status banners
 - Keyboard shortcuts
 

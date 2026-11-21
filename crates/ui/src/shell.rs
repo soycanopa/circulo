@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use async_channel::{Receiver, Sender};
-use circulo_protocol::{ClientRequest, QuestionAction, ServerMessage};
+use circulo_protocol::{ClientRequest, HistoryTurn, QuestionAction, ServerMessage};
 use gpui::{
     Context, FocusHandle, IntoElement, KeyDownEvent, ListState, Render, Window, div, prelude::*, px,
 };
@@ -62,11 +62,15 @@ impl Shell {
         answers: Sender<ClientRequest>,
         session: String,
         draft: String,
+        history: Vec<HistoryTurn>,
     ) -> Self {
+        let mut transcript = Transcript::default();
+        transcript.hydrate(history);
+
         let shell = Self {
             view: View::Session,
             workspace: mock::workspace(),
-            transcript: Transcript::default(),
+            transcript,
             session,
             input: TextInput::with_text(draft),
             composer_focus: cx.focus_handle(),
