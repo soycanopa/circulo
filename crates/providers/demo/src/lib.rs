@@ -109,8 +109,8 @@ impl Driver for DemoDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use circulo_protocol::PermissionRequest;
-    use circulo_provider::Decision;
+    use circulo_protocol::{PermissionRequest, Question};
+    use circulo_provider::{Answer, Decision};
 
     #[test]
     fn a_turn_streams_reasoning_a_tool_and_text() {
@@ -118,6 +118,10 @@ mod tests {
         impl Asker for NoAsker {
             fn permission(&mut self, _: PermissionRequest) -> Decision {
                 Decision::Cancelled
+            }
+
+            fn question(&mut self, _: Question) -> Answer {
+                Answer::decline()
             }
         }
 

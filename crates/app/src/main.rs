@@ -89,6 +89,11 @@ fn main() -> ExitCode {
                 ClientRequest::AnswerPermission { id, option } => {
                     writer.answer_permission(&id, option.as_deref())
                 }
+                ClientRequest::AnswerQuestion {
+                    id,
+                    action,
+                    answers,
+                } => writer.answer_question(&id, action, answers),
                 _ => Ok(()),
             };
             if sent.is_err() {

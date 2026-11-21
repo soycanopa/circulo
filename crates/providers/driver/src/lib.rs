@@ -13,7 +13,9 @@
 
 #![forbid(unsafe_code)]
 
-use circulo_protocol::{Part, PermissionRequest};
+use std::collections::BTreeMap;
+
+use circulo_protocol::{Part, PermissionRequest, Question, QuestionAction};
 
 pub trait Driver: Send + Sync {
     /// The provider name shown in the UI, e.g. `opencode`.
@@ -38,6 +40,40 @@ pub trait Asker {
     /// Blocks until the user answers or the client goes away; a closed channel
     /// reads as `Cancelled`.
     fn permission(&mut self, request: PermissionRequest) -> Decision;
+
+    /// Blocks the same way. An accepted question carries one value per field.
+    fn question(&mut self, question: Question) -> Answer;
+}
+
+/// What the user did with a question.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Answer {
+    pub action: QuestionAction,
+    /// Keyed by field id. Empty unless the action is `Accept`.
+    pub values: BTreeMap<String, String>,
+}
+
+impl Answer {
+    pub fn accept(values: BTreeMap<String, String>) -> Self {
+        Self {
+            action: QuestionAction::Accept,
+            values,
+        }
+    }
+
+    pub fn decline() -> Self {
+        Self {
+            action: QuestionAction::Decline,
+            values: BTreeMap::new(),
+        }
+    }
+
+    pub fn cancel() -> Self {
+        Self {
+            action: QuestionAction::Cancel,
+            values: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

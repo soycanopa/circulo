@@ -6,15 +6,40 @@
 
 use std::collections::VecDeque;
 
-use circulo_protocol::{FinishReason, Part, PermissionOption, ServerMessage, ToolState};
+use circulo_protocol::{
+    FinishReason, Part, PermissionOption, QuestionField, ServerMessage, ToolState,
+};
 
 #[derive(Default)]
 pub struct Transcript {
     pub turns: Vec<Turn>,
     pub status: Status,
-    /// Cards waiting for an answer, oldest first. Parallel tool calls can ask
-    /// twice; the transcript shows one card at a time and pops on answer.
-    pub permissions: VecDeque<PendingPermission>,
+    /// Cards waiting for an answer, oldest first: a permission and a question
+    /// share the slot above the composer, so one queue keeps their order.
+    pub cards: VecDeque<Card>,
+}
+
+#[derive(Clone)]
+pub enum Card {
+    Permission(PendingPermission),
+    Question(PendingQuestion),
+}
+
+impl Card {
+    pub fn id(&self) -> &str {
+        match self {
+            Card::Permission(request) => &request.id,
+            Card::Question(request) => &request.id,
+        }
+    }
+}
+
+/// One open question, as the agent described it.
+#[derive(Clone)]
+pub struct PendingQuestion {
+    pub id: String,
+    pub message: String,
+    pub fields: Vec<QuestionField>,
 }
 
 /// One open permission request, as the daemon described it.
@@ -77,12 +102,19 @@ impl Transcript {
                 }
             }
             ServerMessage::PermissionRequested { id, request, .. } => {
-                self.permissions.push_back(PendingPermission {
+                self.cards.push_back(Card::Permission(PendingPermission {
                     id,
                     title: request.title,
                     detail: request.detail,
                     options: request.options,
-                });
+                }));
+            }
+            ServerMessage::QuestionAsked { id, question, .. } => {
+                self.cards.push_back(Card::Question(PendingQuestion {
+                    id,
+                    message: question.message,
+                    fields: question.fields,
+                }));
             }
             ServerMessage::TurnFinished { reason, .. } => {
                 self.status.running = false;

@@ -13,6 +13,8 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 /// Bumped whenever a message changes shape. Clients send it in the handshake
@@ -49,6 +51,13 @@ pub enum ClientRequest {
     /// options the daemon offered; `None` means cancelled, which is only right
     /// when the turn itself is going away.
     AnswerPermission { id: String, option: Option<String> },
+    /// Answer a pending question. `answers` is keyed by field id; an accepted
+    /// question has one entry per field it asked for.
+    AnswerQuestion {
+        id: String,
+        action: QuestionAction,
+        answers: BTreeMap<String, String>,
+    },
 }
 
 impl ClientRequest {
@@ -65,7 +74,12 @@ impl ClientRequest {
 
 /// The message types this contract defines. A type outside its list is a
 /// message from a newer peer and is skipped, not an error.
-const CLIENT_TYPES: &[&str] = &["start_session", "prompt", "answer_permission"];
+const CLIENT_TYPES: &[&str] = &[
+    "start_session",
+    "prompt",
+    "answer_permission",
+    "answer_question",
+];
 const SERVER_TYPES: &[&str] = &[
     "welcome",
     "session_started",
@@ -73,6 +87,7 @@ const SERVER_TYPES: &[&str] = &[
     "part",
     "turn_finished",
     "permission_requested",
+    "question_asked",
     "error",
 ];
 
@@ -110,6 +125,14 @@ pub enum ServerMessage {
         id: String,
         request: PermissionRequest,
     },
+    /// The agent needs an answer, not an approval. This is ACP elicitation in
+    /// form mode: a message and a flat set of fields.
+    QuestionAsked {
+        session: String,
+        turn: u64,
+        id: String,
+        question: Question,
+    },
     Error {
         message: String,
     },
@@ -133,6 +156,42 @@ pub struct PermissionOption {
     /// The agent's wording, shown as-is.
     pub label: String,
     pub kind: PermissionOptionKind,
+}
+
+/// What the agent wants to know. `message` is the agent's own wording; `fields`
+/// is one entry per property of its form schema, in the order the agent wrote
+/// them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Question {
+    pub message: String,
+    pub fields: Vec<QuestionField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuestionField {
+    /// The schema property name; the answer is keyed by this.
+    pub id: String,
+    /// Human-readable label, from the schema title or derived from the id.
+    pub label: String,
+    pub kind: QuestionKind,
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum QuestionKind {
+    /// One of a fixed set of answers.
+    Choice { options: Vec<String> },
+    /// Free text. A client that cannot type has to decline the question.
+    Text,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuestionAction {
+    Accept,
+    Decline,
+    Cancel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -287,6 +346,22 @@ mod tests {
                             kind: PermissionOptionKind::RejectOnce,
                         },
                     ],
+                },
+            },
+            ServerMessage::QuestionAsked {
+                session: "s1".into(),
+                turn: 7,
+                id: "q-1".into(),
+                question: Question {
+                    message: "How should I approach this?".into(),
+                    fields: vec![QuestionField {
+                        id: "strategy".into(),
+                        label: "Strategy".into(),
+                        kind: QuestionKind::Choice {
+                            options: vec!["conservative".into(), "balanced".into()],
+                        },
+                        required: true,
+                    }],
                 },
             },
             ServerMessage::Error {
