@@ -11,3 +11,6 @@ anyhow = "1"
 async-channel.workspace = true
 circulo-protocol.workspace = true
 gpui.workspace = true
+# CommonMark parsing for transcript text. No HTML rendering and no CLI, so the
+# html and getopts default features stay off.
+pulldown-cmark = { version = "0.13.6", default-features = false }

@@ -250,17 +250,15 @@ fn row_view(row: &Row, index: usize, theme: &Theme) -> AnyElement {
 
 fn segment_view(segment: &Segment, id: SharedString, theme: &Theme) -> AnyElement {
     match segment {
-        // One text block per part: the deltas already carry their own
-        // paragraphs. Markdown styling lands with the renderer.
+        // Agent text is CommonMark while it streams: markers become weight,
+        // mono runs, list indent and code surfaces.
         Segment::Text(text) => div()
             .id(id)
             .w_full()
             .min_w(px(0.))
             .flex_shrink_0()
             .py(px(7.))
-            .text_size(px(13.))
-            .line_height(px(20.))
-            .child(text.clone())
+            .child(crate::markdown::markdown(text, theme))
             .into_any_element(),
         Segment::Reasoning(text) => activity(&id, theme, "icons/brain.svg", None, text, true),
         Segment::Tool { name, detail, done } => {
