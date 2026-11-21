@@ -31,6 +31,7 @@ uuid = { version = "1", features = ["v4"] }
 # The transport. TLS features are enabled by the client so `wss://` works when
 # remote lands; the daemon only ever accepts an already-unwrapped connection.
 tungstenite = "0.30"
+async-channel = "2"
 
 # Puzzle pieces. Dependencies point one way only.
 circulo-client = { path = "crates/client" }

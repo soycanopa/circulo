@@ -1,13 +1,14 @@
-//! The transcript: header, user message, the worked divider, assistant blocks
-//! and, before a project is open, the empty state.
+//! The transcript: header, user message, the worked divider, the parts the
+//! daemon streams and, before a project is open, the empty state.
 //!
-//! Virtualization and live parts come with the protocol; the visual language is
-//! already the final one.
+//! Virtualization and the remaining part renderers come with the protocol
+//! work; the visual language is already the final one.
 
 use gpui::{AnyElement, FontWeight, IntoElement, div, prelude::*, px};
 
 use crate::icons::icon;
-use crate::mock::{Block, ToolState, Workspace};
+use crate::live::{Segment, Transcript};
+use crate::mock::Workspace;
 use crate::shell::View;
 use crate::text::inline;
 use crate::theme::Theme;
@@ -16,19 +17,27 @@ use crate::theme::Theme;
 /// there is no narrower reading column.
 const PADDING: f32 = 34.;
 
-pub(crate) fn transcript(theme: &Theme, view: View, workspace: &Workspace) -> impl IntoElement {
+pub(crate) fn transcript(
+    theme: &Theme,
+    view: View,
+    workspace: &Workspace,
+    transcript: &Transcript,
+    prompt: &str,
+) -> impl IntoElement {
+    let title = match view {
+        View::Empty => workspace.empty.header,
+        View::Session => workspace.title,
+    };
+
     div()
         .flex()
         .flex_col()
         .flex_1()
         .min_h(px(0.))
-        .child(match view {
-            View::Empty => header(theme, workspace.empty.header),
-            View::Session => header(theme, workspace.title),
-        })
+        .child(header(theme, title))
         .child(match view {
             View::Empty => empty(theme, workspace).into_any_element(),
-            View::Session => conversation(theme, workspace).into_any_element(),
+            View::Session => conversation(theme, workspace, transcript, prompt).into_any_element(),
         })
 }
 
@@ -48,7 +57,19 @@ fn header(theme: &Theme, title: &'static str) -> impl IntoElement {
         .child(icon("icons/panel-right.svg", 16., theme.text_faint))
 }
 
-fn conversation(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
+fn conversation(
+    theme: &Theme,
+    workspace: &Workspace,
+    transcript: &Transcript,
+    prompt: &str,
+) -> impl IntoElement {
+    let mut rows: Vec<AnyElement> = Vec::new();
+    for turn in &transcript.turns {
+        for segment in &turn.parts {
+            rows.push(segment_view(theme, segment));
+        }
+    }
+
     div()
         .id("transcript")
         .flex()
@@ -58,16 +79,20 @@ fn conversation(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
         .overflow_y_scroll()
         .px(px(PADDING))
         .pb(px(24.))
-        .child(user_message(theme, workspace))
-        .child(worked(theme, workspace))
-        .child(
-            div().flex().flex_col().gap(px(2.)).children(
-                workspace
-                    .blocks
-                    .iter()
-                    .map(|block| block_view(theme, block)),
-            ),
-        )
+        .child(user_message(theme, prompt))
+        .when(!transcript.is_empty(), |column| {
+            column.child(worked(theme, workspace, transcript))
+        })
+        .children(rows)
+        .when_some(transcript.status.error.clone(), |column, error| {
+            column.child(
+                div()
+                    .pt(px(10.))
+                    .text_size(px(12.))
+                    .text_color(theme.accent)
+                    .child(error),
+            )
+        })
 }
 
 /// The reference empty state: a coral mark, the promise in two lines, one
@@ -129,7 +154,7 @@ fn empty(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
         )
 }
 
-fn user_message(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
+fn user_message(theme: &Theme, prompt: &str) -> impl IntoElement {
     div().flex().justify_end().pt(px(30.)).pb(px(26.)).child(
         div()
             .max_w(px(520.))
@@ -138,11 +163,19 @@ fn user_message(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
             .rounded(px(12.))
             .bg(theme.chip)
             .text_size(px(13.))
-            .child(workspace.user_message),
+            .child(prompt.to_owned()),
     )
 }
 
-fn worked(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
+/// While a turn streams the divider carries a spinner; when it ends, the
+/// disclosure for the turn's activity.
+fn worked(theme: &Theme, workspace: &Workspace, transcript: &Transcript) -> impl IntoElement {
+    let (label, running) = if transcript.status.running {
+        ("Working…", true)
+    } else {
+        (workspace.worked, false)
+    };
+
     div()
         .flex()
         .items_center()
@@ -153,50 +186,54 @@ fn worked(theme: &Theme, workspace: &Workspace) -> impl IntoElement {
             div()
                 .flex()
                 .items_center()
-                .gap(px(3.))
+                .gap(px(4.))
                 .text_size(px(11.5))
                 .text_color(theme.text_faint)
-                .child(workspace.worked)
-                .child(icon("icons/chevron-right.svg", 11., theme.text_faint)),
+                .when(running, |row| {
+                    row.child(icon("icons/loader-circle.svg", 11., theme.text_faint))
+                })
+                .child(label)
+                .when(!running, |row| {
+                    row.child(icon("icons/chevron-right.svg", 11., theme.text_faint))
+                }),
         )
         .child(div().flex_1().h(px(1.)).bg(theme.hairline))
 }
 
-fn block_view(theme: &Theme, block: &Block) -> AnyElement {
-    match block {
-        Block::Heading(text) => div()
-            .py(px(7.))
-            .text_size(px(13.))
-            .line_height(px(20.))
-            .font_weight(FontWeight::SEMIBOLD)
-            .child(*text)
-            .into_any_element(),
-        Block::Paragraph(text) => div()
-            .py(px(7.))
-            .text_size(px(13.))
-            .line_height(px(20.))
-            .child(inline(text, theme))
-            .into_any_element(),
-        Block::Bullet(text) => div()
-            .flex()
-            .gap(px(8.))
-            .py(px(4.))
-            .text_size(px(13.))
-            .line_height(px(20.))
-            .child(div().child("•"))
-            .child(div().flex_1().child(inline(text, theme)))
-            .into_any_element(),
-        Block::Reasoning(summary) => {
-            activity(theme, "icons/brain.svg", None, summary, true).into_any_element()
+fn segment_view(theme: &Theme, segment: &Segment) -> AnyElement {
+    match segment {
+        // Paragraphs keep their shape while streaming; inline markdown is
+        // parsed per paragraph. A real renderer replaces this with runs.
+        Segment::Text(text) => {
+            let mut column = div()
+                .flex()
+                .flex_col()
+                .gap(px(8.))
+                .py(px(7.))
+                .text_size(px(13.))
+                .line_height(px(20.));
+
+            for paragraph in text.split("\n\n").filter(|paragraph| !paragraph.is_empty()) {
+                column = column.child(inline(paragraph, theme));
+            }
+
+            column.into_any_element()
         }
-        Block::Tool {
-            icon: path,
-            name,
-            detail,
-            state,
-        } => {
-            activity(theme, path, Some(name), detail, *state == ToolState::Done).into_any_element()
+        Segment::Reasoning(text) => {
+            activity(theme, "icons/brain.svg", None, text, true).into_any_element()
         }
+        Segment::Tool { name, detail, done } => {
+            activity(theme, tool_icon(name), Some(name), detail, *done).into_any_element()
+        }
+    }
+}
+
+fn tool_icon(name: &str) -> &'static str {
+    match name {
+        "Read" => "icons/file-text.svg",
+        "Edit" => "icons/square-pen.svg",
+        "Bash" => "icons/terminal.svg",
+        _ => "icons/hammer.svg",
     }
 }
 
@@ -205,8 +242,8 @@ fn block_view(theme: &Theme, block: &Block) -> AnyElement {
 fn activity(
     theme: &Theme,
     path: &'static str,
-    name: Option<&'static str>,
-    detail: &'static str,
+    name: Option<&str>,
+    detail: &str,
     done: bool,
 ) -> impl IntoElement {
     div()
@@ -217,7 +254,12 @@ fn activity(
         .text_size(px(12.))
         .child(icon(path, 13., theme.text_faint))
         .when_some(name, |row, name| {
-            row.child(div().text_color(theme.text_muted).child(name))
+            row.child(
+                div()
+                    .flex_shrink_0()
+                    .text_color(theme.text_muted)
+                    .child(name.to_owned()),
+            )
         })
         .child(
             div()
@@ -226,7 +268,7 @@ fn activity(
                 .whitespace_nowrap()
                 .text_ellipsis()
                 .text_color(theme.text_faint)
-                .child(detail),
+                .child(detail.to_owned()),
         )
         .child(if done {
             icon("icons/chevron-right.svg", 11., theme.text_faint)

@@ -67,13 +67,13 @@ impl Daemon {
     pub fn serve(self) -> ! {
         loop {
             match self.listener.accept() {
-                Ok((stream, _peer)) => {
+                Ok((stream, peer)) => {
                     let token = self.token.clone();
                     let core = Arc::clone(&self.core);
 
                     thread::spawn(move || {
-                        if let Err(error) = handle(stream, &token, &core) {
-                            eprintln!("circulo-daemon: connection closed: {error}");
+                        if let Err(error) = handle(stream, peer, &token, &core) {
+                            eprintln!("circulo-daemon: {peer}: {error}");
                         }
                     });
                 }
@@ -83,7 +83,12 @@ impl Daemon {
     }
 }
 
-fn handle(stream: TcpStream, token: &str, core: &Core) -> Result<(), ConnectionError> {
+fn handle(
+    stream: TcpStream,
+    _peer: SocketAddr,
+    token: &str,
+    core: &Core,
+) -> Result<(), ConnectionError> {
     let mut socket = tungstenite::accept(stream)
         .map_err(|error| ConnectionError::Handshake(error.to_string()))?;
 
