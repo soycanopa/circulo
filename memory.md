@@ -2,7 +2,7 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-21, after PR #27 merged (`e36c3d8`).
+Last updated: 2026-11-21, markdown rendering in the transcript (`feature/markdown-transcript`).
 
 ## 1. What works today
 
@@ -10,8 +10,9 @@ Last updated: 2026-11-21, after PR #27 merged (`e36c3d8`).
 - **Daemon** (`circulo-daemon`): owns the core, prints `{"url":"ws://127.0.0.1:PORT","token":"…"}`, serves the protocol over WebSocket.
 - **Client** (`circulo-client`): handshake, requests, streamed messages. The desktop uses it; mobile/remote will reuse it.
 - **Real provider**: OpenCode over **Agent Client Protocol** (`opencode acp`, stdio JSON-RPC). Verified against OpenCode 2.3.2. Reasoning, tool calls and text stream into the window.
+- **Markdown in the transcript** (`crates/ui/src/markdown.rs`): `pulldown-cmark` → blocks and spans → `StyledText` with one `TextRun` per span. Paragraphs, headings, bullet and ordered lists, quotes, fenced code, rules, bold, italic, inline code, strikethrough, links (coloured, not clickable). Partial input is safe: the fence or `**` marker that has not arrived yet does not break the parse. 15 fixtures in the module, and the demo provider's canned turn exercises the shapes.
 - **Lifecycle**: the app spawns the daemon and holds its stdin open; the daemon exits on EOF, so nothing survives the app (verified with SIGKILL).
-- 24 tests green; CI runs fmt + clippy + test on macOS.
+- 39 tests green; CI runs fmt + clippy + test on macOS.
 
 Run it:
 
@@ -25,36 +26,24 @@ Checks: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets`, `ca
 
 Real-provider test (spends a model call): `cargo test -p circulo-provider-opencode --test real -- --ignored`.
 
-## 2. Next task: markdown rendering (the visible gap)
+## 2. Next task: permission card
 
-**Symptom:** agent text renders literally — `**bold**`, `` `code` ``, headings and bullets show their markers. Everything else in the transcript looks right.
+**Symptom:** ACP sends `session/request_permission`; the driver answers `cancelled`, so any tool that needs approval never runs.
 
-**Plan (research already done, do not redo it):**
+**Plan:**
+1. Protocol: a `ServerMessage` for a permission request (id, tool name, options, detail) and a `ClientRequest` carrying the chosen option. Bump the version only if the shape is not additive.
+2. Driver trait: `start_turn` needs a way to ask the UI and wait. The cleanest shape is a callback that blocks on a response channel handed in by the core, so providers never see the protocol.
+3. UI: a card above the composer (design in `docs/ux.md` §4), answerable with the keyboard.
+4. Test with the OpenCode provider on a tool that requires approval, plus a fixture for the ACP request in the adapter.
 
-1. Add `pulldown-cmark = "0.13.6"` to `crates/ui`.
-2. New `crates/ui/src/markdown.rs`:
-   - Parse into blocks: paragraph, heading, bullet, code block, rule. Inline: text, bold, code (italic optional).
-   - Render a paragraph with GPUI `StyledText`:
-     `StyledText::new(plain).with_default_highlights(&text_style, highlights)` where
-     `highlights: impl IntoIterator<Item = (Range<usize>, HighlightStyle)>` over the **plain text byte offsets**.
-   - `HighlightStyle` fields are all `Option`: `color`, `font_weight`, `font_style`, `background_color`, `underline`, `strikethrough`, `fade_out`.
-3. `TextStyle` has **no `Default`**: build all 15 fields —
-   `color: Hsla`, `font_family: SharedString` (".SystemUIFont"), `font_features`, `font_fallbacks: Option<FontFallbacks>`, `font_size: AbsoluteLength`, `line_height: DefiniteLength`, `font_weight`, `font_style`, `background_color`, `underline`, `strikethrough`, `white_space`, `text_overflow`, `text_align`, `line_clamp`.
-   Convert with `px(13.).into()` for the lengths.
-4. Alternative if `TextStyle` is awkward: `StyledText::with_runs(...)` with `TextRun { len (utf8 bytes), font: Font, color: Hsla, background_color: Option<Hsla>, underline, strikethrough }`.
-5. Wire it in `crates/ui/src/transcript.rs` → `segment_view` for `Segment::Text`, replacing the plain `.child(text.clone())`.
-6. Verify with the demo provider first (its text has bold, inline code and paragraphs — free, no model call), then once with OpenCode.
+## 3. Pending after permissions, in priority order
 
-Keep markdown parsing tested with fixtures (`**bold**`, `` `code` ``, `# heading`, `- bullet`, fenced code).
-
-## 3. Pending after markdown, in priority order
-
-1. **Permission card.** ACP sends `session/request_permission`; today the driver answers `cancelled`, so tools that need approval never run. Needs a protocol message + UI card above the composer (design in `docs/ux.md`).
-2. **Composer text input.** The prompt is currently sent automatically at startup (`PROMPT` in `crates/app/src/main.rs`). Needs a real text field, Enter to send, Shift+Enter for newline.
-3. **Model / agent picker.** `session/new` returns `configOptions` (model list, agents). Wire `session/set_config_option` and the existing pickers.
-4. **Session continuity.** One `opencode acp` process per session instead of per turn, and ACP `session/load` (the agent advertises `loadSession: true`).
-5. **Persistence (SQLite)** in `crates/persistence`, owned by the core. Then the sidebar shows real sessions instead of `mock.rs`.
-6. **Pin-to-bottom / scroll UX.** The transcript list resets while a turn runs (needed for correct heights), and is `ListAlignment::Top`; add a scroll-to-bottom affordance like the reference.
+1. **Composer text input.** The prompt is currently sent automatically at startup (`PROMPT` in `crates/app/src/main.rs`). Needs a real text field, Enter to send, Shift+Enter for newline.
+2. **Model / agent picker.** `session/new` returns `configOptions` (model list, agents). Wire `session/set_config_option` and the existing pickers.
+3. **Session continuity.** One `opencode acp` process per session instead of per turn, and ACP `session/load` (the agent advertises `loadSession: true`).
+4. **Persistence (SQLite)** in `crates/persistence`, owned by the core. Then the sidebar shows real sessions instead of `mock.rs`.
+5. **Pin-to-bottom / scroll UX.** The transcript list resets while a turn runs (needed for correct heights), and is `ListAlignment::Top`; add a scroll-to-bottom affordance like the reference.
+6. **Markdown, second pass.** Tables, footnotes and clickable links; parse results are rebuilt every frame today, so cache them per segment if transcripts get long.
 7. **Remote/pairing.** Decisions in `docs/remote.md`: QR with a saved tailcat key + `--allow`; the desktop owns the tunnel and starts it with the daemon. `tailcat` is **not installed** on this machine. Open question: what the QR payload carries (bare address vs address + token + node key).
 
 ## 4. Architecture map
