@@ -134,12 +134,14 @@ Agent text is CommonMark plus the GitHub extensions agents actually write (table
 - [ ] Streaming caret and reduced-motion behaviour.
 
 ### Composer
+- [x] Editable input: buffer, block caret, insertion at the caret, backspace/delete, left/right/home/end. Enter sends, Shift+Enter breaks the line; the field grows to four lines and then scrolls. `CIRCULO_PROMPT` seeds a draft.
 - [x] Input surface with placeholder.
 - [x] Shared controls: model, reasoning effort, access mode, agent mode; send button.
 - [x] Footer: project, `Local`, branch, activity indicator.
 - [ ] Provider glyph in the model picker.
 - [ ] Real menus, queue and steer affordances, usage gauge, attachments.
 - [ ] The empty-state folder picker and the “don’t work in a project” action (both need the core).
+- [ ] Selection, undo, IME composition, and paste: the buffer is deliberately single-carets-at-the-end-of-a-line for now (`crates/ui/src/input.rs`).
 
 ### Missing for v1.0
 Permission cards, checkpoint and rewind UI, the right panel tabs (files, diff, terminal, browser, editor), settings, command palette.

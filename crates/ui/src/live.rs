@@ -14,6 +14,9 @@ use circulo_protocol::{
 pub struct Transcript {
     pub turns: Vec<Turn>,
     pub status: Status,
+    /// The text the window just sent. `TurnStarted` carries no prompt, so it is
+    /// held here until the daemon reports the turn it belongs to.
+    pending_prompt: Option<String>,
     /// Cards waiting for an answer, oldest first: a permission and a question
     /// share the slot above the composer, so one queue keeps their order.
     pub cards: VecDeque<Card>,
@@ -63,6 +66,9 @@ pub struct Status {
 
 #[derive(Default)]
 pub struct Turn {
+    /// What the user sent, shown above the turn. Empty for a turn the window
+    /// did not start.
+    pub prompt: String,
     pub parts: Vec<Segment>,
 }
 
@@ -91,7 +97,10 @@ impl Transcript {
     pub fn apply(&mut self, message: ServerMessage) {
         match message {
             ServerMessage::TurnStarted { .. } => {
-                self.turns.push(Turn::default());
+                self.turns.push(Turn {
+                    prompt: self.pending_prompt.take().unwrap_or_default(),
+                    parts: Vec::new(),
+                });
                 self.status.running = true;
                 self.status.error = None;
                 self.status.finished = None;
@@ -129,8 +138,10 @@ impl Transcript {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.turns.iter().all(|turn| turn.parts.is_empty())
+    /// Remembers the prompt the window is about to send, so the turn can show
+    /// it above the answer.
+    pub fn expect_prompt(&mut self, prompt: String) {
+        self.pending_prompt = Some(prompt);
     }
 }
 
@@ -224,6 +235,16 @@ mod tests {
         part(Part::Text {
             delta: delta.into(),
         })
+    }
+
+    #[test]
+    fn a_sent_prompt_is_shown_on_the_turn_it_belongs_to() {
+        let mut transcript = Transcript::default();
+        transcript.expect_prompt("hello".into());
+        transcript.apply(started(1));
+
+        assert_eq!(transcript.turns[0].prompt, "hello");
+        assert!(transcript.turns[0].parts.is_empty());
     }
 
     #[test]
