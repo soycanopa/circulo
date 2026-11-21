@@ -1,25 +1,23 @@
-//! The daemon: the core behind a local listener.
+//! The daemon: the core behind a local WebSocket listener.
 //!
 //! The daemon owns the process the clients talk to. It binds loopback, prints
 //! its address and token once so a supervisor can hand them over, then serves
 //! connections: one thread per connection, the protocol on the wire, the core
 //! behind it.
 //!
-//! Loopback only for now. Remote will add WebSocket + TLS in front of the same
-//! protocol and the same core.
+//! Loopback only for now. A tailnet or a reverse proxy can front it for remote
+//! without touching this code, and TLS terminates before the WebSocket upgrade.
 
 #![forbid(unsafe_code)]
 
-use std::io::BufReader;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
 
 use circulo_core::Core;
-use circulo_protocol::{
-    ClientRequest, Hello, PROTOCOL_VERSION, ProtocolError, ServerMessage, read_line, write_message,
-};
+use circulo_protocol::{ClientRequest, Hello, PROTOCOL_VERSION, ProtocolError, ServerMessage};
 use circulo_provider_demo::DemoDriver;
+use tungstenite::{Message, WebSocket};
 use uuid::Uuid;
 
 pub struct Daemon {
@@ -53,14 +51,15 @@ impl Daemon {
         &self.token
     }
 
+    /// The URL a client connects to.
+    pub fn url(&self) -> String {
+        format!("ws://{}", self.local_addr())
+    }
+
     /// One line a supervisor can parse to learn where the daemon listens and
     /// which token to present.
     pub fn announcement(&self) -> String {
-        format!(
-            r#"{{"address":"{}","token":"{}"}}"#,
-            self.local_addr(),
-            self.token
-        )
+        format!(r#"{{"url":"{}","token":"{}"}}"#, self.url(), self.token)
     }
 
     /// Accepts forever. Each connection gets its own thread so a long turn
@@ -84,19 +83,19 @@ impl Daemon {
     }
 }
 
-fn handle(stream: TcpStream, token: &str, core: &Core) -> Result<(), ProtocolError> {
-    let mut writer = stream.try_clone()?;
-    let mut reader = BufReader::new(stream);
+fn handle(stream: TcpStream, token: &str, core: &Core) -> Result<(), ConnectionError> {
+    let mut socket = tungstenite::accept(stream)
+        .map_err(|error| ConnectionError::Handshake(error.to_string()))?;
 
     // Handshake: protocol version first, then the token.
-    let Some(line) = read_line(&mut reader)? else {
+    let Some(line) = next(&mut socket)? else {
         return Ok(());
     };
     let hello = Hello::decode(&line)?;
 
     if hello.protocol != PROTOCOL_VERSION {
-        write_message(
-            &mut writer,
+        send(
+            &mut socket,
             &ServerMessage::Error {
                 message: format!(
                     "protocol version {} does not match {}",
@@ -108,8 +107,8 @@ fn handle(stream: TcpStream, token: &str, core: &Core) -> Result<(), ProtocolErr
     }
 
     if hello.token != token {
-        write_message(
-            &mut writer,
+        send(
+            &mut socket,
             &ServerMessage::Error {
                 message: "bad token".into(),
             },
@@ -117,30 +116,30 @@ fn handle(stream: TcpStream, token: &str, core: &Core) -> Result<(), ProtocolErr
         return Ok(());
     }
 
-    write_message(
-        &mut writer,
+    send(
+        &mut socket,
         &ServerMessage::Welcome {
             protocol: PROTOCOL_VERSION,
             daemon: core.driver_name().to_owned(),
         },
     )?;
 
-    while let Some(line) = read_line(&mut reader)? {
+    while let Some(line) = next(&mut socket)? {
         match ClientRequest::decode(&line)? {
             Some(ClientRequest::StartSession { project }) => {
                 let session = core.start_session(project);
-                write_message(&mut writer, &ServerMessage::SessionStarted { session })?;
+                send(&mut socket, &ServerMessage::SessionStarted { session })?;
             }
             Some(ClientRequest::Prompt { session, text }) => {
                 core.run_turn(&session, &text, |message| {
                     // A client that walks away mid-turn ends the turn for this
                     // connection only; the write error is reported there.
-                    let _ = write_message(&mut writer, &message);
+                    let _ = send(&mut socket, &message);
                 });
             }
             None => {
-                write_message(
-                    &mut writer,
+                send(
+                    &mut socket,
                     &ServerMessage::Error {
                         message: "unknown request".into(),
                     },
@@ -150,4 +149,33 @@ fn handle(stream: TcpStream, token: &str, core: &Core) -> Result<(), ProtocolErr
     }
 
     Ok(())
+}
+
+fn send(socket: &mut WebSocket<TcpStream>, message: &ServerMessage) -> Result<(), ConnectionError> {
+    Ok(socket.send(Message::text(message.encode()?))?)
+}
+
+fn next(socket: &mut WebSocket<TcpStream>) -> Result<Option<String>, ConnectionError> {
+    loop {
+        match socket.read() {
+            Ok(Message::Text(text)) => return Ok(Some(text.to_string())),
+            Ok(Message::Close(_)) => return Ok(None),
+            // Ping and pong are handled by the WebSocket layer.
+            Ok(_) => continue,
+            Err(tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed) => {
+                return Ok(None);
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum ConnectionError {
+    #[error(transparent)]
+    Protocol(#[from] ProtocolError),
+    #[error("websocket: {0}")]
+    WebSocket(#[from] tungstenite::Error),
+    #[error("handshake: {0}")]
+    Handshake(String),
 }

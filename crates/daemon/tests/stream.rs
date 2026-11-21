@@ -9,20 +9,20 @@ use circulo_daemon::Daemon;
 use circulo_protocol::{FinishReason, Part, ServerMessage, ToolState};
 use circulo_provider_demo::DemoDriver;
 
-fn daemon() -> (Daemon, std::net::SocketAddr, String) {
+fn daemon() -> (Daemon, String, String) {
     let core = Arc::new(Core::new(Arc::new(DemoDriver::instant())));
     let daemon = Daemon::with_core(core).expect("bind the daemon");
-    let address = daemon.local_addr();
+    let url = daemon.url();
     let token = daemon.token().to_owned();
-    (daemon, address, token)
+    (daemon, url, token)
 }
 
 #[test]
 fn a_client_streams_a_turn_from_the_daemon() {
-    let (daemon, address, token) = daemon();
+    let (daemon, url, token) = daemon();
     thread::spawn(move || daemon.serve());
 
-    let mut client = Client::connect(address, &token).expect("handshake");
+    let mut client = Client::connect(&url, &token).expect("handshake");
     let session = client
         .start_session(Some("/tmp/project".into()))
         .expect("session");
@@ -64,10 +64,10 @@ fn a_client_streams_a_turn_from_the_daemon() {
 
 #[test]
 fn the_wrong_token_is_refused() {
-    let (daemon, address, _) = daemon();
+    let (daemon, url, _) = daemon();
     thread::spawn(move || daemon.serve());
 
-    match Client::connect(address, "not-the-token") {
+    match Client::connect(&url, "not-the-token") {
         Err(ClientError::Refused(message)) => assert!(message.contains("token")),
         Err(other) => panic!("expected a refusal, got {other:?}"),
         Ok(_) => panic!("expected a refusal, got a connection"),
@@ -76,10 +76,10 @@ fn the_wrong_token_is_refused() {
 
 #[test]
 fn an_unknown_session_comes_back_as_an_error() {
-    let (daemon, address, token) = daemon();
+    let (daemon, url, token) = daemon();
     thread::spawn(move || daemon.serve());
 
-    let mut client = Client::connect(address, &token).expect("handshake");
+    let mut client = Client::connect(&url, &token).expect("handshake");
     client.prompt("missing-session", "hello").expect("prompt");
 
     assert!(matches!(
@@ -89,21 +89,22 @@ fn an_unknown_session_comes_back_as_an_error() {
 }
 
 #[test]
-fn the_announcement_carries_the_address_and_the_token() {
-    let (daemon, address, token) = daemon();
+fn the_announcement_carries_the_url_and_the_token() {
+    let (daemon, url, token) = daemon();
     let announcement = daemon.announcement();
 
-    assert!(announcement.contains(&address.to_string()));
+    assert!(url.starts_with("ws://"), "the transport is a WebSocket");
+    assert!(announcement.contains(&url));
     assert!(announcement.contains(&token));
 }
 
 /// Keeps the demo turn's shapes honest for the transcript renderer.
 #[test]
 fn the_turn_reaches_the_client_in_order() {
-    let (daemon, address, token) = daemon();
+    let (daemon, url, token) = daemon();
     thread::spawn(move || daemon.serve());
 
-    let mut client = Client::connect(address, &token).expect("handshake");
+    let mut client = Client::connect(&url, &token).expect("handshake");
     let session = client.start_session(None).expect("session");
     client.prompt(&session, "order").expect("prompt");
 

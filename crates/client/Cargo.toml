@@ -9,3 +9,4 @@ repository.workspace = true
 [dependencies]
 circulo-protocol.workspace = true
 thiserror.workspace = true
+tungstenite = { workspace = true, features = ["rustls-tls-webpki-roots"] }

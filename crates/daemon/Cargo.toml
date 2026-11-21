@@ -10,6 +10,8 @@ repository.workspace = true
 circulo-core.workspace = true
 circulo-protocol.workspace = true
 circulo-provider-demo.workspace = true
+thiserror.workspace = true
+tungstenite.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]

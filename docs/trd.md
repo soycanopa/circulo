@@ -13,7 +13,7 @@
 | Language | Rust | Stable, edition 2021 or later |
 | Persistence | SQLite + JSON files | Local-first (same spirit as Waku) |
 | Protocol | Neutral events + provider adapters | Versioned, transport-agnostic contract |
-| Transport | Loopback TCP, newline-delimited JSON | WS + TLS for remote; same protocol crate, new adapter |
+| Transport | WebSocket, JSON text frames | `ws://` on loopback; `wss://` behind TLS for remote |
 | Providers | Adapter per CLI | Native structured protocols (not terminal scraping) |
 | Build | cargo | Desktop bundles (macOS .app, Linux, Windows) |
 
@@ -21,7 +21,7 @@
 
 The core runs as its own process (`circulo-daemon`) from day one. The desktop, and later mobile and remote clients, connect to it over the protocol. That is what makes the same core usable everywhere without moving boundaries: a client that can speak the protocol does not care where the daemon runs.
 
-Transport today: loopback TCP with one JSON message per line. The protocol crate owns the message types and the framing, so adding WebSocket + TLS for remote is a transport adapter, not a contract change. The handshake carries the protocol version and a token the daemon prints when it starts.
+Transport: a WebSocket, one JSON message per text frame, `ws://` on loopback and `wss://` once TLS fronts the daemon. The protocol crate owns the message types; the WebSocket layer only carries them, so remote is a deployment change (TLS terminator, private network), not a contract change. The handshake carries the protocol version and a token the daemon prints when it starts; remote adds TLS and header authentication in front of it.
 
 ```
 ┌─────────────────────────────────────┐
