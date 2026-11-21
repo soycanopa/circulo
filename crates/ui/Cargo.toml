@@ -11,3 +11,4 @@ anyhow = "1"
 async-channel.workspace = true
 circulo-protocol.workspace = true
 gpui.workspace = true
+pulldown-cmark = "0.13"

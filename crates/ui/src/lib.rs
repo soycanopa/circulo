@@ -13,6 +13,7 @@ mod assets;
 mod composer;
 mod icons;
 mod live;
+mod markdown;
 mod mock;
 mod shell;
 mod sidebar;

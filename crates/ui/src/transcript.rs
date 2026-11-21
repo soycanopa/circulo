@@ -16,6 +16,7 @@ use gpui::{
 
 use crate::icons::icon;
 use crate::live::Transcript;
+use crate::markdown::markdown_view;
 use crate::mock::Workspace;
 use crate::shell::View;
 use crate::theme::Theme;
@@ -251,16 +252,14 @@ fn row_view(row: &Row, index: usize, theme: &Theme) -> AnyElement {
 fn segment_view(segment: &Segment, id: SharedString, theme: &Theme) -> AnyElement {
     match segment {
         // One text block per part: the deltas already carry their own
-        // paragraphs. Markdown styling lands with the renderer.
+        // paragraphs. Each stacked markdown block keeps flex_shrink_0 so a
+        // row measured at minimum width still reports its full height.
         Segment::Text(text) => div()
             .id(id)
             .w_full()
             .min_w(px(0.))
             .flex_shrink_0()
-            .py(px(7.))
-            .text_size(px(13.))
-            .line_height(px(20.))
-            .child(text.clone())
+            .child(markdown_view(text, theme))
             .into_any_element(),
         Segment::Reasoning(text) => activity(&id, theme, "icons/brain.svg", None, text, true),
         Segment::Tool { name, detail, done } => {
