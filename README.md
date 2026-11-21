@@ -97,3 +97,7 @@ cargo test --workspace
 The owner works directly on `main`, one small commit at a time. External collaborators work on `feature/…`, `fix/…` or `docs/…` branches and open a pull request. Commit messages use `type(scope): summary`; local checks must pass before anything is pushed.
 
 Earlier attempts are kept for reference, with their full history and tags: [`legacy2`](https://github.com/soycanopa/circulo/tree/legacy2) holds the Go/MyGo application, and [`legacy`](https://github.com/soycanopa/circulo/tree/legacy) holds the Wails + React application before it.
+
+## License
+
+MIT. Circulo is inspired by [Waku](https://github.com/egoist/waku), which is GPL-3.0; no Waku code is used here.

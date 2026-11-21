@@ -3,6 +3,7 @@ name = "circulo-protocol"
 description = "The neutral wire contract shared by the Circulo UI and core"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 repository.workspace = true
 
 [dependencies]
