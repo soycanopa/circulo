@@ -9,9 +9,12 @@ use std::rc::Rc;
 
 use async_channel::{Receiver, Sender};
 use circulo_protocol::{ClientRequest, QuestionAction, ServerMessage};
-use gpui::{Context, FocusHandle, IntoElement, ListState, Render, Window, div, prelude::*, px};
+use gpui::{
+    Context, FocusHandle, IntoElement, KeyDownEvent, ListState, Render, Window, div, prelude::*, px,
+};
 
-use crate::composer::composer;
+use crate::composer::{Field, KeyHandler, SendHandler, composer};
+use crate::input::TextInput;
 use crate::live::{Card, Transcript};
 use crate::mock::{self, Workspace};
 use crate::permission::{Answer, permission_card};
@@ -32,7 +35,11 @@ pub struct Shell {
     view: View,
     workspace: Workspace,
     transcript: Transcript,
-    prompt: String,
+    /// The session every prompt goes to. The app opens it once at startup.
+    session: String,
+    input: TextInput,
+    composer_focus: FocusHandle,
+    focus_composer: bool,
     list_state: ListState,
     /// Requests the UI sends to the daemon, answered through the client's
     /// writer half. A permission answer travels this way.
@@ -53,13 +60,17 @@ impl Shell {
         cx: &mut Context<Self>,
         receiver: Receiver<ServerMessage>,
         answers: Sender<ClientRequest>,
-        prompt: String,
+        session: String,
+        draft: String,
     ) -> Self {
         let shell = Self {
             view: View::Session,
             workspace: mock::workspace(),
             transcript: Transcript::default(),
-            prompt,
+            session,
+            input: TextInput::with_text(draft),
+            composer_focus: cx.focus_handle(),
+            focus_composer: true,
             list_state: new_list_state(),
             answers,
             card_focus: cx.focus_handle(),
@@ -149,6 +160,51 @@ impl Shell {
         cx.notify();
     }
 
+    /// Editing keys for the composer. Enter sends, Shift+Enter breaks the line,
+    /// and everything else is the buffer's own business.
+    fn input_key(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        let key = event.keystroke.key.as_str();
+        let modifiers = event.keystroke.modifiers;
+        let plain = !modifiers.control && !modifiers.alt && !modifiers.platform;
+
+        match key {
+            "enter" if !modifiers.shift => {
+                self.submit(cx);
+                return;
+            }
+            "enter" => self.input.insert("\n"),
+            "backspace" => self.input.backspace(),
+            "delete" => self.input.delete(),
+            "left" => self.input.left(),
+            "right" => self.input.right(),
+            "home" => self.input.home(),
+            "end" => self.input.end(),
+            _ if plain => match &event.keystroke.key_char {
+                Some(text) => self.input.insert(text),
+                None => return,
+            },
+            _ => return,
+        }
+
+        cx.notify();
+    }
+
+    /// Sends the composer's text as a prompt. The transcript remembers it, so
+    /// the turn shows what was asked above what came back.
+    fn submit(&mut self, cx: &mut Context<Self>) {
+        if self.input.is_blank() || self.transcript.status.running {
+            return;
+        }
+
+        let text = self.input.take();
+        self.transcript.expect_prompt(text.clone());
+        let _ = self.answers.send_blocking(ClientRequest::Prompt {
+            session: self.session.clone(),
+            text,
+        });
+        cx.notify();
+    }
+
     fn pop_card(&mut self, id: &str) {
         if let Some(index) = self
             .transcript
@@ -168,7 +224,12 @@ impl Render for Shell {
         let theme = Theme::for_appearance(window.appearance());
         let view = self.view;
 
-        // A new card takes the keyboard once, so Enter and Escape act on it.
+        // The composer has the keyboard unless a card is asking.
+        if self.focus_composer {
+            self.focus_composer = false;
+            self.composer_focus.focus(window);
+        }
+
         if self.focus_card && !self.transcript.cards.is_empty() {
             self.focus_card = false;
             self.card_focus.focus(window);
@@ -217,12 +278,32 @@ impl Render for Shell {
                 view,
                 &self.workspace,
                 &self.transcript,
-                &self.prompt,
                 &self.list_state,
             ))
             .children(card)
             .when(view == View::Session, |column| {
-                column.child(composer(&theme, &self.workspace, &self.transcript))
+                let shell = cx.entity();
+                let on_key: KeyHandler = Rc::new(move |event, _window, cx| {
+                    shell.update(cx, |shell, cx| shell.input_key(event, cx));
+                });
+                let shell = cx.entity();
+                let on_send: SendHandler = Rc::new(move |_window, cx| {
+                    shell.update(cx, |shell, cx| shell.submit(cx));
+                });
+                let focused = self.composer_focus.is_focused(window);
+
+                column.child(composer(
+                    &theme,
+                    &self.workspace,
+                    &self.transcript,
+                    Field {
+                        input: &self.input,
+                        focus: &self.composer_focus,
+                        focused,
+                        on_key,
+                        on_send,
+                    },
+                ))
             });
 
         div()

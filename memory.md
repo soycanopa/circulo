@@ -2,7 +2,7 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-21, after permission cards landed; questions are next.
+Last updated: 2026-11-21, after the composer became typeable; the app is usable end to end.
 
 ## 1. What works today
 
@@ -30,21 +30,20 @@ Checks: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets`, `ca
 
 Real-provider test (spends a model call): `cargo test -p circulo-provider-opencode --test real -- --ignored`.
 
-## 2. Next task: composer text input
+## 2. Next task: free-text answers in the question card
 
-**Why:** it unblocks three things at once — sending a prompt from the window,
-answering free-text questions (`docs/permissions.md` §2), and steering. It is
-the last piece that keeps the app a demo instead of a usable client.
+**Why:** `TextInput` exists now, so the last hole in `docs/permissions.md` §2 closes:
+a question whose schema has a free-text property can be answered instead of
+declined.
 
 **Plan:**
-1. A `TextInput` in `crates/ui`: buffer, caret, focus, key handling (chars,
-   backspace, arrows, paste), Enter to send, Shift+Enter for a newline. GPUI has
-   no text input element, so this is ours; keep it in one module with tests for
-   the buffer and caret.
-2. Send through the writer half of the connection (it already exists for
-   answers) as a `Prompt` request; the transcript starts a new turn.
-3. Then reuse the same input inside the question card for `Text` fields, and
-   drop the "decline when typing is needed" path.
+1. The question card renders a `TextInput` per `QuestionKind::Text` field, with
+   its own caret and focus; one focus at a time, tab or click moves between
+   fields.
+2. `Submit` sends the typed values in the same `answers` map; drop the "needs a
+   typed answer, decline it" branch and `needs_typing`.
+3. Verify with the scripted ACP agent: add a second schema property of type
+   string (no enum) and assert the value reaches the agent.
 
 ## 3. Pending after permissions, in priority order
 

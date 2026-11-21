@@ -125,6 +125,19 @@ pub struct ClientWriter {
 }
 
 impl ClientWriter {
+    /// Sends a prompt over the writer half of a split, so the composer can send
+    /// while the reader is blocked on the previous turn.
+    pub fn prompt(&mut self, session: &str, text: &str) -> Result<(), ClientError> {
+        send(
+            &mut self.socket,
+            &ClientRequest::Prompt {
+                session: session.to_owned(),
+                text: text.to_owned(),
+            }
+            .encode()?,
+        )
+    }
+
     /// Answers a permission request over the writer half of a split.
     pub fn answer_permission(&mut self, id: &str, option: Option<&str>) -> Result<(), ClientError> {
         send(&mut self.socket, &answer(id, option).encode()?)

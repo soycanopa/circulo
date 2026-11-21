@@ -57,7 +57,6 @@ pub(crate) fn transcript(
     view: View,
     workspace: &Workspace,
     transcript: &Transcript,
-    prompt: &str,
     list_state: &ListState,
 ) -> impl IntoElement {
     let title = match view {
@@ -74,7 +73,7 @@ pub(crate) fn transcript(
         .child(match view {
             View::Empty => empty(theme, workspace).into_any_element(),
             View::Session => {
-                conversation(theme, workspace, transcript, prompt, list_state).into_any_element()
+                conversation(theme, workspace, transcript, list_state).into_any_element()
             }
         })
 }
@@ -99,10 +98,9 @@ fn conversation(
     theme: &Theme,
     workspace: &Workspace,
     transcript: &Transcript,
-    prompt: &str,
     list_state: &ListState,
 ) -> impl IntoElement {
-    let rows = Rc::new(rows(workspace, transcript, prompt));
+    let rows = Rc::new(rows(workspace, transcript));
     // The list's builder is 'static; the theme is a handful of copied colours.
     let theme = *theme;
 
@@ -177,21 +175,23 @@ pub(crate) fn new_list_state() -> ListState {
     ListState::new(0, ListAlignment::Bottom, px(OVERDRAW))
 }
 
-fn rows(workspace: &Workspace, transcript: &Transcript, prompt: &str) -> Vec<Row> {
-    let mut rows = vec![Row::Message(prompt.to_owned())];
+fn rows(workspace: &Workspace, transcript: &Transcript) -> Vec<Row> {
+    let mut rows = Vec::new();
 
-    if !transcript.is_empty() {
+    for (index, turn) in transcript.turns.iter().enumerate() {
+        rows.push(Row::Message(turn.prompt.clone()));
+
+        // Only the last turn can still be running.
+        let running = index + 1 == transcript.turns.len() && transcript.status.running;
         rows.push(Row::Divider {
-            label: if transcript.status.running {
+            label: if running {
                 "Working…".to_owned()
             } else {
                 workspace.worked.to_owned()
             },
-            running: transcript.status.running,
+            running,
         });
-    }
 
-    for turn in &transcript.turns {
         let segments = turn
             .parts
             .iter()

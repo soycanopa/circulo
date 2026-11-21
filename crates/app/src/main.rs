@@ -20,13 +20,11 @@ use gpui::{
     size,
 };
 
-const PROMPT: &str = "Give me a quick overview of this workspace.";
-
-/// The composer is not typeable yet, so the app sends one fixed prompt. The
-/// override exists so a real provider can be exercised with a different ask
-/// (a table, a code block) without a rebuild.
-fn prompt() -> String {
-    std::env::var("CIRCULO_PROMPT").unwrap_or_else(|_| PROMPT.to_owned())
+/// A draft the composer starts with. It exists so a real provider can be
+/// exercised without typing, and so a development session can start from a
+/// fixed ask. The window sends nothing on its own.
+fn draft() -> String {
+    std::env::var("CIRCULO_PROMPT").unwrap_or_default()
 }
 
 fn main() -> ExitCode {
@@ -46,6 +44,7 @@ fn main() -> ExitCode {
         }
     };
 
+    let draft = draft();
     let session = match client.start_session(None) {
         Ok(session) => session,
         Err(error) => {
@@ -53,12 +52,6 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-
-    let prompt = prompt();
-    if let Err(error) = client.prompt(&session, &prompt) {
-        eprintln!("circulo: cannot send the prompt: {error}");
-        return ExitCode::FAILURE;
-    }
 
     // The client is blocking, so it lives on its own thread and hands messages
     // to the UI. Dropping the receiver ends the thread with the window.
@@ -86,6 +79,7 @@ fn main() -> ExitCode {
     thread::spawn(move || {
         while let Ok(request) = answers_rx.recv_blocking() {
             let sent = match request {
+                ClientRequest::Prompt { session, text } => writer.prompt(&session, &text),
                 ClientRequest::AnswerPermission { id, option } => {
                     writer.answer_permission(&id, option.as_deref())
                 }
@@ -119,8 +113,15 @@ fn main() -> ExitCode {
                     ..Default::default()
                 },
                 |_, cx| {
+                    let session = session.clone();
                     cx.new(|cx| {
-                        Shell::new(cx, receiver.clone(), answers_tx.clone(), prompt.clone())
+                        Shell::new(
+                            cx,
+                            receiver.clone(),
+                            answers_tx.clone(),
+                            session,
+                            draft.clone(),
+                        )
                     })
                 },
             )
