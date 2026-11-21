@@ -4,6 +4,7 @@ package session
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/soycanopa/circulo/protocol"
 )
@@ -31,6 +32,22 @@ type SessionInfo struct {
 	Title   string
 }
 
+// Catalog is one model the picker can offer.
+type Catalog struct {
+	ID       string
+	Provider string
+	Name     string
+	Label    string
+	Variants []string
+}
+
+// Choice is the model and reasoning effort selected for one session.
+type Choice struct {
+	Provider string
+	ID       string
+	Variant  string
+}
+
 // Model is presentation state. Apply it on the UI thread only.
 type Model struct {
 	Connected bool
@@ -39,6 +56,8 @@ type Model struct {
 	Sessions  []SessionInfo
 	Selected  string
 	Messages  []Message
+	Models    []Catalog
+	choice    map[string]Choice
 	index     map[string]int
 }
 
@@ -68,6 +87,10 @@ func (m *Model) Apply(e protocol.Envelope) error {
 		if e.Role != "user" {
 			m.Status = "Streaming"
 		}
+	case protocol.TypeModel:
+		m.upsertCatalog(e)
+	case protocol.TypeCurrent:
+		m.setChoice(e)
 	case protocol.TypeDone:
 		if i, ok := m.lookup(e.ID); ok {
 			m.Messages[i].Done = true
@@ -104,6 +127,85 @@ func (m *Model) append(e protocol.Envelope) {
 	}
 	m.index[e.ID] = len(m.Messages)
 	m.Messages = append(m.Messages, Message{ID: e.ID, Session: e.Session, Role: e.Role, Text: e.Text})
+}
+
+// Busy is true while a turn is being sent or streamed.
+func (m *Model) Busy() bool {
+	return m.Status == "Sending" || m.Status == "Streaming"
+}
+
+// Selection is the picker label and reasoning effort for the open session.
+func (m *Model) Selection() (label, variant string) {
+	if m.choice == nil {
+		return "", ""
+	}
+	ch, ok := m.choice[m.Selected]
+	if !ok {
+		return "", ""
+	}
+	for _, it := range m.Models {
+		if it.ID == ch.ID && it.Provider == ch.Provider {
+			return it.Label, ch.Variant
+		}
+	}
+	if ch.ID == "" {
+		return "", ch.Variant
+	}
+	return ch.Provider + "/" + ch.ID, ch.Variant
+}
+
+// Lookup finds a catalog entry by the label the picker shows.
+func (m *Model) Lookup(label string) (Catalog, bool) {
+	for _, it := range m.Models {
+		if it.Label == label {
+			return it, true
+		}
+	}
+	return Catalog{}, false
+}
+
+func (m *Model) upsertCatalog(e protocol.Envelope) {
+	item := Catalog{ID: e.ID, Provider: e.Provider, Name: e.Name}
+	if e.Variants != "" {
+		item.Variants = strings.Split(e.Variants, ",")
+	}
+	for i := range m.Models {
+		if m.Models[i].ID == item.ID && m.Models[i].Provider == item.Provider {
+			m.Models[i].ID = item.ID
+			m.Models[i].Provider = item.Provider
+			m.Models[i].Name = item.Name
+			m.Models[i].Variants = item.Variants
+			m.relabel()
+			return
+		}
+	}
+	m.Models = append(m.Models, item)
+	m.relabel()
+}
+
+func (m *Model) relabel() {
+	counts := map[string]int{}
+	for _, it := range m.Models {
+		counts[it.Name]++
+	}
+	for i := range m.Models {
+		it := &m.Models[i]
+		switch {
+		case it.Name != "" && counts[it.Name] == 1:
+			it.Label = it.Name
+		case it.Name != "":
+			it.Label = it.Provider + "/" + it.Name
+		default:
+			it.Label = it.Provider + "/" + it.ID
+		}
+	}
+}
+
+func (m *Model) setChoice(e protocol.Envelope) {
+	if m.choice == nil {
+		m.choice = map[string]Choice{}
+	}
+	m.choice[e.ID] = Choice{Provider: e.Provider, ID: e.ModelID, Variant: e.Variant}
 }
 
 func (m *Model) upsertProject(p Project) {

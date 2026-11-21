@@ -11,12 +11,15 @@ import (
 type App struct {
 	Model *Model
 	// Send delivers a request to the core. It is safe to call from the UI thread.
-	Send  func(protocol.Envelope)
-	path  string
-	draft string
-	seq   int64
-	md    markdown.Options
-	list  ui.ListState
+	Send         func(protocol.Envelope)
+	path         string
+	draft        string
+	modelLabel   string
+	variantLabel string
+	synced       string
+	seq          int64
+	md           markdown.Options
+	list         ui.ListState
 }
 
 // NewApp builds the window state. Model is updated on the UI thread.
@@ -93,13 +96,86 @@ func (a *App) transcript(c *ui.Context) {
 		if !a.list.AtEnd() && ui.Button(c, "Jump to latest").Clicked() {
 			a.list.ScrollToEnd()
 		}
+		a.controls(c)
 		ui.Row(c).Gap(8).Children(func() {
 			ui.TextInput(c, &a.draft).Placeholder("Message").Grow(1)
-			if ui.PrimaryButton(c, "Send").Clicked() && a.draft != "" && a.Model.Selected != "" {
-				a.request(protocol.Envelope{Type: protocol.TypePrompt, ID: a.Model.Selected, Text: a.draft})
-				a.draft = ""
+			if a.Model.Busy() {
+				if ui.Button(c, "Steer").Clicked() {
+					a.sendDraft("steer")
+				}
+				if ui.Button(c, "Queue").Clicked() {
+					a.sendDraft("queue")
+				}
+				if ui.Button(c, "Stop").Clicked() && a.Model.Selected != "" {
+					a.request(protocol.Envelope{Type: protocol.TypeAbort, ID: a.Model.Selected})
+				}
+			} else if ui.PrimaryButton(c, "Send").Clicked() {
+				a.sendDraft("")
 			}
 		})
+	})
+}
+
+func (a *App) controls(c *ui.Context) {
+	label, variant := a.Model.Selection()
+	key := a.Model.Selected + "\x00" + label + "\x00" + variant
+	if key != a.synced {
+		a.modelLabel = label
+		a.variantLabel = variant
+		a.synced = key
+	}
+	if len(a.Model.Models) == 0 {
+		return
+	}
+	options := make([]string, len(a.Model.Models))
+	for i, it := range a.Model.Models {
+		options[i] = it.Label
+	}
+	ui.Row(c).Gap(8).Children(func() {
+		if ui.Combobox(c, &a.modelLabel, options).Grow(1).Changed() {
+			a.sendModel()
+		}
+		it, ok := a.Model.Lookup(a.modelLabel)
+		if !ok || len(it.Variants) == 0 {
+			return
+		}
+		if ui.Combobox(c, &a.variantLabel, it.Variants).Changed() {
+			a.sendModel()
+		}
+	})
+}
+
+func (a *App) sendDraft(delivery string) {
+	if a.draft == "" || a.Model.Selected == "" {
+		return
+	}
+	a.request(protocol.Envelope{
+		Type: protocol.TypePrompt, ID: a.Model.Selected, Text: a.draft, Delivery: delivery,
+	})
+	a.draft = ""
+}
+
+func (a *App) sendModel() {
+	it, ok := a.Model.Lookup(a.modelLabel)
+	if !ok || a.Model.Selected == "" {
+		return
+	}
+	variant := a.variantLabel
+	known := false
+	for _, v := range it.Variants {
+		if v == variant {
+			known = true
+			break
+		}
+	}
+	if !known && len(it.Variants) > 0 {
+		variant = it.Variants[0]
+		a.variantLabel = variant
+	}
+	a.synced = a.Model.Selected + "\x00" + it.Label + "\x00" + variant
+	a.request(protocol.Envelope{
+		Type: protocol.TypeUse, ID: a.Model.Selected,
+		Provider: it.Provider, ModelID: it.ID, Variant: variant,
 	})
 }
 
