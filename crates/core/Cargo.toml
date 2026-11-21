@@ -1,9 +1,12 @@
 [package]
 name = "circulo-core"
-description = "Projects, sessions and the provider lifecycle for Circulo"
+description = "Sessions and turn orchestration for the Circulo daemon"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
+circulo-protocol.workspace = true
+circulo-provider.workspace = true
+uuid.workspace = true

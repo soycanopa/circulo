@@ -79,8 +79,13 @@ A developer who already uses one or more agent CLIs (Claude Code, Codex, OpenCod
 - No dependency on external cloud services for core operation.
 - Architecture clean enough that mobile can be added later with the same core.
 
-## 7. Open questions
+## 7. Decisions
 
-- Daemon process vs single-process with clear internal crate boundaries. Prefer clear process or crate boundaries so pieces stay independent.
+- **The core is a daemon from day one.** Mobile and remote access are post-v1.0 goals, and both are clients of the same core. Running it in-process first would mean moving every boundary later; running it as a process now means the desktop is just the first client. The cost is honest and paid up front: a handshake, a token, process supervision and a versioned wire contract.
+- **The UI is a protocol client, never a core.** It holds presentation state and a disposable cache. It may show a folder picker only when the daemon can act on a path it owns (loopback today, daemon host otherwise).
+- **Providers stay behind the Driver trait**, in their own crates, speaking their own native protocol.
+
+## 8. Open questions
+
 - Exact set of providers for day-one v1.0 (OpenCode + Claude Code + Codex is the recommended minimum).
 - Final graphite token values once Waku screenshots are captured and adjusted.

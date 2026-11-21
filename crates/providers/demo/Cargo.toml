@@ -1,0 +1,11 @@
+[package]
+name = "circulo-provider-demo"
+description = "A fake Circulo provider that streams a canned turn"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+circulo-protocol.workspace = true
+circulo-provider.workspace = true

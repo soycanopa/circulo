@@ -1,0 +1,11 @@
+[package]
+name = "circulo-client"
+description = "The protocol client the desktop, mobile and remote use to reach the daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+circulo-protocol.workspace = true
+thiserror.workspace = true

@@ -1,0 +1,17 @@
+[package]
+name = "circulo-daemon"
+description = "The Circulo daemon: core, protocol and a local listener"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+circulo-core.workspace = true
+circulo-protocol.workspace = true
+circulo-provider-demo.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+circulo-client.workspace = true
+circulo-provider.workspace = true
