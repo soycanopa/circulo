@@ -96,6 +96,7 @@ cargo test --workspace
 | [UI](docs/ui.md) | Visual language, surfaces, and tokens |
 | [Flows](docs/flow.md) | Start, prompt, steering, permissions, checkpoints, quit |
 | [Implementation plan](docs/implement.md) | Phases from foundation to the v1.0 tag |
+| [Remote access](docs/remote.md) | Proposal: tailcat, a tailnet, or your own TLS |
 | [AGENTS.md](AGENTS.md) | Rules for anyone changing this repository |
 
 ## Repository

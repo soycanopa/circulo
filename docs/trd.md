@@ -1,7 +1,7 @@
 # Circulo — Technical Requirements Document (v1.0)
 
 - **Status:** Draft v1.0 (2026-11-21)
-- **Related:** [PRD](prd.md) · [Flow](flow.md) · [Implementation Plan](implement.md)
+- **Related:** [PRD](prd.md) · [Flow](flow.md) · [Implementation Plan](implement.md) · [Remote access](remote.md)
 - **Stack decision:** Rust + GPUI (same technology as Waku). Native GPU-accelerated UI.
 - **Architecture principle:** Everything is separated like puzzle pieces. UI, core, providers, protocol, persistence and Git are independent crates/modules with clear boundaries. This makes the system easy to maintain, test and scale (including future mobile and remote).
 
