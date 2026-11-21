@@ -21,8 +21,11 @@ icon_assets!(
     "arrow-left.svg",
     "arrow-right.svg",
     "arrow-up.svg",
+    "asterisk.svg",
+    "brain.svg",
     "chevron-down.svg",
     "chevron-right.svg",
+    "file-text.svg",
     "folder-plus.svg",
     "folder.svg",
     "git-branch.svg",
@@ -35,6 +38,7 @@ icon_assets!(
     "search.svg",
     "settings.svg",
     "square-pen.svg",
+    "terminal.svg",
 );
 
 /// A fixed-size icon that never shrinks in a row and takes the given tint.

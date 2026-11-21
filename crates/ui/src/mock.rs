@@ -16,6 +16,16 @@ pub(crate) struct Workspace {
     pub worked: &'static str,
     pub groups: Vec<Group>,
     pub blocks: Vec<Block>,
+    pub empty: Empty,
+}
+
+/// The state before a project is open.
+pub(crate) struct Empty {
+    pub header: &'static str,
+    pub title: &'static str,
+    pub subtitle: &'static str,
+    pub primary: &'static str,
+    pub secondary: &'static str,
 }
 
 pub(crate) struct Group {
@@ -30,12 +40,27 @@ pub(crate) struct Task {
     pub selected: bool,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ToolState {
+    Running,
+    Done,
+}
+
 /// One block of assistant output. Inline `code` and **bold** are parsed by
 /// `text::inline`; the real part model replaces this enum.
 pub(crate) enum Block {
     Heading(&'static str),
     Paragraph(&'static str),
     Bullet(&'static str),
+    /// A collapsed reasoning block. Expanded reasoning arrives with streaming.
+    Reasoning(&'static str),
+    /// A collapsed tool call: what ran, on what, and whether it finished.
+    Tool {
+        icon: &'static str,
+        name: &'static str,
+        detail: &'static str,
+        state: ToolState,
+    },
 }
 
 impl Group {
@@ -92,6 +117,25 @@ pub(crate) fn workspace() -> Workspace {
             },
         ],
         blocks: vec![
+            Block::Reasoning("Thought for 6 seconds"),
+            Block::Tool {
+                icon: "icons/file-text.svg",
+                name: "Read",
+                detail: "crates/ui/src/shell.rs",
+                state: ToolState::Done,
+            },
+            Block::Tool {
+                icon: "icons/square-pen.svg",
+                name: "Edit",
+                detail: "crates/ui/src/theme.rs",
+                state: ToolState::Done,
+            },
+            Block::Tool {
+                icon: "icons/terminal.svg",
+                name: "Bash",
+                detail: "cargo test --workspace",
+                state: ToolState::Running,
+            },
             Block::Heading("Done. The window now matches the reference layout."),
             Block::Paragraph(
                 "The shell is a **three-region frame**: an opaque sidebar of 252pt, the transcript \
@@ -118,5 +162,13 @@ pub(crate) fn workspace() -> Workspace {
                  live parts.",
             ),
         ],
+        empty: Empty {
+            header: "New task",
+            title: "Open a project to begin",
+            subtitle: "Circulo runs coding agents in folders you choose. Your code, sessions and \
+                       history stay on this machine.",
+            primary: "Open project folder…",
+            secondary: "Don't work in a project",
+        },
     }
 }
