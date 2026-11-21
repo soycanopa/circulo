@@ -73,10 +73,10 @@ The UI never talks to a CLI. Providers never import the UI or the core. The prot
 
 ```sh
 cargo run -p circulo          # the desktop window
-cargo run -p circulo-daemon   # the daemon: prints its address and token, then serves
+cargo run -p circulo-daemon   # the daemon: prints its URL and token, then serves
 ```
 
-The daemon is the core process. It prints one line with its loopback address and token; a client presents both in the handshake. Remote and mobile are clients of the same daemon, so nothing needs to move when they arrive.
+The daemon is the core process. It prints one line with its loopback URL (`ws://…`) and token; a client presents both in the handshake. Remote and mobile are clients of the same daemon over `wss://`, so nothing needs to move when they arrive.
 
 Checks to run before contributing:
 
@@ -96,6 +96,7 @@ cargo test --workspace
 | [UI](docs/ui.md) | Visual language, surfaces, and tokens |
 | [Flows](docs/flow.md) | Start, prompt, steering, permissions, checkpoints, quit |
 | [Implementation plan](docs/implement.md) | Phases from foundation to the v1.0 tag |
+| [Remote access](docs/remote.md) | Proposal: tailcat, a tailnet, or your own TLS |
 | [AGENTS.md](AGENTS.md) | Rules for anyone changing this repository |
 
 ## Repository

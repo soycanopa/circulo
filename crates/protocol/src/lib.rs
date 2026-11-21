@@ -6,17 +6,14 @@
 //! never touch the daemon's database or worktrees. That is why a change here
 //! has to update both sides in the same change.
 //!
-//! The contract is transport-agnostic. [`frame`] implements the one transport
-//! we ship today — loopback TCP, one JSON message per line — and remote will add
-//! WebSocket + TLS behind the same types.
+//! The contract is transport-agnostic. The transport we ship is a WebSocket:
+//! `ws://` on loopback today, `wss://` for remote. One JSON message per
+//! WebSocket text frame. TLS and header authentication arrive with remote; the
+//! messages below do not change.
 
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
-
-mod frame;
-
-pub use frame::{read_line, write_message};
 
 /// Bumped whenever a message changes shape. Clients send it in the handshake
 /// and the daemon refuses a mismatch instead of guessing.
@@ -51,8 +48,12 @@ pub enum ClientRequest {
 }
 
 impl ClientRequest {
-    /// Decodes one wire line. An unknown request type returns `Ok(None)` so a
-    /// newer client cannot crash an older daemon.
+    pub fn encode(&self) -> Result<String, ProtocolError> {
+        Ok(serde_json::to_string(self)?)
+    }
+
+    /// Decodes one frame. An unknown request type returns `Ok(None)` so a newer
+    /// client cannot crash an older daemon.
     pub fn decode(line: &str) -> Result<Option<Self>, ProtocolError> {
         decode_known(line, CLIENT_TYPES)
     }
@@ -106,8 +107,8 @@ impl ServerMessage {
         Ok(serde_json::to_string(self)?)
     }
 
-    /// Decodes one wire line. Unknown message types return `Ok(None)` so a
-    /// newer daemon can add messages without breaking an older client.
+    /// Decodes one frame. Unknown message types return `Ok(None)` so a newer
+    /// daemon can add messages without breaking an older client.
     pub fn decode(line: &str) -> Result<Option<Self>, ProtocolError> {
         decode_known(line, SERVER_TYPES)
     }

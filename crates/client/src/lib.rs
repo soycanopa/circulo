@@ -5,44 +5,43 @@
 //! handshake and receives the same messages. Nothing here knows about GPUI, the
 //! core or a provider.
 //!
+//! The connection is a WebSocket. `ws://` on loopback today; `wss://` works as
+//! soon as the daemon is reachable over TLS, which remote will provide.
+//!
 //! The connection is blocking. The desktop will drive it from a GPUI background
 //! task; tests drive it directly.
 
 #![forbid(unsafe_code)]
 
-use std::io::BufReader;
-use std::net::{SocketAddr, TcpStream};
-use std::time::Duration;
+use std::net::TcpStream;
 
-use circulo_protocol::{
-    ClientRequest, Hello, PROTOCOL_VERSION, ServerMessage, read_line, write_message,
-};
+use circulo_protocol::{ClientRequest, Hello, PROTOCOL_VERSION, ProtocolError, ServerMessage};
+use tungstenite::stream::MaybeTlsStream;
+use tungstenite::{Message, WebSocket};
+
+type Socket = WebSocket<MaybeTlsStream<TcpStream>>;
 
 pub struct Client {
-    writer: TcpStream,
-    reader: BufReader<TcpStream>,
+    socket: Socket,
 }
 
 impl Client {
-    /// Connects, then performs the versioned handshake. The daemon must welcome
+    /// Connects and performs the versioned handshake. The daemon must welcome
     /// us; anything else is a refusal with its reason.
-    pub fn connect(address: SocketAddr, token: &str) -> Result<Self, ClientError> {
-        let stream = TcpStream::connect(address)?;
-        stream.set_nodelay(true)?;
+    pub fn connect(url: &str, token: &str) -> Result<Self, ClientError> {
+        let (mut socket, _response) = tungstenite::connect(url)?;
 
-        let mut writer = stream.try_clone()?;
-        let mut reader = BufReader::new(stream);
-
-        write_message(
-            &mut writer,
+        send(
+            &mut socket,
             &Hello {
                 protocol: PROTOCOL_VERSION,
                 token: token.to_owned(),
-            },
+            }
+            .encode()?,
         )?;
 
-        match read(&mut reader)? {
-            Some(ServerMessage::Welcome { .. }) => Ok(Self { writer, reader }),
+        match next(&mut socket)? {
+            Some(ServerMessage::Welcome { .. }) => Ok(Self { socket }),
             Some(ServerMessage::Error { message }) => Err(ClientError::Refused(message)),
             other => Err(ClientError::Unexpected(format!("{other:?}"))),
         }
@@ -50,7 +49,10 @@ impl Client {
 
     /// Opens a session and returns its id.
     pub fn start_session(&mut self, project: Option<String>) -> Result<String, ClientError> {
-        write_message(&mut self.writer, &ClientRequest::StartSession { project })?;
+        send(
+            &mut self.socket,
+            &ClientRequest::StartSession { project }.encode()?,
+        )?;
 
         loop {
             match self.next_message()? {
@@ -66,48 +68,53 @@ impl Client {
 
     /// Sends a prompt. The turn arrives through [`Client::next_message`].
     pub fn prompt(&mut self, session: &str, text: &str) -> Result<(), ClientError> {
-        write_message(
-            &mut self.writer,
+        send(
+            &mut self.socket,
             &ClientRequest::Prompt {
                 session: session.to_owned(),
                 text: text.to_owned(),
-            },
-        )?;
-        Ok(())
+            }
+            .encode()?,
+        )
     }
 
     /// Reads the next message. `None` means the daemon closed the connection.
     pub fn next_message(&mut self) -> Result<Option<ServerMessage>, ClientError> {
-        read(&mut self.reader)
-    }
-
-    /// How long a read may block. Used by a client that polls instead of
-    /// dedicating a thread.
-    pub fn set_read_timeout(&self, timeout: Option<Duration>) -> Result<(), ClientError> {
-        Ok(self.reader.get_ref().set_read_timeout(timeout)?)
+        next(&mut self.socket)
     }
 }
 
-fn read(reader: &mut BufReader<TcpStream>) -> Result<Option<ServerMessage>, ClientError> {
-    loop {
-        let Some(line) = read_line(reader)? else {
-            return Ok(None);
-        };
+fn send(socket: &mut Socket, line: &str) -> Result<(), ClientError> {
+    Ok(socket.send(Message::text(line))?)
+}
 
-        // A newer daemon may send messages this client does not know. Skip them
-        // instead of tearing the connection down.
-        if let Some(message) = ServerMessage::decode(&line)? {
-            return Ok(Some(message));
+fn next(socket: &mut Socket) -> Result<Option<ServerMessage>, ClientError> {
+    loop {
+        match socket.read() {
+            Ok(Message::Text(text)) => {
+                // A newer daemon may send messages this client does not know.
+                // Skip them instead of tearing the connection down.
+                if let Some(message) = ServerMessage::decode(text.as_str())? {
+                    return Ok(Some(message));
+                }
+            }
+            Ok(Message::Close(_)) => return Ok(None),
+            // Ping and pong are handled by the WebSocket layer.
+            Ok(_) => continue,
+            Err(tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed) => {
+                return Ok(None);
+            }
+            Err(error) => return Err(error.into()),
         }
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
-    #[error("i/o: {0}")]
-    Io(#[from] std::io::Error),
+    #[error("transport: {0}")]
+    Transport(#[from] tungstenite::Error),
     #[error("protocol: {0}")]
-    Protocol(#[from] circulo_protocol::ProtocolError),
+    Protocol(#[from] ProtocolError),
     #[error("the daemon refused the connection: {0}")]
     Refused(String),
     #[error("the daemon closed the connection")]
