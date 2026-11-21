@@ -307,7 +307,7 @@ fn apply_update(update: &Value, tools: &mut HashMap<String, Tool>, emit: &mut dy
                 .unwrap_or_default()
                 .to_owned();
 
-            let tool = tools.entry(id).or_insert_with(|| Tool {
+            let tool = tools.entry(id.clone()).or_insert_with(|| Tool {
                 name: name.clone(),
                 detail: detail.clone(),
             });
@@ -326,6 +326,7 @@ fn apply_update(update: &Value, tools: &mut HashMap<String, Tool>, emit: &mut dy
             };
 
             emit(Part::Tool {
+                id,
                 name: tool.name.clone(),
                 detail,
                 state,
@@ -395,7 +396,10 @@ mod tests {
         assert_eq!(parts.len(), 3);
         for part in &parts {
             match part {
-                Part::Tool { name, .. } => assert_eq!(name, "read"),
+                Part::Tool { id, name, .. } => {
+                    assert_eq!(id, "call_1", "every update carries the call id");
+                    assert_eq!(name, "read");
+                }
                 other => panic!("expected tool parts, got {other:?}"),
             }
         }

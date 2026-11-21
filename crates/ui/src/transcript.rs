@@ -10,8 +10,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, FontWeight, IntoElement, ListAlignment, ListState, SharedString, div, list,
-    prelude::*, px,
+    AnyElement, FontWeight, IntoElement, ListAlignment, ListOffset, ListState, SharedString, div,
+    list, prelude::*, px,
 };
 
 use crate::icons::icon;
@@ -107,31 +107,73 @@ fn conversation(
 
     // A streaming turn changes the height of its row without changing the row
     // count. Without a reset the list keeps the height it measured a frame ago
-    // and the turn's blocks paint over each other.
+    // and the turn's blocks paint over each other. The list is bottom-anchored,
+    // so a reset also puts the view back on the newest row: that is the
+    // follow-the-stream behaviour, without a scroll call every frame.
     if list_state.item_count() != rows.len() || transcript.status.running {
         list_state.reset(rows.len());
     }
 
     let state = list_state.clone();
+    // Reading the logical offset is enough: the list is anchored to the bottom,
+    // so "at the newest row" is an offset at or past the last item.
+    let at_bottom = list_state.logical_scroll_top().item_ix >= list_state.item_count();
+
+    let list = list(state.clone(), move |index, _window, _cx| {
+        row_view(&rows[index], index, &theme)
+    })
+    .size_full();
 
     div()
+        .relative()
         .flex_1()
         .min_h(px(0.))
         .px(px(PADDING))
         .pb(px(24.))
-        .child(
-            list(state, move |index, _window, _cx| {
-                row_view(&rows[index], index, &theme)
-            })
-            .size_full(),
-        )
+        .child(list)
+        .when(!at_bottom, |container| {
+            container.child(
+                div()
+                    .absolute()
+                    .left(px(0.))
+                    .right(px(0.))
+                    .bottom(px(10.))
+                    .flex()
+                    .justify_center()
+                    .child(
+                        div()
+                            .id("jump-to-latest")
+                            .size(px(26.))
+                            .rounded_full()
+                            .bg(theme.surface)
+                            .border_1()
+                            .border_color(theme.border)
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .cursor_pointer()
+                            .hover(|style| style.bg(theme.chip))
+                            .child(icon("icons/chevron-down.svg", 13., theme.text_muted))
+                            .on_click(move |_, window, _| {
+                                // The bottom of a bottom-anchored list is one
+                                // item past the last one.
+                                state.scroll_to(ListOffset {
+                                    item_ix: state.item_count(),
+                                    offset_in_item: px(0.),
+                                });
+                                window.refresh();
+                            }),
+                    ),
+            )
+        })
 }
 
 pub(crate) fn new_list_state() -> ListState {
-    // Top alignment keeps the offset at zero, which is the state the list lays
-    // out reliably; pinning to the newest row is an explicit scroll, as in the
-    // reference's scroll-to-bottom layer.
-    ListState::new(0, ListAlignment::Top, px(OVERDRAW))
+    // Bottom alignment is the follow-the-stream behaviour: while a turn runs
+    // the list is reset every frame, and a reset with this alignment puts the
+    // view back on the newest row. Once the user scrolls up, the offset sticks
+    // and the jump-to-latest button appears.
+    ListState::new(0, ListAlignment::Bottom, px(OVERDRAW))
 }
 
 fn rows(workspace: &Workspace, transcript: &Transcript, prompt: &str) -> Vec<Row> {
@@ -155,7 +197,9 @@ fn rows(workspace: &Workspace, transcript: &Transcript, prompt: &str) -> Vec<Row
             .map(|segment| match segment {
                 crate::live::Segment::Text(text) => Segment::Text(text.clone()),
                 crate::live::Segment::Reasoning(text) => Segment::Reasoning(text.clone()),
-                crate::live::Segment::Tool { name, detail, done } => Segment::Tool {
+                crate::live::Segment::Tool {
+                    name, detail, done, ..
+                } => Segment::Tool {
                     name: name.clone(),
                     detail: detail.clone(),
                     done: *done,

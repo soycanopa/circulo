@@ -32,12 +32,18 @@ documented message set, so it is the honest integration.
 |---|---|
 | `agent_message_chunk` | `Text { delta }` |
 | `agent_thought_chunk` | `Reasoning { delta }` |
-| `tool_call`, `tool_call_update` | `Tool { name, detail, state }`, one row per `toolCallId` |
+| `tool_call`, `tool_call_update` | `Tool { id, name, detail, state }`, one row per `toolCallId` |
 
 `detail` prefers the tool's first location path, then `rawInput.path`. A tool is
 `Running` while pending or in progress, `Done` when completed or failed; a
 failure appends `· failed` to the detail. Unknown update kinds are ignored, so
 ACP can add them without breaking the driver.
+
+The ACP `toolCallId` travels in `Part::Tool.id`. Without it the transcript can
+only match an update against the row that is still open at the end of the turn
+parts, and a real turn interleaves its calls: A opens, B opens, then A finishes.
+The completion of A then had no row to land on, which left A spinning and opened
+a duplicate row for it.
 
 ## Limits, recorded on purpose
 

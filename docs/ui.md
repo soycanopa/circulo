@@ -109,7 +109,9 @@ Two more, learned from a real OpenCode turn rather than from the demo one:
 3. **No fixed heights on a row that carries provider text.** The reasoning and tool rows use `min_h`, never `h`: a row is allowed to grow with its content and push the rows below it. A fixed height only works while the content fits.
 4. **A collapsed row's text is flattened to one line before it is painted.** GPUI splits any text element on `\n` regardless of `white_space`, so a reasoning part with paragraphs, or a shell command written on two lines, painted every line from one 26 px box and straight over the next rows. `transcript::flatten` joins whitespace runs with single spaces; `whitespace_nowrap` and `text_ellipsis` then do their job.
 
-Streaming changes a row's height without changing the row count; the list is reset while a turn runs so it measures the turn again instead of keeping last frame's height. Bottom-pinning is an explicit scroll, not a list alignment.
+Streaming changes a row's height without changing the row count; the list is reset while a turn runs so it measures the turn again instead of keeping last frame's height.
+
+The list is **bottom-anchored** (`ListAlignment::Bottom`). That is what makes a streaming turn follow its newest row: a reset clears the logical offset, and a bottom-anchored list with no offset sits at the end. Once the reader scrolls up the offset sticks, and a circular **jump-to-latest** button appears above the composer; it scrolls to `item_count` (one past the last row, which is how a bottom-anchored list expresses "the end") and disappears once the offset is back at the bottom.
 
 ### How markdown is rendered
 
@@ -123,7 +125,7 @@ Agent text is CommonMark, and it streams, so the renderer has to accept partial 
 - [x] Collapsed reasoning and tool rows: icon, label, target, and a disclosure chevron or a spinner.
 - [x] Empty state: coral mark, title, subtitle, primary button and the quiet way out.
 - [ ] Expanded reasoning, tool output and live status; the rows are static.
-- [ ] Virtualized list, pin-to-bottom and the jump-to-latest pill.
+- [x] Bottom-anchored list that follows the stream, and the jump-to-latest button.
 - [ ] Streaming caret and reduced-motion behaviour.
 
 ### Composer
