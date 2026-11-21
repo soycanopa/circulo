@@ -33,11 +33,19 @@ documented message set, so it is the honest integration.
 | `agent_message_chunk` | `Text { delta }` |
 | `agent_thought_chunk` | `Reasoning { delta }` |
 | `tool_call`, `tool_call_update` | `Tool { id, name, detail, state }`, one row per `toolCallId` |
+| `session/request_permission` | a permission card; the answer goes back as the chosen `optionId` |
 
 `detail` prefers the tool's first location path, then `rawInput.path`. A tool is
 `Running` while pending or in progress, `Done` when completed or failed; a
 failure appends `· failed` to the detail. Unknown update kinds are ignored, so
 ACP can add them without breaking the driver.
+
+A permission request blocks the turn until the user answers. The card's title is
+the ACP `toolCall.title`, its detail is `rawInput.command`, then the first
+location path, then `rawInput.path`. When the agent offers no option at all the
+driver answers `cancelled` rather than showing a card with no buttons. OpenCode
+2.3.2 asks for `write` and `bash` calls; a project-level `permission` config does
+not change that in ACP mode.
 
 The ACP `toolCallId` travels in `Part::Tool.id`. Without it the transcript can
 only match an update against the row that is still open at the end of the turn
