@@ -95,6 +95,16 @@ Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group la
 - [x] `Worked for …` divider with hairline rules and a disclosure chevron.
 - [x] Assistant blocks: heading, paragraph, bullet, inline code, bold.
 - [x] Live parts from the daemon: reasoning row, tool row that updates from running to done, streamed text with paragraphs.
+- [x] Rendered through a GPUI `List` of turn rows, as the reference does, not a plain flex column.
+
+### How the transcript is rendered
+
+Two rules, learned the hard way and worth keeping:
+
+1. **The scroll container is a `List`, not a flex column.** A `div` that is both the scrolling viewport and the column measures its children against the viewport and they shrink into each other. The list virtualizes, owns the offset and gives every row a stable id (`row-{index}`, `row-{index}-segment-{index}`).
+2. **Every row is `w_full` and does not shrink.** A row measured at its minimum width reports a shorter height than it paints, so the next row lands on top of it. Turn rows mark `flex_shrink_0` on each block.
+
+Streaming changes a row's height without changing the row count; the list is reset while a turn runs so it measures the turn again instead of keeping last frame's height. Bottom-pinning is an explicit scroll, not a list alignment.
 - [x] Collapsed reasoning and tool rows: icon, label, target, and a disclosure chevron or a spinner.
 - [x] Empty state: coral mark, title, subtitle, primary button and the quiet way out.
 - [ ] Expanded reasoning, tool output and live status; the rows are static.
