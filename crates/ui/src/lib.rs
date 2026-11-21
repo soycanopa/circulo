@@ -16,7 +16,6 @@ mod live;
 mod mock;
 mod shell;
 mod sidebar;
-mod text;
 mod theme;
 mod transcript;
 

@@ -1,0 +1,16 @@
+[package]
+name = "circulo-provider-opencode"
+description = "The OpenCode provider, speaking Agent Client Protocol over stdio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+circulo-protocol.workspace = true
+circulo-provider.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

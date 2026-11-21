@@ -6,14 +6,14 @@
 
 use async_channel::Receiver;
 use circulo_protocol::ServerMessage;
-use gpui::{Context, IntoElement, Render, Window, div, prelude::*, px};
+use gpui::{Context, IntoElement, ListState, Render, Window, div, prelude::*, px};
 
 use crate::composer::composer;
 use crate::live::Transcript;
 use crate::mock::{self, Workspace};
 use crate::sidebar::sidebar;
 use crate::theme::Theme;
-use crate::transcript::transcript;
+use crate::transcript::{new_list_state, transcript};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum View {
@@ -28,6 +28,7 @@ pub struct Shell {
     workspace: Workspace,
     transcript: Transcript,
     prompt: String,
+    list_state: ListState,
 }
 
 impl Shell {
@@ -39,6 +40,7 @@ impl Shell {
             workspace: mock::workspace(),
             transcript: Transcript::default(),
             prompt,
+            list_state: new_list_state(),
         };
 
         cx.spawn(async move |this, cx| {
@@ -87,6 +89,7 @@ impl Render for Shell {
                 &self.workspace,
                 &self.transcript,
                 &self.prompt,
+                &self.list_state,
             ))
             .when(view == View::Session, |column| {
                 column.child(composer(&theme, &self.workspace, &self.transcript))

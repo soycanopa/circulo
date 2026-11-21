@@ -95,9 +95,11 @@ impl Turn {
                     done: open_done,
                 }) = self.parts.last_mut()
                     && *open_name == name
-                    && *open_detail == detail
                     && !*open_done
                 {
+                    // The same call reports itself several times and only then
+                    // knows its target; keep one row and let the detail fill in.
+                    *open_detail = detail;
                     *open_done = state == ToolState::Done;
                     return;
                 }
@@ -159,6 +161,11 @@ mod tests {
         transcript.apply(started(1));
         transcript.apply(part(Part::Tool {
             name: "Read".into(),
+            detail: String::new(),
+            state: ToolState::Running,
+        }));
+        transcript.apply(part(Part::Tool {
+            name: "Read".into(),
             detail: "src/lib.rs".into(),
             state: ToolState::Running,
         }));
@@ -169,9 +176,12 @@ mod tests {
         }));
 
         let parts = &transcript.turns[0].parts;
-        assert_eq!(parts.len(), 1, "running and done are the same row");
+        assert_eq!(parts.len(), 1, "all reports are the same row");
         match &parts[0] {
-            Segment::Tool { done, .. } => assert!(done),
+            Segment::Tool { done, detail, .. } => {
+                assert!(done);
+                assert_eq!(detail, "src/lib.rs", "the target fills in");
+            }
             _ => panic!("expected a tool row"),
         }
     }
