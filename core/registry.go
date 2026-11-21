@@ -26,14 +26,21 @@ type Registry struct {
 	Driver driver.Driver
 	Boot   error
 
-	mu   sync.Mutex
-	seq  int64
-	subs map[chan protocol.Envelope]struct{}
+	mu       sync.Mutex
+	seq      int64
+	subs     map[chan protocol.Envelope]struct{}
+	catalogs map[string][]driver.Model
+	chosen   map[string]driver.Model
 }
 
 // NewRegistry builds a registry. Driver may be nil when the provider failed to start; Boot explains why.
 func NewRegistry(db *persistence.Store, drv driver.Driver, boot error) *Registry {
-	return &Registry{DB: db, Driver: drv, Boot: boot, subs: map[chan protocol.Envelope]struct{}{}}
+	return &Registry{
+		DB: db, Driver: drv, Boot: boot,
+		subs:     map[chan protocol.Envelope]struct{}{},
+		catalogs: map[string][]driver.Model{},
+		chosen:   map[string]driver.Model{},
+	}
 }
 
 // Serve accepts loopback clients and watches the provider until ctx is canceled.
@@ -41,6 +48,7 @@ func (r *Registry) Serve(ctx context.Context, ln net.Listener) error {
 	defer ln.Close()
 	if r.Driver != nil {
 		go r.Driver.Watch(ctx, r.onEvent)
+		go r.refresh(ctx)
 	}
 	go func() {
 		<-ctx.Done()
@@ -107,7 +115,11 @@ func (r *Registry) handle(ctx context.Context, e protocol.Envelope) error {
 	case protocol.TypeOpen:
 		return r.Focus(e.ID)
 	case protocol.TypePrompt:
-		return r.Prompt(ctx, e.ID, e.Text)
+		return r.Prompt(ctx, e.ID, e.Text, e.Delivery)
+	case protocol.TypeUse:
+		return r.UseModel(ctx, e.ID, driver.Model{ID: e.ModelID, ProviderID: e.Provider, Variant: e.Variant})
+	case protocol.TypeAbort:
+		return r.Abort(ctx, e.ID)
 	default:
 		return nil
 	}
@@ -177,6 +189,10 @@ func (r *Registry) NewSession(ctx context.Context, projectID string) error {
 		return err
 	}
 	r.emit(protocol.Envelope{Type: protocol.TypeSession, ID: sess.ID, Project: sess.ProjectID, Name: sess.Title})
+	if err := r.ensureCatalog(ctx, project); err != nil {
+		r.status(err.Error())
+	}
+	r.bindModel(ctx, sess.ID, project.Path)
 	return r.Focus(sess.ID)
 }
 
@@ -202,7 +218,7 @@ func (r *Registry) Focus(sessionID string) error {
 }
 
 // Prompt stores the user turn and asks the provider to run it.
-func (r *Registry) Prompt(ctx context.Context, sessionID, text string) error {
+func (r *Registry) Prompt(ctx context.Context, sessionID, text, delivery string) error {
 	if r.Driver == nil {
 		if r.Boot != nil {
 			return r.Boot
@@ -216,6 +232,9 @@ func (r *Registry) Prompt(ctx context.Context, sessionID, text string) error {
 	if text == "" {
 		return errors.New("empty prompt")
 	}
+	if delivery != "" && delivery != "steer" && delivery != "queue" {
+		return fmt.Errorf("unknown delivery %s", delivery)
+	}
 	id := "usr_" + randomID()
 	msg := persistence.Message{ID: id, SessionID: sessionID, Role: "user", Text: text, Done: true}
 	if err := r.DB.SaveMessage(msg); err != nil {
@@ -223,8 +242,44 @@ func (r *Registry) Prompt(ctx context.Context, sessionID, text string) error {
 	}
 	r.emit(protocol.Envelope{Type: protocol.TypeDelta, ID: id, Session: sessionID, Role: "user", Text: text})
 	r.emit(protocol.Envelope{Type: protocol.TypeDone, ID: id, Session: sessionID})
-	r.status("Sending")
-	return r.Driver.Prompt(ctx, sessionID, text)
+	if delivery == "" {
+		r.status("Sending")
+	}
+	return r.Driver.Prompt(ctx, sessionID, text, delivery)
+}
+
+// UseModel switches the model and reasoning effort for one session.
+func (r *Registry) UseModel(ctx context.Context, sessionID string, model driver.Model) error {
+	if r.Driver == nil {
+		if r.Boot != nil {
+			return r.Boot
+		}
+		return errors.New("no provider")
+	}
+	if _, err := r.DB.SessionByID(sessionID); err != nil {
+		return err
+	}
+	if err := r.Driver.SetModel(ctx, sessionID, model); err != nil {
+		return err
+	}
+	r.noteChoice(sessionID, model)
+	r.emitChoice(sessionID, model)
+	return nil
+}
+
+// Abort interrupts the provider turn for one session.
+func (r *Registry) Abort(ctx context.Context, sessionID string) error {
+	if r.Driver == nil {
+		if r.Boot != nil {
+			return r.Boot
+		}
+		return errors.New("no provider")
+	}
+	if err := r.Driver.Abort(ctx, sessionID); err != nil {
+		return err
+	}
+	r.status("Idle")
+	return nil
 }
 
 func (r *Registry) onEvent(e driver.Event) {
@@ -247,6 +302,10 @@ func (r *Registry) onEvent(e driver.Event) {
 		}
 		r.status(e.Text)
 		r.finishTurn(e.SessionID, "")
+	case driver.KindModel:
+		ref := driver.Model{ID: e.ModelID, ProviderID: e.ProviderID, Variant: e.Variant}
+		r.noteChoice(e.SessionID, ref)
+		r.emitChoice(e.SessionID, ref)
 	}
 }
 
@@ -358,6 +417,19 @@ func (r *Registry) snapshot(ch chan protocol.Envelope) []protocol.Envelope {
 	for _, s := range sessions {
 		out = append(out, r.next(protocol.Envelope{Type: protocol.TypeSession, ID: s.ID, Project: s.ProjectID, Name: s.Title}))
 	}
+	for _, models := range r.catalogs {
+		for _, m := range models {
+			out = append(out, r.next(protocol.Envelope{
+				Type: protocol.TypeModel, ID: m.ID, Provider: m.ProviderID, Name: m.Name,
+				Variants: strings.Join(m.Variants, ","),
+			}))
+		}
+	}
+	for id, m := range r.chosen {
+		out = append(out, r.next(protocol.Envelope{
+			Type: protocol.TypeCurrent, ID: id, Provider: m.ProviderID, ModelID: m.ID, Variant: m.Variant,
+		}))
+	}
 	if len(sessions) > 0 {
 		last := sessions[len(sessions)-1]
 		out = append(out, r.next(protocol.Envelope{Type: protocol.TypeFocus, ID: last.ID}))
@@ -401,6 +473,94 @@ func (r *Registry) next(e protocol.Envelope) protocol.Envelope {
 	e.V = protocol.Version
 	e.Seq = r.seq
 	return e
+}
+
+func (r *Registry) refresh(ctx context.Context) {
+	projects, err := r.DB.ListProjects()
+	if err != nil {
+		r.status(err.Error())
+		return
+	}
+	for _, p := range projects {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := r.ensureCatalog(ctx, p); err != nil {
+			r.status(err.Error())
+		}
+	}
+	sessions, err := r.DB.ListSessions()
+	if err != nil {
+		r.status(err.Error())
+		return
+	}
+	paths := map[string]string{}
+	for _, p := range projects {
+		paths[p.ID] = p.Path
+	}
+	for _, s := range sessions {
+		if ctx.Err() != nil {
+			return
+		}
+		r.bindModel(ctx, s.ID, paths[s.ProjectID])
+	}
+}
+
+func (r *Registry) ensureCatalog(ctx context.Context, project persistence.Project) error {
+	if r.Driver == nil {
+		return nil
+	}
+	r.mu.Lock()
+	_, ok := r.catalogs[project.ID]
+	r.mu.Unlock()
+	if ok {
+		return nil
+	}
+	models, err := r.Driver.Models(ctx, project.Path)
+	if err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.catalogs[project.ID] = models
+	r.mu.Unlock()
+	for _, m := range models {
+		r.emit(protocol.Envelope{
+			Type: protocol.TypeModel, ID: m.ID, Provider: m.ProviderID, Name: m.Name,
+			Variants: strings.Join(m.Variants, ","),
+		})
+	}
+	return nil
+}
+
+func (r *Registry) bindModel(ctx context.Context, sessionID, directory string) {
+	if r.Driver == nil {
+		return
+	}
+	ref, err := r.Driver.SessionModel(ctx, sessionID)
+	if err != nil || ref.ID == "" {
+		ref, err = r.Driver.DefaultModel(ctx, directory)
+	}
+	if err != nil || ref.ID == "" {
+		if err != nil {
+			r.status(err.Error())
+		}
+		return
+	}
+	r.noteChoice(sessionID, ref)
+	r.emitChoice(sessionID, ref)
+}
+
+func (r *Registry) noteChoice(sessionID string, model driver.Model) {
+	r.mu.Lock()
+	r.chosen[sessionID] = model
+	r.mu.Unlock()
+}
+
+func (r *Registry) emitChoice(sessionID string, model driver.Model) {
+	r.emit(protocol.Envelope{
+		Type: protocol.TypeCurrent, ID: sessionID,
+		Provider: model.ProviderID, ModelID: model.ID, Variant: model.Variant,
+	})
 }
 
 func projectID(path string) string {

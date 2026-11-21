@@ -15,10 +15,13 @@ import (
 )
 
 type fakeDriver struct {
-	mu      sync.Mutex
-	dir     string
-	prompts []string
-	ev      chan driver.Event
+	mu       sync.Mutex
+	dir      string
+	prompts  []string
+	delivery string
+	model    driver.Model
+	aborted  bool
+	ev       chan driver.Event
 }
 
 func (f *fakeDriver) CreateSession(_ context.Context, dir, _ string) (string, error) {
@@ -28,9 +31,38 @@ func (f *fakeDriver) CreateSession(_ context.Context, dir, _ string) (string, er
 	return "ses_fake", nil
 }
 
-func (f *fakeDriver) Prompt(_ context.Context, _ string, text string) error {
+func (f *fakeDriver) Prompt(_ context.Context, _ string, text, delivery string) error {
 	f.mu.Lock()
 	f.prompts = append(f.prompts, text)
+	f.delivery = delivery
+	f.mu.Unlock()
+	return nil
+}
+
+func (f *fakeDriver) Models(context.Context, string) ([]driver.Model, error) {
+	return []driver.Model{{
+		ID: "big-pickle", ProviderID: "opencode", Name: "Big Pickle", Variants: []string{"low", "high"},
+	}}, nil
+}
+
+func (f *fakeDriver) DefaultModel(context.Context, string) (driver.Model, error) {
+	return driver.Model{ID: "big-pickle", ProviderID: "opencode", Variant: "low"}, nil
+}
+
+func (f *fakeDriver) SessionModel(context.Context, string) (driver.Model, error) {
+	return driver.Model{}, nil
+}
+
+func (f *fakeDriver) SetModel(_ context.Context, _ string, model driver.Model) error {
+	f.mu.Lock()
+	f.model = model
+	f.mu.Unlock()
+	return nil
+}
+
+func (f *fakeDriver) Abort(context.Context, string) error {
+	f.mu.Lock()
+	f.aborted = true
 	f.mu.Unlock()
 	return nil
 }
@@ -117,5 +149,34 @@ func TestRegistryProjectAndPrompt(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRegistryModelAndAbort(t *testing.T) {
+	dir := t.TempDir()
+	db, err := persistence.Open(filepath.Join(t.TempDir(), "c.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	fake := &fakeDriver{ev: make(chan driver.Event, 1)}
+	reg := NewRegistry(db, fake, nil)
+	if err := reg.AddProject(context.Background(), dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.UseModel(context.Background(), "ses_fake", driver.Model{ID: "big-pickle", ProviderID: "opencode", Variant: "high"}); err != nil {
+		t.Fatal(err)
+	}
+	if fake.model.Variant != "high" {
+		t.Fatalf("%#v", fake.model)
+	}
+	if err := reg.Prompt(context.Background(), "ses_fake", "later", "queue"); err != nil {
+		t.Fatal(err)
+	}
+	if fake.delivery != "queue" {
+		t.Fatalf("delivery %q", fake.delivery)
+	}
+	if err := reg.Abort(context.Background(), "ses_fake"); err != nil || !fake.aborted {
+		t.Fatalf("abort %v %v", err, fake.aborted)
 	}
 }

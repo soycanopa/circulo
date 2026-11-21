@@ -68,11 +68,110 @@ func (c *Client) CreateSession(ctx context.Context, directory, title string) (st
 	return out.Data.ID, nil
 }
 
-// Prompt admits one user message and starts the agent turn.
-func (c *Client) Prompt(ctx context.Context, sessionID, text string) error {
-	return c.do(ctx, http.MethodPost, "/api/session/"+url.PathEscape(sessionID)+"/prompt", map[string]any{
-		"text": text,
-	}, nil)
+// Prompt admits one user message. delivery is empty, "steer", or "queue".
+func (c *Client) Prompt(ctx context.Context, sessionID, text, delivery string) error {
+	body := map[string]any{"text": text}
+	if delivery != "" {
+		body["delivery"] = delivery
+	}
+	return c.do(ctx, http.MethodPost, "/api/session/"+url.PathEscape(sessionID)+"/prompt", body, nil)
+}
+
+// Models lists enabled chat models for a project directory.
+func (c *Client) Models(ctx context.Context, directory string) ([]driver.Model, error) {
+	var out struct {
+		Data []struct {
+			ID         string `json:"id"`
+			ProviderID string `json:"providerID"`
+			Name       string `json:"name"`
+			Enabled    bool   `json:"enabled"`
+			Variants   []struct {
+				ID string `json:"id"`
+			} `json:"variants"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/model?"+locationQuery(directory)+"&types=chat", nil, &out); err != nil {
+		return nil, err
+	}
+	var models []driver.Model
+	for _, m := range out.Data {
+		if !m.Enabled {
+			continue
+		}
+		item := driver.Model{ID: m.ID, ProviderID: m.ProviderID, Name: m.Name}
+		for _, v := range m.Variants {
+			if v.ID != "" {
+				item.Variants = append(item.Variants, v.ID)
+			}
+		}
+		models = append(models, item)
+	}
+	return models, nil
+}
+
+// DefaultModel is the model OpenCode would use for new work in directory.
+func (c *Client) DefaultModel(ctx context.Context, directory string) (driver.Model, error) {
+	var out struct {
+		Data *struct {
+			ID         string `json:"id"`
+			ProviderID string `json:"providerID"`
+			Name       string `json:"name"`
+			Variants   []struct {
+				ID string `json:"id"`
+			} `json:"variants"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/model/default?"+locationQuery(directory), nil, &out); err != nil {
+		return driver.Model{}, err
+	}
+	if out.Data == nil {
+		return driver.Model{}, nil
+	}
+	item := driver.Model{ID: out.Data.ID, ProviderID: out.Data.ProviderID, Name: out.Data.Name}
+	for _, v := range out.Data.Variants {
+		if v.ID != "" {
+			item.Variants = append(item.Variants, v.ID)
+		}
+	}
+	return item, nil
+}
+
+// SessionModel reads the model currently selected on a session.
+func (c *Client) SessionModel(ctx context.Context, sessionID string) (driver.Model, error) {
+	var out struct {
+		Data struct {
+			Model struct {
+				ID         string `json:"id"`
+				ProviderID string `json:"providerID"`
+				Variant    string `json:"variant"`
+			} `json:"model"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/session/"+url.PathEscape(sessionID), nil, &out); err != nil {
+		return driver.Model{}, err
+	}
+	m := out.Data.Model
+	return driver.Model{ID: m.ID, ProviderID: m.ProviderID, Variant: m.Variant}, nil
+}
+
+// SetModel switches the session's model and reasoning effort.
+func (c *Client) SetModel(ctx context.Context, sessionID string, model driver.Model) error {
+	body := map[string]any{"id": model.ID, "providerID": model.ProviderID}
+	if model.Variant != "" {
+		body["variant"] = model.Variant
+	}
+	return c.do(ctx, http.MethodPost, "/api/session/"+url.PathEscape(sessionID)+"/model", body, nil)
+}
+
+// Abort interrupts the session's current turn.
+func (c *Client) Abort(ctx context.Context, sessionID string) error {
+	return c.do(ctx, http.MethodPost, "/api/session/"+url.PathEscape(sessionID)+"/interrupt", nil, nil)
+}
+
+func locationQuery(directory string) string {
+	q := url.Values{}
+	q.Set("location[directory]", directory)
+	return q.Encode()
 }
 
 // Watch reads the event stream until ctx ends, reconnecting after the server closes it.
@@ -107,6 +206,7 @@ func (c *Client) stream(ctx context.Context, fn func(driver.Event)) error {
 		"session.execution.succeeded",
 		"session.execution.failed",
 		"session.execution.interrupted",
+		"session.model.selected",
 	} {
 		q.Add("types", typ)
 	}
@@ -206,6 +306,11 @@ func translate(payload []byte) (driver.Event, bool) {
 			Text               string `json:"text"`
 			Error              any    `json:"error"`
 			Reason             string `json:"reason"`
+			Model              struct {
+				ID         string `json:"id"`
+				ProviderID string `json:"providerID"`
+				Variant    string `json:"variant"`
+			} `json:"model"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(payload, &ev); err != nil {
@@ -222,6 +327,11 @@ func translate(payload []byte) (driver.Event, bool) {
 		return driver.Event{Kind: driver.KindFailed, SessionID: ev.Data.SessionID, Text: fmt.Sprint(ev.Data.Error)}, true
 	case "session.execution.interrupted":
 		return driver.Event{Kind: driver.KindFailed, SessionID: ev.Data.SessionID, Text: "interrupted: " + ev.Data.Reason}, true
+	case "session.model.selected":
+		return driver.Event{
+			Kind: driver.KindModel, SessionID: ev.Data.SessionID,
+			ModelID: ev.Data.Model.ID, ProviderID: ev.Data.Model.ProviderID, Variant: ev.Data.Model.Variant,
+		}, true
 	default:
 		return driver.Event{}, false
 	}
