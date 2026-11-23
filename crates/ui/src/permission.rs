@@ -111,9 +111,15 @@ pub(crate) fn permission_card(
                         .child(
                             div()
                                 .min_w(px(0.))
+                                .flex_1()
                                 .text_size(px(12.5))
+                                .line_height(px(17.))
                                 .font_weight(gpui::FontWeight::MEDIUM)
                                 .text_color(theme.text)
+                                // The reference keeps a title to two lines;
+                                // a longer one is clipped, not a wall.
+                                .max_h(px(34.))
+                                .overflow_hidden()
                                 .child(SharedString::from(request.title.clone())),
                         ),
                 )
