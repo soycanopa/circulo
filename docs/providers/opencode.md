@@ -20,13 +20,43 @@ documented message set, so it is the honest integration.
 
 1. `initialize` with `protocolVersion: 1`. The agent must answer with the same
    version; anything else fails the turn instead of guessing.
-2. `session/new` with `cwd` and an empty `mcpServers` list. The answer carries a
-   `sessionId` and `configOptions` (models, effort, modes) behind the pickers.
-   The stored choices are re-applied with `session/set_config_option`, because
-   a set lasts only for the session that received it.
+2. The session, only when there is no live one for the Circulo session yet:
+   `session/new` with `cwd` and an empty `mcpServers` list — the answer carries
+   a `sessionId` and `configOptions` (models, effort, modes) behind the
+   pickers — or, when the core holds a stored key, `session/load` with that id,
+   which resumes the agent's own history (see "Session continuity").
+   The stored choices are re-applied with `session/set_config_option` in both
+   cases, because a set lasts only for the session that received it.
 3. `session/prompt` with one text part. Updates stream as
    `session/update` notifications until the response arrives.
-4. The process is killed when the turn ends.
+4. The process stays alive: one `opencode acp` child per Circulo session,
+   released when the daemon winds down (the driver's `shutdown`).
+
+## Session continuity
+
+The driver keeps one live agent per Circulo session — the child process and
+its ACP session — so the agent remembers the conversation across turns. The
+ACP session id is the key the driver hands back each turn; the core stores it
+in `sessions.provider_session` and hands it back on the next turn, wherever
+that happens:
+
+- **Same daemon:** the live agent is reused as is; no session call at all.
+- **Restarted daemon:** the stored key drives `session/load`, and the agent's
+  own history continues. The replay arrives as `session/update` notifications
+  before the response and is skipped — the transcript already lives in the
+  database, and drawing it again would double it on screen. Probed on 2.3.2:
+  the load response carries the session's `configOptions` but **no
+  `sessionId`**; the loaded session is the one that was asked for.
+- **Key the agent no longer knows:** the driver starts a fresh conversation
+  rather than failing the turn, and the fresh key comes back so the store
+  heals. Continuity degrades instead of breaking.
+- **Dead child** (a crash): the slot is dropped and the next turn starts
+  over, resuming through the stored key the same way.
+
+Turns on one session queue behind each other — the agent answers one prompt
+at a time — while other sessions keep moving. A model or effort switch made
+while a turn is running is queued and lands at the turn's end: the picker
+sees its value at once, the session reads it from the next turn.
 
 ## Mapping
 
@@ -58,17 +88,18 @@ a duplicate row for it.
 
 ## Limits, recorded on purpose
 
-- **One process per turn.** No shared mutable process and no half-dead session.
-  `session/load` (the agent advertises `loadSession: true`) is how a session will
-  be resumed once sessions are persisted.
+- **One process per Circulo session.** It lives with the daemon: a quit
+  releases every child (driver `shutdown`, plus the agent closing on stdin
+  EOF either way), and a crash of a child costs one failed turn before the
+  next one starts over.
 - **Permissions ask the user.** `session/request_permission` becomes a card and
   the turn blocks on the answer; a client that leaves reads as cancelled.
   Reads still work without asking: OpenCode's defaults allow them.
-- **No per-turn memory.** A set lasts for the agent session that received it: a
-  fresh `session/new` resets `effort` to `default` (probed on 2.3.2). The
-  driver stores the user's choices and re-applies them after every
-  `session/new`, so a switch survives the per-turn process. A stale choice the
-  agent refuses is dropped.
+- **A set lasts for the agent session that received it:** a fresh
+  `session/new` resets `effort` to `default` (probed on 2.3.2). The driver
+  stores the user's choices and re-applies them whenever it attaches — to a
+  new session, or to a loaded one. A stale choice the agent refuses is
+  dropped.
 - **No timeouts.** A wedged agent blocks its connection thread; the daemon has
   one thread per connection, so it does not block another client.
 - **`opencode` must be on `PATH`.** The daemon reports the spawn failure as a
@@ -86,9 +117,19 @@ provider, so the window works without an agent installed.
 ## Verification
 
 - Unit tests cover the mapping with fixtures captured from the real binary.
-- `cargo test -p circulo-provider-opencode -- --ignored` runs a real turn
-  (needs a logged-in OpenCode and spends a model call).
+- `tests/continuity.rs` runs the lifecycle against a scripted ACP agent that
+  counts prompts per process and keeps sessions in a directory across
+  processes: two turns share one child, the key rides back, a live choice
+  holds, a mid-turn choice lands next turn, shutdown releases the child
+  (signal probing, not file presence — a SIGKILL runs no cleanup), a dead
+  child is dropped, a restart resumes, a lost session starts fresh.
+- `cargo test -p circulo-provider-opencode --lib -- --ignored` reattaches to
+  a real session across two processes without spending a model call.
+- `cargo test -p circulo-provider-opencode --test real -- --ignored` runs the
+  model-call tests: a turn, remembering across turns, and resuming after a
+  driver restart (needs a logged-in OpenCode; balance required).
 - The probe shapes in this document came from OpenCode 2.3.2: `initialize`
-  answers `protocolVersion: 1`; a read tool reported `tool_call` with
-  `status: pending`, then `tool_call_update` with `in_progress` and `completed`
-  and the directory in `locations[0].path`.
+  answers `protocolVersion: 1` and advertises `loadSession: true`;
+  `session/load` returns `configOptions` and no `sessionId`; a read tool
+  reported `tool_call` with `status: pending`, then `tool_call_update` with
+  `in_progress` and `completed` and the directory in `locations[0].path`.

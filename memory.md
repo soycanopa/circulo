@@ -2,8 +2,12 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-21, model/mode pickers branch. `main` is at `3e94d95`;
-83 tests green; CI covers fmt + clippy + test on macOS.
+Last updated: 2026-11-23, session-continuity branch (PR open against
+`fb0239a`); 99 tests green; CI covers fmt + clippy + test on macOS. The
+model-call tests in `tests/real.rs` need OpenCode credit, which this account
+has none of right now (2026-11-23): they fail with "Insufficient balance".
+The no-model-call load probe (`cargo test -p circulo-provider-opencode
+--lib -- --ignored`) passes against 2.3.2.
 
 ## 1. What works today
 
@@ -46,14 +50,31 @@ or paste yet.
 **Pickers**: model, effort and mode draw the daemon's `Options` (neutral
 `ConfigOption`/`ConfigChoice`; `SetOption` back). Click opens the agent's
 choices with the current one marked, Escape closes, choosing returns the
-refreshed list. The driver keeps the choices and re-applies them after every
-`session/new`, because a set dies with its agent session (probed: a fresh
-session resets `effort` to `default`). Access stays a mock label.
+refreshed list. Choices survive sessions: the driver re-applies them
+whenever it attaches, and a switch made mid-turn lands at the turn's end
+(the picker sees it at once, the session reads it next turn). Access stays
+a mock label.
+
+**Continuity** (`crates/providers/opencode`, spec in `docs/providers/opencode.md`):
+one `opencode acp` child per Circulo session — the agent remembers across
+turns. The ACP session id is the key the driver hands back per turn; the
+core stores it in `sessions.provider_session` (SQLite schema v2) and hands
+it back on the next turn. A restarted daemon resumes through ACP
+`session/load` (probed: the response has `configOptions`, no `sessionId`;
+the replay notifications are skipped — the transcript already lives in the
+database). A key the agent lost starts fresh and heals the store; a dead
+child is dropped and the next turn resumes the same way. The daemon now
+winds down on stdin EOF (`serve_until`): cards cancelled, agents released,
+no orphans — the supervisor closes stdin and waits 2 s before escalating
+to kill. Verified without model calls: `tests/continuity.rs` (scripted
+agent counting prompts per process, sessions kept in a directory across
+processes) and the real load probe.
 
 **Storage** (`crates/persistence`, rusqlite bundled): sessions, turns and parts in
 `~/.circulo/circulo.db`; `CIRCULO_HOME` overrides the directory. The core writes
 on every turn; the app reopens the newest session and hydrates its history.
-Storage is **not** agent memory: each turn still starts a fresh process.
+The sessions table also carries the provider's session key (schema v2), which
+is what makes a restart a continuation.
 
 **Sidebar**: real sessions from the database, grouped Today / Yesterday / This
 Month / month name, title from the first prompt, project folder, relative time,
@@ -74,8 +95,10 @@ cargo run -p circulo-daemon                                     # daemon alone
 ```
 
 Checks: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets`,
-`cargo test --workspace`. Real-provider test (spends a model call):
-`cargo test -p circulo-provider-opencode --test real -- --ignored`.
+`cargo test --workspace`. Real-provider tests (spend model calls, need
+credit): `cargo test -p circulo-provider-opencode --test real -- --ignored`.
+No-credit verification: the continuity suite (`tests/continuity.rs`) and the
+load probe (`cargo test -p circulo-provider-opencode --lib -- --ignored`).
 
 **Watching the UI without a human**: `screencapture -x -R<x>,<y>,<w>,<h>` with the
 window bounds from
@@ -88,29 +111,39 @@ after another app takes focus only activates the window; click twice.
 **Providers that need a scripted counterpart**: OpenCode 2.3.2 asks for
 permission on `write`/`bash` but never elicits on its own, so
 `crates/providers/opencode/tests/permission.rs` runs a Python ACP agent
-(`FAKE_ACP_MODE=permission|question`). For the app, `CIRCULO_OPENCODE_BIN` points
-the daemon at that script.
+(`FAKE_ACP_MODE=permission|question`), and `tests/continuity.rs` runs one
+that counts prompts per process and persists sessions to a directory. For
+the app, `CIRCULO_OPENCODE_BIN` points the daemon at that script.
 
 **OpenCode facts worth remembering**: it auto-runs reads and searches; a
 project-level `permission` config does not change ACP behaviour; the ACP session
 advertises `loadSession: true` (unused so far).
 
-## 3. Next task: session continuity
+## 3. Next task: steering and abort
 
-**Why:** one `opencode acp` process per turn means the agent never remembers;
-history is display-only. The ACP session advertises `loadSession: true`
-(unused so far), and the daemon already persists turns in SQLite.
+Session continuity landed (2026-11-23): one agent process per Circulo
+session, the ACP session id in SQLite, `session/load` on restart, mid-turn
+switches queued to the turn's end, clean daemon shutdown. What the model-call
+tests would still prove, once there is credit: a real two-turn conversation
+sharing context (`a_real_session_remembers_across_turns`) and a real restart
+resuming (`a_real_session_resumes_after_a_restart`). Everything else is
+proven against the scripted agent and the real load probe.
+
+**Why steering/abort next:** a blocking turn can currently only be answered,
+not stopped. The permission broker cancels cards when the client leaves, but
+a running turn has no way to be interrupted or to receive a queued message.
 
 **Plan:**
-1. Keep one agent process per Circulo session instead of one per turn: create
-   the ACP session once and reuse it across turns.
-2. On daemon restart, `session/load` the stored session so the agent resumes
-   where it left off.
-3. The stored option overrides become the initial `set_config_option` calls on
-   the long-lived session; a user switch mid-session applies directly.
-4. A switch mid-turn takes effect on the next turn; document it.
-5. Verify against OpenCode 2.3.2: two turns in one session share context, a
-   restart resumes, and a switch applies without a new process.
+1. Protocol: a `CancelTurn { session }` request and a queued-message shape
+   (`Prompt` while a turn runs steers or queues — decide with Waku's UX as
+   the reference).
+2. Driver trait: `cancel(session)` alongside `start_turn`; ACP
+   `session/cancel` for OpenCode. Cancelling must also cancel open
+   permission/question cards of that turn.
+3. Core: route the cancel, mark the turn `FinishReason::Cancelled` (new
+   reason on the wire), keep the transcript honest about what ran.
+4. Verify: steer mid-turn against OpenCode 2.3.2, cancel mid-tool, cancel
+   while a card is open.
 
 ## 4. After that, in plan order
 
@@ -133,15 +166,15 @@ history is display-only. The ACP session advertises `loadSession: true`
 | Crate | Role |
 |---|---|
 | `crates/protocol` | Wire contract, version 1: `Hello`, `ClientRequest` (+`SetOption`), `ServerMessage` (+`Options`), `Part`, `PermissionRequest`, `Question`, `ConfigOption`, `SessionSummary`, `HistoryTurn`. One JSON per WebSocket text frame; unknown types skipped. |
-| `crates/core` | Sessions, turn orchestration, the permission/question broker, translation between storage and wire. Speaks only the Driver trait. |
-| `crates/persistence` | SQLite: sessions, turns, parts. Owned by the core; nobody else opens it. |
-| `crates/daemon` | Loopback WebSocket, token handshake, reader + writer per connection, provider chosen by `CIRCULO_PROVIDER`, database from `CIRCULO_HOME`. |
+| `crates/core` | Sessions, turn orchestration, the permission/question broker, translation between storage and wire, carrying provider session keys both ways. Speaks only the Driver trait. |
+| `crates/persistence` | SQLite: sessions (+ provider key), turns, parts; schema v2. Owned by the core; nobody else opens it. |
+| `crates/daemon` | Loopback WebSocket, token handshake, reader + writer per connection, provider chosen by `CIRCULO_PROVIDER`, database from `CIRCULO_HOME`, clean shutdown on stdin EOF. |
 | `crates/client` | Handshake, blocking read loop, a splittable writer half. No GPUI. |
-| `crates/providers/driver` | `Driver { name, start_turn(prompt, ask, emit), options(), set_option(id, value) }` and `Asker { permission, question }`. Choices survive per-turn processes: the driver re-applies them. |
+| `crates/providers/driver` | `Driver { name, start_turn(SessionRef, prompt, ask, emit) -> Option<key>, options(session), set_option(session, id, value), shutdown() }` and `Asker { permission, question }`. |
 | `crates/providers/demo` | Canned turn, no auth. |
-| `crates/providers/opencode` | ACP over stdio; one process per turn; permission and elicitation mapped to cards; `configOptions` listed and set, re-applied after every `session/new`. |
+| `crates/providers/opencode` | ACP over stdio; one agent process per Circulo session; `session/load` resume with self-healing fallback; permission and elicitation mapped to cards; `configOptions` applied live, queued mid-turn. |
 | `crates/ui` | GPUI views and presentation state: shell, sidebar, transcript, markdown, composer, input, cards. |
-| `crates/app` | Composition root + supervisor: spawns the daemon, connects, reopens the last session, opens the window. |
+| `crates/app` | Composition root + supervisor: spawns the daemon, connects, reopens the last session, opens the window; quit closes stdin and waits before killing. |
 
 Dependency direction is one way. The UI never imports a provider or the core.
 
@@ -171,6 +204,15 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   channel means cancelled.
 - **The agent owns remembered decisions**: Circulo sends the chosen `optionId`
   and stores nothing.
+- **The provider's session key is opaque to the core**: the driver returns it
+  per turn, the core stores it in `sessions.provider_session` and hands it
+  back; nothing reads its content. A lost session degrades to a fresh
+  conversation — continuity self-heals, it never fails a turn.
+- **Mid-turn switches queue to the turn's end**: the picker updates at once
+  (promised value), the agent reads it from the next turn. A live, idle
+  session applies directly.
+- **Replays are skipped, not rendered**: `session/load` history already
+  lives in the database; drawing the agent's replay again would double it.
 - **SQLite with rusqlite (bundled)** at `~/.circulo/circulo.db`; `CIRCULO_HOME`
   overrides. A daemon without a database still serves turns.
 - **`serde_json` `preserve_order` in the provider**, so a form's fields keep the
@@ -183,10 +225,9 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
 
 - A local process keeps probing the daemon port with non-WebSocket requests; the
   daemon logs one line per probe. Harmless.
-- One agent process per turn: the transcript persists, the agent does not
-  remember. Session continuity is the item that fixes it.
 - The composer's input has no selection, undo, IME or paste; the caret is a block
   painted as a `TextRun` background.
+- A turn cannot be stopped or steered yet — that is the next task (§3).
 - Links render in the accent colour and are not clickable (no hit-testing in
   GPUI 0.2.2).
 - Light theme values are approximations; this machine is dark.
