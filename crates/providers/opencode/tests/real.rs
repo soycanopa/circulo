@@ -80,3 +80,75 @@ fn a_real_turn_streams_text() {
         "the agent answered: {text:?}"
     );
 }
+
+/// The answer to the agent's memory of a word planted one turn earlier.
+fn recall(driver: &OpenCode, resume: Option<&str>) -> String {
+    let mut parts = Vec::new();
+    let key = driver
+        .start_turn(
+            SessionRef { id: "s1", resume },
+            "Which fruit did I ask you to remember? Reply with exactly that one word.",
+            &mut NoAsker,
+            &mut |part| parts.push(part),
+        )
+        .expect("turn");
+
+    let text: String = parts
+        .iter()
+        .filter_map(|part| match part {
+            Part::Text { delta } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(key.is_some(), "the driver keeps the session key");
+    text
+}
+
+#[test]
+#[ignore = "spawns the real opencode CLI and spends two model calls"]
+fn a_real_session_remembers_across_turns() {
+    let driver = OpenCode::new(std::env::temp_dir());
+
+    let mut parts = Vec::new();
+    driver
+        .start_turn(
+            SessionRef::new("s1"),
+            "Remember this fruit for later: pineapple. Reply with exactly: noted.",
+            &mut NoAsker,
+            &mut |part| parts.push(part),
+        )
+        .expect("first turn");
+
+    let answer = recall(&driver, None);
+    assert!(
+        answer.to_lowercase().contains("pineapple"),
+        "the second turn knew the first: {answer:?}"
+    );
+}
+
+#[test]
+#[ignore = "spawns the real opencode CLI and spends two model calls"]
+fn a_real_session_resumes_after_a_restart() {
+    let key = {
+        // The first life: plant the word, then drop the driver, which kills
+        // the agent process — a restart in miniature.
+        let driver = OpenCode::new(std::env::temp_dir());
+        let mut parts = Vec::new();
+        driver
+            .start_turn(
+                SessionRef::new("s1"),
+                "Remember this fruit for later: pineapple. Reply with exactly: noted.",
+                &mut NoAsker,
+                &mut |part| parts.push(part),
+            )
+            .expect("first turn")
+            .expect("the agent's session key")
+    };
+
+    let driver = OpenCode::new(std::env::temp_dir());
+    let answer = recall(&driver, Some(&key));
+    assert!(
+        answer.to_lowercase().contains("pineapple"),
+        "the loaded session remembered: {answer:?}"
+    );
+}

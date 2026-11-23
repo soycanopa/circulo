@@ -410,7 +410,9 @@ fn initialize(agent: &mut Agent, ask: &mut dyn Asker) -> Result<(), DriverError>
 /// replayed as `session/update` notifications before the response arrives;
 /// `request` skips notifications, and rightly so — the transcript already
 /// lives in the core's database, and drawing the replay again would double
-/// it on screen.
+/// it on screen. The response carries the session's config but, as probed
+/// on OpenCode 2.3.2, no id: the loaded session is the one that was asked
+/// for, so that is what comes back.
 fn load_session(
     agent: &mut Agent,
     key: &str,
@@ -428,13 +430,8 @@ fn load_session(
         }),
         ask,
     )?;
-    agent.last_config = loaded.clone();
-    let session = loaded
-        .get("sessionId")
-        .and_then(Value::as_str)
-        .ok_or_else(|| DriverError::new("opencode did not return a session id"))?
-        .to_owned();
-    Ok(session)
+    agent.last_config = loaded;
+    Ok(key.to_owned())
 }
 
 /// The agent's settings as `session/new` or `session/set_config_option`
@@ -956,6 +953,28 @@ mod tests {
             apply_update(update, &mut tools, &mut |part| parts.push(part));
         }
         parts
+    }
+
+    /// The real agent's load contract, without a model call: open a session,
+    /// drop the process, and hand the stored id to a fresh one. What this
+    /// pins down is the method name, the params and the response shape of
+    /// `session/load` against the installed OpenCode.
+    #[test]
+    #[ignore = "spawns the real opencode CLI"]
+    fn a_real_session_loads_without_a_model_call() {
+        let cwd = std::env::temp_dir();
+        let binary = std::path::PathBuf::from("opencode");
+
+        let key = {
+            let mut agent = Agent::spawn(&binary, &cwd).expect("spawn");
+            let session = open_session(&mut agent, &cwd, &mut RefuseAll).expect("open");
+            drop(agent);
+            session
+        };
+
+        let mut agent = Agent::spawn(&binary, &cwd).expect("respawn");
+        let loaded = load_session(&mut agent, &key, &cwd, &mut RefuseAll).expect("load");
+        assert_eq!(loaded, key, "the agent answered with the same session");
     }
 
     #[test]
