@@ -143,6 +143,24 @@ impl Client {
         send(&mut self.socket, &answer(id, option).encode()?)
     }
 
+    /// Asks for the client's own settings. The daemon answers with
+    /// `Settings` carrying the whole map.
+    pub fn get_settings(&mut self) -> Result<(), ClientError> {
+        send(&mut self.socket, &ClientRequest::GetSettings.encode()?)
+    }
+
+    /// Stores one client setting. The daemon answers with `Settings`.
+    pub fn set_setting(&mut self, key: &str, value: serde_json::Value) -> Result<(), ClientError> {
+        send(
+            &mut self.socket,
+            &ClientRequest::SetSetting {
+                key: key.to_owned(),
+                value,
+            }
+            .encode()?,
+        )
+    }
+
     /// Splits the connection so a reader can block while a writer sends: a
     /// turn asks a question and the answer has to reach the daemon without
     /// waiting for the turn to end. One instance only reads, the other only

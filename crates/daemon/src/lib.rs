@@ -313,6 +313,25 @@ fn handle(
                     Err(message) => emit(&outbound, ServerMessage::Error { message }),
                 });
             }
+            Some(ClientRequest::GetSettings) => match core.settings() {
+                Ok(settings) => emit(&outbound, ServerMessage::Settings { settings }),
+                Err(error) => emit(
+                    &outbound,
+                    ServerMessage::Error {
+                        message: error.to_string(),
+                    },
+                ),
+            },
+            Some(ClientRequest::SetSetting { key, value }) => {
+                // The store takes the write; the answer is the whole map, the
+                // way the client redraws.
+                let core = Arc::clone(&core);
+                let outbound = outbound.clone();
+                thread::spawn(move || match core.set_setting(&key, &value) {
+                    Ok(settings) => emit(&outbound, ServerMessage::Settings { settings }),
+                    Err(message) => emit(&outbound, ServerMessage::Error { message }),
+                });
+            }
             None => {
                 emit(
                     &outbound,

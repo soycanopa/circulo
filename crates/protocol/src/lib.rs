@@ -16,6 +16,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// Bumped whenever a message changes shape. Clients send it in the handshake
 /// and the daemon refuses a mismatch instead of guessing.
@@ -71,6 +72,12 @@ pub enum ClientRequest {
         id: String,
         value: String,
     },
+    /// The client's own settings — interface state such as favourite models.
+    /// The daemon answers with `Settings` carrying everything it has.
+    GetSettings,
+    /// Store one setting. The daemon answers with `Settings` carrying
+    /// everything it has, the way a picker redraws from the whole list.
+    SetSetting { key: String, value: Value },
 }
 
 impl ClientRequest {
@@ -95,6 +102,8 @@ const CLIENT_TYPES: &[&str] = &[
     "list_sessions",
     "open_session",
     "set_option",
+    "get_settings",
+    "set_setting",
 ];
 const SERVER_TYPES: &[&str] = &[
     "welcome",
@@ -107,6 +116,7 @@ const SERVER_TYPES: &[&str] = &[
     "sessions",
     "history",
     "options",
+    "settings",
     "error",
 ];
 
@@ -168,6 +178,12 @@ pub enum ServerMessage {
     Options {
         session: String,
         options: Vec<ConfigOption>,
+    },
+    /// The client's own settings, the whole map. The daemon answers
+    /// `GetSettings` and `SetSetting` with this, so the client always redraws
+    /// from what is stored, not from what it hopes is stored.
+    Settings {
+        settings: BTreeMap<String, Value>,
     },
     Error {
         message: String,
@@ -481,6 +497,12 @@ mod tests {
                     ],
                 }],
             },
+            ServerMessage::Settings {
+                settings: BTreeMap::from([(
+                    "favorites.model".into(),
+                    serde_json::json!(["a", "b"]),
+                )]),
+            },
             ServerMessage::Error {
                 message: "nope".into(),
             },
@@ -508,6 +530,11 @@ mod tests {
                 session: "s1".into(),
                 id: "model".into(),
                 value: "b".into(),
+            },
+            ClientRequest::GetSettings,
+            ClientRequest::SetSetting {
+                key: "favorites.model".into(),
+                value: serde_json::json!(["a", "b"]),
             },
         ];
 

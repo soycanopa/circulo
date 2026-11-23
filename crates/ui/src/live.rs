@@ -140,6 +140,7 @@ impl Transcript {
             | ServerMessage::SessionStarted { .. }
             | ServerMessage::Sessions { .. }
             | ServerMessage::Options { .. }
+            | ServerMessage::Settings { .. }
             | ServerMessage::History { .. } => {}
         }
     }

@@ -12,7 +12,7 @@
 #![forbid(unsafe_code)]
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -23,6 +23,7 @@ use circulo_protocol::{
     ServerMessage, SessionSummary,
 };
 use circulo_provider::{Answer, Asker, Decision, Driver, SessionRef};
+use serde_json::Value;
 use uuid::Uuid;
 
 pub struct Session {
@@ -113,6 +114,28 @@ impl Core {
                 parts: turn.parts,
             })
             .collect())
+    }
+
+    /// The client's own settings — interface state the core only stores.
+    /// A memory-only core has none.
+    pub fn settings(&self) -> Result<BTreeMap<String, Value>, StoreError> {
+        match &self.store {
+            Some(store) => store.settings(),
+            None => Ok(BTreeMap::new()),
+        }
+    }
+
+    /// Records one client setting and returns the whole map, the way the
+    /// wire answers. A write failure reads as an error message, not a lost
+    /// turn: settings are never urgent.
+    pub fn set_setting(&self, key: &str, value: &Value) -> Result<BTreeMap<String, Value>, String> {
+        let Some(store) = &self.store else {
+            return Err("this daemon has no settings store".to_owned());
+        };
+        store
+            .set_setting(key, value)
+            .map_err(|error| error.to_string())?;
+        self.settings().map_err(|error| error.to_string())
     }
 
     /// Answers a pending permission request. `None` cancels it, which is only
@@ -700,6 +723,27 @@ mod tests {
         );
         let seen = seen.lock().unwrap_or_else(PoisonError::into_inner);
         assert_eq!(seen.first(), Some(&Some("stale".to_owned())));
+    }
+
+    #[test]
+    fn settings_are_stored_and_refused_without_a_store() {
+        let core = core_with(Arc::new(Echo));
+        assert!(core.settings().expect("settings").is_empty());
+        assert!(
+            core.set_setting("favorites.model", &serde_json::json!(["a"]))
+                .is_err()
+        );
+
+        let core = core_with_store(Arc::new(Echo));
+        let settings = core
+            .set_setting("favorites.model", &serde_json::json!(["a"]))
+            .expect("set");
+        assert_eq!(
+            settings.get("favorites.model"),
+            Some(&serde_json::json!(["a"])),
+            "the answer carries the whole map, stored form"
+        );
+        assert_eq!(core.settings().expect("read").len(), 1);
     }
 
     #[test]

@@ -196,6 +196,54 @@ fn the_announcement_carries_the_url_and_the_token() {
     assert!(announcement.contains(&token));
 }
 
+#[test]
+fn settings_round_trip_through_the_daemon() {
+    // A daemon with a store: settings are stored state, not memory-only.
+    let core = Arc::new(Core::with_store(
+        Arc::new(DemoDriver::instant()),
+        Some(Arc::new(
+            circulo_persistence::Store::in_memory().expect("store"),
+        )),
+    ));
+    let daemon = Daemon::with_core(core).expect("bind the daemon");
+    let url = daemon.url();
+    let token = daemon.token().to_owned();
+    thread::spawn(move || daemon.serve());
+
+    let mut client = Client::connect(&url, &token).expect("handshake");
+    client
+        .set_setting("favorites.model", serde_json::json!(["a", "b"]))
+        .expect("set");
+
+    let stored = wait_settings(&mut client);
+    assert_eq!(
+        stored.get("favorites.model"),
+        Some(&serde_json::json!(["a", "b"]))
+    );
+
+    // Asking again reads the same map back, the way a fresh window would.
+    client.get_settings().expect("ask");
+    let again = wait_settings(&mut client);
+    assert_eq!(
+        again.get("favorites.model"),
+        Some(&serde_json::json!(["a", "b"])),
+        "the stored setting is what comes back"
+    );
+}
+
+/// Reads until the daemon answers with its settings map.
+fn wait_settings(client: &mut Client) -> std::collections::BTreeMap<String, serde_json::Value> {
+    for _ in 0..100 {
+        match client.next_message().expect("message") {
+            Some(ServerMessage::Settings { settings }) => return settings,
+            Some(ServerMessage::Error { message }) => panic!("the daemon refused: {message}"),
+            Some(_) => continue,
+            None => panic!("the daemon closed the connection"),
+        }
+    }
+    panic!("no settings arrived");
+}
+
 /// Keeps the demo turn's shapes honest for the transcript renderer.
 #[test]
 fn the_turn_reaches_the_client_in_order() {

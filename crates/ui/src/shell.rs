@@ -14,6 +14,11 @@ use circulo_protocol::{
 use gpui::{
     Context, FocusHandle, IntoElement, KeyDownEvent, ListState, Render, Window, div, prelude::*, px,
 };
+use serde_json::Value;
+
+/// The settings key the model picker's favourites live under. The value is a
+/// list of choice ids, in the order they were starred.
+const FAVORITES_KEY: &str = "favorites.model";
 
 use crate::composer::{
     ChooseHandler, Field, KeyHandler, Pickers, SendHandler, ToggleHandler, composer,
@@ -60,6 +65,9 @@ pub struct Shell {
     options: Vec<ConfigOption>,
     /// The option id whose menu is open above the composer, if any.
     open_picker: Option<String>,
+    /// The model choices this client starred, in the order they were starred.
+    /// Stored on the daemon side, so they survive a restart.
+    favorites: Vec<String>,
 }
 
 impl Shell {
@@ -96,7 +104,12 @@ impl Shell {
             question_shown: None,
             options: Vec::new(),
             open_picker: None,
+            favorites: Vec::new(),
         };
+
+        // The client's own settings: the pickers want their favourites before
+        // the first model menu opens.
+        shell.request(ClientRequest::GetSettings);
 
         cx.spawn(async move |this, cx| {
             while let Ok(message) = receiver.recv().await {
@@ -156,6 +169,21 @@ impl Shell {
                 self.transcript.hydrate(turns);
                 self.clear_options();
             }
+            ServerMessage::Settings { settings } => {
+                // The client's own state, the whole map. Only the favourites
+                // have a reader today; the rest is kept for the ones to come.
+                self.favorites = settings
+                    .get(FAVORITES_KEY)
+                    .and_then(Value::as_array)
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+            }
             ServerMessage::TurnFinished { .. } => {
                 self.transcript.apply(message);
                 // The turn changed the title and the order of the list.
@@ -205,6 +233,21 @@ impl Shell {
             session: self.session.clone(),
             id,
             value,
+        });
+        cx.notify();
+    }
+
+    /// Stars or unstars a model and stores the list. The local list updates at
+    /// once; the daemon's answer confirms the same map back.
+    fn toggle_favorite(&mut self, value: String, cx: &mut Context<Self>) {
+        if let Some(position) = self.favorites.iter().position(|id| id == &value) {
+            self.favorites.remove(position);
+        } else {
+            self.favorites.push(value.clone());
+        }
+        self.request(ClientRequest::SetSetting {
+            key: FAVORITES_KEY.to_owned(),
+            value: Value::from(self.favorites.clone()),
         });
         cx.notify();
     }
