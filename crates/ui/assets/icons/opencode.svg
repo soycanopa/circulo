@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" fill="currentColor">
+  <!-- The OpenCode mark: a square ring with the inner square seated at its
+       bottom. One path per shape, currentColor tint, square viewBox so the
+       icon pipeline can size it without distortion. Coordinates are the
+       240x300 original centred in x. -->
+  <path fill-rule="evenodd" d="M270 0H30v300h240V0ZM210 60H90v180h120V60Z"/>
+  <path d="M210 150H90v120h120V150Z"/>
+</svg>

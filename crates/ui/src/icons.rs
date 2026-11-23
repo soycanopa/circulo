@@ -35,6 +35,7 @@ icon_assets!(
     "loader-circle.svg",
     "lock.svg",
     "monitor.svg",
+    "opencode.svg",
     "panel-left.svg",
     "panel-right.svg",
     "search.svg",

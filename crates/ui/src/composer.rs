@@ -300,6 +300,10 @@ fn tab_bar(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> Div {
         .tab
         .unwrap_or_else(|| default_tab(pickers.favorites));
 
+    // The models tab carries the agent's own mark when one exists — icon
+    // only, the way a logo wants to be read — and falls back to the name
+    // with a generic glyph for agents without one.
+    let agent = agent_icon(pickers.agent_label);
     div()
         .flex()
         .items_center()
@@ -313,7 +317,7 @@ fn tab_bar(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> Div {
             option,
             FAVORITES_TAB,
             "icons/star.svg",
-            "Favorites",
+            Some("Favorites"),
             active == FAVORITES_TAB,
             pickers,
         ))
@@ -321,8 +325,8 @@ fn tab_bar(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> Div {
             theme,
             option,
             MODELS_TAB,
-            "icons/layers.svg",
-            pickers.agent_label,
+            agent.unwrap_or("icons/layers.svg"),
+            agent.map_or(Some(pickers.agent_label), |_| None),
             active == MODELS_TAB,
             pickers,
         ))
@@ -333,7 +337,7 @@ fn tab_button<'a>(
     option: &ConfigOption,
     id: &'static str,
     path: &'static str,
-    label: &'a str,
+    label: Option<&'a str>,
     on: bool,
     pickers: &Pickers<'a>,
 ) -> impl IntoElement + use<'a> {
@@ -354,7 +358,7 @@ fn tab_button<'a>(
             13.,
             if on { theme.accent } else { theme.text_faint },
         ))
-        .child(label.to_owned())
+        .when_some(label, |tab, label| tab.child(label.to_owned()))
         .cursor_pointer()
         .hover(move |style| style.bg(theme.hover))
         .on_click(move |_, window, cx| {
@@ -362,6 +366,15 @@ fn tab_button<'a>(
                 on_tab(id.to_owned(), window, cx);
             }
         })
+}
+
+/// The agent's own mark, when the interface has one. Any agent without a
+/// known logo keeps its name on the tab.
+fn agent_icon(agent: &str) -> Option<&'static str> {
+    match agent {
+        "opencode" => Some("icons/opencode.svg"),
+        _ => None,
+    }
 }
 
 /// The agent's choices under one heading per provider, in the order the
