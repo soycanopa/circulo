@@ -7,8 +7,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, Div, FocusHandle, IntoElement, KeyDownEvent, SharedString, Window, div,
-    prelude::*, px,
+    AnyElement, App, Corner, Div, FocusHandle, IntoElement, KeyDownEvent, SharedString, Window,
+    anchored, div, point, prelude::*, px,
 };
 
 use crate::icons::icon;
@@ -79,17 +79,15 @@ pub(crate) fn composer(
 ) -> Div {
     let running = transcript.status.running;
     let can_send = !field.input.is_blank() && !running;
-    let menu = pickers
-        .open
-        .and_then(|open| pickers.options.iter().find(|option| option.id == open))
-        .map(|option| menu_view(theme, option, &pickers));
 
+    // The open menu is not laid out here: it lives inside the picker that
+    // opened it, anchored above the chip, so it never pushes the composer
+    // around and always reads as coming from its own selector.
     div()
         .flex()
         .flex_col()
         .px(px(24.))
         .pb(px(10.))
-        .children(menu)
         .child(input_box(
             theme, workspace, running, &pickers, field, can_send,
         ))
@@ -157,7 +155,8 @@ fn input_box(
 }
 
 /// One composer slot: the daemon's value when the option exists, the mock
-/// label until then. A live option opens its menu on click.
+/// label until then. A live option opens its menu on click, anchored above
+/// the chip itself.
 fn slot(
     theme: &Theme,
     pickers: &Pickers<'_>,
@@ -171,11 +170,14 @@ fn slot(
             let open = pickers.open == Some(option.id.as_str());
             let next = if open { None } else { Some(option.id.clone()) };
             let on_toggle = pickers.on_toggle.clone();
-            picker(theme, path, label, open)
+            let mut anchor = picker(theme, path, label, open)
                 .id(SharedString::from(format!("picker-{}", option.id)))
                 .cursor_pointer()
-                .on_click(move |_, window, cx| on_toggle(next.clone(), window, cx))
-                .into_any_element()
+                .on_click(move |_, window, cx| on_toggle(next.clone(), window, cx));
+            if open {
+                anchor = anchor.child(menu_view(theme, option, pickers));
+            }
+            anchor.into_any_element()
         }
         None => static_picker(theme, path, fallback).into_any_element(),
     }
@@ -227,11 +229,11 @@ fn current_label(option: &ConfigOption) -> String {
         .unwrap_or_else(|| option.current.clone())
 }
 
-/// The open option's choices, above the composer: a popup of fixed width and
-/// bounded height, whatever the agent lists. The model menu gains tabs — the
-/// starred models first, the agent's own list grouped by who serves each
-/// model — and a star per row. The current value is marked; anything else
-/// sends the choice to the daemon.
+/// The open option's choices: a popup of fixed width and bounded height,
+/// anchored above the picker chip that opened it, whatever the agent lists.
+/// The model menu gains tabs — the starred models first, the agent's own
+/// list grouped by who serves each model — and a star per row. The current
+/// value is marked; anything else sends the choice to the daemon.
 fn menu_view(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> AnyElement {
     let tabbed = option.id == "model";
 
@@ -239,7 +241,6 @@ fn menu_view(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> Any
         .w(px(MENU_WIDTH))
         .flex()
         .flex_col()
-        .mb(px(8.))
         .p(px(6.))
         .rounded(px(10.))
         .border_1()
@@ -276,12 +277,20 @@ fn menu_view(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> Any
         }
     }
 
-    menu.child(
-        rows.id(SharedString::from(format!("menu-rows-{}", option.id)))
-            .max_h(px(MENU_MAX_HEIGHT))
-            .overflow_y_scroll(),
-    )
-    .into_any_element()
+    // The popup's bottom-left corner sits just above the chip that opened it,
+    // so the menu reads as coming out of that selector. `anchored` flips or
+    // snaps the corner when the window edge would cut it.
+    anchored()
+        .anchor(Corner::BottomLeft)
+        .offset(point(px(0.), px(-8.)))
+        .child(
+            menu.child(
+                rows.id(SharedString::from(format!("menu-rows-{}", option.id)))
+                    .max_h(px(MENU_MAX_HEIGHT))
+                    .overflow_y_scroll(),
+            ),
+        )
+        .into_any_element()
 }
 
 /// Without a choice from the user, favourites lead when they exist: that tab
