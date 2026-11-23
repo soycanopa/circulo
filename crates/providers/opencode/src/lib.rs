@@ -122,9 +122,19 @@ impl OpenCode {
     }
 
     /// Spawns the agent and opens its session, applying the user's choices.
-    fn attach(&self, ask: &mut dyn Asker) -> Result<Attached, DriverError> {
+    /// A stored key resumes the agent's own session — that is what makes a
+    /// restarted daemon a continuation instead of a reset. A key the agent
+    /// no longer knows starts a fresh conversation rather than failing the
+    /// turn: the new key comes back, the store heals, the transcript stays.
+    fn attach(&self, resume: Option<&str>, ask: &mut dyn Asker) -> Result<Attached, DriverError> {
         let mut agent = Agent::spawn(&self.binary, &self.cwd)?;
-        let session = open_session(&mut agent, &self.cwd, ask)?;
+        let session = match resume {
+            Some(key) => match load_session(&mut agent, key, &self.cwd, ask) {
+                Ok(session) => session,
+                Err(_) => open_session(&mut agent, &self.cwd, ask)?,
+            },
+            None => open_session(&mut agent, &self.cwd, ask)?,
+        };
         let applied = self.overrides().clone();
         let options = self.recall(&mut agent, &session, ask);
 
@@ -263,7 +273,7 @@ impl Driver for OpenCode {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if slot.is_none() {
-            *slot = Some(self.attach(ask)?);
+            *slot = Some(self.attach(session_ref.resume, ask)?);
         }
         let attached = slot.as_mut().expect("attached just above");
 
@@ -353,6 +363,26 @@ impl Asker for RefuseAll {
 /// Returns the agent's session id and remembers the reported config list on
 /// the agent for the caller to validate against.
 fn open_session(agent: &mut Agent, cwd: &Path, ask: &mut dyn Asker) -> Result<String, DriverError> {
+    initialize(agent, ask)?;
+
+    let session = agent.request(
+        "session/new",
+        json!({
+            "cwd": cwd.to_string_lossy(),
+            "mcpServers": []
+        }),
+        ask,
+    )?;
+    agent.last_config = session.clone();
+    let session = session
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| DriverError::new("opencode did not return a session id"))?
+        .to_owned();
+    Ok(session)
+}
+
+fn initialize(agent: &mut Agent, ask: &mut dyn Asker) -> Result<(), DriverError> {
     let welcome = agent.request(
         "initialize",
         json!({
@@ -373,17 +403,33 @@ fn open_session(agent: &mut Agent, cwd: &Path, ask: &mut dyn Asker) -> Result<St
             "opencode speaks ACP version {version:?}, this driver speaks {ACP_VERSION}"
         )));
     }
+    Ok(())
+}
 
-    let session = agent.request(
-        "session/new",
+/// Reattaches to a session the agent still remembers. The conversation is
+/// replayed as `session/update` notifications before the response arrives;
+/// `request` skips notifications, and rightly so — the transcript already
+/// lives in the core's database, and drawing the replay again would double
+/// it on screen.
+fn load_session(
+    agent: &mut Agent,
+    key: &str,
+    cwd: &Path,
+    ask: &mut dyn Asker,
+) -> Result<String, DriverError> {
+    initialize(agent, ask)?;
+
+    let loaded = agent.request(
+        "session/load",
         json!({
+            "sessionId": key,
             "cwd": cwd.to_string_lossy(),
             "mcpServers": []
         }),
         ask,
     )?;
-    agent.last_config = session.clone();
-    let session = session
+    agent.last_config = loaded.clone();
+    let session = loaded
         .get("sessionId")
         .and_then(Value::as_str)
         .ok_or_else(|| DriverError::new("opencode did not return a session id"))?

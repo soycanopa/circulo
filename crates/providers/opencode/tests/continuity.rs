@@ -23,12 +23,17 @@ use circulo_provider::{Decision, Driver, SessionRef};
 /// reports its current effort, so a test can read both back. When
 /// `FAKE_ACP_LIVENESS` names a file, the agent creates it on start (with its
 /// pid) and removes it when our stdin closes on it — EOF means the driver
-/// let go, however that happened.
+/// let go, however that happened. When `FAKE_ACP_STORE` names a directory,
+/// sessions survive the process there, the way OpenCode keeps its own store:
+/// `session/load` restores the prompt count, an unknown one is refused.
 const AGENT: &str = r#"
 import json, os, sys
 
 MODE = os.environ.get("FAKE_ACP_MODE", "plain")
 LIVENESS = os.environ.get("FAKE_ACP_LIVENESS")
+STORE = os.environ.get("FAKE_ACP_STORE")
+if STORE and not os.path.isdir(STORE):
+    os.makedirs(STORE)
 if LIVENESS:
     with open(LIVENESS, "w") as alive:
         alive.write(str(os.getpid()))
@@ -40,6 +45,15 @@ CONFIG = {
 }
 
 PROMPTS = 0
+CURRENT = None
+
+def session_path(session_id):
+    return os.path.join(STORE, session_id + ".json")
+
+def remember():
+    if STORE and CURRENT:
+        with open(session_path(CURRENT), "w") as file:
+            json.dump({"prompts": PROMPTS}, file)
 
 def config_options():
     return [{"id": key, "name": entry["name"], "type": "select",
@@ -61,8 +75,26 @@ for line in sys.stdin:
               "result": {"protocolVersion": 1, "agentCapabilities": {}}})
     elif method == "session/new":
         CONFIG["effort"]["current"] = "low"
+        PROMPTS = 0
+        if STORE:
+            CURRENT = "s%d" % (len([name for name in os.listdir(STORE)
+                                    if name.endswith(".json")]) + 1)
+            remember()
+        else:
+            CURRENT = "s1"
         send({"jsonrpc": "2.0", "id": message["id"],
-              "result": {"sessionId": "s1", "configOptions": config_options()}})
+              "result": {"sessionId": CURRENT, "configOptions": config_options()}})
+    elif method == "session/load":
+        wanted = message.get("params", {}).get("sessionId")
+        if STORE and wanted and os.path.exists(session_path(wanted)):
+            with open(session_path(wanted)) as file:
+                PROMPTS = json.load(file)["prompts"]
+            CURRENT = wanted
+            send({"jsonrpc": "2.0", "id": message["id"],
+                  "result": {"sessionId": CURRENT, "configOptions": config_options()}})
+        else:
+            send({"jsonrpc": "2.0", "id": message["id"],
+                  "error": {"code": -32602, "message": "unknown session"}})
     elif method == "session/set_config_option":
         params = message.get("params", {})
         entry = CONFIG.get(params.get("configId"))
@@ -76,11 +108,12 @@ for line in sys.stdin:
                   "result": {"configOptions": config_options()}})
     elif method == "session/prompt":
         PROMPTS += 1
+        remember()
 
         if MODE == "permission":
             send({"jsonrpc": "2.0", "id": 900, "method": "session/request_permission",
                   "params": {
-                      "sessionId": "s1",
+                      "sessionId": CURRENT or "s1",
                       "toolCall": {"toolCallId": "call-1", "title": "Run cargo test",
                                    "kind": "execute",
                                    "rawInput": {"command": "cargo test"}},
@@ -92,7 +125,7 @@ for line in sys.stdin:
 
         text = "n=%d effort=%s" % (PROMPTS, CONFIG["effort"]["current"])
         send({"jsonrpc": "2.0", "method": "session/update",
-              "params": {"sessionId": "s1",
+              "params": {"sessionId": CURRENT or "s1",
                          "update": {"sessionUpdate": "agent_message_chunk",
                                     "content": {"type": "text", "text": text}}}})
         send({"jsonrpc": "2.0", "id": message["id"],
@@ -119,11 +152,13 @@ impl ScriptedAgent {
         fs::write(&agent, AGENT).expect("write agent");
 
         let liveness = directory.join("alive");
+        let store = directory.join("store");
         fs::write(
             directory.join("agent.sh"),
             format!(
-                "#!/bin/sh\nFAKE_ACP_MODE={mode} FAKE_ACP_LIVENESS='{}' exec python3 '{}'\n",
+                "#!/bin/sh\nFAKE_ACP_MODE={mode} FAKE_ACP_LIVENESS='{}' FAKE_ACP_STORE='{}' exec python3 '{}'\n",
                 liveness.to_string_lossy(),
+                store.to_string_lossy(),
                 agent.to_string_lossy()
             ),
         )
@@ -413,4 +448,98 @@ fn options_read_the_live_session_without_spawning() {
         .find(|option| option.id == "effort")
         .expect("effort");
     assert_eq!(effort.current, "low");
+}
+
+#[test]
+fn a_restarted_driver_resumes_the_stored_session() {
+    let agent = ScriptedAgent::plain("resume");
+    // The first life of the session: one turn, then the daemon is gone —
+    // the driver drop releases its child, memory included. Only the key
+    // the driver handed back survives, the way the core's database would.
+    let key = {
+        let driver = circulo_provider_opencode::OpenCode::with_binary(
+            agent.directory.clone(),
+            agent.binary(),
+        );
+        let mut ask = Refuse;
+        let mut parts = Vec::new();
+        let key = driver
+            .start_turn(SessionRef::new("s1"), "go", &mut ask, &mut |part: Part| {
+                parts.push(part)
+            })
+            .expect("first life")
+            .expect("the session key");
+        let first: String = parts
+            .iter()
+            .filter_map(|part| match part {
+                Part::Text { delta } => Some(delta.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(first.contains("n=1"), "{first}");
+        key
+    };
+
+    // The second life: a fresh driver, the stored key, the same history.
+    let driver =
+        circulo_provider_opencode::OpenCode::with_binary(agent.directory.clone(), agent.binary());
+    let mut ask = Refuse;
+    let mut parts = Vec::new();
+    let key = driver
+        .start_turn(
+            SessionRef {
+                id: "s1",
+                resume: Some(&key),
+            },
+            "go",
+            &mut ask,
+            &mut |part: Part| parts.push(part),
+        )
+        .expect("resumed turn");
+
+    let resumed: String = parts
+        .iter()
+        .filter_map(|part| match part {
+            Part::Text { delta } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        resumed.contains("n=2"),
+        "the resumed agent continued where it left off: {resumed}"
+    );
+    assert_eq!(key.as_deref(), Some("s1"), "the same session, kept");
+}
+
+#[test]
+fn a_lost_session_starts_fresh_rather_than_failing() {
+    let agent = ScriptedAgent::plain("lost");
+    let driver =
+        circulo_provider_opencode::OpenCode::with_binary(agent.directory.clone(), agent.binary());
+    let mut ask = Refuse;
+
+    // No such session in the agent's store: the driver starts over instead
+    // of failing the turn, and the fresh key comes back to heal the store.
+    let mut parts = Vec::new();
+    let key = driver
+        .start_turn(
+            SessionRef {
+                id: "s1",
+                resume: Some("gone"),
+            },
+            "go",
+            &mut ask,
+            &mut |part: Part| parts.push(part),
+        )
+        .expect("turn");
+
+    let fresh: String = parts
+        .iter()
+        .filter_map(|part| match part {
+            Part::Text { delta } => Some(delta.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(fresh.contains("n=1"), "a new conversation began: {fresh}");
+    assert_eq!(key.as_deref(), Some("s1"), "the fresh session id");
 }
