@@ -21,7 +21,8 @@ use serde_json::Value;
 const FAVORITES_KEY: &str = "favorites.model";
 
 use crate::composer::{
-    ChooseHandler, Field, KeyHandler, Pickers, SendHandler, ToggleHandler, composer,
+    ChooseHandler, Field, KeyHandler, Pickers, SendHandler, StarHandler, TabHandler, ToggleHandler,
+    composer,
 };
 use crate::input::TextInput;
 use crate::live::{Card, Transcript};
@@ -65,6 +66,11 @@ pub struct Shell {
     options: Vec<ConfigOption>,
     /// The option id whose menu is open above the composer, if any.
     open_picker: Option<String>,
+    /// The model menu's tab while the menu is open; `None` lets the menu pick.
+    picker_tab: Option<String>,
+    /// The provider behind the daemon ("opencode"), from the handshake: the
+    /// models tab carries its name.
+    daemon: String,
     /// The model choices this client starred, in the order they were starred.
     /// Stored on the daemon side, so they survive a restart.
     favorites: Vec<String>,
@@ -81,6 +87,7 @@ impl Shell {
         draft: String,
         history: Vec<HistoryTurn>,
         sessions: Vec<SessionSummary>,
+        daemon: String,
     ) -> Self {
         let mut transcript = Transcript::default();
         transcript.hydrate(history);
@@ -104,6 +111,8 @@ impl Shell {
             question_shown: None,
             options: Vec::new(),
             open_picker: None,
+            picker_tab: None,
+            daemon,
             favorites: Vec::new(),
         };
 
@@ -216,24 +225,41 @@ impl Shell {
     /// until the daemon reports them.
     fn clear_options(&mut self) {
         self.options.clear();
+        self.close_picker();
+    }
+
+    fn close_picker(&mut self) {
         self.open_picker = None;
+        self.picker_tab = None;
     }
 
     /// Opens the option's menu, or closes it when it is already open.
     fn toggle_picker(&mut self, id: Option<String>, cx: &mut Context<Self>) {
-        self.open_picker = id;
+        match id {
+            Some(id) => {
+                self.open_picker = Some(id);
+                self.picker_tab = None;
+            }
+            None => self.close_picker(),
+        }
         cx.notify();
     }
 
     /// Sends the choice to the daemon and closes the menu. The refreshed list
     /// comes back as `Options`; until then the picker keeps its old value.
     fn choose_option(&mut self, id: String, value: String, cx: &mut Context<Self>) {
-        self.open_picker = None;
+        self.close_picker();
         self.request(ClientRequest::SetOption {
             session: self.session.clone(),
             id,
             value,
         });
+        cx.notify();
+    }
+
+    /// Switches the open model menu's tab. Only meaningful while it is open.
+    fn pick_tab(&mut self, tab: String, cx: &mut Context<Self>) {
+        self.picker_tab = Some(tab);
         cx.notify();
     }
 
@@ -311,7 +337,7 @@ impl Shell {
         let plain = !modifiers.control && !modifiers.alt && !modifiers.platform;
 
         if key == "escape" && self.open_picker.is_some() {
-            self.open_picker = None;
+            self.close_picker();
             cx.notify();
             return;
         }
@@ -529,6 +555,14 @@ impl Render for Shell {
                 let on_choose: ChooseHandler = Rc::new(move |id, value, _window, cx| {
                     shell.update(cx, |shell, cx| shell.choose_option(id, value, cx));
                 });
+                let shell = cx.entity();
+                let on_star: StarHandler = Rc::new(move |value, _window, cx| {
+                    shell.update(cx, |shell, cx| shell.toggle_favorite(value, cx));
+                });
+                let shell = cx.entity();
+                let on_tab: TabHandler = Rc::new(move |tab, _window, cx| {
+                    shell.update(cx, |shell, cx| shell.pick_tab(tab, cx));
+                });
                 let focused = self.composer_focus.is_focused(window);
 
                 column.child(composer(
@@ -538,8 +572,13 @@ impl Render for Shell {
                     Pickers {
                         options: &self.options,
                         open: self.open_picker.as_deref(),
+                        tab: self.picker_tab.as_deref(),
+                        favorites: &self.favorites,
+                        agent_label: &self.daemon,
                         on_toggle,
                         on_choose,
+                        on_star,
+                        on_tab,
                     },
                     Field {
                         input: &self.input,

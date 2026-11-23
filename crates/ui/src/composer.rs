@@ -21,6 +21,16 @@ use circulo_protocol::ConfigOption;
 /// How tall the field may grow before it scrolls: four lines of body text.
 const FIELD_MAX_HEIGHT: f32 = 96.;
 
+/// The menu's footprint: a popup, not a panel. Wide enough for a model name
+/// and its provider, short enough to never swallow the transcript.
+const MENU_WIDTH: f32 = 360.;
+const MENU_MAX_HEIGHT: f32 = 320.;
+
+/// The model menu's tabs. The favourites lead when there are any; the agent's
+/// own list is always one click away.
+const FAVORITES_TAB: &str = "favorites";
+const MODELS_TAB: &str = "models";
+
 /// Keys the field does not handle itself, and what the send button does. The
 /// shell owns both, because both change its state.
 pub(crate) type KeyHandler = Rc<dyn Fn(&KeyDownEvent, &mut Window, &mut App)>;
@@ -29,14 +39,26 @@ pub(crate) type SendHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 /// both, because both change its state.
 pub(crate) type ToggleHandler = Rc<dyn Fn(Option<String>, &mut Window, &mut App)>;
 pub(crate) type ChooseHandler = Rc<dyn Fn(String, String, &mut Window, &mut App)>;
+/// Starring a model, and switching the model menu's tab.
+pub(crate) type StarHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
+pub(crate) type TabHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
 
-/// The daemon's options as the pickers draw them: which menu is open and what
-/// choosing does. A missing option id keeps its mock label and does nothing.
+/// The daemon's options as the pickers draw them: which menu is open, which
+/// model tab is showing, what choosing and starring do. A missing option id
+/// keeps its mock label and does nothing.
 pub(crate) struct Pickers<'a> {
     pub options: &'a [ConfigOption],
     pub open: Option<&'a str>,
+    /// The model menu's tab, when the user picked one; `None` picks by itself.
+    pub tab: Option<&'a str>,
+    /// The starred model ids, in the order they were starred.
+    pub favorites: &'a [String],
+    /// The agent behind the daemon, naming the models tab ("opencode").
+    pub agent_label: &'a str,
     pub on_toggle: ToggleHandler,
     pub on_choose: ChooseHandler,
+    pub on_star: StarHandler,
+    pub on_tab: TabHandler,
 }
 
 /// Everything the field needs that changes between frames.
@@ -60,7 +82,7 @@ pub(crate) fn composer(
     let menu = pickers
         .open
         .and_then(|open| pickers.options.iter().find(|option| option.id == open))
-        .map(|option| menu_view(theme, option, &pickers.on_choose));
+        .map(|option| menu_view(theme, option, &pickers));
 
     div()
         .flex()
@@ -205,11 +227,16 @@ fn current_label(option: &ConfigOption) -> String {
         .unwrap_or_else(|| option.current.clone())
 }
 
-/// The open option's choices, above the composer. The current value is marked;
-/// anything else sends the choice to the daemon.
-fn menu_view(theme: &Theme, option: &ConfigOption, on_choose: &ChooseHandler) -> AnyElement {
+/// The open option's choices, above the composer: a popup of fixed width and
+/// bounded height, whatever the agent lists. The model menu gains tabs — the
+/// starred models first, the agent's own list grouped by who serves each
+/// model — and a star per row. The current value is marked; anything else
+/// sends the choice to the daemon.
+fn menu_view(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> AnyElement {
+    let tabbed = option.id == "model";
+
     let mut menu = div()
-        .w_full()
+        .w(px(MENU_WIDTH))
         .flex()
         .flex_col()
         .mb(px(8.))
@@ -218,7 +245,12 @@ fn menu_view(theme: &Theme, option: &ConfigOption, on_choose: &ChooseHandler) ->
         .border_1()
         .border_color(theme.border)
         .bg(theme.surface)
-        .child(
+        .shadow_md();
+
+    if tabbed {
+        menu = menu.child(tab_bar(theme, option, pickers));
+    } else {
+        menu = menu.child(
             div()
                 .px(px(8.))
                 .py(px(4.))
@@ -226,45 +258,281 @@ fn menu_view(theme: &Theme, option: &ConfigOption, on_choose: &ChooseHandler) ->
                 .text_color(theme.text_faint)
                 .child(option.label.clone()),
         );
-
-    for choice in &option.options {
-        let current = choice.id == option.current;
-        let id = option.id.clone();
-        let value = choice.id.clone();
-        let on_choose = on_choose.clone();
-        menu = menu.child(
-            div()
-                .id(SharedString::from(format!(
-                    "choice-{}-{}",
-                    option.id, choice.id
-                )))
-                .flex()
-                .items_center()
-                .gap(px(8.))
-                .px(px(8.))
-                .py(px(6.))
-                .rounded(px(6.))
-                .text_size(px(12.5))
-                .text_color(if current {
-                    theme.text
-                } else {
-                    theme.text_muted
-                })
-                .child(
-                    div()
-                        .w(px(14.))
-                        .flex_shrink_0()
-                        .text_color(theme.accent)
-                        .child(if current { "✓" } else { "" }),
-                )
-                .child(choice.label.clone())
-                .cursor_pointer()
-                .hover(move |style| style.bg(theme.hover))
-                .on_click(move |_, window, cx| on_choose(id.clone(), value.clone(), window, cx)),
-        );
     }
 
-    menu.into_any_element()
+    let mut rows = div().flex().flex_col();
+    if tabbed {
+        let tab = pickers
+            .tab
+            .unwrap_or_else(|| default_tab(pickers.favorites));
+        if tab == FAVORITES_TAB {
+            rows = favorite_rows(theme, option, pickers);
+        } else {
+            rows = grouped_rows(theme, option, pickers);
+        }
+    } else {
+        for choice in &option.options {
+            rows = rows.child(choice_row(theme, option, choice, pickers, false));
+        }
+    }
+
+    menu.child(
+        rows.id(SharedString::from(format!("menu-rows-{}", option.id)))
+            .max_h(px(MENU_MAX_HEIGHT))
+            .overflow_y_scroll(),
+    )
+    .into_any_element()
+}
+
+/// Without a choice from the user, favourites lead when they exist: that tab
+/// is the reason they were starred.
+fn default_tab(favorites: &[String]) -> &'static str {
+    if favorites.is_empty() {
+        MODELS_TAB
+    } else {
+        FAVORITES_TAB
+    }
+}
+
+/// The model menu's two tabs: what was starred, and what the agent serves.
+fn tab_bar(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> Div {
+    let active = pickers
+        .tab
+        .unwrap_or_else(|| default_tab(pickers.favorites));
+
+    div()
+        .flex()
+        .items_center()
+        .gap(px(2.))
+        .px(px(4.))
+        .pb(px(6.))
+        .border_b_1()
+        .border_color(theme.border)
+        .child(tab_button(
+            theme,
+            option,
+            FAVORITES_TAB,
+            "icons/star.svg",
+            "Favorites",
+            active == FAVORITES_TAB,
+            pickers,
+        ))
+        .child(tab_button(
+            theme,
+            option,
+            MODELS_TAB,
+            "icons/layers.svg",
+            pickers.agent_label,
+            active == MODELS_TAB,
+            pickers,
+        ))
+}
+
+fn tab_button<'a>(
+    theme: &Theme,
+    option: &ConfigOption,
+    id: &'static str,
+    path: &'static str,
+    label: &'a str,
+    on: bool,
+    pickers: &Pickers<'a>,
+) -> impl IntoElement + use<'a> {
+    let on_tab = pickers.on_tab.clone();
+    div()
+        .id(SharedString::from(format!("tab-{}-{}", option.id, id)))
+        .flex()
+        .items_center()
+        .gap(px(5.))
+        .px(px(8.))
+        .py(px(5.))
+        .rounded(px(6.))
+        .text_size(px(12.))
+        .text_color(if on { theme.text } else { theme.text_faint })
+        .when(on, |tab| tab.bg(theme.hover))
+        .child(icon(
+            path,
+            13.,
+            if on { theme.accent } else { theme.text_faint },
+        ))
+        .child(label.to_owned())
+        .cursor_pointer()
+        .hover(move |style| style.bg(theme.hover))
+        .on_click(move |_, window, cx| {
+            if !on {
+                on_tab(id.to_owned(), window, cx);
+            }
+        })
+}
+
+/// The agent's choices under one heading per provider, in the order the
+/// agent listed them. A list with no providers at all stays flat.
+fn grouped_rows(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> Div {
+    let groups = group_by_provider(&option.options);
+    let mut rows = div().flex().flex_col();
+
+    if groups.len() <= 1 {
+        for choice in &option.options {
+            rows = rows.child(choice_row(theme, option, choice, pickers, true));
+        }
+        return rows;
+    }
+
+    for (provider, choices) in groups {
+        rows = rows.child(
+            div()
+                .px(px(8.))
+                .pt(px(8.))
+                .pb(px(2.))
+                .text_size(px(11.5))
+                .text_color(theme.text_faint)
+                .child(provider_label(provider).to_owned()),
+        );
+        for choice in choices {
+            rows = rows.child(choice_row(theme, option, choice, pickers, true));
+        }
+    }
+    rows
+}
+
+/// The starred choices, in the order they were starred. A star that names a
+/// model the agent no longer serves is skipped.
+fn favorite_rows(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> Div {
+    let mut rows = div().flex().flex_col();
+    let mut shown = 0;
+
+    for id in pickers.favorites {
+        if let Some(choice) = option.options.iter().find(|choice| &choice.id == id) {
+            shown += 1;
+            rows = rows.child(choice_row(theme, option, choice, pickers, true));
+        }
+    }
+
+    if shown == 0 {
+        rows = rows.child(
+            div()
+                .px(px(8.))
+                .py(px(10.))
+                .text_size(px(12.))
+                .text_color(theme.text_faint)
+                .child("Star a model to pin it here."),
+        );
+    }
+    rows
+}
+
+/// One choice line: the agent's mark on the left, the cleaned name, and — for
+/// the model menu — the star. The star stops the click so choosing a model
+/// and starring it never fire together.
+fn choice_row(
+    theme: &Theme,
+    option: &ConfigOption,
+    choice: &circulo_protocol::ConfigChoice,
+    pickers: &Pickers<'_>,
+    starred: bool,
+) -> AnyElement {
+    let current = choice.id == option.current;
+    let id = option.id.clone();
+    let value = choice.id.clone();
+    let on_choose = pickers.on_choose.clone();
+    let star = pickers.on_star.clone();
+    let favorite = pickers.favorites.iter().any(|id| id == &choice.id);
+
+    let row = div()
+        .id(SharedString::from(format!(
+            "choice-{}-{}",
+            option.id, choice.id
+        )))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .px(px(8.))
+        .py(px(6.))
+        .rounded(px(6.))
+        .text_size(px(12.5))
+        .text_color(if current {
+            theme.text
+        } else {
+            theme.text_muted
+        })
+        .child(
+            div()
+                .w(px(14.))
+                .flex_shrink_0()
+                .text_color(theme.accent)
+                .child(if current { "✓" } else { "" }),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.))
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .child(choice.label.clone()),
+        );
+
+    let row = if starred {
+        let value = choice.id.clone();
+        row.child(
+            div()
+                .id(SharedString::from(format!(
+                    "star-{}-{}",
+                    option.id, choice.id
+                )))
+                .flex_shrink_0()
+                .p(px(2.))
+                .rounded(px(4.))
+                .cursor_pointer()
+                .hover(move |style| style.bg(theme.hover))
+                .child(icon(
+                    "icons/star.svg",
+                    14.,
+                    if favorite {
+                        theme.accent
+                    } else {
+                        theme.text_faint
+                    },
+                ))
+                .on_click(move |_, window, cx| {
+                    cx.stop_propagation();
+                    star(value.clone(), window, cx);
+                }),
+        )
+    } else {
+        row
+    };
+
+    row.cursor_pointer()
+        .hover(move |style| style.bg(theme.hover))
+        .on_click(move |_, window, cx| on_choose(id.clone(), value.clone(), window, cx))
+        .into_any_element()
+}
+
+/// Choices under their provider, in first-appearance order.
+fn group_by_provider(
+    choices: &[circulo_protocol::ConfigChoice],
+) -> Vec<(&str, Vec<&circulo_protocol::ConfigChoice>)> {
+    let mut groups: Vec<(&str, Vec<&circulo_protocol::ConfigChoice>)> = Vec::new();
+    for choice in choices {
+        let provider = choice.provider.as_str();
+        match groups.iter_mut().find(|(name, _)| name == &provider) {
+            Some((_, group)) => group.push(choice),
+            None => groups.push((provider, vec![choice])),
+        }
+    }
+    groups
+}
+
+/// The provider's name as a person would read it. The map covers the agents
+/// seen so far; anything else shows its slug, which is at least honest.
+fn provider_label(provider: &str) -> &str {
+    match provider {
+        "deepseek" => "DeepSeek",
+        "minimax-coding-plan" => "MiniMax",
+        "opencode" => "OpenCode",
+        "zai-coding-plan" => "Z.ai",
+        other => other,
+    }
 }
 
 fn send(theme: &Theme, running: bool, can_send: bool, on_send: SendHandler) -> impl IntoElement {

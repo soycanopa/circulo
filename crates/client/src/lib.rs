@@ -28,6 +28,9 @@ type Socket = WebSocket<MaybeTlsStream<TcpStream>>;
 
 pub struct Client {
     socket: Socket,
+    /// The provider behind the daemon, as the handshake announced it
+    /// ("opencode"). Presentation state: the pickers name their tabs after it.
+    daemon: String,
 }
 
 impl Client {
@@ -46,10 +49,15 @@ impl Client {
         )?;
 
         match next(&mut socket)? {
-            Some(ServerMessage::Welcome { .. }) => Ok(Self { socket }),
+            Some(ServerMessage::Welcome { daemon, .. }) => Ok(Self { socket, daemon }),
             Some(ServerMessage::Error { message }) => Err(ClientError::Refused(message)),
             other => Err(ClientError::Unexpected(format!("{other:?}"))),
         }
+    }
+
+    /// The provider behind the daemon, from the handshake.
+    pub fn daemon(&self) -> &str {
+        &self.daemon
     }
 
     /// Opens a session and returns its id.
