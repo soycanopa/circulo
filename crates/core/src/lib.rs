@@ -19,8 +19,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use circulo_persistence::{Store, StoreError};
 use circulo_protocol::{
-    FinishReason, HistoryTurn, PermissionRequest, Question, QuestionAction, ServerMessage,
-    SessionSummary,
+    ConfigOption, FinishReason, HistoryTurn, PermissionRequest, Question, QuestionAction,
+    ServerMessage, SessionSummary,
 };
 use circulo_provider::{Answer, Asker, Decision, Driver};
 use uuid::Uuid;
@@ -150,6 +150,32 @@ impl Core {
 
     pub fn driver_name(&self) -> &'static str {
         self.driver.name()
+    }
+
+    /// The agent's current settings for a session the client holds open.
+    /// Spawning an agent takes a moment, so the daemon asks from its own
+    /// thread; an unknown session reads as an error message.
+    pub fn load_options(&self, session: &str) -> Result<Vec<ConfigOption>, String> {
+        if !self.has_session(session) {
+            return Err(format!("unknown session {session}"));
+        }
+        self.driver.options().map_err(|error| error.to_string())
+    }
+
+    /// Applies the user's choice and returns the refreshed list, as the agent
+    /// reports it.
+    pub fn set_option(
+        &self,
+        session: &str,
+        id: &str,
+        value: &str,
+    ) -> Result<Vec<ConfigOption>, String> {
+        if !self.has_session(session) {
+            return Err(format!("unknown session {session}"));
+        }
+        self.driver
+            .set_option(id, value)
+            .map_err(|error| error.to_string())
     }
 
     /// Opens a session and returns its id. The project is recorded but nothing
@@ -362,6 +388,18 @@ mod tests {
             });
             Ok(())
         }
+
+        fn options(&self) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Ok(Vec::new())
+        }
+
+        fn set_option(
+            &self,
+            _id: &str,
+            _value: &str,
+        ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Err(DriverError::new("this agent has no settings"))
+        }
     }
 
     /// A driver that asks a question and reports what it was told.
@@ -400,6 +438,18 @@ mod tests {
             emit(Part::Text { delta });
             Ok(())
         }
+
+        fn options(&self) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Ok(Vec::new())
+        }
+
+        fn set_option(
+            &self,
+            _id: &str,
+            _value: &str,
+        ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Err(DriverError::new("this agent has no settings"))
+        }
     }
 
     struct Broken;
@@ -417,6 +467,18 @@ mod tests {
         ) -> Result<(), DriverError> {
             Err(DriverError::new("no"))
         }
+
+        fn options(&self) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Ok(Vec::new())
+        }
+
+        fn set_option(
+            &self,
+            _id: &str,
+            _value: &str,
+        ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Err(DriverError::new("this agent has no settings"))
+        }
     }
 
     fn core_with(driver: Arc<dyn Driver>) -> Core {
@@ -426,6 +488,24 @@ mod tests {
     fn core_with_store(driver: Arc<dyn Driver>) -> Core {
         let store = Arc::new(circulo_persistence::Store::in_memory().expect("store"));
         Core::with_store(driver, Some(store))
+    }
+
+    #[test]
+    fn options_need_an_open_session_and_follow_the_driver() {
+        let core = core_with(Arc::new(Echo));
+        assert!(core.load_options("missing").is_err());
+        assert!(core.set_option("missing", "model", "x").is_err());
+
+        let session = core.start_session(None);
+        assert_eq!(
+            core.load_options(&session).expect("options"),
+            Vec::new(),
+            "the echo agent has no settings"
+        );
+        assert!(
+            core.set_option(&session, "model", "x").is_err(),
+            "and nothing to set"
+        );
     }
 
     #[test]
@@ -529,6 +609,18 @@ mod tests {
             };
             emit(Part::Text { delta });
             Ok(())
+        }
+
+        fn options(&self) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Ok(Vec::new())
+        }
+
+        fn set_option(
+            &self,
+            _id: &str,
+            _value: &str,
+        ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Err(DriverError::new("this agent has no settings"))
         }
     }
 

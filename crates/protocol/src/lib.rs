@@ -63,6 +63,14 @@ pub enum ClientRequest {
     /// Continue a session the database already holds. The daemon answers with
     /// its history.
     OpenSession { session: String },
+    /// Apply one of the agent's own settings. The daemon answers with
+    /// `Options` carrying the refreshed list, or `Error` when the session is
+    /// unknown or the agent refuses the choice.
+    SetOption {
+        session: String,
+        id: String,
+        value: String,
+    },
 }
 
 impl ClientRequest {
@@ -86,6 +94,7 @@ const CLIENT_TYPES: &[&str] = &[
     "answer_question",
     "list_sessions",
     "open_session",
+    "set_option",
 ];
 const SERVER_TYPES: &[&str] = &[
     "welcome",
@@ -97,6 +106,7 @@ const SERVER_TYPES: &[&str] = &[
     "question_asked",
     "sessions",
     "history",
+    "options",
     "error",
 ];
 
@@ -152,6 +162,13 @@ pub enum ServerMessage {
         session: String,
         turns: Vec<HistoryTurn>,
     },
+    /// The agent's current settings. The daemon pushes this after a session
+    /// opens and after every accepted `SetOption`, so the pickers always show
+    /// what the agent reports rather than what the client remembers.
+    Options {
+        session: String,
+        options: Vec<ConfigOption>,
+    },
     Error {
         message: String,
     },
@@ -192,6 +209,28 @@ pub struct PermissionOption {
     /// The agent's wording, shown as-is.
     pub label: String,
     pub kind: PermissionOptionKind,
+}
+
+/// One agent-owned setting, such as the model. The client never invents
+/// values: `current` and every choice id come from the agent, and the daemon
+/// sends the chosen id back verbatim.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigOption {
+    /// Provider-owned id, sent back verbatim in `SetOption` (`"model"`).
+    pub id: String,
+    /// The agent's wording, shown as-is (`"Model"`).
+    pub label: String,
+    /// The current value's id, e.g. `"opencode/deepseek-v4.1-flash-free"`.
+    pub current: String,
+    pub options: Vec<ConfigChoice>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigChoice {
+    /// Provider-owned value id, sent back verbatim.
+    pub id: String,
+    /// The agent's wording, shown as-is.
+    pub label: String,
 }
 
 /// What the agent wants to know. `message` is the agent's own wording; `fields`
@@ -416,6 +455,24 @@ mod tests {
                     parts: vec![Part::Text { delta: "hi".into() }],
                 }],
             },
+            ServerMessage::Options {
+                session: "s1".into(),
+                options: vec![ConfigOption {
+                    id: "model".into(),
+                    label: "Model".into(),
+                    current: "b".into(),
+                    options: vec![
+                        ConfigChoice {
+                            id: "a".into(),
+                            label: "A".into(),
+                        },
+                        ConfigChoice {
+                            id: "b".into(),
+                            label: "B".into(),
+                        },
+                    ],
+                }],
+            },
             ServerMessage::Error {
                 message: "nope".into(),
             },
@@ -438,6 +495,11 @@ mod tests {
             ClientRequest::Prompt {
                 session: "s1".into(),
                 text: "ship it".into(),
+            },
+            ClientRequest::SetOption {
+                session: "s1".into(),
+                id: "model".into(),
+                value: "b".into(),
             },
         ];
 

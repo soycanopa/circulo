@@ -27,6 +27,26 @@ import json, os, sys
 
 MODE = os.environ.get("FAKE_ACP_MODE", "permission")
 
+CONFIG = {
+    "model": {"name": "Model",
+              "options": [("opus", "Opus"), ("sonnet", "Sonnet")],
+              "current": "sonnet"},
+    "effort": {"name": "Effort",
+               "options": [("low", "Low"), ("high", "High")],
+               "current": "low"},
+}
+
+# A fresh agent session starts here, the way the real binary resets a set
+# that only lasted for the previous session.
+DEFAULTS = {key: entry["current"] for key, entry in CONFIG.items()}
+
+def config_options():
+    return [{"id": key, "name": entry["name"], "type": "select",
+             "currentValue": entry["current"],
+             "options": [{"value": value, "name": name}
+                         for value, name in entry["options"]]}
+            for key, entry in CONFIG.items()]
+
 def send(message):
     sys.stdout.write(json.dumps(message) + "\n")
     sys.stdout.flush()
@@ -39,7 +59,21 @@ for line in sys.stdin:
         send({"jsonrpc": "2.0", "id": message["id"],
               "result": {"protocolVersion": 1, "agentCapabilities": {}}})
     elif method == "session/new":
-        send({"jsonrpc": "2.0", "id": message["id"], "result": {"sessionId": "s1"}})
+        for key, value in DEFAULTS.items():
+            CONFIG[key]["current"] = value
+        send({"jsonrpc": "2.0", "id": message["id"],
+              "result": {"sessionId": "s1", "configOptions": config_options()}})
+    elif method == "session/set_config_option":
+        params = message.get("params", {})
+        entry = CONFIG.get(params.get("configId"))
+        values = [value for value, _ in entry["options"]] if entry else []
+        if entry is None or params.get("value") not in values:
+            send({"jsonrpc": "2.0", "id": message["id"],
+                  "error": {"code": -32602, "message": "unknown option or value"}})
+        else:
+            entry["current"] = params["value"]
+            send({"jsonrpc": "2.0", "id": message["id"],
+                  "result": {"configOptions": config_options()}})
     elif method == "session/prompt" and MODE == "question":
         send({"jsonrpc": "2.0", "id": 901, "method": "elicitation/create",
               "params": {
@@ -284,4 +318,57 @@ fn a_cancelled_request_reads_as_cancelled_on_the_agent_side() {
     let (parts, _) = run(&agent, None);
 
     assert_eq!(text(&parts), "chosen=cancelled");
+}
+
+/// A driver and the scripted agent it spawns. The agent stays alive for the
+/// test: every call starts a new process from its files.
+fn driver(name: &str) -> (ScriptedAgent, OpenCode) {
+    let agent = ScriptedAgent::new(name);
+    let driver = OpenCode::with_binary(agent.directory.clone(), agent.binary());
+    (agent, driver)
+}
+
+#[test]
+fn options_lists_what_the_agent_reports() {
+    let (_agent, driver) = driver("options-list");
+    let options = driver.options().expect("options");
+
+    assert_eq!(
+        options.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(),
+        vec!["model", "effort"]
+    );
+    let effort = &options[1];
+    assert_eq!(effort.label, "Effort");
+    assert_eq!(effort.current, "low");
+    assert_eq!(effort.options.len(), 2);
+}
+
+#[test]
+fn a_choice_applies_and_survives_a_fresh_session() {
+    let (_agent, driver) = driver("options-set");
+
+    let options = driver.set_option("effort", "high").expect("set");
+    let effort = options
+        .iter()
+        .find(|option| option.id == "effort")
+        .expect("effort");
+    assert_eq!(effort.current, "high");
+
+    // The next call spawns a new agent, whose `session/new` resets to the
+    // default: the driver re-applies the stored choice, the way a per-turn
+    // process keeps the user's pick.
+    let options = driver.options().expect("options again");
+    let effort = options
+        .iter()
+        .find(|option| option.id == "effort")
+        .expect("effort");
+    assert_eq!(effort.current, "high");
+}
+
+#[test]
+fn an_unknown_option_or_value_is_an_error() {
+    let (_agent, driver) = driver("options-bad");
+
+    assert!(driver.set_option("nope", "high").is_err());
+    assert!(driver.set_option("effort", "ludicrous").is_err());
 }

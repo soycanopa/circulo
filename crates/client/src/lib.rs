@@ -121,6 +121,21 @@ impl Client {
         )
     }
 
+    /// Applies one of the agent's settings. The daemon answers with the
+    /// refreshed `Options`, or an `Error` for an unknown session or a choice
+    /// the agent refuses.
+    pub fn set_option(&mut self, session: &str, id: &str, value: &str) -> Result<(), ClientError> {
+        send(
+            &mut self.socket,
+            &ClientRequest::SetOption {
+                session: session.to_owned(),
+                id: id.to_owned(),
+                value: value.to_owned(),
+            }
+            .encode()?,
+        )
+    }
+
     /// Answers a permission request. `option` is one of the ids the daemon
     /// offered; `None` cancels, which is only right when the turn is going
     /// away.

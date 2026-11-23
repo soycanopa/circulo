@@ -137,6 +137,7 @@ Agent text is CommonMark plus the GitHub extensions agents actually write (table
 - [x] Editable input: buffer, block caret, insertion at the caret, backspace/delete, left/right/home/end. Enter sends, Shift+Enter breaks the line; the field grows to four lines and then scrolls. `CIRCULO_PROMPT` seeds a draft.
 - [x] Input surface with placeholder.
 - [x] Shared controls: model, reasoning effort, access mode, agent mode; send button.
+- [x] Model, effort and mode pickers fed by the daemon's `Options`: click opens the agent's choices with the current one marked, Escape closes, choosing sends `SetOption` and the refreshed list redraws the labels. Access stays a mock label.
 - [x] Footer: project, `Local`, branch, activity indicator.
 - [ ] Provider glyph in the model picker.
 - [ ] Real menus, queue and steer affordances, usage gauge, attachments.

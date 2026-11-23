@@ -23,7 +23,7 @@ Order matters: prove the pipe before adding a real provider to it.
 8. [x] Local persistence (SQLite), owned by the core: sessions, turns and parts in `~/.circulo/circulo.db` (`CIRCULO_HOME` overrides), the app reopens the newest session with its history. Settings and the attachment store still follow.
 
 ## Phase 2 — Shared control surface
-- Model / reasoning effort discovery and switching (`session/new` returns `configOptions`; `session/set_config_option`)
+- [x] Model / reasoning effort discovery and switching (`session/new` returns `configOptions`; `session/set_config_option`)
 - Message queue + steering
 - Abort
 

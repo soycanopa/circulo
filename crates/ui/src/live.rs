@@ -133,11 +133,13 @@ impl Transcript {
                 self.status.error = Some(message);
             }
             // Welcome and session messages are handled before a transcript
-            // exists, or are not transcript content. The session list and a
-            // stored transcript arrive before the window is built.
+            // exists, or are not transcript content. The session list, the
+            // options and a stored transcript arrive before the window is
+            // built, or are owned by the shell.
             ServerMessage::Welcome { .. }
             | ServerMessage::SessionStarted { .. }
             | ServerMessage::Sessions { .. }
+            | ServerMessage::Options { .. }
             | ServerMessage::History { .. } => {}
         }
     }

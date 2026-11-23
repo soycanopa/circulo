@@ -2,8 +2,8 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-21, after free-text answers closed the question card. `main`
-is at `3e94d95`; 78 tests green; CI covers fmt + clippy + test on macOS.
+Last updated: 2026-11-21, model/mode pickers branch. `main` is at `3e94d95`;
+83 tests green; CI covers fmt + clippy + test on macOS.
 
 ## 1. What works today
 
@@ -42,6 +42,13 @@ and exercises the shapes.
 **Composer**: typeable (`crates/ui/src/input.rs`), Enter sends, Shift+Enter breaks
 the line, block caret, grows to four lines then scrolls. No selection, undo, IME
 or paste yet.
+
+**Pickers**: model, effort and mode draw the daemon's `Options` (neutral
+`ConfigOption`/`ConfigChoice`; `SetOption` back). Click opens the agent's
+choices with the current one marked, Escape closes, choosing returns the
+refreshed list. The driver keeps the choices and re-applies them after every
+`session/new`, because a set dies with its agent session (probed: a fresh
+session resets `effort` to `default`). Access stays a mock label.
 
 **Storage** (`crates/persistence`, rusqlite bundled): sessions, turns and parts in
 `~/.circulo/circulo.db`; `CIRCULO_HOME` overrides the directory. The core writes
@@ -88,45 +95,36 @@ the daemon at that script.
 project-level `permission` config does not change ACP behaviour; the ACP session
 advertises `loadSession: true` (unused so far).
 
-## 3. Next task: model and mode pickers
+## 3. Next task: session continuity
 
-**Why:** `docs/implement.md` Phase 2 starts here. The composer already draws model
-/ reasoning / access / mode pickers, but they are `mock.rs` labels and do nothing.
-ACP's `session/new` returns `configOptions`, and switching uses
-`session/set_config_option`.
+**Why:** one `opencode acp` process per turn means the agent never remembers;
+history is display-only. The ACP session advertises `loadSession: true`
+(unused so far), and the daemon already persists turns in SQLite.
 
 **Plan:**
-1. Read the ACP schema for `configOptions` (likely `configOptions: [{id, name,
-   currentValue, options:[{value,name}]}]`) and `session/set_config_option`
-   before writing anything; do not invent the shape.
-2. OpenCode adapter: keep what `session/new` returns, expose it, and send the set
-   request when the user picks something. The provider also has to report a
-   changed config even when the change has no turn attached.
-3. Protocol: a message carrying the available options with their current values,
-   and a request to set one. Additive, like the permission pair.
-4. UI: the two mock pickers become menus fed by the daemon, showing the agent's
-   current value; the rest (access, agent mode) keep their labels until they map
-   to a real option.
-5. Verify against OpenCode 2.3.2: list models, switch one, send a turn, confirm
-   the agent used it. A switch must survive the per-turn process for now, which
-   means re-applying it in the next `session/new`.
+1. Keep one agent process per Circulo session instead of one per turn: create
+   the ACP session once and reuse it across turns.
+2. On daemon restart, `session/load` the stored session so the agent resumes
+   where it left off.
+3. The stored option overrides become the initial `set_config_option` calls on
+   the long-lived session; a user switch mid-session applies directly.
+4. A switch mid-turn takes effect on the next turn; document it.
+5. Verify against OpenCode 2.3.2: two turns in one session share context, a
+   restart resumes, and a switch applies without a new process.
 
 ## 4. After that, in plan order
 
-1. **Session continuity.** One `opencode acp` process per session instead of per
-   turn, and `session/load`, so the agent remembers. Until then, history is
-   display-only.
-2. **Steering and abort** (Phase 2): queue a message mid-turn, cancel a turn.
+1. **Steering and abort** (Phase 2): queue a message mid-turn, cancel a turn.
    Abort must also cancel open permission/question requests.
-3. **Git checkpoints and rewind** (Phase 3), with `crates/git` still an empty
+2. **Git checkpoints and rewind** (Phase 3), with `crates/git` still an empty
    scaffold.
-4. **A second provider** (Claude Code or Codex) to prove the Driver trait.
-5. **Clickable links and math** in markdown. Links need GPUI text hit-testing,
+3. **A second provider** (Claude Code or Codex) to prove the Driver trait.
+4. **Clickable links and math** in markdown. Links need GPUI text hit-testing,
    which 0.2.2 does not expose: either keep the text layout plus element bounds,
    or build an inline layout from word-sized elements.
-6. **Settings (JSON) and the attachment blob store**, the two pieces
+5. **Settings (JSON) and the attachment blob store**, the two pieces
    `docs/implement.md` Phase 1 leaves open inside persistence.
-7. **Remote/pairing** (`docs/remote.md`): QR with a saved tailcat key + `--allow`;
+6. **Remote/pairing** (`docs/remote.md`): QR with a saved tailcat key + `--allow`;
    the desktop owns the tunnel. `tailcat` is not installed here. Open question:
    what the QR payload carries.
 
@@ -134,14 +132,14 @@ ACP's `session/new` returns `configOptions`, and switching uses
 
 | Crate | Role |
 |---|---|
-| `crates/protocol` | Wire contract, version 1: `Hello`, `ClientRequest`, `ServerMessage`, `Part`, `PermissionRequest`, `Question`, `SessionSummary`, `HistoryTurn`. One JSON per WebSocket text frame; unknown types skipped. |
+| `crates/protocol` | Wire contract, version 1: `Hello`, `ClientRequest` (+`SetOption`), `ServerMessage` (+`Options`), `Part`, `PermissionRequest`, `Question`, `ConfigOption`, `SessionSummary`, `HistoryTurn`. One JSON per WebSocket text frame; unknown types skipped. |
 | `crates/core` | Sessions, turn orchestration, the permission/question broker, translation between storage and wire. Speaks only the Driver trait. |
 | `crates/persistence` | SQLite: sessions, turns, parts. Owned by the core; nobody else opens it. |
 | `crates/daemon` | Loopback WebSocket, token handshake, reader + writer per connection, provider chosen by `CIRCULO_PROVIDER`, database from `CIRCULO_HOME`. |
 | `crates/client` | Handshake, blocking read loop, a splittable writer half. No GPUI. |
-| `crates/providers/driver` | `Driver { name, start_turn(prompt, ask, emit) }` and `Asker { permission, question }`. |
+| `crates/providers/driver` | `Driver { name, start_turn(prompt, ask, emit), options(), set_option(id, value) }` and `Asker { permission, question }`. Choices survive per-turn processes: the driver re-applies them. |
 | `crates/providers/demo` | Canned turn, no auth. |
-| `crates/providers/opencode` | ACP over stdio; one process per turn; permission and elicitation mapped to cards. |
+| `crates/providers/opencode` | ACP over stdio; one process per turn; permission and elicitation mapped to cards; `configOptions` listed and set, re-applied after every `session/new`. |
 | `crates/ui` | GPUI views and presentation state: shell, sidebar, transcript, markdown, composer, input, cards. |
 | `crates/app` | Composition root + supervisor: spawns the daemon, connects, reopens the last session, opens the window. |
 
