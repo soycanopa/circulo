@@ -2,6 +2,7 @@
 
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
+use std::sync::mpsc::channel;
 use std::thread;
 
 use circulo_daemon::Daemon;
@@ -19,10 +20,12 @@ fn main() -> ExitCode {
     println!("{}", daemon.announcement());
     let _ = io::stdout().flush();
 
-    // One lifecycle: when the supervisor goes away, its end of our stdin closes
-    // and we exit with it. This survives a SIGKILL of the parent, where no
-    // graceful shutdown would run.
-    thread::spawn(|| {
+    // One lifecycle: when the supervisor goes away, its end of our stdin
+    // closes and the serve loop winds down — cards cancelled, agents released
+    // by the driver, destructors run. This survives a SIGKILL of the parent,
+    // where no graceful shutdown would run.
+    let (fire, stopped) = channel();
+    thread::spawn(move || {
         let mut stdin = io::stdin();
         let mut buffer = [0u8; 64];
         loop {
@@ -31,8 +34,9 @@ fn main() -> ExitCode {
                 Ok(_) => {}
             }
         }
-        std::process::exit(0);
+        let _ = fire.send(());
     });
 
-    daemon.serve();
+    daemon.serve_until(stopped);
+    ExitCode::SUCCESS
 }

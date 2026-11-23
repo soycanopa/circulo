@@ -74,6 +74,11 @@ pub trait Driver: Send + Sync {
         id: &str,
         value: &str,
     ) -> Result<Vec<ConfigOption>, DriverError>;
+
+    /// The daemon is going away: release everything the provider keeps
+    /// alive — its agent processes above all. Turns still in flight end on
+    /// their own; no child process may outlive this call.
+    fn shutdown(&self) {}
 }
 
 /// The user, as the provider sees it. The core implements this; a provider only

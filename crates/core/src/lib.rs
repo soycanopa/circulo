@@ -148,6 +148,14 @@ impl Core {
         self.questions.cancel_all();
     }
 
+    /// The daemon is on its way out: open cards can no longer be answered,
+    /// and the provider must let its agents go — their processes belong to
+    /// the provider, and this is what keeps none of them behind.
+    pub fn shutdown(&self) {
+        self.cancel_permissions();
+        self.driver.shutdown();
+    }
+
     pub fn driver_name(&self) -> &'static str {
         self.driver.name()
     }

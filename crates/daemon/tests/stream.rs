@@ -134,6 +134,45 @@ fn the_wrong_token_is_refused() {
 }
 
 #[test]
+fn a_shutdown_stops_the_listener_and_frees_the_port() {
+    use std::net::TcpStream;
+    use std::sync::mpsc::channel;
+
+    let (daemon, url, token) = daemon();
+    let (fire, stopped) = channel();
+    thread::spawn(move || daemon.serve_until(stopped));
+
+    // A turn goes through first: the shutdown must not disturb served work.
+    let mut client = Client::connect(&url, &token).expect("handshake");
+    let session = client.start_session(None).expect("session");
+    client.prompt(&session, "before the end").expect("prompt");
+    while let Some(message) = client.next_message().expect("message") {
+        if matches!(message, ServerMessage::TurnFinished { .. }) {
+            break;
+        }
+    }
+
+    // The supervisor's stdin closed: the daemon winds down and returns,
+    // destructors included.
+    fire.send(()).expect("fire");
+
+    let host_port = url.trim_start_matches("ws://").to_owned();
+    let mut refused = false;
+    for _ in 0..100 {
+        match TcpStream::connect(&host_port) {
+            // The connection may still land on a socket that accept already
+            // drained; only a hard refusal proves the listener is closed.
+            Err(_) => {
+                refused = true;
+                break;
+            }
+            Ok(_) => thread::sleep(std::time::Duration::from_millis(20)),
+        }
+    }
+    assert!(refused, "the daemon kept listening after the shutdown");
+}
+
+#[test]
 fn an_unknown_session_comes_back_as_an_error() {
     let (daemon, url, token) = daemon();
     thread::spawn(move || daemon.serve());

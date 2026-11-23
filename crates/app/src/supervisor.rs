@@ -1,13 +1,16 @@
 //! The daemon process, owned by the app.
 //!
 //! One supervisor, one lifecycle: the app starts `circulo-daemon` next to its
-//! own binary, reads the announcement line it prints, and kills it on quit so
-//! there is no listener left behind. The tailcat tunnel will be started the same
-//! way, from the same place, when remote lands.
+//! own binary, reads the announcement line it prints, and lets go of its stdin
+//! on quit, which winds the daemon down cleanly — only a daemon that refuses
+//! to die is killed. The tailcat tunnel will be started the same way, from the
+//! same place, when remote lands.
 
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::thread;
+use std::time::Duration;
 
 use serde::Deserialize;
 
@@ -20,9 +23,9 @@ struct Announcement {
 pub struct Daemon {
     child: Child,
     /// Held open for as long as the app lives. When it closes — a crash, a
-    /// SIGKILL, a normal quit — the daemon sees EOF and exits, so no listener
-    /// outlives us.
-    _stdin: ChildStdin,
+    /// SIGKILL, a normal quit — the daemon sees EOF and shuts down, so no
+    /// listener and no agent process outlives us.
+    stdin: Option<ChildStdin>,
     url: String,
     token: String,
 }
@@ -52,7 +55,7 @@ impl Daemon {
 
         Ok(Self {
             child,
-            _stdin: stdin,
+            stdin: Some(stdin),
             url,
             token,
         })
@@ -69,6 +72,16 @@ impl Daemon {
 
 impl Drop for Daemon {
     fn drop(&mut self) {
+        // Closing stdin is the polite ask: the daemon winds down and takes
+        // its agent processes with it. It gets a moment to do that; only a
+        // daemon that refuses to die is killed outright.
+        drop(self.stdin.take());
+        for _ in 0..40 {
+            if matches!(self.child.try_wait(), Ok(Some(_))) {
+                return;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
