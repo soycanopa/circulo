@@ -2,8 +2,8 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-23, session-continuity branch (PR open against
-`fb0239a`); 99 tests green; CI covers fmt + clippy + test on macOS. The
+Last updated: 2026-11-23, pickers-and-settings branch (PR open against
+`f10adcd`); 104 tests green; CI covers fmt + clippy + test on macOS. The
 model-call tests in `tests/real.rs` need OpenCode credit, which this account
 has none of right now (2026-11-23): they fail with "Insufficient balance".
 The no-model-call load probe (`cargo test -p circulo-provider-opencode
@@ -48,12 +48,23 @@ the line, block caret, grows to four lines then scrolls. No selection, undo, IME
 or paste yet.
 
 **Pickers**: model, effort and mode draw the daemon's `Options` (neutral
-`ConfigOption`/`ConfigChoice`; `SetOption` back). Click opens the agent's
-choices with the current one marked, Escape closes, choosing returns the
-refreshed list. Choices survive sessions: the driver re-applies them
-whenever it attaches, and a switch made mid-turn lands at the turn's end
-(the picker sees it at once, the session reads it next turn). Access stays
-a mock label.
+`ConfigOption`/`ConfigChoice`; `SetOption` back). Menus are compact popups
+(360 × 320, scrolling): the model menu has two tabs — **Favorites** (star
+icon) and the agent's name from the handshake — a star per row stores the
+choice through the settings wire, and the agent's list is grouped under a
+heading per provider (`ConfigChoice.provider`, filled by the driver, which
+also strips the vendor tag from names: `deepseek/DeepSeek V4 Pro` reads
+`DeepSeek V4 Pro` under a `DeepSeek` heading). Click opens the choices with
+the current one marked, Escape closes, choosing returns the refreshed list.
+Choices survive sessions: the driver re-applies them whenever it attaches,
+and a switch made mid-turn lands at the turn's end (the picker sees it at
+once, the session reads it next turn). Access stays a mock label.
+
+**Settings**: the `settings` table (SQLite schema 3) stores the client's own
+key/value JSON — `favorites.model` is a list of choice ids. The wire carries
+`GetSettings`, `SetSetting` and a `Settings` message with the whole map; the
+shell loads favourites at startup and redraws from the daemon's answer, never
+from a local hope. A memory-only daemon refuses to store with an error.
 
 **Continuity** (`crates/providers/opencode`, spec in `docs/providers/opencode.md`):
 one `opencode acp` child per Circulo session — the agent remembers across
@@ -213,6 +224,11 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   session applies directly.
 - **Replays are skipped, not rendered**: `session/load` history already
   lives in the database; drawing the agent's replay again would double it.
+- **The driver cleans its own names**: `ConfigChoice.provider` and the
+  stripped display label come from the driver, which knows its protocol;
+  the UI groups and paints, and never parses ids.
+- **Settings are opaque JSON to the core**: the shell decides what a key
+  means; the store and the wire carry the map whole.
 - **SQLite with rusqlite (bundled)** at `~/.circulo/circulo.db`; `CIRCULO_HOME`
   overrides. A daemon without a database still serves turns.
 - **`serde_json` `preserve_order` in the provider**, so a form's fields keep the

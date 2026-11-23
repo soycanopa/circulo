@@ -31,6 +31,7 @@
 | User bubble | max 520 wide, radius 12, padding 15 × 9, right-aligned |
 | Composer | 24 horizontal inset, radius 14, 13 padding, 12 between input and controls |
 | Picker | 26 high, radius 6 |
+| Picker menu | 360 wide, 320 tall at most, radius 10, scroll, surface + border + shadow |
 | Send | 28 circle |
 
 The transcript scrolls under the composer; the composer and its footer stay at the bottom of the main column.
@@ -138,9 +139,10 @@ Agent text is CommonMark plus the GitHub extensions agents actually write (table
 - [x] Input surface with placeholder.
 - [x] Shared controls: model, reasoning effort, access mode, agent mode; send button.
 - [x] Model, effort and mode pickers fed by the daemon's `Options`: click opens the agent's choices with the current one marked, Escape closes, choosing sends `SetOption` and the refreshed list redraws the labels. Access stays a mock label.
+- [x] Compact menus (360 × 320, scrolling): the model menu has two tabs — **Favorites** (star icon) and the agent's name (layers icon), the star on every row, starred models stored through the settings wire and leading the menu when they exist — and the agent's list grouped under one heading per provider (`DeepSeek`, `OpenCode`, …), with the vendor tag stripped from each name by the driver. Effort and mode share the container without tabs.
 - [x] Footer: project, `Local`, branch, activity indicator.
-- [ ] Provider glyph in the model picker.
-- [ ] Real menus, queue and steer affordances, usage gauge, attachments.
+- [x] Provider glyph in the model picker: the tab carries the agent's name and the layers icon.
+- [ ] Queue and steer affordances, usage gauge, attachments.
 - [ ] The empty-state folder picker and the “don’t work in a project” action (both need the core).
 - [ ] Selection, undo, IME composition, and paste: the buffer is deliberately single-carets-at-the-end-of-a-line for now (`crates/ui/src/input.rs`).
 
