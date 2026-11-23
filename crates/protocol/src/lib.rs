@@ -20,7 +20,11 @@ use serde_json::Value;
 
 /// Bumped whenever a message changes shape. Clients send it in the handshake
 /// and the daemon refuses a mismatch instead of guessing.
-pub const PROTOCOL_VERSION: u32 = 1;
+///
+/// 2: `ConfigChoice` carries its provider, and the settings messages arrived
+/// (`GetSettings`/`SetSetting`/`Settings`). A peer at 1 would fail to decode
+/// a choice without its `provider` field.
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// The first line a client sends.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
