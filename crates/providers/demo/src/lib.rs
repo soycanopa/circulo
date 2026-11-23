@@ -156,10 +156,12 @@ fn demo_options(overrides: &BTreeMap<String, String>) -> Vec<ConfigOption> {
                 ConfigChoice {
                     id: "demo-fast".into(),
                     label: "Demo Fast".into(),
+                    provider: "demo".into(),
                 },
                 ConfigChoice {
                     id: "demo-deep".into(),
                     label: "Demo Deep".into(),
+                    provider: "demo".into(),
                 },
             ],
         },
@@ -174,14 +176,17 @@ fn demo_options(overrides: &BTreeMap<String, String>) -> Vec<ConfigOption> {
                 ConfigChoice {
                     id: "low".into(),
                     label: "Low".into(),
+                    provider: String::new(),
                 },
                 ConfigChoice {
                     id: "medium".into(),
                     label: "Medium".into(),
+                    provider: String::new(),
                 },
                 ConfigChoice {
                     id: "high".into(),
                     label: "High".into(),
+                    provider: String::new(),
                 },
             ],
         },

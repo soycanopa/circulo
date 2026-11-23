@@ -16,10 +16,15 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// Bumped whenever a message changes shape. Clients send it in the handshake
 /// and the daemon refuses a mismatch instead of guessing.
-pub const PROTOCOL_VERSION: u32 = 1;
+///
+/// 2: `ConfigChoice` carries its provider, and the settings messages arrived
+/// (`GetSettings`/`SetSetting`/`Settings`). A peer at 1 would fail to decode
+/// a choice without its `provider` field.
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// The first line a client sends.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,6 +76,12 @@ pub enum ClientRequest {
         id: String,
         value: String,
     },
+    /// The client's own settings — interface state such as favourite models.
+    /// The daemon answers with `Settings` carrying everything it has.
+    GetSettings,
+    /// Store one setting. The daemon answers with `Settings` carrying
+    /// everything it has, the way a picker redraws from the whole list.
+    SetSetting { key: String, value: Value },
 }
 
 impl ClientRequest {
@@ -95,6 +106,8 @@ const CLIENT_TYPES: &[&str] = &[
     "list_sessions",
     "open_session",
     "set_option",
+    "get_settings",
+    "set_setting",
 ];
 const SERVER_TYPES: &[&str] = &[
     "welcome",
@@ -107,6 +120,7 @@ const SERVER_TYPES: &[&str] = &[
     "sessions",
     "history",
     "options",
+    "settings",
     "error",
 ];
 
@@ -169,6 +183,12 @@ pub enum ServerMessage {
         session: String,
         options: Vec<ConfigOption>,
     },
+    /// The client's own settings, the whole map. The daemon answers
+    /// `GetSettings` and `SetSetting` with this, so the client always redraws
+    /// from what is stored, not from what it hopes is stored.
+    Settings {
+        settings: BTreeMap<String, Value>,
+    },
     Error {
         message: String,
     },
@@ -229,8 +249,14 @@ pub struct ConfigOption {
 pub struct ConfigChoice {
     /// Provider-owned value id, sent back verbatim.
     pub id: String,
-    /// The agent's wording, shown as-is.
+    /// The agent's wording, shown as-is. A model that arrives as
+    /// `deepseek/DeepSeek V4 Pro` arrives here already stripped to
+    /// `DeepSeek V4 Pro` by the driver, which knows its own naming.
     pub label: String,
+    /// Who serves this choice (`"deepseek"`), from the agent's own id.
+    /// Empty when the choice has no provider of its own. The client groups
+    /// by it; it never parses ids to find out.
+    pub provider: String,
 }
 
 /// What the agent wants to know. `message` is the agent's own wording; `fields`
@@ -465,13 +491,21 @@ mod tests {
                         ConfigChoice {
                             id: "a".into(),
                             label: "A".into(),
+                            provider: "vendor-a".into(),
                         },
                         ConfigChoice {
                             id: "b".into(),
                             label: "B".into(),
+                            provider: String::new(),
                         },
                     ],
                 }],
+            },
+            ServerMessage::Settings {
+                settings: BTreeMap::from([(
+                    "favorites.model".into(),
+                    serde_json::json!(["a", "b"]),
+                )]),
             },
             ServerMessage::Error {
                 message: "nope".into(),
@@ -500,6 +534,11 @@ mod tests {
                 session: "s1".into(),
                 id: "model".into(),
                 value: "b".into(),
+            },
+            ClientRequest::GetSettings,
+            ClientRequest::SetSetting {
+                key: "favorites.model".into(),
+                value: serde_json::json!(["a", "b"]),
             },
         ];
 

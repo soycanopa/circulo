@@ -869,6 +869,7 @@ name = "circulo-client"
 version = "0.1.0"
 dependencies = [
  "circulo-protocol",
+ "serde_json",
  "thiserror 2.0.21",
  "tungstenite",
 ]
@@ -880,6 +881,7 @@ dependencies = [
  "circulo-persistence",
  "circulo-protocol",
  "circulo-provider",
+ "serde_json",
  "uuid",
 ]
 
@@ -894,6 +896,7 @@ dependencies = [
  "circulo-provider",
  "circulo-provider-demo",
  "circulo-provider-opencode",
+ "serde_json",
  "thiserror 2.0.21",
  "tungstenite",
  "uuid",
@@ -958,6 +961,7 @@ dependencies = [
  "circulo-protocol",
  "gpui",
  "pulldown-cmark",
+ "serde_json",
 ]
 
 [[package]]

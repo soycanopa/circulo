@@ -45,6 +45,7 @@ fn main() -> ExitCode {
     };
 
     let draft = draft();
+    let daemon_name = client.daemon().to_owned();
 
     // Reopen the newest stored session, or start one. A database that cannot be
     // read is not fatal: the window still works, it just starts empty.
@@ -122,6 +123,7 @@ fn main() -> ExitCode {
                 |_, cx| {
                     let session = session.clone();
                     let history = history.clone();
+                    let daemon = daemon_name.clone();
                     cx.new(|cx| {
                         Shell::new(
                             cx,
@@ -131,6 +133,7 @@ fn main() -> ExitCode {
                             draft.clone(),
                             history,
                             sessions,
+                            daemon,
                         )
                     })
                 },

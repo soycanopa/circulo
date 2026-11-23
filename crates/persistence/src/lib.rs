@@ -13,6 +13,7 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
@@ -28,8 +29,9 @@ const DATABASE_FILE: &str = "circulo.db";
 ///
 /// 1 created the tables. 2 added `sessions.provider_session`, the provider's
 /// own key for a session, so a restart can hand it back and the agent resumes
-/// where it left off.
-const SCHEMA_VERSION: i64 = 2;
+/// where it left off. 3 added `settings`, the client's own key/value store —
+/// the model favourites, and whatever the interface remembers next.
+const SCHEMA_VERSION: i64 = 3;
 
 /// The database path: `CIRCULO_HOME/circulo.db`, or `~/.circulo/circulo.db`.
 ///
@@ -171,6 +173,18 @@ impl Store {
             )?;
         }
 
+        if version < 3 {
+            connection.execute_batch(
+                r#"
+                CREATE TABLE IF NOT EXISTS settings (
+                    key   TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+                PRAGMA user_version = 3;
+                "#,
+            )?;
+        }
+
         Ok(())
     }
 
@@ -287,6 +301,51 @@ impl Store {
             params![id, key],
         )?;
         Ok(())
+    }
+
+    /// The client's own value for `key`, if it ever set one. Settings are
+    /// interface state — favourite models — so the shape is opaque here:
+    /// whatever JSON went in comes back out.
+    pub fn setting(&self, key: &str) -> Result<Option<Value>, StoreError> {
+        let payload: Option<String> = self
+            .connection()
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(payload
+            .map(|payload| serde_json::from_str(&payload))
+            .transpose()?)
+    }
+
+    /// Records the client's value for `key`, replacing whatever was there.
+    pub fn set_setting(&self, key: &str, value: &Value) -> Result<(), StoreError> {
+        let payload = serde_json::to_string(value)?;
+        self.connection().execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, payload],
+        )?;
+        Ok(())
+    }
+
+    /// Everything the client ever stored, keyed. The map is small — favourite
+    /// models today — so the wire carries it whole.
+    pub fn settings(&self) -> Result<BTreeMap<String, Value>, StoreError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare("SELECT key, value FROM settings")?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        let mut settings = BTreeMap::new();
+        for row in rows {
+            let (key, payload) = row?;
+            settings.insert(key, serde_json::from_str(&payload)?);
+        }
+        Ok(settings)
     }
 
     /// Every turn of a session, in order, with its parts in order.
@@ -571,5 +630,97 @@ mod tests {
         assert_eq!(path, PathBuf::from("/home/me/.circulo/circulo.db"));
 
         assert!(home_path(None, None).is_err());
+    }
+
+    #[test]
+    fn a_setting_round_trips_and_survives_a_reopen() {
+        let directory = std::env::temp_dir().join(format!(
+            "circulo-store-{}-{}-settings",
+            std::process::id(),
+            now()
+        ));
+        let path = directory.join("circulo.db");
+
+        {
+            let store = Store::open(&path).expect("open");
+            assert_eq!(store.setting("favorites.model").expect("read"), None);
+            store
+                .set_setting("favorites.model", &serde_json::json!(["a", "b"]))
+                .expect("write");
+        }
+
+        let store = Store::open(&path).expect("reopen");
+        assert_eq!(
+            store.setting("favorites.model").expect("read"),
+            Some(serde_json::json!(["a", "b"])),
+            "the setting outlives the process"
+        );
+        store
+            .set_setting("favorites.model", &serde_json::json!(["c"]))
+            .expect("replace");
+        assert_eq!(
+            store.setting("favorites.model").expect("read"),
+            Some(serde_json::json!(["c"]))
+        );
+
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_version_2_database_gains_the_settings_table() {
+        let directory = std::env::temp_dir().join(format!(
+            "circulo-store-{}-{}-settings-migration",
+            std::process::id(),
+            now()
+        ));
+        let path = directory.join("circulo.db");
+
+        // A database from the continuity release: schema 2, no settings.
+        {
+            std::fs::create_dir_all(&directory).expect("directory");
+            let connection = Connection::open(&path).expect("raw connection");
+            connection
+                .execute_batch(
+                    r#"
+                    CREATE TABLE sessions (
+                        id          TEXT PRIMARY KEY,
+                        project     TEXT,
+                        provider    TEXT NOT NULL,
+                        title       TEXT NOT NULL DEFAULT '',
+                        created_at  INTEGER NOT NULL,
+                        updated_at  INTEGER NOT NULL,
+                        provider_session TEXT
+                    );
+                    CREATE TABLE turns (
+                        session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                        turn        INTEGER NOT NULL,
+                        prompt      TEXT NOT NULL,
+                        created_at  INTEGER NOT NULL,
+                        PRIMARY KEY (session_id, turn)
+                    );
+                    CREATE TABLE parts (
+                        session_id  TEXT NOT NULL,
+                        turn        INTEGER NOT NULL,
+                        position    INTEGER NOT NULL,
+                        payload     TEXT NOT NULL,
+                        PRIMARY KEY (session_id, turn, position)
+                    );
+                    PRAGMA user_version = 2;
+                    "#,
+                )
+                .expect("schema 2");
+        }
+
+        let store = Store::open(&path).expect("open migrates");
+        assert_eq!(store.setting("favorites.model").expect("read"), None);
+        store
+            .set_setting("favorites.model", &serde_json::json!(["a"]))
+            .expect("write");
+        assert_eq!(
+            store.setting("favorites.model").expect("read"),
+            Some(serde_json::json!(["a"]))
+        );
+
+        let _ = std::fs::remove_dir_all(&directory);
     }
 }

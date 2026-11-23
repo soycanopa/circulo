@@ -28,6 +28,9 @@ type Socket = WebSocket<MaybeTlsStream<TcpStream>>;
 
 pub struct Client {
     socket: Socket,
+    /// The provider behind the daemon, as the handshake announced it
+    /// ("opencode"). Presentation state: the pickers name their tabs after it.
+    daemon: String,
 }
 
 impl Client {
@@ -46,10 +49,15 @@ impl Client {
         )?;
 
         match next(&mut socket)? {
-            Some(ServerMessage::Welcome { .. }) => Ok(Self { socket }),
+            Some(ServerMessage::Welcome { daemon, .. }) => Ok(Self { socket, daemon }),
             Some(ServerMessage::Error { message }) => Err(ClientError::Refused(message)),
             other => Err(ClientError::Unexpected(format!("{other:?}"))),
         }
+    }
+
+    /// The provider behind the daemon, from the handshake.
+    pub fn daemon(&self) -> &str {
+        &self.daemon
     }
 
     /// Opens a session and returns its id.
@@ -141,6 +149,24 @@ impl Client {
     /// away.
     pub fn answer_permission(&mut self, id: &str, option: Option<&str>) -> Result<(), ClientError> {
         send(&mut self.socket, &answer(id, option).encode()?)
+    }
+
+    /// Asks for the client's own settings. The daemon answers with
+    /// `Settings` carrying the whole map.
+    pub fn get_settings(&mut self) -> Result<(), ClientError> {
+        send(&mut self.socket, &ClientRequest::GetSettings.encode()?)
+    }
+
+    /// Stores one client setting. The daemon answers with `Settings`.
+    pub fn set_setting(&mut self, key: &str, value: serde_json::Value) -> Result<(), ClientError> {
+        send(
+            &mut self.socket,
+            &ClientRequest::SetSetting {
+                key: key.to_owned(),
+                value,
+            }
+            .encode()?,
+        )
     }
 
     /// Splits the connection so a reader can block while a writer sends: a

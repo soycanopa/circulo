@@ -4,6 +4,7 @@
 //! the daemon streams into. Sessions come from the database through the daemon;
 //! the labels the core does not own yet still come from `mock`.
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -12,11 +13,18 @@ use circulo_protocol::{
     ClientRequest, ConfigOption, HistoryTurn, QuestionAction, ServerMessage, SessionSummary,
 };
 use gpui::{
-    Context, FocusHandle, IntoElement, KeyDownEvent, ListState, Render, Window, div, prelude::*, px,
+    Context, FocusHandle, IntoElement, KeyDownEvent, ListState, Pixels, Point, Render, Window, div,
+    prelude::*, px,
 };
+use serde_json::Value;
+
+/// The settings key the model picker's favourites live under. The value is a
+/// list of choice ids, in the order they were starred.
+const FAVORITES_KEY: &str = "favorites.model";
 
 use crate::composer::{
-    ChooseHandler, Field, KeyHandler, Pickers, SendHandler, ToggleHandler, composer,
+    ChooseHandler, EditHandler, EffortHandler, Field, KeyHandler, Pickers, SendHandler,
+    StarHandler, TabHandler, ToggleHandler, composer,
 };
 use crate::input::TextInput;
 use crate::live::{Card, Transcript};
@@ -60,6 +68,21 @@ pub struct Shell {
     options: Vec<ConfigOption>,
     /// The option id whose menu is open above the composer, if any.
     open_picker: Option<String>,
+    /// The model menu's tab while the menu is open; `None` lets the menu pick.
+    picker_tab: Option<String>,
+    /// The model row whose effort editor is open beside the model menu.
+    open_editor: Option<String>,
+    /// The provider behind the daemon ("opencode"), from the handshake: the
+    /// models tab carries its name.
+    daemon: String,
+    /// The model choices this client starred, in the order they were starred.
+    /// Stored on the daemon side, so they survive a restart.
+    favorites: Vec<String>,
+    /// Where each picker chip sits, measured by its canvas every frame and
+    /// read by the open menu the next one. Lives on the shell so the value
+    /// survives the frame that wrote it — a fresh cell per render would only
+    /// ever hold zero.
+    picker_anchors: Rc<Cell<BTreeMap<String, Point<Pixels>>>>,
 }
 
 impl Shell {
@@ -73,6 +96,7 @@ impl Shell {
         draft: String,
         history: Vec<HistoryTurn>,
         sessions: Vec<SessionSummary>,
+        daemon: String,
     ) -> Self {
         let mut transcript = Transcript::default();
         transcript.hydrate(history);
@@ -96,7 +120,67 @@ impl Shell {
             question_shown: None,
             options: Vec::new(),
             open_picker: None,
+            picker_tab: None,
+            open_editor: None,
+            daemon,
+            favorites: Vec::new(),
+            picker_anchors: Rc::new(Cell::new(BTreeMap::new())),
         };
+
+        // The client's own settings: the pickers want their favourites before
+        // the first model menu opens.
+        shell.request(ClientRequest::GetSettings);
+
+        // A development hook, like CIRCULO_PROMPT: open one picker at startup
+        // so a test can see a menu without a click. It opens on a timer, not
+        // on the first frame — the chip's canvas has to have measured once,
+        // or the menu would anchor to zero and pin itself to the corner.
+        if let Some(id) = std::env::var("CIRCULO_OPEN_PICKER").ok() {
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(400))
+                    .await;
+                let _ = this.update(cx, |shell, cx| {
+                    if shell.open_picker.is_none() {
+                        shell.open_picker = Some(id);
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        };
+
+        // The same idea for the effort editor: once the menu is up, open the
+        // editor on its first model so the whole path can be exercised
+        // without a click.
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(900))
+                .await;
+            let _ = this.update(cx, |shell, cx| {
+                let model = std::env::var("CIRCULO_OPEN_EDIT").ok();
+                let model = match model {
+                    Some(substring) => shell
+                        .options
+                        .iter()
+                        .find(|option| option.id == "model")
+                        .and_then(|option| {
+                            option
+                                .options
+                                .iter()
+                                .find(|choice| choice.id.contains(&substring))
+                                .map(|choice| choice.id.clone())
+                        }),
+                    None => None,
+                };
+                if let Some(model) = model {
+                    shell.open_picker = Some("model".to_owned());
+                    shell.open_editor = Some(model);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
 
         cx.spawn(async move |this, cx| {
             while let Ok(message) = receiver.recv().await {
@@ -156,6 +240,21 @@ impl Shell {
                 self.transcript.hydrate(turns);
                 self.clear_options();
             }
+            ServerMessage::Settings { settings } => {
+                // The client's own state, the whole map. Only the favourites
+                // have a reader today; the rest is kept for the ones to come.
+                self.favorites = settings
+                    .get(FAVORITES_KEY)
+                    .and_then(Value::as_array)
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+            }
             ServerMessage::TurnFinished { .. } => {
                 self.transcript.apply(message);
                 // The turn changed the title and the order of the list.
@@ -188,22 +287,94 @@ impl Shell {
     /// until the daemon reports them.
     fn clear_options(&mut self) {
         self.options.clear();
+        self.close_picker();
+    }
+
+    fn close_picker(&mut self) {
         self.open_picker = None;
+        self.picker_tab = None;
+        self.open_editor = None;
     }
 
     /// Opens the option's menu, or closes it when it is already open.
     fn toggle_picker(&mut self, id: Option<String>, cx: &mut Context<Self>) {
-        self.open_picker = id;
+        match id {
+            Some(id) => {
+                self.open_picker = Some(id);
+                self.picker_tab = None;
+            }
+            None => self.close_picker(),
+        }
         cx.notify();
     }
 
     /// Sends the choice to the daemon and closes the menu. The refreshed list
     /// comes back as `Options`; until then the picker keeps its old value.
     fn choose_option(&mut self, id: String, value: String, cx: &mut Context<Self>) {
-        self.open_picker = None;
+        self.close_picker();
         self.request(ClientRequest::SetOption {
             session: self.session.clone(),
             id,
+            value,
+        });
+        cx.notify();
+    }
+
+    /// Switches the open model menu's tab. Only meaningful while it is open.
+    fn pick_tab(&mut self, tab: String, cx: &mut Context<Self>) {
+        self.picker_tab = Some(tab);
+        cx.notify();
+    }
+
+    /// Stars or unstars a model and stores the list. The local list updates at
+    /// once; the daemon's answer confirms the same map back.
+    fn toggle_favorite(&mut self, value: String, cx: &mut Context<Self>) {
+        if let Some(position) = self.favorites.iter().position(|id| id == &value) {
+            self.favorites.remove(position);
+        } else {
+            self.favorites.push(value.clone());
+        }
+        self.request(ClientRequest::SetSetting {
+            key: FAVORITES_KEY.to_owned(),
+            value: Value::from(self.favorites.clone()),
+        });
+        cx.notify();
+    }
+
+    /// Opens or closes the effort editor beside a model row. Opening one row's
+    /// editor closes another's — it is one editor, moved.
+    fn toggle_editor(&mut self, model: Option<String>, cx: &mut Context<Self>) {
+        self.open_editor = model;
+        cx.notify();
+    }
+
+    /// Applies a model and its effort in one decision: the model switches
+    /// only when it changes, and the effort rides after it. Both travel as
+    /// plain agent settings; a refusal comes back as the daemon's error.
+    fn choose_model_effort(
+        &mut self,
+        model: String,
+        effort: String,
+        value: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.close_picker();
+
+        let current = self
+            .options
+            .iter()
+            .find(|option| option.id == "model")
+            .map(|option| option.current.as_str());
+        if current != Some(model.as_str()) {
+            self.request(ClientRequest::SetOption {
+                session: self.session.clone(),
+                id: "model".to_owned(),
+                value: model,
+            });
+        }
+        self.request(ClientRequest::SetOption {
+            session: self.session.clone(),
+            id: effort,
             value,
         });
         cx.notify();
@@ -267,8 +438,14 @@ impl Shell {
         let modifiers = event.keystroke.modifiers;
         let plain = !modifiers.control && !modifiers.alt && !modifiers.platform;
 
+        if key == "escape" && self.open_editor.is_some() {
+            self.open_editor = None;
+            cx.notify();
+            return;
+        }
+
         if key == "escape" && self.open_picker.is_some() {
-            self.open_picker = None;
+            self.close_picker();
             cx.notify();
             return;
         }
@@ -486,6 +663,24 @@ impl Render for Shell {
                 let on_choose: ChooseHandler = Rc::new(move |id, value, _window, cx| {
                     shell.update(cx, |shell, cx| shell.choose_option(id, value, cx));
                 });
+                let shell = cx.entity();
+                let on_star: StarHandler = Rc::new(move |value, _window, cx| {
+                    shell.update(cx, |shell, cx| shell.toggle_favorite(value, cx));
+                });
+                let shell = cx.entity();
+                let on_tab: TabHandler = Rc::new(move |tab, _window, cx| {
+                    shell.update(cx, |shell, cx| shell.pick_tab(tab, cx));
+                });
+                let shell = cx.entity();
+                let on_edit: EditHandler = Rc::new(move |model, _window, cx| {
+                    shell.update(cx, |shell, cx| shell.toggle_editor(model, cx));
+                });
+                let shell = cx.entity();
+                let on_effort: EffortHandler = Rc::new(move |model, effort, value, _window, cx| {
+                    shell.update(cx, |shell, cx| {
+                        shell.choose_model_effort(model, effort, value, cx)
+                    });
+                });
                 let focused = self.composer_focus.is_focused(window);
 
                 column.child(composer(
@@ -495,8 +690,17 @@ impl Render for Shell {
                     Pickers {
                         options: &self.options,
                         open: self.open_picker.as_deref(),
+                        tab: self.picker_tab.as_deref(),
+                        editor: self.open_editor.as_deref(),
+                        favorites: &self.favorites,
+                        agent_label: &self.daemon,
+                        anchors: Rc::clone(&self.picker_anchors),
                         on_toggle,
                         on_choose,
+                        on_star,
+                        on_tab,
+                        on_edit,
+                        on_effort,
                     },
                     Field {
                         input: &self.input,

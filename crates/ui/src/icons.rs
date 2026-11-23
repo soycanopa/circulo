@@ -18,6 +18,7 @@ macro_rules! icon_assets {
 }
 
 icon_assets!(
+    "alert.svg",
     "arrow-left.svg",
     "arrow-right.svg",
     "arrow-up.svg",
@@ -30,14 +31,17 @@ icon_assets!(
     "folder.svg",
     "git-branch.svg",
     "hammer.svg",
+    "layers.svg",
     "loader-circle.svg",
     "lock.svg",
     "monitor.svg",
+    "opencode.svg",
     "panel-left.svg",
     "panel-right.svg",
     "search.svg",
     "settings.svg",
     "square-pen.svg",
+    "star.svg",
     "terminal.svg",
 );
 
