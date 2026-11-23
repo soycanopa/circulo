@@ -4,6 +4,7 @@
 //! the daemon streams into. Sessions come from the database through the daemon;
 //! the labels the core does not own yet still come from `mock`.
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -12,7 +13,8 @@ use circulo_protocol::{
     ClientRequest, ConfigOption, HistoryTurn, QuestionAction, ServerMessage, SessionSummary,
 };
 use gpui::{
-    Context, FocusHandle, IntoElement, KeyDownEvent, ListState, Render, Window, div, prelude::*, px,
+    Context, FocusHandle, IntoElement, KeyDownEvent, ListState, Pixels, Point, Render, Window, div,
+    prelude::*, px,
 };
 use serde_json::Value;
 
@@ -21,8 +23,8 @@ use serde_json::Value;
 const FAVORITES_KEY: &str = "favorites.model";
 
 use crate::composer::{
-    ChooseHandler, Field, KeyHandler, Pickers, SendHandler, StarHandler, TabHandler, ToggleHandler,
-    composer,
+    ChooseHandler, EditHandler, EffortHandler, Field, KeyHandler, Pickers, SendHandler,
+    StarHandler, TabHandler, ToggleHandler, composer,
 };
 use crate::input::TextInput;
 use crate::live::{Card, Transcript};
@@ -68,12 +70,19 @@ pub struct Shell {
     open_picker: Option<String>,
     /// The model menu's tab while the menu is open; `None` lets the menu pick.
     picker_tab: Option<String>,
+    /// The model row whose effort editor is open beside the model menu.
+    open_editor: Option<String>,
     /// The provider behind the daemon ("opencode"), from the handshake: the
     /// models tab carries its name.
     daemon: String,
     /// The model choices this client starred, in the order they were starred.
     /// Stored on the daemon side, so they survive a restart.
     favorites: Vec<String>,
+    /// Where each picker chip sits, measured by its canvas every frame and
+    /// read by the open menu the next one. Lives on the shell so the value
+    /// survives the frame that wrote it — a fresh cell per render would only
+    /// ever hold zero.
+    picker_anchors: Rc<Cell<BTreeMap<String, Point<Pixels>>>>,
 }
 
 impl Shell {
@@ -112,13 +121,66 @@ impl Shell {
             options: Vec::new(),
             open_picker: None,
             picker_tab: None,
+            open_editor: None,
             daemon,
             favorites: Vec::new(),
+            picker_anchors: Rc::new(Cell::new(BTreeMap::new())),
         };
 
         // The client's own settings: the pickers want their favourites before
         // the first model menu opens.
         shell.request(ClientRequest::GetSettings);
+
+        // A development hook, like CIRCULO_PROMPT: open one picker at startup
+        // so a test can see a menu without a click. It opens on a timer, not
+        // on the first frame — the chip's canvas has to have measured once,
+        // or the menu would anchor to zero and pin itself to the corner.
+        if let Some(id) = std::env::var("CIRCULO_OPEN_PICKER").ok() {
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(400))
+                    .await;
+                let _ = this.update(cx, |shell, cx| {
+                    if shell.open_picker.is_none() {
+                        shell.open_picker = Some(id);
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        };
+
+        // The same idea for the effort editor: once the menu is up, open the
+        // editor on its first model so the whole path can be exercised
+        // without a click.
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(900))
+                .await;
+            let _ = this.update(cx, |shell, cx| {
+                let model = std::env::var("CIRCULO_OPEN_EDIT").ok();
+                let model = match model {
+                    Some(substring) => shell
+                        .options
+                        .iter()
+                        .find(|option| option.id == "model")
+                        .and_then(|option| {
+                            option
+                                .options
+                                .iter()
+                                .find(|choice| choice.id.contains(&substring))
+                                .map(|choice| choice.id.clone())
+                        }),
+                    None => None,
+                };
+                if let Some(model) = model {
+                    shell.open_picker = Some("model".to_owned());
+                    shell.open_editor = Some(model);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
 
         cx.spawn(async move |this, cx| {
             while let Ok(message) = receiver.recv().await {
@@ -231,6 +293,7 @@ impl Shell {
     fn close_picker(&mut self) {
         self.open_picker = None;
         self.picker_tab = None;
+        self.open_editor = None;
     }
 
     /// Opens the option's menu, or closes it when it is already open.
@@ -274,6 +337,45 @@ impl Shell {
         self.request(ClientRequest::SetSetting {
             key: FAVORITES_KEY.to_owned(),
             value: Value::from(self.favorites.clone()),
+        });
+        cx.notify();
+    }
+
+    /// Opens or closes the effort editor beside a model row. Opening one row's
+    /// editor closes another's — it is one editor, moved.
+    fn toggle_editor(&mut self, model: Option<String>, cx: &mut Context<Self>) {
+        self.open_editor = model;
+        cx.notify();
+    }
+
+    /// Applies a model and its effort in one decision: the model switches
+    /// only when it changes, and the effort rides after it. Both travel as
+    /// plain agent settings; a refusal comes back as the daemon's error.
+    fn choose_model_effort(
+        &mut self,
+        model: String,
+        effort: String,
+        value: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.close_picker();
+
+        let current = self
+            .options
+            .iter()
+            .find(|option| option.id == "model")
+            .map(|option| option.current.as_str());
+        if current != Some(model.as_str()) {
+            self.request(ClientRequest::SetOption {
+                session: self.session.clone(),
+                id: "model".to_owned(),
+                value: model,
+            });
+        }
+        self.request(ClientRequest::SetOption {
+            session: self.session.clone(),
+            id: effort,
+            value,
         });
         cx.notify();
     }
@@ -335,6 +437,12 @@ impl Shell {
         let key = event.keystroke.key.as_str();
         let modifiers = event.keystroke.modifiers;
         let plain = !modifiers.control && !modifiers.alt && !modifiers.platform;
+
+        if key == "escape" && self.open_editor.is_some() {
+            self.open_editor = None;
+            cx.notify();
+            return;
+        }
 
         if key == "escape" && self.open_picker.is_some() {
             self.close_picker();
@@ -563,6 +671,16 @@ impl Render for Shell {
                 let on_tab: TabHandler = Rc::new(move |tab, _window, cx| {
                     shell.update(cx, |shell, cx| shell.pick_tab(tab, cx));
                 });
+                let shell = cx.entity();
+                let on_edit: EditHandler = Rc::new(move |model, _window, cx| {
+                    shell.update(cx, |shell, cx| shell.toggle_editor(model, cx));
+                });
+                let shell = cx.entity();
+                let on_effort: EffortHandler = Rc::new(move |model, effort, value, _window, cx| {
+                    shell.update(cx, |shell, cx| {
+                        shell.choose_model_effort(model, effort, value, cx)
+                    });
+                });
                 let focused = self.composer_focus.is_focused(window);
 
                 column.child(composer(
@@ -573,12 +691,16 @@ impl Render for Shell {
                         options: &self.options,
                         open: self.open_picker.as_deref(),
                         tab: self.picker_tab.as_deref(),
+                        editor: self.open_editor.as_deref(),
                         favorites: &self.favorites,
                         agent_label: &self.daemon,
+                        anchors: Rc::clone(&self.picker_anchors),
                         on_toggle,
                         on_choose,
                         on_star,
                         on_tab,
+                        on_edit,
+                        on_effort,
                     },
                     Field {
                         input: &self.input,

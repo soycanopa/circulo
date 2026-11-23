@@ -5,11 +5,12 @@
 //! keys. Enter sends, Shift+Enter breaks the line.
 
 use std::cell::Cell;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, Corner, Div, FocusHandle, IntoElement, KeyDownEvent, Pixels, Point,
-    SharedString, Window, anchored, canvas, div, point, prelude::*, px,
+    SharedString, Window, anchored, canvas, deferred, div, point, prelude::*, px,
 };
 
 use crate::icons::icon;
@@ -26,6 +27,8 @@ const FIELD_MAX_HEIGHT: f32 = 96.;
 /// and its provider, short enough to never swallow the transcript.
 const MENU_WIDTH: f32 = 360.;
 const MENU_MAX_HEIGHT: f32 = 320.;
+/// The effort editor's footprint, beside the model menu.
+const EDITOR_WIDTH: f32 = 160.;
 
 /// The model menu's tabs. The favourites lead when there are any; the agent's
 /// own list is always one click away.
@@ -40,9 +43,12 @@ pub(crate) type SendHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 /// both, because both change its state.
 pub(crate) type ToggleHandler = Rc<dyn Fn(Option<String>, &mut Window, &mut App)>;
 pub(crate) type ChooseHandler = Rc<dyn Fn(String, String, &mut Window, &mut App)>;
-/// Starring a model, and switching the model menu's tab.
+/// Starring a model, switching the model menu's tab, opening a row's effort
+/// editor, and picking an effort for a model.
 pub(crate) type StarHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
 pub(crate) type TabHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
+pub(crate) type EditHandler = Rc<dyn Fn(Option<String>, &mut Window, &mut App)>;
+pub(crate) type EffortHandler = Rc<dyn Fn(String, String, String, &mut Window, &mut App)>;
 
 /// The daemon's options as the pickers draw them: which menu is open, which
 /// model tab is showing, what choosing and starring do. A missing option id
@@ -52,14 +58,21 @@ pub(crate) struct Pickers<'a> {
     pub open: Option<&'a str>,
     /// The model menu's tab, when the user picked one; `None` picks by itself.
     pub tab: Option<&'a str>,
+    /// The model row whose effort editor is open, if any.
+    pub editor: Option<&'a str>,
     /// The starred model ids, in the order they were starred.
     pub favorites: &'a [String],
     /// The agent behind the daemon, naming the models tab ("opencode").
     pub agent_label: &'a str,
+    /// Where each chip sits, shared across frames: the canvas writes this
+    /// frame's measurement, the menu reads last frame's.
+    pub anchors: Rc<Cell<BTreeMap<String, Point<Pixels>>>>,
     pub on_toggle: ToggleHandler,
     pub on_choose: ChooseHandler,
     pub on_star: StarHandler,
     pub on_tab: TabHandler,
+    pub on_edit: EditHandler,
+    pub on_effort: EffortHandler,
 }
 
 /// Everything the field needs that changes between frames.
@@ -81,14 +94,51 @@ pub(crate) fn composer(
     let running = transcript.status.running;
     let can_send = !field.input.is_blank() && !running;
 
-    // The open menu is not laid out here: it lives inside the picker that
-    // opened it, anchored above the chip, so it never pushes the composer
-    // around and always reads as coming from its own selector.
+    // The open menu and the effort editor both live at the top level, each
+    // an anchored popup at the chip's measured point — the menu above the
+    // chip, the editor beside the menu. Inside the menu's own subtree the
+    // anchoring math does not compose; as siblings they do.
+    let open_option = pickers
+        .open
+        .and_then(|open| pickers.options.iter().find(|option| option.id == open));
+    let anchor = open_option.map(|option| {
+        let map = pickers.anchors.take();
+        let anchor = map.get(&option.id).copied().unwrap_or_default();
+        pickers.anchors.set(map);
+        anchor
+    });
+    let menu = open_option
+        .zip(anchor)
+        .map(|(option, anchor)| menu_view(theme, option, &pickers, anchor));
+    let editor = open_option.zip(anchor).and_then(|(option, chip)| {
+        let editor = pickers.editor?;
+        let choice = option.options.iter().find(|choice| choice.id == editor)?;
+        // The editor belongs to the row the user opened it from, so its
+        // height comes from that row's Edit button — measured into the same
+        // cell as the chips, one frame old at worst. Without a measurement
+        // (the menu was closed a frame ago) it waits for the next one.
+        let key = format!("edit-{}-{}", option.id, choice.id);
+        let map = pickers.anchors.take();
+        let row = map.get(&key).copied();
+        pickers.anchors.set(map);
+        let row = row?;
+        // Beside the menu (the chip's column plus its width), level with
+        // the clicked row.
+        Some(effort_editor(
+            theme,
+            choice,
+            &pickers,
+            point(chip.x + px(MENU_WIDTH + 8.), row.y),
+        ))
+    });
+
     div()
         .flex()
         .flex_col()
         .px(px(24.))
         .pb(px(10.))
+        .children(menu)
+        .children(editor)
         .child(input_box(
             theme, workspace, running, &pickers, field, can_send,
         ))
@@ -137,7 +187,6 @@ fn input_box(
                 .items_center()
                 .gap(px(4.))
                 .child(slot(theme, pickers, "model", None, workspace.model))
-                .child(slot(theme, pickers, "effort", None, workspace.reasoning))
                 .child(static_picker(
                     theme,
                     Some("icons/lock.svg"),
@@ -159,7 +208,8 @@ fn input_box(
 /// label until then. A live option opens its menu on click, anchored above
 /// the chip itself. Where the chip sits is measured, not assumed: a
 /// zero-size canvas beside it reports the wrapper's window origin every
-/// frame, and the menu anchors to that point.
+/// frame into the shell's shared cell, and the menu anchors to the last
+/// measurement — one frame old at worst, and the chips do not move.
 fn slot(
     theme: &Theme,
     pickers: &Pickers<'_>,
@@ -167,28 +217,48 @@ fn slot(
     path: Option<&'static str>,
     fallback: &'static str,
 ) -> impl IntoElement {
-    let origin = Rc::new(Cell::new(Point::<Pixels>::default()));
-
     match pickers.options.iter().find(|option| option.id == id) {
         Some(option) => {
             let label = current_label(option);
             let open = pickers.open == Some(option.id.as_str());
             let next = if open { None } else { Some(option.id.clone()) };
             let on_toggle = pickers.on_toggle.clone();
-            let track = Rc::clone(&origin);
+            // The model chip carries its effort as a small tag, so the
+            // composer answers "what am I running" in one glance.
+            let tag = (id == "model")
+                .then(|| current_effort_label(pickers))
+                .flatten();
 
+            // The anchor the menu reads is last frame's measurement, which is
+            // why the cell lives on the shell: a fresh one per render would
+            // only ever hold zero, the window's top-left corner.
+            let track = Rc::clone(&pickers.anchors);
+            let key = id.to_owned();
             let mut wrapper = div().flex().items_start().child(canvas(
-                move |bounds, _, _| track.set(bounds.origin),
+                move |bounds, _, _| {
+                    let mut anchors = track.take();
+                    anchors.insert(key, bounds.origin);
+                    track.set(anchors);
+                },
                 |_, _, _, _| {},
             ));
             wrapper = wrapper.child(
-                picker(theme, path, label, open)
+                picker(theme, path, label, tag, open)
                     .id(SharedString::from(format!("picker-{}", option.id)))
                     .cursor_pointer()
                     .on_click(move |_, window, cx| on_toggle(next.clone(), window, cx)),
             );
             if open {
-                wrapper = wrapper.child(menu_view(theme, option, pickers, origin.get()));
+                // No menu without a measurement: an unmeasured anchor is
+                // zero, and zero is the window's top-left corner. The chip's
+                // canvas has run at least once before any click — and the
+                // startup hook waits for it — so this never holds long.
+                let map = pickers.anchors.take();
+                let anchor = map.get(id).copied();
+                pickers.anchors.set(map);
+                if let Some(anchor) = anchor {
+                    wrapper = wrapper.child(menu_view(theme, option, pickers, anchor));
+                }
             }
             wrapper.into_any_element()
         }
@@ -201,10 +271,16 @@ fn static_picker(
     path: Option<&'static str>,
     label: &'static str,
 ) -> impl IntoElement {
-    picker(theme, path, label.to_owned(), false)
+    picker(theme, path, label.to_owned(), None, false)
 }
 
-fn picker(theme: &Theme, path: Option<&'static str>, label: String, open: bool) -> Div {
+fn picker(
+    theme: &Theme,
+    path: Option<&'static str>,
+    label: String,
+    tag: Option<String>,
+    open: bool,
+) -> Div {
     div()
         .flex()
         .items_center()
@@ -226,9 +302,24 @@ fn picker(theme: &Theme, path: Option<&'static str>, label: String, open: bool) 
                 .text_ellipsis()
                 .child(label),
         )
+        .when_some(tag, |row, tag| row.child(effort_tag(theme, &tag)))
         .child(icon("icons/chevron-down.svg", 11., theme.text_faint))
         .when(open, |row| row.bg(theme.hover))
         .hover(move |style| style.bg(theme.hover))
+}
+
+/// The effort tag that rides on the model chip: small, quiet, and readable
+/// at a glance — `GLM-5.4 High`.
+fn effort_tag(theme: &Theme, label: &str) -> Div {
+    div()
+        .flex_shrink_0()
+        .px(px(5.))
+        .py(px(1.))
+        .rounded(px(4.))
+        .bg(theme.chip)
+        .text_size(px(10.5))
+        .text_color(theme.text_muted)
+        .child(label.to_owned())
 }
 
 /// The agent's wording for its current value, or the raw id when the choice
@@ -240,6 +331,16 @@ fn current_label(option: &ConfigOption) -> String {
         .find(|choice| choice.id == option.current)
         .map(|choice| choice.label.clone())
         .unwrap_or_else(|| option.current.clone())
+}
+
+/// The effort the model is running at, as the agent names it, for the chip's
+/// tag. `None` while the agent lists no effort option at all.
+fn current_effort_label(pickers: &Pickers<'_>) -> Option<String> {
+    let effort = pickers
+        .options
+        .iter()
+        .find(|option| option.id == "effort")?;
+    Some(current_label(effort))
 }
 
 /// The open option's choices: a popup of fixed width and bounded height,
@@ -282,35 +383,49 @@ fn menu_view(
 
     let mut rows = div().flex().flex_col();
     if tabbed {
+        // Effort rides on the model menu when the agent lists it: every row
+        // gains its editor. The agent does not advertise per-model support,
+        // so a model without effort gets the daemon's refusal, not a hidden
+        // button.
+        let editable = pickers
+            .options
+            .iter()
+            .find(|option| option.id == "effort")
+            .map(|option| !option.options.is_empty())
+            .unwrap_or(false);
         let tab = pickers
             .tab
             .unwrap_or_else(|| default_tab(pickers.favorites));
         if tab == FAVORITES_TAB {
-            rows = favorite_rows(theme, option, pickers);
+            rows = favorite_rows(theme, option, pickers, editable);
         } else {
-            rows = grouped_rows(theme, option, pickers);
+            rows = grouped_rows(theme, option, pickers, editable);
         }
     } else {
         for choice in &option.options {
-            rows = rows.child(choice_row(theme, option, choice, pickers, false));
+            rows = rows.child(choice_row(theme, option, choice, pickers, false, false));
         }
     }
 
     // The popup's bottom-left corner sits just above the chip that opened it,
     // so the menu reads as coming out of that selector. `anchored` flips or
-    // snaps the corner when the window edge would cut it.
-    anchored()
-        .anchor(Corner::BottomLeft)
-        .position(anchor)
-        .offset(point(px(0.), px(-8.)))
-        .child(
-            menu.child(
-                rows.id(SharedString::from(format!("menu-rows-{}", option.id)))
-                    .max_h(px(MENU_MAX_HEIGHT))
-                    .overflow_y_scroll(),
+    // snaps the corner when the window edge would cut it. `deferred` moves
+    // the paint to after every ancestor has drawn, so the surface paints
+    // opaque over the composer instead of blending with it.
+    deferred(
+        anchored()
+            .anchor(Corner::BottomLeft)
+            .position(anchor)
+            .offset(point(px(0.), px(-8.)))
+            .child(
+                menu.child(
+                    rows.id(SharedString::from(format!("menu-rows-{}", option.id)))
+                        .max_h(px(MENU_MAX_HEIGHT))
+                        .overflow_y_scroll(),
+                ),
             ),
-        )
-        .into_any_element()
+    )
+    .into_any_element()
 }
 
 /// Without a choice from the user, favourites lead when they exist: that tab
@@ -407,13 +522,18 @@ fn agent_icon(agent: &str) -> Option<&'static str> {
 
 /// The agent's choices under one heading per provider, in the order the
 /// agent listed them. A list with no providers at all stays flat.
-fn grouped_rows(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> Div {
+fn grouped_rows(
+    theme: &Theme,
+    option: &ConfigOption,
+    pickers: &Pickers<'_>,
+    editable: bool,
+) -> Div {
     let groups = group_by_provider(&option.options);
     let mut rows = div().flex().flex_col();
 
     if groups.len() <= 1 {
         for choice in &option.options {
-            rows = rows.child(choice_row(theme, option, choice, pickers, true));
+            rows = rows.child(choice_row(theme, option, choice, pickers, true, editable));
         }
         return rows;
     }
@@ -421,7 +541,8 @@ fn grouped_rows(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> 
     for (provider, choices) in groups {
         rows = rows.child(
             div()
-                .px(px(8.))
+                .pl(px(28.))
+                .pr(px(8.))
                 .pt(px(8.))
                 .pb(px(2.))
                 .text_size(px(11.5))
@@ -429,7 +550,7 @@ fn grouped_rows(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> 
                 .child(provider_label(provider).to_owned()),
         );
         for choice in choices {
-            rows = rows.child(choice_row(theme, option, choice, pickers, true));
+            rows = rows.child(choice_row(theme, option, choice, pickers, true, editable));
         }
     }
     rows
@@ -437,14 +558,19 @@ fn grouped_rows(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> 
 
 /// The starred choices, in the order they were starred. A star that names a
 /// model the agent no longer serves is skipped.
-fn favorite_rows(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> Div {
+fn favorite_rows(
+    theme: &Theme,
+    option: &ConfigOption,
+    pickers: &Pickers<'_>,
+    editable: bool,
+) -> Div {
     let mut rows = div().flex().flex_col();
     let mut shown = 0;
 
     for id in pickers.favorites {
         if let Some(choice) = option.options.iter().find(|choice| &choice.id == id) {
             shown += 1;
-            rows = rows.child(choice_row(theme, option, choice, pickers, true));
+            rows = rows.child(choice_row(theme, option, choice, pickers, true, editable));
         }
     }
 
@@ -461,15 +587,17 @@ fn favorite_rows(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) ->
     rows
 }
 
-/// One choice line: the agent's mark on the left, the cleaned name, and — for
-/// the model menu — the star. The star stops the click so choosing a model
-/// and starring it never fire together.
+/// One choice line: the agent's mark, the cleaned name with its provider
+/// beside it, and — for the model menu — the star and the Edit affordance.
+/// Only the name's own area chooses the model: the star and Edit sit outside
+/// that element, so their clicks never select anything.
 fn choice_row(
     theme: &Theme,
     option: &ConfigOption,
     choice: &circulo_protocol::ConfigChoice,
     pickers: &Pickers<'_>,
     starred: bool,
+    editable: bool,
 ) -> AnyElement {
     let current = choice.id == option.current;
     let id = option.id.clone();
@@ -477,15 +605,18 @@ fn choice_row(
     let on_choose = pickers.on_choose.clone();
     let star = pickers.on_star.clone();
     let favorite = pickers.favorites.iter().any(|id| id == &choice.id);
+    let editing = pickers.editor == Some(choice.id.as_str());
 
-    let row = div()
+    let group = SharedString::from(format!("row-{}-{}", option.id, choice.id));
+    let mut row = div()
         .id(SharedString::from(format!(
             "choice-{}-{}",
             option.id, choice.id
         )))
+        .group(group.clone())
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(px(4.))
         .px(px(8.))
         .py(px(6.))
         .rounded(px(6.))
@@ -495,26 +626,91 @@ fn choice_row(
         } else {
             theme.text_muted
         })
+        .hover(move |style| style.bg(theme.hover))
+        // Choosing is the name's own hit area — the buttons beside it are
+        // siblings, so a click on them cannot reach this handler.
         .child(
             div()
-                .w(px(14.))
-                .flex_shrink_0()
-                .text_color(theme.accent)
-                .child(if current { "✓" } else { "" }),
-        )
-        .child(
-            div()
+                .id(SharedString::from(format!(
+                    "pick-{}-{}",
+                    option.id, choice.id
+                )))
+                .flex()
+                .items_center()
+                .gap(px(6.))
                 .flex_1()
                 .min_w(px(0.))
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_ellipsis()
-                .child(choice.label.clone()),
+                .cursor_pointer()
+                .child(
+                    div()
+                        .w(px(14.))
+                        .flex_shrink_0()
+                        .text_color(theme.accent)
+                        .child(if current { "✓" } else { "" }),
+                )
+                .child(
+                    div()
+                        .min_w(px(0.))
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .child(choice.label.clone()),
+                )
+                .on_click(move |_, window, cx| on_choose(id.clone(), value.clone(), window, cx)),
         );
 
-    let row = if starred {
+    if editable {
+        // Edit leads, the star follows, and Edit only shows while the row is
+        // hovered — opacity, not removal, so rows keep their width.
+        let on_edit = pickers.on_edit.clone();
+        let model = choice.id.clone();
+        // Where this button sits, every frame while the menu is open: the
+        // effort editor reads it to line up with this row. Opacity does not
+        // stop the canvas, so the measurement survives the hover leaving.
+        let track = Rc::clone(&pickers.anchors);
+        let key = format!("edit-{}", option.id);
+        row = row.child(
+            div()
+                .id(SharedString::from(format!(
+                    "edit-{}-{}",
+                    option.id, choice.id
+                )))
+                .flex_shrink_0()
+                .px(px(4.))
+                .py(px(2.))
+                .rounded(px(4.))
+                .text_size(px(10.5))
+                .text_color(if editing {
+                    theme.text
+                } else {
+                    theme.text_faint
+                })
+                .when(editing, |edit| edit.bg(theme.hover))
+                .child(canvas(
+                    {
+                        let key = format!("{}-{}", key, choice.id);
+                        move |bounds, _, _| {
+                            let mut anchors = track.take();
+                            anchors.insert(key, bounds.origin);
+                            track.set(anchors);
+                        }
+                    },
+                    |_, _, _, _| {},
+                ))
+                .child("Edit")
+                .cursor_pointer()
+                .opacity(0.)
+                .group_hover(group, move |style| style.opacity(1.))
+                .hover(move |style| style.bg(theme.hover))
+                .on_click(move |_, window, cx| {
+                    on_edit(if editing { None } else { Some(model.clone()) }, window, cx);
+                }),
+        );
+    }
+
+    if starred {
         let value = choice.id.clone();
-        row.child(
+        row = row.child(
             div()
                 .id(SharedString::from(format!(
                     "star-{}-{}",
@@ -534,22 +730,106 @@ fn choice_row(
                         theme.text_faint
                     },
                 ))
-                .on_click(move |_, window, cx| {
-                    cx.stop_propagation();
-                    star(value.clone(), window, cx);
-                }),
-        )
-    } else {
-        row
+                .on_click(move |_, window, cx| star(value.clone(), window, cx)),
+        );
+    }
+
+    row.into_any_element()
+}
+
+/// The effort editor for one model: the agent's effort choices beside the
+/// row. Picking one applies the model with it — one decision, two plain
+/// settings on the wire.
+fn effort_editor(
+    theme: &Theme,
+    choice: &circulo_protocol::ConfigChoice,
+    pickers: &Pickers<'_>,
+    anchor: Point<Pixels>,
+) -> AnyElement {
+    let Some(effort) = pickers.options.iter().find(|option| option.id == "effort") else {
+        return div().into_any_element();
     };
 
-    row.cursor_pointer()
-        .hover(move |style| style.bg(theme.hover))
-        .on_click(move |_, window, cx| on_choose(id.clone(), value.clone(), window, cx))
-        .into_any_element()
+    let mut panel = div()
+        .w(px(EDITOR_WIDTH))
+        .flex()
+        .flex_col()
+        .p(px(6.))
+        .rounded(px(10.))
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.surface)
+        .shadow_md()
+        .child(
+            div()
+                .px(px(8.))
+                .py(px(4.))
+                .text_size(px(11.5))
+                .text_color(theme.text_faint)
+                .child(effort.label.clone()),
+        );
+
+    for value in &effort.options {
+        let current = value.id == effort.current;
+        let model = choice.id.clone();
+        let effort_id = effort.id.clone();
+        let picked = value.id.clone();
+        let on_effort = pickers.on_effort.clone();
+
+        panel = panel.child(
+            div()
+                .id(SharedString::from(format!(
+                    "effort-{}-{}",
+                    choice.id, value.id
+                )))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .px(px(8.))
+                .py(px(6.))
+                .rounded(px(6.))
+                .text_size(px(12.5))
+                .text_color(if current {
+                    theme.text
+                } else {
+                    theme.text_muted
+                })
+                .child(
+                    div()
+                        .w(px(14.))
+                        .flex_shrink_0()
+                        .text_color(theme.accent)
+                        .child(if current { "✓" } else { "" }),
+                )
+                .child(value.label.clone())
+                .cursor_pointer()
+                .hover(move |style| style.bg(theme.hover))
+                .on_click(move |_, window, cx| {
+                    on_effort(model.clone(), effort_id.clone(), picked.clone(), window, cx)
+                }),
+        );
+    }
+
+    // To the menu's right, with its top at the clicked row: the anchor the
+    // composer passes already carries both (the menu's right edge, the row's
+    // Edit button). `TopLeft`, not the menu's `BottomLeft` — this one grows
+    // down from its row; when the row sits too low, `anchored` flips it to
+    // grow up instead of spilling past the window. Plain `anchored`, not
+    // `deferred`: the menu is already the deferred draw, and deferring again
+    // from inside it aborts the app. The editor paints with the menu, which
+    // is already the last pass.
+    deferred(
+        anchored()
+            .anchor(Corner::TopLeft)
+            .position(anchor)
+            .child(panel),
+    )
+    .with_priority(1)
+    .into_any_element()
 }
 
 /// Choices under their provider, in first-appearance order.
+#[allow(dead_code)]
 fn group_by_provider(
     choices: &[circulo_protocol::ConfigChoice],
 ) -> Vec<(&str, Vec<&circulo_protocol::ConfigChoice>)> {

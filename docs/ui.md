@@ -32,6 +32,7 @@
 | Composer | 24 horizontal inset, radius 14, 13 padding, 12 between input and controls |
 | Picker | 26 high, radius 6 |
 | Picker menu | 360 wide, 320 tall at most, radius 10, scroll, surface + border + shadow |
+| Effort editor | 160 wide, radius 10, surface + border + shadow; floats beside the menu, level with its row |
 | Send | 28 circle |
 
 The transcript scrolls under the composer; the composer and its footer stay at the bottom of the main column.
@@ -142,6 +143,7 @@ Agent text is CommonMark plus the GitHub extensions agents actually write (table
 - [x] Compact menus (360 × 320, scrolling): the model menu has two tabs — **Favorites** (star icon) and the agent's name (layers icon), the star on every row, starred models stored through the settings wire and leading the menu when they exist — and the agent's list grouped under one heading per provider (`DeepSeek`, `OpenCode`, …), with the vendor tag stripped from each name by the driver. Effort and mode share the container without tabs.
 - [x] Footer: project, `Local`, branch, activity indicator.
 - [x] Provider glyph in the model picker: the tab carries the agent's name and the layers icon.
+- [x] Effort editor beside the model menu: hovered rows gain an `Edit` affordance, and clicking it floats the agent's effort choices level with that row — one editor, moved between rows. Picking a value applies the model with it in one decision (two `SetOption`s, the model only when it changed); Escape or a closed menu dismisses it. The editor anchors to the row's measured position and flips upward near the window's bottom edge. `CIRCULO_OPEN_PICKER` and `CIRCULO_OPEN_EDIT` open both without a click for testing.
 - [ ] Queue and steer affordances, usage gauge, attachments.
 - [ ] The empty-state folder picker and the “don’t work in a project” action (both need the core).
 - [ ] Selection, undo, IME composition, and paste: the buffer is deliberately single-carets-at-the-end-of-a-line for now (`crates/ui/src/input.rs`).
