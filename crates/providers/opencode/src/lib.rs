@@ -31,7 +31,7 @@ use circulo_protocol::{
     ConfigChoice, ConfigOption, Part, PermissionOption, PermissionOptionKind, PermissionRequest,
     Question, QuestionField, QuestionKind, ToolState,
 };
-use circulo_provider::{Asker, Decision, Driver, DriverError};
+use circulo_provider::{Asker, Decision, Driver, DriverError, SessionRef};
 use serde_json::{Value, json};
 
 /// ACP version this driver speaks. `initialize` returns the same number or the
@@ -109,26 +109,30 @@ impl Driver for OpenCode {
 
     fn start_turn(
         &self,
+        _: SessionRef<'_>,
         prompt: &str,
         ask: &mut dyn Asker,
         emit: &mut dyn FnMut(Part),
-    ) -> Result<(), DriverError> {
+    ) -> Result<Option<String>, DriverError> {
         let mut agent = Agent::spawn(&self.binary, &self.cwd)?;
         let session = open_session(&mut agent, &self.cwd, ask)?;
         self.recall(&mut agent, &session, ask);
 
         let mut tools = HashMap::new();
-        agent.prompt(&session, prompt, &mut tools, ask, emit)
+        agent.prompt(&session, prompt, &mut tools, ask, emit)?;
+        // Per-turn processes for now; the session key rides along when the
+        // driver keeps its agents alive.
+        Ok(None)
     }
 
-    fn options(&self) -> Result<Vec<ConfigOption>, DriverError> {
+    fn options(&self, _: &str) -> Result<Vec<ConfigOption>, DriverError> {
         let mut agent = Agent::spawn(&self.binary, &self.cwd)?;
         let mut refuse = RefuseAll;
         let session = open_session(&mut agent, &self.cwd, &mut refuse)?;
         Ok(self.recall(&mut agent, &session, &mut refuse))
     }
 
-    fn set_option(&self, id: &str, value: &str) -> Result<Vec<ConfigOption>, DriverError> {
+    fn set_option(&self, _: &str, id: &str, value: &str) -> Result<Vec<ConfigOption>, DriverError> {
         let mut agent = Agent::spawn(&self.binary, &self.cwd)?;
         let mut refuse = RefuseAll;
         let session = open_session(&mut agent, &self.cwd, &mut refuse)?;

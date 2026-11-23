@@ -17,31 +17,63 @@ use std::collections::BTreeMap;
 
 use circulo_protocol::{ConfigOption, Part, PermissionRequest, Question, QuestionAction};
 
+/// The two sides of one conversation. The Circulo session is stable on the
+/// wire and in storage; the provider's key for its own side (an ACP session
+/// id, say) belongs to the provider alone — the core only carries it, never
+/// reads it.
+pub struct SessionRef<'a> {
+    /// The Circulo session the turn belongs to.
+    pub id: &'a str,
+    /// The key the provider handed back on its last turn and the core stored,
+    /// if any. A provider that remembers its sessions uses it to resume the
+    /// same conversation after a restart.
+    pub resume: Option<&'a str>,
+}
+
+impl<'a> SessionRef<'a> {
+    /// A session with nothing to resume: its first turn, or a provider that
+    /// keeps no session of its own.
+    pub fn new(id: &'a str) -> Self {
+        Self { id, resume: None }
+    }
+}
+
 pub trait Driver: Send + Sync {
     /// The provider name shown in the UI, e.g. `opencode`.
     fn name(&self) -> &'static str;
 
-    /// Runs one turn and emits its parts in order. Returning an error ends the
-    /// turn as failed; parts already emitted stay emitted.
+    /// Runs one turn of `session` and emits its parts in order. Returning an
+    /// error ends the turn as failed; parts already emitted stay emitted.
+    ///
+    /// `session.resume` carries the provider's own key from the previous turn,
+    /// when one was stored. On success the driver returns the key for this
+    /// session's next turn — `None` when the provider keeps no session of its
+    /// own, or lost the one it had. The core stores it; nothing else reads it.
     ///
     /// A provider that needs the user before it acts calls `ask.permission`
     /// and blocks: the core sends the card and waits for the answer.
     fn start_turn(
         &self,
+        session: SessionRef<'_>,
         prompt: &str,
         ask: &mut dyn Asker,
         emit: &mut dyn FnMut(Part),
-    ) -> Result<(), DriverError>;
+    ) -> Result<Option<String>, DriverError>;
 
-    /// The agent's current settings, with their current values. Starts no
-    /// turn; a provider that needs an agent process starts a short-lived one.
-    /// Empty when the provider has no settings.
-    fn options(&self) -> Result<Vec<ConfigOption>, DriverError>;
+    /// The agent's current settings for `session`, with their current values.
+    /// Starts no turn; a provider that needs an agent process starts a
+    /// short-lived one. Empty when the provider has no settings.
+    fn options(&self, session: &str) -> Result<Vec<ConfigOption>, DriverError>;
 
-    /// Applies the user's choice and returns the refreshed list, as the agent
-    /// reports it. The choice survives later turns: a provider whose agent
-    /// forgets between processes re-applies it.
-    fn set_option(&self, id: &str, value: &str) -> Result<Vec<ConfigOption>, DriverError>;
+    /// Applies the user's choice for `session` and returns the refreshed list,
+    /// as the agent reports it. The choice survives later turns: a provider
+    /// whose agent forgets between processes re-applies it.
+    fn set_option(
+        &self,
+        session: &str,
+        id: &str,
+        value: &str,
+    ) -> Result<Vec<ConfigOption>, DriverError>;
 }
 
 /// The user, as the provider sees it. The core implements this; a provider only

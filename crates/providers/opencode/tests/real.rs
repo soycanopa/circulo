@@ -6,7 +6,7 @@
 
 use circulo_protocol::Part;
 use circulo_protocol::{PermissionRequest, Question};
-use circulo_provider::{Answer, Asker, Decision, Driver};
+use circulo_provider::{Answer, Asker, Decision, Driver, SessionRef};
 use circulo_provider_opencode::OpenCode;
 
 /// A real turn that stops for approval has no user here. Refuse loudly instead
@@ -30,13 +30,13 @@ impl Asker for NoAsker {
 fn a_real_switch_applies_and_holds() {
     let driver = OpenCode::new(std::env::temp_dir());
 
-    let options = driver.options().expect("options");
+    let options = driver.options("s1").expect("options");
     assert!(
         options.iter().any(|option| option.id == "model"),
         "the agent reports its models"
     );
 
-    let options = driver.set_option("effort", "low").expect("set");
+    let options = driver.set_option("s1", "effort", "low").expect("set");
     let current = options
         .iter()
         .find(|option| option.id == "effort")
@@ -44,7 +44,7 @@ fn a_real_switch_applies_and_holds() {
     assert_eq!(current, Some("low"));
 
     // A fresh session resets the agent; the driver re-applies the choice.
-    let options = driver.options().expect("options again");
+    let options = driver.options("s1").expect("options again");
     let current = options
         .iter()
         .find(|option| option.id == "effort")
@@ -59,9 +59,12 @@ fn a_real_turn_streams_text() {
 
     let mut parts = Vec::new();
     driver
-        .start_turn("Reply with exactly: ready", &mut NoAsker, &mut |part| {
-            parts.push(part)
-        })
+        .start_turn(
+            SessionRef::new("s1"),
+            "Reply with exactly: ready",
+            &mut NoAsker,
+            &mut |part| parts.push(part),
+        )
         .expect("turn");
 
     let text: String = parts
