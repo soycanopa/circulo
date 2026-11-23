@@ -4,11 +4,12 @@
 //! the buffer and the caret; this module paints it and the shell handles the
 //! keys. Enter sends, Shift+Enter breaks the line.
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, Corner, Div, FocusHandle, IntoElement, KeyDownEvent, SharedString, Window,
-    anchored, div, point, prelude::*, px,
+    AnyElement, App, Corner, Div, FocusHandle, IntoElement, KeyDownEvent, Pixels, Point,
+    SharedString, Window, anchored, canvas, div, point, prelude::*, px,
 };
 
 use crate::icons::icon;
@@ -156,7 +157,9 @@ fn input_box(
 
 /// One composer slot: the daemon's value when the option exists, the mock
 /// label until then. A live option opens its menu on click, anchored above
-/// the chip itself.
+/// the chip itself. Where the chip sits is measured, not assumed: a
+/// zero-size canvas beside it reports the wrapper's window origin every
+/// frame, and the menu anchors to that point.
 fn slot(
     theme: &Theme,
     pickers: &Pickers<'_>,
@@ -164,20 +167,30 @@ fn slot(
     path: Option<&'static str>,
     fallback: &'static str,
 ) -> impl IntoElement {
+    let origin = Rc::new(Cell::new(Point::<Pixels>::default()));
+
     match pickers.options.iter().find(|option| option.id == id) {
         Some(option) => {
             let label = current_label(option);
             let open = pickers.open == Some(option.id.as_str());
             let next = if open { None } else { Some(option.id.clone()) };
             let on_toggle = pickers.on_toggle.clone();
-            let mut anchor = picker(theme, path, label, open)
-                .id(SharedString::from(format!("picker-{}", option.id)))
-                .cursor_pointer()
-                .on_click(move |_, window, cx| on_toggle(next.clone(), window, cx));
+            let track = Rc::clone(&origin);
+
+            let mut wrapper = div().flex().items_start().child(canvas(
+                move |bounds, _, _| track.set(bounds.origin),
+                |_, _, _, _| {},
+            ));
+            wrapper = wrapper.child(
+                picker(theme, path, label, open)
+                    .id(SharedString::from(format!("picker-{}", option.id)))
+                    .cursor_pointer()
+                    .on_click(move |_, window, cx| on_toggle(next.clone(), window, cx)),
+            );
             if open {
-                anchor = anchor.child(menu_view(theme, option, pickers));
+                wrapper = wrapper.child(menu_view(theme, option, pickers, origin.get()));
             }
-            anchor.into_any_element()
+            wrapper.into_any_element()
         }
         None => static_picker(theme, path, fallback).into_any_element(),
     }
@@ -230,11 +243,17 @@ fn current_label(option: &ConfigOption) -> String {
 }
 
 /// The open option's choices: a popup of fixed width and bounded height,
-/// anchored above the picker chip that opened it, whatever the agent lists.
-/// The model menu gains tabs — the starred models first, the agent's own
-/// list grouped by who serves each model — and a star per row. The current
-/// value is marked; anything else sends the choice to the daemon.
-fn menu_view(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> AnyElement {
+/// anchored above the picker chip that opened it — at the point the chip's
+/// canvas measured last frame. The model menu gains tabs — the starred
+/// models first, the agent's own list grouped by who serves each model —
+/// and a star per row. The current value is marked; anything else sends
+/// the choice to the daemon.
+fn menu_view(
+    theme: &Theme,
+    option: &ConfigOption,
+    pickers: &Pickers<'_>,
+    anchor: Point<Pixels>,
+) -> AnyElement {
     let tabbed = option.id == "model";
 
     let mut menu = div()
@@ -282,6 +301,7 @@ fn menu_view(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> Any
     // snaps the corner when the window edge would cut it.
     anchored()
         .anchor(Corner::BottomLeft)
+        .position(anchor)
         .offset(point(px(0.), px(-8.)))
         .child(
             menu.child(
