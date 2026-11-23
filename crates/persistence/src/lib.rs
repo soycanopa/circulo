@@ -25,7 +25,11 @@ const HOME_DIRECTORY: &str = ".circulo";
 const DATABASE_FILE: &str = "circulo.db";
 
 /// Schema version, tracked in SQLite's own `user_version`.
-const SCHEMA_VERSION: i64 = 1;
+///
+/// 1 created the tables. 2 added `sessions.provider_session`, the provider's
+/// own key for a session, so a restart can hand it back and the agent resumes
+/// where it left off.
+const SCHEMA_VERSION: i64 = 2;
 
 /// The database path: `CIRCULO_HOME/circulo.db`, or `~/.circulo/circulo.db`.
 ///
@@ -121,38 +125,51 @@ impl Store {
             return Ok(());
         }
 
-        connection.execute_batch(
-            r#"
-            BEGIN;
-            CREATE TABLE IF NOT EXISTS sessions (
-                id          TEXT PRIMARY KEY,
-                project     TEXT,
-                provider    TEXT NOT NULL,
-                title       TEXT NOT NULL DEFAULT '',
-                created_at  INTEGER NOT NULL,
-                updated_at  INTEGER NOT NULL
-            );
+        // Each step moves one version forward, so a database from any past
+        // release reaches the current shape in order.
+        if version < 1 {
+            connection.execute_batch(
+                r#"
+                BEGIN;
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id          TEXT PRIMARY KEY,
+                    project     TEXT,
+                    provider    TEXT NOT NULL,
+                    title       TEXT NOT NULL DEFAULT '',
+                    created_at  INTEGER NOT NULL,
+                    updated_at  INTEGER NOT NULL
+                );
 
-            CREATE TABLE IF NOT EXISTS turns (
-                session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-                turn        INTEGER NOT NULL,
-                prompt      TEXT NOT NULL,
-                created_at  INTEGER NOT NULL,
-                PRIMARY KEY (session_id, turn)
-            );
+                CREATE TABLE IF NOT EXISTS turns (
+                    session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    turn        INTEGER NOT NULL,
+                    prompt      TEXT NOT NULL,
+                    created_at  INTEGER NOT NULL,
+                    PRIMARY KEY (session_id, turn)
+                );
 
-            CREATE TABLE IF NOT EXISTS parts (
-                session_id  TEXT NOT NULL,
-                turn        INTEGER NOT NULL,
-                position    INTEGER NOT NULL,
-                payload     TEXT NOT NULL,
-                PRIMARY KEY (session_id, turn, position)
-            );
+                CREATE TABLE IF NOT EXISTS parts (
+                    session_id  TEXT NOT NULL,
+                    turn        INTEGER NOT NULL,
+                    position    INTEGER NOT NULL,
+                    payload     TEXT NOT NULL,
+                    PRIMARY KEY (session_id, turn, position)
+                );
 
-            PRAGMA user_version = 1;
-            COMMIT;
-            "#,
-        )?;
+                PRAGMA user_version = 1;
+                COMMIT;
+                "#,
+            )?;
+        }
+
+        if version < 2 {
+            connection.execute_batch(
+                r#"
+                ALTER TABLE sessions ADD COLUMN provider_session TEXT;
+                PRAGMA user_version = 2;
+                "#,
+            )?;
+        }
 
         Ok(())
     }
@@ -245,6 +262,31 @@ impl Store {
             })
             .optional()?;
         Ok(found.is_some())
+    }
+
+    /// The provider's own key for this session, from its last turn. `None`
+    /// while no turn has run, or when the provider keeps no session of its own.
+    pub fn provider_session(&self, id: &str) -> Result<Option<String>, StoreError> {
+        let key = self
+            .connection()
+            .query_row(
+                "SELECT provider_session FROM sessions WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(key)
+    }
+
+    /// Remembers the key the provider handed back this turn, or forgets it
+    /// with `None`: a stale key must not survive a provider that lost it.
+    pub fn set_provider_session(&self, id: &str, key: Option<&str>) -> Result<(), StoreError> {
+        self.connection().execute(
+            "UPDATE sessions SET provider_session = ?2 WHERE id = ?1",
+            params![id, key],
+        )?;
+        Ok(())
     }
 
     /// Every turn of a session, in order, with its parts in order.
@@ -417,6 +459,105 @@ mod tests {
         let store = Store::open(&path).expect("reopen");
         assert_eq!(store.sessions().expect("list").len(), 1);
         assert_eq!(store.transcript("s1").expect("transcript").len(), 1);
+
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn the_provider_key_survives_a_reopen() {
+        let directory = std::env::temp_dir().join(format!(
+            "circulo-store-{}-{}-provider-key",
+            std::process::id(),
+            now()
+        ));
+        let path = directory.join("circulo.db");
+
+        {
+            let store = Store::open(&path).expect("open");
+            store
+                .start_session("s1", None, "opencode")
+                .expect("session");
+            assert_eq!(
+                store.provider_session("s1").expect("key"),
+                None,
+                "a fresh session has no provider key"
+            );
+            store
+                .set_provider_session("s1", Some("ses_acp_1"))
+                .expect("set");
+        }
+
+        let store = Store::open(&path).expect("reopen");
+        assert_eq!(
+            store.provider_session("s1").expect("key").as_deref(),
+            Some("ses_acp_1"),
+            "the key outlives the process that wrote it"
+        );
+
+        // A provider that lost its session clears it, and the store forgets.
+        store.set_provider_session("s1", None).expect("clear");
+        assert_eq!(store.provider_session("s1").expect("key"), None);
+
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_version_1_database_migrates_in_place() {
+        let directory = std::env::temp_dir().join(format!(
+            "circulo-store-{}-{}-migration",
+            std::process::id(),
+            now()
+        ));
+        let path = directory.join("circulo.db");
+
+        // A database from release v0.4: schema 1, no provider key column.
+        {
+            std::fs::create_dir_all(&directory).expect("directory");
+            let connection = Connection::open(&path).expect("raw connection");
+            connection
+                .execute_batch(
+                    r#"
+                    CREATE TABLE sessions (
+                        id          TEXT PRIMARY KEY,
+                        project     TEXT,
+                        provider    TEXT NOT NULL,
+                        title       TEXT NOT NULL DEFAULT '',
+                        created_at  INTEGER NOT NULL,
+                        updated_at  INTEGER NOT NULL
+                    );
+                    CREATE TABLE turns (
+                        session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                        turn        INTEGER NOT NULL,
+                        prompt      TEXT NOT NULL,
+                        created_at  INTEGER NOT NULL,
+                        PRIMARY KEY (session_id, turn)
+                    );
+                    CREATE TABLE parts (
+                        session_id  TEXT NOT NULL,
+                        turn        INTEGER NOT NULL,
+                        position    INTEGER NOT NULL,
+                        payload     TEXT NOT NULL,
+                        PRIMARY KEY (session_id, turn, position)
+                    );
+                    PRAGMA user_version = 1;
+                    "#,
+                )
+                .expect("schema 1");
+            connection
+                .execute(
+                    "INSERT INTO sessions (id, provider, created_at, updated_at)
+                     VALUES ('s1', 'demo', 0, 0)",
+                    [],
+                )
+                .expect("row");
+        }
+
+        let store = Store::open(&path).expect("open migrates");
+        assert_eq!(store.sessions().expect("list")[0].id, "s1", "data survived");
+        assert_eq!(store.provider_session("s1").expect("key"), None);
+        store
+            .set_provider_session("s1", Some("ses_acp_1"))
+            .expect("set");
 
         let _ = std::fs::remove_dir_all(&directory);
     }

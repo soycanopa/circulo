@@ -13,7 +13,7 @@ use std::thread;
 use std::time::Duration;
 
 use circulo_protocol::{ConfigChoice, ConfigOption, Part, ToolState};
-use circulo_provider::{Asker, Driver, DriverError};
+use circulo_provider::{Asker, Driver, DriverError, SessionRef};
 
 pub struct DemoDriver {
     chunk_delay: Duration,
@@ -53,10 +53,11 @@ impl Driver for DemoDriver {
 
     fn start_turn(
         &self,
+        _: SessionRef<'_>,
         prompt: &str,
         _: &mut dyn Asker,
         emit: &mut dyn FnMut(Part),
-    ) -> Result<(), DriverError> {
+    ) -> Result<Option<String>, DriverError> {
         emit(Part::Reasoning {
             delta: "Reading the request and picking a shape for the answer.\n\n\
                     The thought arrives with paragraphs of its own, the way a real agent's \
@@ -109,14 +110,15 @@ impl Driver for DemoDriver {
             thread::sleep(self.chunk_delay);
         }
 
-        Ok(())
+        // The demo keeps no session of its own; every turn starts fresh.
+        Ok(None)
     }
 
-    fn options(&self) -> Result<Vec<ConfigOption>, DriverError> {
+    fn options(&self, _: &str) -> Result<Vec<ConfigOption>, DriverError> {
         Ok(demo_options(&self.overrides()))
     }
 
-    fn set_option(&self, id: &str, value: &str) -> Result<Vec<ConfigOption>, DriverError> {
+    fn set_option(&self, _: &str, id: &str, value: &str) -> Result<Vec<ConfigOption>, DriverError> {
         let options = demo_options(&self.overrides());
         let option = options
             .iter()
@@ -207,7 +209,9 @@ mod tests {
 
         let mut parts = Vec::new();
         DemoDriver::instant()
-            .start_turn("hello", &mut NoAsker, &mut |part| parts.push(part))
+            .start_turn(SessionRef::new("s1"), "hello", &mut NoAsker, &mut |part| {
+                parts.push(part)
+            })
             .expect("turn");
 
         assert!(matches!(parts.first(), Some(Part::Reasoning { .. })));
@@ -246,10 +250,10 @@ mod tests {
     fn a_choice_survives_and_a_bad_one_is_refused() {
         let driver = DemoDriver::instant();
 
-        let options = driver.options().expect("options");
+        let options = driver.options("s1").expect("options");
         assert_eq!(options.len(), 2);
 
-        let options = driver.set_option("effort", "high").expect("set");
+        let options = driver.set_option("s1", "effort", "high").expect("set");
         let effort = options
             .iter()
             .find(|option| option.id == "effort")
@@ -258,15 +262,15 @@ mod tests {
 
         // The choice is still there on the next read: this is what lets a
         // per-turn process keep the user's pick.
-        let options = driver.options().expect("options again");
+        let options = driver.options("s1").expect("options again");
         let effort = options
             .iter()
             .find(|option| option.id == "effort")
             .expect("effort");
         assert_eq!(effort.current, "high");
 
-        assert!(driver.set_option("effort", "ludicrous").is_err());
-        assert!(driver.set_option("model", "high").is_err());
-        assert!(driver.set_option("nope", "high").is_err());
+        assert!(driver.set_option("s1", "effort", "ludicrous").is_err());
+        assert!(driver.set_option("s1", "model", "high").is_err());
+        assert!(driver.set_option("s1", "nope", "high").is_err());
     }
 }

@@ -11,9 +11,11 @@
 //! `session/update` notifications carrying message chunks, reasoning chunks and
 //! tool calls.
 //!
-//! A turn spawns one agent process. That is deliberate for the first slice: no
-//! shared mutable process, no half-dead session to recover. Keeping one agent
-//! per session (ACP `session/load`) lands when sessions are persisted.
+//! One agent process per Circulo session: the driver keeps every session's
+//! `opencode acp` child alive, so the agent remembers the conversation across
+//! turns — history is no longer display-only. The child dies with the driver,
+//! when the daemon winds down; a restarted daemon hands the stored session id
+//! back to the agent (ACP `session/load`) instead of starting from nothing.
 //!
 //! Permissions: a `session/request_permission` becomes a card in the client.
 //! The driver blocks on the answer, then tells the agent which option the user
@@ -25,13 +27,13 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use circulo_protocol::{
     ConfigChoice, ConfigOption, Part, PermissionOption, PermissionOptionKind, PermissionRequest,
     Question, QuestionField, QuestionKind, ToolState,
 };
-use circulo_provider::{Asker, Decision, Driver, DriverError};
+use circulo_provider::{Asker, Decision, Driver, DriverError, SessionRef};
 use serde_json::{Value, json};
 
 /// ACP version this driver speaks. `initialize` returns the same number or the
@@ -41,10 +43,30 @@ const ACP_VERSION: u64 = 1;
 pub struct OpenCode {
     cwd: PathBuf,
     binary: PathBuf,
-    /// Choices the user made, keyed by option id. A set only lasts for the
-    /// agent session that received it — the probe showed a fresh `session/new`
-    /// resets `effort` to `default` — so every new session re-applies these.
+    /// Choices the user made, keyed by option id. They are the defaults for
+    /// every session this driver opens, and the queue for a choice made while
+    /// a turn holds the session.
     overrides: Mutex<BTreeMap<String, String>>,
+    /// One live agent per Circulo session, keyed by the session's wire id.
+    /// Each slot locks on its own: a long turn parks its session without
+    /// parking anyone else's, and two turns on one session queue the way an
+    /// agent requires — one prompt at a time.
+    live: Mutex<HashMap<String, Arc<Mutex<Option<Attached>>>>>,
+}
+
+/// The agent side of one Circulo session: the process, its ACP session and
+/// what it has reported so far.
+struct Attached {
+    agent: Agent,
+    /// The ACP session id inside that process. It is also the key the core
+    /// stores, so a restarted daemon can `session/load` it back.
+    session: String,
+    /// The options list from the last `session/new`, set or recall.
+    options: Vec<ConfigOption>,
+    /// The overrides this attach has already applied. A choice made after it
+    /// — mid-turn — differs from this snapshot, and the end of the turn is
+    /// when it lands: the next turn reads the refreshed session.
+    applied: BTreeMap<String, String>,
 }
 
 impl OpenCode {
@@ -53,6 +75,7 @@ impl OpenCode {
             cwd: cwd.into(),
             binary: PathBuf::from("opencode"),
             overrides: Mutex::new(BTreeMap::new()),
+            live: Mutex::new(HashMap::new()),
         }
     }
 
@@ -63,6 +86,7 @@ impl OpenCode {
             cwd: cwd.into(),
             binary: binary.into(),
             overrides: Mutex::new(BTreeMap::new()),
+            live: Mutex::new(HashMap::new()),
         }
     }
 
@@ -72,9 +96,136 @@ impl OpenCode {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// Re-applies the user's choices to a fresh agent session and returns the
-    /// list the agent reports afterwards. A choice the agent refuses is
-    /// dropped: the option is gone, and the rest still apply.
+    fn live(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Mutex<Option<Attached>>>>> {
+        self.live
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The session's slot, created empty on first sight. An empty slot means
+    /// "known, not attached": the next turn or listing attaches it.
+    fn slot_for(&self, id: &str) -> Arc<Mutex<Option<Attached>>> {
+        self.live()
+            .entry(id.to_owned())
+            .or_insert_with(|| Arc::new(Mutex::new(None)))
+            .clone()
+    }
+
+    /// The slot's contents, recovered if a turn panicked mid-way; `None` when
+    /// nothing is attached or a turn holds the lock right now.
+    fn peek(slot: &Mutex<Option<Attached>>) -> Option<std::sync::MutexGuard<'_, Option<Attached>>> {
+        match slot.try_lock() {
+            Ok(guard) => Some(guard),
+            Err(std::sync::TryLockError::Poisoned(poison)) => Some(poison.into_inner()),
+            Err(std::sync::TryLockError::WouldBlock) => None,
+        }
+    }
+
+    /// Spawns the agent and opens its session, applying the user's choices.
+    /// A stored key resumes the agent's own session — that is what makes a
+    /// restarted daemon a continuation instead of a reset. A key the agent
+    /// no longer knows starts a fresh conversation rather than failing the
+    /// turn: the new key comes back, the store heals, the transcript stays.
+    fn attach(&self, resume: Option<&str>, ask: &mut dyn Asker) -> Result<Attached, DriverError> {
+        let mut agent = Agent::spawn(&self.binary, &self.cwd)?;
+        let session = match resume {
+            Some(key) => match load_session(&mut agent, key, &self.cwd, ask) {
+                Ok(session) => session,
+                Err(_) => open_session(&mut agent, &self.cwd, ask)?,
+            },
+            None => open_session(&mut agent, &self.cwd, ask)?,
+        };
+        let applied = self.overrides().clone();
+        let options = self.recall(&mut agent, &session, ask);
+
+        Ok(Attached {
+            agent,
+            session,
+            options,
+            applied,
+        })
+    }
+
+    /// Applies an override to whichever agent can take it right now. A live,
+    /// idle session gets it directly; a busy one queues it for its turn's
+    /// end; no session at all takes a short-lived one. Either way the choice
+    /// is in `overrides`, which is what every future attach re-applies.
+    fn apply_choice(
+        &self,
+        session: &str,
+        id: &str,
+        value: &str,
+    ) -> Result<Vec<ConfigOption>, DriverError> {
+        let slot = self.live().get(session).cloned();
+        if let Some(slot) = &slot {
+            if let Some(mut guard) = Self::peek(slot) {
+                if let Some(live) = guard.as_mut() {
+                    // A stale picker gets a clear error instead of a refused
+                    // call, checked against what this agent last reported.
+                    let option = option_in(&live.options, id)?;
+                    check_choice(option, id, value)?;
+
+                    let mut refuse = RefuseAll;
+                    let result = live.agent.request(
+                        "session/set_config_option",
+                        json!({
+                            "sessionId": live.session,
+                            "configId": id,
+                            "value": value,
+                        }),
+                        &mut refuse,
+                    )?;
+                    let options = config_options(&result);
+                    live.options = options.clone();
+                    live.applied.insert(id.to_owned(), value.to_owned());
+                    self.overrides().insert(id.to_owned(), value.to_owned());
+                    return Ok(options);
+                }
+            } else {
+                // A turn holds the session. The choice lands when it ends —
+                // the queued override differs from the applied snapshot, and
+                // that is the recall trigger. Until then the picker shows
+                // the value it asked for.
+                let fresh = self.options(session)?;
+                let option = option_in(&fresh, id)?;
+                check_choice(option, id, value)?;
+                self.overrides().insert(id.to_owned(), value.to_owned());
+
+                let mut promised = fresh;
+                if let Some(option) = promised.iter_mut().find(|option| option.id == id) {
+                    option.current = value.to_owned();
+                }
+                return Ok(promised);
+            }
+        }
+
+        // Nothing live: a short-lived agent takes the choice the way the
+        // per-turn driver always did.
+        let mut agent = Agent::spawn(&self.binary, &self.cwd)?;
+        let mut refuse = RefuseAll;
+        let session = open_session(&mut agent, &self.cwd, &mut refuse)?;
+
+        let fresh = config_options(&agent.last_config);
+        let option = option_in(&fresh, id)?;
+        check_choice(option, id, value)?;
+
+        let result = agent.request(
+            "session/set_config_option",
+            json!({
+                "sessionId": session,
+                "configId": id,
+                "value": value,
+            }),
+            &mut refuse,
+        )?;
+        let options = config_options(&result);
+        self.overrides().insert(id.to_owned(), value.to_owned());
+        Ok(options)
+    }
+
+    /// Re-applies the user's choices to an agent session and returns the list
+    /// the agent reports afterwards. A choice the agent refuses is dropped:
+    /// the option is gone, and the rest still apply.
     fn recall(&self, agent: &mut Agent, session: &str, ask: &mut dyn Asker) -> Vec<ConfigOption> {
         let mut options = config_options(&agent.last_config);
         let mut stored = self.overrides().clone();
@@ -109,53 +260,87 @@ impl Driver for OpenCode {
 
     fn start_turn(
         &self,
+        session_ref: SessionRef<'_>,
         prompt: &str,
         ask: &mut dyn Asker,
         emit: &mut dyn FnMut(Part),
-    ) -> Result<(), DriverError> {
-        let mut agent = Agent::spawn(&self.binary, &self.cwd)?;
-        let session = open_session(&mut agent, &self.cwd, ask)?;
-        self.recall(&mut agent, &session, ask);
+    ) -> Result<Option<String>, DriverError> {
+        let slot = self.slot_for(session_ref.id);
+
+        // Held for the whole turn: the agent answers one prompt at a time,
+        // and a second turn on this session waits instead of interleaving.
+        let mut slot = slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.is_none() {
+            *slot = Some(self.attach(session_ref.resume, ask)?);
+        }
+        let attached = slot.as_mut().expect("attached just above");
 
         let mut tools = HashMap::new();
-        agent.prompt(&session, prompt, &mut tools, ask, emit)
+        let run = attached
+            .agent
+            .prompt(&attached.session, prompt, &mut tools, ask, emit);
+
+        match run {
+            Ok(()) => {
+                // A choice made mid-turn is still queued; this is where it
+                // lands, so the next turn reads the refreshed session.
+                if *self.overrides() != attached.applied {
+                    attached.options = self.recall(&mut attached.agent, &attached.session, ask);
+                    attached.applied = self.overrides().clone();
+                }
+                Ok(Some(attached.session.clone()))
+            }
+            Err(error) => {
+                // A dead process cannot serve the next turn; dropping it lets
+                // the stored key bring the session back on the next one.
+                if attached.agent.dead {
+                    *slot = None;
+                }
+                Err(error)
+            }
+        }
     }
 
-    fn options(&self) -> Result<Vec<ConfigOption>, DriverError> {
+    fn options(&self, session: &str) -> Result<Vec<ConfigOption>, DriverError> {
+        let slot = self.live().get(session).cloned();
+        if let Some(slot) = &slot {
+            if let Some(attached) = Self::peek(slot) {
+                if let Some(live) = attached.as_ref() {
+                    return Ok(live.options.clone());
+                }
+            }
+        }
+
+        // Nothing live: what a fresh session reports is what there is.
         let mut agent = Agent::spawn(&self.binary, &self.cwd)?;
         let mut refuse = RefuseAll;
         let session = open_session(&mut agent, &self.cwd, &mut refuse)?;
         Ok(self.recall(&mut agent, &session, &mut refuse))
     }
 
-    fn set_option(&self, id: &str, value: &str) -> Result<Vec<ConfigOption>, DriverError> {
-        let mut agent = Agent::spawn(&self.binary, &self.cwd)?;
-        let mut refuse = RefuseAll;
-        let session = open_session(&mut agent, &self.cwd, &mut refuse)?;
+    fn set_option(
+        &self,
+        session: &str,
+        id: &str,
+        value: &str,
+    ) -> Result<Vec<ConfigOption>, DriverError> {
+        self.apply_choice(session, id, value)
+    }
 
-        // Check against what the agent just reported, so a stale picker gets a
-        // clear error instead of a refused call.
-        let fresh = config_options(&agent.last_config);
-        let option = fresh
-            .iter()
-            .find(|option| option.id == id)
-            .ok_or_else(|| DriverError::new(format!("unknown option {id}")))?;
-        if !option.options.iter().any(|choice| choice.id == value) {
-            return Err(DriverError::new(format!("{value} is not a {id}")));
+    fn shutdown(&self) {
+        // Release every agent this driver holds. A slot whose turn is still
+        // streaming keeps its Arc inside the turn thread and its child dies
+        // when the turn ends — or with us, since the agent reads our stdin
+        // and closes on EOF either way.
+        let mut live = self.live();
+        for slot in live.values() {
+            if let Ok(mut attached) = slot.try_lock() {
+                *attached = None;
+            }
         }
-
-        let result = agent.request(
-            "session/set_config_option",
-            json!({
-                "sessionId": session,
-                "configId": id,
-                "value": value,
-            }),
-            &mut refuse,
-        )?;
-        let options = config_options(&result);
-        self.overrides().insert(id.to_owned(), value.to_owned());
-        Ok(options)
+        live.clear();
     }
 }
 
@@ -178,6 +363,26 @@ impl Asker for RefuseAll {
 /// Returns the agent's session id and remembers the reported config list on
 /// the agent for the caller to validate against.
 fn open_session(agent: &mut Agent, cwd: &Path, ask: &mut dyn Asker) -> Result<String, DriverError> {
+    initialize(agent, ask)?;
+
+    let session = agent.request(
+        "session/new",
+        json!({
+            "cwd": cwd.to_string_lossy(),
+            "mcpServers": []
+        }),
+        ask,
+    )?;
+    agent.last_config = session.clone();
+    let session = session
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| DriverError::new("opencode did not return a session id"))?
+        .to_owned();
+    Ok(session)
+}
+
+fn initialize(agent: &mut Agent, ask: &mut dyn Asker) -> Result<(), DriverError> {
     let welcome = agent.request(
         "initialize",
         json!({
@@ -198,28 +403,55 @@ fn open_session(agent: &mut Agent, cwd: &Path, ask: &mut dyn Asker) -> Result<St
             "opencode speaks ACP version {version:?}, this driver speaks {ACP_VERSION}"
         )));
     }
+    Ok(())
+}
 
-    let session = agent.request(
-        "session/new",
+/// Reattaches to a session the agent still remembers. The conversation is
+/// replayed as `session/update` notifications before the response arrives;
+/// `request` skips notifications, and rightly so — the transcript already
+/// lives in the core's database, and drawing the replay again would double
+/// it on screen. The response carries the session's config but, as probed
+/// on OpenCode 2.3.2, no id: the loaded session is the one that was asked
+/// for, so that is what comes back.
+fn load_session(
+    agent: &mut Agent,
+    key: &str,
+    cwd: &Path,
+    ask: &mut dyn Asker,
+) -> Result<String, DriverError> {
+    initialize(agent, ask)?;
+
+    let loaded = agent.request(
+        "session/load",
         json!({
+            "sessionId": key,
             "cwd": cwd.to_string_lossy(),
             "mcpServers": []
         }),
         ask,
     )?;
-    agent.last_config = session.clone();
-    let session = session
-        .get("sessionId")
-        .and_then(Value::as_str)
-        .ok_or_else(|| DriverError::new("opencode did not return a session id"))?
-        .to_owned();
-    Ok(session)
+    agent.last_config = loaded;
+    Ok(key.to_owned())
 }
 
 /// The agent's settings as `session/new` or `session/set_config_option`
 /// reported them. Only `select` lists become options; anything else is a
 /// setting this client has no control for, and is skipped the way unknown
 /// updates are.
+fn option_in<'a>(options: &'a [ConfigOption], id: &str) -> Result<&'a ConfigOption, DriverError> {
+    options
+        .iter()
+        .find(|option| option.id == id)
+        .ok_or_else(|| DriverError::new(format!("unknown option {id}")))
+}
+
+fn check_choice(option: &ConfigOption, id: &str, value: &str) -> Result<(), DriverError> {
+    if option.options.iter().any(|choice| choice.id == value) {
+        Ok(())
+    } else {
+        Err(DriverError::new(format!("{value} is not a {id}")))
+    }
+}
 fn config_options(value: &Value) -> Vec<ConfigOption> {
     value
         .get("configOptions")
@@ -271,6 +503,9 @@ struct Agent {
     /// The last `session/new` result, so a caller can validate a choice
     /// against what the agent reported.
     last_config: Value,
+    /// I/O with this process failed; it serves no further turns and its
+    /// holder drops it rather than hand work to a corpse.
+    dead: bool,
 }
 
 impl Agent {
@@ -302,6 +537,7 @@ impl Agent {
             stdout: BufReader::new(stdout),
             next_id: 1,
             last_config: Value::Null,
+            dead: false,
         })
     }
 
@@ -445,18 +681,22 @@ impl Agent {
         self.stdin
             .write_all(line.as_bytes())
             .and_then(|()| self.stdin.flush())
-            .map_err(|error| DriverError::new(format!("opencode acp: {error}")))
+            .map_err(|error| {
+                self.dead = true;
+                DriverError::new(format!("opencode acp: {error}"))
+            })
     }
 
     fn receive(&mut self) -> Result<Value, DriverError> {
         loop {
             let mut line = String::new();
-            let read = self
-                .stdout
-                .read_line(&mut line)
-                .map_err(|error| DriverError::new(format!("opencode acp: {error}")))?;
+            let read = self.stdout.read_line(&mut line).map_err(|error| {
+                self.dead = true;
+                DriverError::new(format!("opencode acp: {error}"))
+            })?;
 
             if read == 0 {
+                self.dead = true;
                 return Err(DriverError::new("opencode acp closed the connection"));
             }
 
@@ -713,6 +953,28 @@ mod tests {
             apply_update(update, &mut tools, &mut |part| parts.push(part));
         }
         parts
+    }
+
+    /// The real agent's load contract, without a model call: open a session,
+    /// drop the process, and hand the stored id to a fresh one. What this
+    /// pins down is the method name, the params and the response shape of
+    /// `session/load` against the installed OpenCode.
+    #[test]
+    #[ignore = "spawns the real opencode CLI"]
+    fn a_real_session_loads_without_a_model_call() {
+        let cwd = std::env::temp_dir();
+        let binary = std::path::PathBuf::from("opencode");
+
+        let key = {
+            let mut agent = Agent::spawn(&binary, &cwd).expect("spawn");
+            let session = open_session(&mut agent, &cwd, &mut RefuseAll).expect("open");
+            drop(agent);
+            session
+        };
+
+        let mut agent = Agent::spawn(&binary, &cwd).expect("respawn");
+        let loaded = load_session(&mut agent, &key, &cwd, &mut RefuseAll).expect("load");
+        assert_eq!(loaded, key, "the agent answered with the same session");
     }
 
     #[test]

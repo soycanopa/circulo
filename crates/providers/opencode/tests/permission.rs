@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::collections::BTreeMap;
 
 use circulo_protocol::{Part, PermissionRequest, Question};
-use circulo_provider::{Answer, Asker, Decision, Driver};
+use circulo_provider::{Answer, Asker, Decision, Driver, SessionRef};
 use circulo_provider_opencode::OpenCode;
 
 /// A fake agent that asks for permission before it answers the prompt.
@@ -233,7 +233,9 @@ fn run_with_note(
     let mut parts = Vec::new();
 
     driver
-        .start_turn("go", &mut asker, &mut |part| parts.push(part))
+        .start_turn(SessionRef::new("s1"), "go", &mut asker, &mut |part| {
+            parts.push(part)
+        })
         .expect("turn");
 
     (parts, asker)
@@ -331,7 +333,7 @@ fn driver(name: &str) -> (ScriptedAgent, OpenCode) {
 #[test]
 fn options_lists_what_the_agent_reports() {
     let (_agent, driver) = driver("options-list");
-    let options = driver.options().expect("options");
+    let options = driver.options("s1").expect("options");
 
     assert_eq!(
         options.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(),
@@ -347,7 +349,7 @@ fn options_lists_what_the_agent_reports() {
 fn a_choice_applies_and_survives_a_fresh_session() {
     let (_agent, driver) = driver("options-set");
 
-    let options = driver.set_option("effort", "high").expect("set");
+    let options = driver.set_option("s1", "effort", "high").expect("set");
     let effort = options
         .iter()
         .find(|option| option.id == "effort")
@@ -357,7 +359,7 @@ fn a_choice_applies_and_survives_a_fresh_session() {
     // The next call spawns a new agent, whose `session/new` resets to the
     // default: the driver re-applies the stored choice, the way a per-turn
     // process keeps the user's pick.
-    let options = driver.options().expect("options again");
+    let options = driver.options("s1").expect("options again");
     let effort = options
         .iter()
         .find(|option| option.id == "effort")
@@ -369,6 +371,6 @@ fn a_choice_applies_and_survives_a_fresh_session() {
 fn an_unknown_option_or_value_is_an_error() {
     let (_agent, driver) = driver("options-bad");
 
-    assert!(driver.set_option("nope", "high").is_err());
-    assert!(driver.set_option("effort", "ludicrous").is_err());
+    assert!(driver.set_option("s1", "nope", "high").is_err());
+    assert!(driver.set_option("s1", "effort", "ludicrous").is_err());
 }

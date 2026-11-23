@@ -12,7 +12,7 @@
 
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
-use std::sync::mpsc::{Sender, channel};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
 use std::path::PathBuf;
@@ -71,13 +71,32 @@ impl Daemon {
     }
 
     /// Accepts forever. Each connection gets its own thread so a long turn
-    /// cannot block the next client.
+    /// cannot block the next client. Tests use this: nothing stops it.
     pub fn serve(self) -> ! {
+        let (_hold, stopped) = channel();
+        self.serve_until(stopped);
+        unreachable!("serve_until only returns when its shutdown fires")
+    }
+
+    /// Serves until `shutdown` fires — the supervisor's stdin reached EOF,
+    /// meaning the app that owns us is gone. Then the core is released: open
+    /// cards are cancelled and the provider's agents go home, which is what
+    /// keeps no orphaned agent process behind. Returns so the process can
+    /// exit cleanly, destructors included.
+    pub fn serve_until(self, shutdown: Receiver<()>) {
+        // A blocking accept cannot observe the shutdown, so the listener polls
+        // and the wait doubles as the loop's rest between attempts.
+        let _ = self.listener.set_nonblocking(true);
         loop {
             match self.listener.accept() {
                 Ok((stream, peer)) => {
                     let token = self.token.clone();
                     let core = Arc::clone(&self.core);
+
+                    // The accepted socket inherits the listener's nonblocking
+                    // flag, and the WebSocket handshake blocks on purpose.
+                    let mut stream = stream;
+                    let _ = stream.set_nonblocking(false);
 
                     thread::spawn(move || {
                         if let Err(error) = handle(stream, peer, &token, core) {
@@ -85,9 +104,17 @@ impl Daemon {
                         }
                     });
                 }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    match shutdown.recv_timeout(std::time::Duration::from_millis(50)) {
+                        Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    }
+                }
                 Err(error) => eprintln!("circulo-daemon: accept failed: {error}"),
             }
         }
+
+        self.core.shutdown();
     }
 }
 

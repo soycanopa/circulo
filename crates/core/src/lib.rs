@@ -22,7 +22,7 @@ use circulo_protocol::{
     ConfigOption, FinishReason, HistoryTurn, PermissionRequest, Question, QuestionAction,
     ServerMessage, SessionSummary,
 };
-use circulo_provider::{Answer, Asker, Decision, Driver};
+use circulo_provider::{Answer, Asker, Decision, Driver, SessionRef};
 use uuid::Uuid;
 
 pub struct Session {
@@ -148,6 +148,14 @@ impl Core {
         self.questions.cancel_all();
     }
 
+    /// The daemon is on its way out: open cards can no longer be answered,
+    /// and the provider must let its agents go — their processes belong to
+    /// the provider, and this is what keeps none of them behind.
+    pub fn shutdown(&self) {
+        self.cancel_permissions();
+        self.driver.shutdown();
+    }
+
     pub fn driver_name(&self) -> &'static str {
         self.driver.name()
     }
@@ -159,7 +167,9 @@ impl Core {
         if !self.has_session(session) {
             return Err(format!("unknown session {session}"));
         }
-        self.driver.options().map_err(|error| error.to_string())
+        self.driver
+            .options(session)
+            .map_err(|error| error.to_string())
     }
 
     /// Applies the user's choice and returns the refreshed list, as the agent
@@ -174,7 +184,7 @@ impl Core {
             return Err(format!("unknown session {session}"));
         }
         self.driver
-            .set_option(id, value)
+            .set_option(session, id, value)
             .map_err(|error| error.to_string())
     }
 
@@ -246,12 +256,34 @@ impl Core {
             emit: &emit,
         };
 
-        let result = self.driver.start_turn(prompt, &mut asker, &mut parts);
+        // The key the provider handed back last turn is its way back in after
+        // a restart; a write failure must not stop the turn from running.
+        let resume = match &self.store {
+            Some(store) => store.provider_session(session).ok().flatten(),
+            None => None,
+        };
+        let result = self.driver.start_turn(
+            SessionRef {
+                id: session,
+                resume: resume.as_deref(),
+            },
+            prompt,
+            &mut asker,
+            &mut parts,
+        );
+
+        // Whatever the provider handed back is what the next turn — maybe of
+        // the next daemon — resumes with. `None` clears a stale key.
+        if let Ok(key) = &result {
+            if let Some(store) = &self.store {
+                let _ = store.set_provider_session(session, key.as_deref());
+            }
+        }
 
         let send = |message| (emit.borrow_mut())(message);
 
         let reason = match result {
-            Ok(()) => FinishReason::Completed,
+            Ok(_) => FinishReason::Completed,
             Err(error) => {
                 send(ServerMessage::Error {
                     message: error.to_string(),
@@ -369,6 +401,7 @@ mod tests {
     use super::*;
     use circulo_protocol::Part;
     use circulo_provider::DriverError;
+    use std::sync::Mutex;
 
     struct Echo;
 
@@ -379,22 +412,24 @@ mod tests {
 
         fn start_turn(
             &self,
+            _: SessionRef<'_>,
             prompt: &str,
             _: &mut dyn Asker,
             emit: &mut dyn FnMut(Part),
-        ) -> Result<(), DriverError> {
+        ) -> Result<Option<String>, DriverError> {
             emit(Part::Text {
                 delta: prompt.to_owned(),
             });
-            Ok(())
+            Ok(None)
         }
 
-        fn options(&self) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+        fn options(&self, _: &str) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
             Ok(Vec::new())
         }
 
         fn set_option(
             &self,
+            _: &str,
             _id: &str,
             _value: &str,
         ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
@@ -412,10 +447,11 @@ mod tests {
 
         fn start_turn(
             &self,
+            _: SessionRef<'_>,
             _: &str,
             ask: &mut dyn Asker,
             emit: &mut dyn FnMut(Part),
-        ) -> Result<(), DriverError> {
+        ) -> Result<Option<String>, DriverError> {
             let answer = ask.question(Question {
                 message: "How should I approach this?".into(),
                 fields: vec![circulo_protocol::QuestionField {
@@ -436,15 +472,16 @@ mod tests {
                 other => format!("{other:?}").to_lowercase(),
             };
             emit(Part::Text { delta });
-            Ok(())
+            Ok(None)
         }
 
-        fn options(&self) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+        fn options(&self, _: &str) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
             Ok(Vec::new())
         }
 
         fn set_option(
             &self,
+            _: &str,
             _id: &str,
             _value: &str,
         ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
@@ -461,19 +498,74 @@ mod tests {
 
         fn start_turn(
             &self,
+            _: SessionRef<'_>,
             _: &str,
             _: &mut dyn Asker,
             _: &mut dyn FnMut(Part),
-        ) -> Result<(), DriverError> {
+        ) -> Result<Option<String>, DriverError> {
             Err(DriverError::new("no"))
         }
 
-        fn options(&self) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+        fn options(&self, _: &str) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
             Ok(Vec::new())
         }
 
         fn set_option(
             &self,
+            _: &str,
+            _id: &str,
+            _value: &str,
+        ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Err(DriverError::new("this agent has no settings"))
+        }
+    }
+
+    /// A driver that remembers sessions: it records what it was asked to
+    /// resume with and hands `give` back as its key, the way OpenCode would.
+    struct Remembers {
+        seen: Arc<Mutex<Vec<Option<String>>>>,
+        give: Option<String>,
+    }
+
+    impl Remembers {
+        fn giving(key: &str) -> (Self, Arc<Mutex<Vec<Option<String>>>>) {
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            (
+                Self {
+                    seen: Arc::clone(&seen),
+                    give: Some(key.to_owned()),
+                },
+                seen,
+            )
+        }
+    }
+
+    impl Driver for Remembers {
+        fn name(&self) -> &'static str {
+            "remembers"
+        }
+
+        fn start_turn(
+            &self,
+            session: SessionRef<'_>,
+            _: &str,
+            _: &mut dyn Asker,
+            _: &mut dyn FnMut(Part),
+        ) -> Result<Option<String>, DriverError> {
+            self.seen
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(session.resume.map(str::to_owned));
+            Ok(self.give.clone())
+        }
+
+        fn options(&self, _: &str) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Ok(Vec::new())
+        }
+
+        fn set_option(
+            &self,
+            _: &str,
             _id: &str,
             _value: &str,
         ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
@@ -547,6 +639,70 @@ mod tests {
     }
 
     #[test]
+    fn a_provider_key_travels_from_turn_to_turn() {
+        let (driver, seen) = Remembers::giving("k1");
+        let core = core_with_store(Arc::new(driver));
+        let session = core.start_session(None);
+
+        core.run_turn(&session, "one", |_| {});
+        core.run_turn(&session, "two", |_| {});
+
+        let seen = seen.lock().unwrap_or_else(PoisonError::into_inner);
+        assert_eq!(
+            seen.as_slice(),
+            &[None, Some("k1".to_owned())],
+            "the first turn has nothing to resume; the second carries the stored key"
+        );
+    }
+
+    #[test]
+    fn a_reopened_core_resumes_with_the_stored_key() {
+        let store = Arc::new(circulo_persistence::Store::in_memory().expect("store"));
+        let (driver, _seen) = Remembers::giving("k1");
+        let core = Core::with_store(Arc::new(driver), Some(Arc::clone(&store)));
+        let session = core.start_session(None);
+        core.run_turn(&session, "one", |_| {});
+
+        // A daemon restart: a fresh core over the same database.
+        let (driver, seen_again) = Remembers::giving("k1");
+        let restarted = Core::with_store(Arc::new(driver), Some(store));
+        restarted.reopen_session(&session).expect("reopen");
+        restarted.run_turn(&session, "two", |_| {});
+
+        let seen = seen_again.lock().unwrap_or_else(PoisonError::into_inner);
+        assert_eq!(
+            seen.as_slice(),
+            &[Some("k1".to_owned())],
+            "the restart resumes the provider's session, not a fresh one"
+        );
+    }
+
+    #[test]
+    fn a_provider_that_loses_its_key_clears_it() {
+        let store = Arc::new(circulo_persistence::Store::in_memory().expect("store"));
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let driver = Remembers {
+            seen: Arc::clone(&seen),
+            give: None,
+        };
+        let core = Core::with_store(Arc::new(driver), Some(Arc::clone(&store)));
+        let session = core.start_session(None);
+        store
+            .set_provider_session(&session, Some("stale"))
+            .expect("seed a stale key");
+
+        core.run_turn(&session, "one", |_| {});
+
+        assert_eq!(
+            store.provider_session(&session).expect("key"),
+            None,
+            "a provider with no session must not leave a stale key behind"
+        );
+        let seen = seen.lock().unwrap_or_else(PoisonError::into_inner);
+        assert_eq!(seen.first(), Some(&Some("stale".to_owned())));
+    }
+
+    #[test]
     fn a_turn_is_bracketed_and_streams_its_parts() {
         let core = core_with(Arc::new(Echo));
         let session = core.start_session(Some("/tmp/project".into()));
@@ -582,10 +738,11 @@ mod tests {
 
         fn start_turn(
             &self,
+            _: SessionRef<'_>,
             _: &str,
             ask: &mut dyn Asker,
             emit: &mut dyn FnMut(Part),
-        ) -> Result<(), DriverError> {
+        ) -> Result<Option<String>, DriverError> {
             let answer = ask.permission(PermissionRequest {
                 title: "Run cargo test".into(),
                 detail: "cargo test --workspace".into(),
@@ -608,15 +765,16 @@ mod tests {
                 Decision::Cancelled => "cancelled".into(),
             };
             emit(Part::Text { delta });
-            Ok(())
+            Ok(None)
         }
 
-        fn options(&self) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+        fn options(&self, _: &str) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
             Ok(Vec::new())
         }
 
         fn set_option(
             &self,
+            _: &str,
             _id: &str,
             _value: &str,
         ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {

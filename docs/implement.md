@@ -19,8 +19,9 @@ Order matters: prove the pipe before adding a real provider to it.
 4. [x] Daemon process: loopback WebSocket, token handshake, request loop, announced URL.
 5. [x] Client crate: handshake, requests, streamed messages. Integration test against a real daemon.
 6. [x] Wire the desktop: the app supervises the daemon, streams parts into the transcript, and the daemon exits with the app.
-7. [x] OpenCode adapter behind the same Driver trait (ACP over stdio, one process per turn).
+7. [x] OpenCode adapter behind the same Driver trait (ACP over stdio).
 8. [x] Local persistence (SQLite), owned by the core: sessions, turns and parts in `~/.circulo/circulo.db` (`CIRCULO_HOME` overrides), the app reopens the newest session with its history. Settings and the attachment store still follow.
+9. [x] Session continuity: one agent process per Circulo session, the ACP session id stored in SQLite, `session/load` on a daemon restart, mid-turn option switches land at the turn's end, clean daemon shutdown with no orphaned agent processes.
 
 ## Phase 2 — Shared control surface
 - [x] Model / reasoning effort discovery and switching (`session/new` returns `configOptions`; `session/set_config_option`)
