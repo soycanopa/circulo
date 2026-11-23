@@ -229,8 +229,14 @@ pub struct ConfigOption {
 pub struct ConfigChoice {
     /// Provider-owned value id, sent back verbatim.
     pub id: String,
-    /// The agent's wording, shown as-is.
+    /// The agent's wording, shown as-is. A model that arrives as
+    /// `deepseek/DeepSeek V4 Pro` arrives here already stripped to
+    /// `DeepSeek V4 Pro` by the driver, which knows its own naming.
     pub label: String,
+    /// Who serves this choice (`"deepseek"`), from the agent's own id.
+    /// Empty when the choice has no provider of its own. The client groups
+    /// by it; it never parses ids to find out.
+    pub provider: String,
 }
 
 /// What the agent wants to know. `message` is the agent's own wording; `fields`
@@ -465,10 +471,12 @@ mod tests {
                         ConfigChoice {
                             id: "a".into(),
                             label: "A".into(),
+                            provider: "vendor-a".into(),
                         },
                         ConfigChoice {
                             id: "b".into(),
                             label: "B".into(),
+                            provider: String::new(),
                         },
                     ],
                 }],

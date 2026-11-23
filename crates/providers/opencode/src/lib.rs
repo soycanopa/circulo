@@ -452,6 +452,22 @@ fn check_choice(option: &ConfigOption, id: &str, value: &str) -> Result<(), Driv
         Err(DriverError::new(format!("{value} is not a {id}")))
     }
 }
+
+/// Who serves a choice, and what it is called without the vendor tag. ACP
+/// reports models as `deepseek/deepseek-v4-pro` named
+/// `deepseek/DeepSeek V4 Pro`; the picker wants `DeepSeek V4 Pro` under a
+/// `DeepSeek` heading. The prefix only counts as the vendor when the label
+/// repeats it — anything else is shown as the agent wrote it.
+fn split_provider(id: &str, label: String) -> (String, String) {
+    match id.split_once('/') {
+        Some((vendor, _))
+            if label.starts_with(vendor) && label[vendor.len()..].starts_with('/') =>
+        {
+            (vendor.to_owned(), label[vendor.len() + 1..].to_owned())
+        }
+        _ => (String::new(), label),
+    }
+}
 fn config_options(value: &Value) -> Vec<ConfigOption> {
     value
         .get("configOptions")
@@ -468,9 +484,13 @@ fn config_options(value: &Value) -> Vec<ConfigOption> {
                         .and_then(Value::as_array)?
                         .iter()
                         .filter_map(|choice| {
+                            let id = choice.get("value")?.as_str()?.to_owned();
+                            let label = choice.get("name")?.as_str()?.to_owned();
+                            let (provider, label) = split_provider(&id, label);
                             Some(ConfigChoice {
-                                id: choice.get("value")?.as_str()?.to_owned(),
-                                label: choice.get("name")?.as_str()?.to_owned(),
+                                id,
+                                label,
+                                provider,
                             })
                         })
                         .collect::<Vec<_>>();
@@ -945,6 +965,27 @@ fn apply_update(update: &Value, tools: &mut HashMap<String, Tool>, emit: &mut dy
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_model_arrives_without_its_vendor_tag() {
+        assert_eq!(
+            split_provider(
+                "deepseek/deepseek-v4-pro",
+                "deepseek/DeepSeek V4 Pro".into()
+            ),
+            ("deepseek".into(), "DeepSeek V4 Pro".into())
+        );
+        // The vendor prefix must repeat in the label, or nothing is stripped.
+        assert_eq!(
+            split_provider("deepseek/deepseek-v4-pro", "DeepSeek V4 Pro".into()),
+            (String::new(), "DeepSeek V4 Pro".into())
+        );
+        // No vendor in the id at all.
+        assert_eq!(
+            split_provider("beam-free", "Beam Free".into()),
+            (String::new(), "Beam Free".into())
+        );
+    }
 
     fn collect(updates: &[Value]) -> Vec<Part> {
         let mut parts = Vec::new();
