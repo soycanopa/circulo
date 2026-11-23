@@ -309,9 +309,8 @@ fn tab_bar(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> Div {
         .tab
         .unwrap_or_else(|| default_tab(pickers.favorites));
 
-    // The models tab carries the agent's own mark when one exists — icon
-    // only, the way a logo wants to be read — and falls back to the name
-    // with a generic glyph for agents without one.
+    // Both tabs are icon-only: the star, and the agent's mark when one
+    // exists (otherwise the agent's name with a generic glyph).
     let agent = agent_icon(pickers.agent_label);
     div()
         .flex()
@@ -326,7 +325,7 @@ fn tab_bar(theme: &Theme, option: &ConfigOption, pickers: &Pickers<'_>) -> Div {
             option,
             FAVORITES_TAB,
             "icons/star.svg",
-            Some("Favorites"),
+            None,
             active == FAVORITES_TAB,
             pickers,
         ))
@@ -365,7 +364,7 @@ fn tab_button<'a>(
         .child(icon(
             path,
             13.,
-            if on { theme.accent } else { theme.text_faint },
+            if on { theme.text } else { theme.text_faint },
         ))
         .when_some(label, |tab, label| tab.child(label.to_owned()))
         .cursor_pointer()
@@ -510,7 +509,7 @@ fn choice_row(
                     "icons/star.svg",
                     14.,
                     if favorite {
-                        theme.accent
+                        theme.text
                     } else {
                         theme.text_faint
                     },
