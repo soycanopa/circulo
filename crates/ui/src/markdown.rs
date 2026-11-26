@@ -17,9 +17,12 @@
 //!
 //! Footnotes parse into superscript references and a numbered list at the end.
 //!
-//! What is deliberately not supported yet: math and raw HTML (dropped). A link
-//! keeps its destination, and `InteractiveText` hit-tests the byte ranges GPUI
-//! lays out, so clicking a link opens it in the system browser.
+//! What is deliberately not supported yet: inline math images and raw HTML
+//! (dropped). Display math (`$$…$$`) is laid out by RaTeX and painted as an
+//! image; inline math (`$…$`) stays a mono chip with its source until there is
+//! an inline layout. A link keeps its destination, and `InteractiveText`
+//! hit-tests the byte ranges GPUI lays out, so clicking a link opens it in the
+//! system browser.
 
 use std::ops::Range;
 use std::rc::Rc;
@@ -116,6 +119,8 @@ pub(crate) enum Block {
         number: usize,
         spans: Vec<Span>,
     },
+    /// Display math (`$$…$$`), rendered as an image.
+    Math(String),
     Rule,
 }
 
@@ -309,6 +314,7 @@ fn block_view(block: &Block, theme: &Theme, links: &mut u64) -> AnyElement {
                     )),
             )
             .into_any_element(),
+        Block::Math(source) => crate::math::view(source, theme),
         Block::Rule => div()
             .w_full()
             .h(px(1.))
@@ -471,7 +477,7 @@ fn block_spans_mut(block: &mut Block) -> Vec<&mut Vec<Span>> {
         Block::Table { head, rows, .. } => {
             head.iter_mut().chain(rows.iter_mut().flatten()).collect()
         }
-        Block::Code(_) | Block::Rule => Vec::new(),
+        Block::Code(_) | Block::Math(_) | Block::Rule => Vec::new(),
     }
 }
 
@@ -598,7 +604,8 @@ pub(crate) fn blocks(text: &str) -> Vec<Block> {
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_FOOTNOTES
-        | Options::ENABLE_GFM;
+        | Options::ENABLE_GFM
+        | Options::ENABLE_MATH;
     let mut builder = Builder::default();
 
     for event in pulldown_cmark::Parser::new_ext(text, options) {
@@ -692,12 +699,20 @@ impl Builder {
             Event::TaskListMarker(checked) => {
                 self.push_span(if checked { "☑ " } else { "☐ " }, self.style);
             }
-            Event::InlineMath(text) | Event::DisplayMath(text) => {
+            Event::InlineMath(text) => {
+                // GPUI cannot put an image inside a text run; until there is an
+                // inline layout, the TeX source is an honest mono chip.
                 let style = Inline {
                     code: true,
                     ..self.style
                 };
-                self.push_span(&text, style);
+                self.push_span(&format!("${text}$"), style);
+            }
+            Event::DisplayMath(text) => {
+                // A display equation is its own block: flush the paragraph in
+                // progress and let the renderer draw an image.
+                self.flush();
+                self.blocks.push(Block::Math(text.trim().to_owned()));
             }
             // Raw HTML is dropped rather than shown as markup: an agent's
             // `<br>` is noise, not content.
@@ -1391,6 +1406,29 @@ mod tests {
         let grown = cache.blocks("hello world");
         assert!(!Rc::ptr_eq(&first, &grown));
         assert_eq!(grown.len(), 1);
+    }
+
+    #[test]
+    fn inline_math_is_a_chip_and_display_math_is_a_block() {
+        assert_eq!(
+            blocks("value $x^2$"),
+            vec![Block::Paragraph(vec![
+                plain("value "),
+                Span {
+                    text: "$x^2$".into(),
+                    style: Inline {
+                        code: true,
+                        ..Inline::default()
+                    },
+                    link: None,
+                },
+            ])]
+        );
+
+        assert_eq!(
+            blocks("$$\n\\frac{1}{2}\n$$"),
+            vec![Block::Math("\\frac{1}{2}".into())]
+        );
     }
 
     #[test]

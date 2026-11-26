@@ -18,3 +18,11 @@ serde_json.workspace = true
 # CommonMark parsing for transcript text. No HTML rendering and no CLI, so the
 # html and getopts default features stay off.
 pulldown-cmark = { version = "0.13.6", default-features = false }
+# Display math: RaTeX lays out TeX and rasterizes it once; the PNG is cached
+# and handed to GPUI as a RenderImage.
+ratex-parser = "0.1.16"
+ratex-layout = "0.1.16"
+ratex-render = { version = "0.1.16", features = ["embed-fonts"] }
+ratex-types = "0.1.16"
+image = { version = "0.25", default-features = false, features = ["png"] }
+smallvec = "1"
