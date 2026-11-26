@@ -85,10 +85,12 @@ Kubai Icons (MIT, `crates/ui/assets/icons/LICENSE`): the **two-tone** style for
 icons with body (folders, files, tools, settings, star, lock, monitor, loader),
 and the same library's **line** style for the simple navigation glyphs the
 two-tone set does not draw (arrows, chevrons, the reasoning brain, the panel
-toggles). Each file uses `currentColor`; the second tone is the same tint at 35%
-opacity, so dark/light and the accent apply. The provider's own mark
-(`opencode.svg`) stays. The SVGs are static: GPUI does not run the library's
-motion.
+toggles). Each file uses `currentColor`; the second tone is the same tint at 45%
+opacity, so dark/light and the accent apply. The two-tone files draw on a 16-unit
+grid with a margin and carry more ink than an outline, so the renderer draws them
+18% larger and blends 15% white into the requested tint; line files keep the
+exact size and colour. The provider's own mark (`opencode.svg`) stays. The SVGs
+are static: GPUI does not run the library's motion.
 
 ## 4. Surfaces and components (replication checklist)
 
