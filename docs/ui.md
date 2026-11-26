@@ -81,16 +81,11 @@ Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group la
 
 ### Icons
 
-Kubai Icons (MIT, `crates/ui/assets/icons/LICENSE`): the **two-tone** style for
-icons with body (folders, files, tools, settings, star, lock, monitor, loader),
-and the same library's **line** style for the simple navigation glyphs the
-two-tone set does not draw (arrows, chevrons, the reasoning brain, the panel
-toggles). Each file uses `currentColor`; the second tone is the same tint at 45%
-opacity, so dark/light and the accent apply. The two-tone files draw on a 16-unit
-grid with a margin and carry more ink than an outline, so the renderer draws them
-18% larger and blends 15% white into the requested tint; line files keep the
-exact size and colour. The provider's own mark (`opencode.svg`) stays. The SVGs
-are static: GPUI does not run the library's motion.
+Kubai Icons (MIT, `crates/ui/assets/icons/LICENSE`) in the **line** style: a 24
+grid with a 2px stroke, drawn with `currentColor`, so dark/light and the accent
+apply at the exact size the layout asks for. The provider's own mark
+(`opencode.svg`) stays. The SVGs are static: GPUI does not run the library's
+motion.
 
 ## 4. Surfaces and components (replication checklist)
 
