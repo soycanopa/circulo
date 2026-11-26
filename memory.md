@@ -2,7 +2,7 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-26, on `fix/icon-line` after PR #52; 134
+Last updated: 2026-11-26, on `fix/iconoir` after PR #53; 134
 tests green; CI covers fmt + clippy + test on macOS. The model-call tests in
 `tests/real.rs` need OpenCode credit, which this account has none of right now
 (2026-11-23): they fail with "Insufficient balance". The no-model-call load
@@ -17,10 +17,10 @@ turn, quit, and find the session again.
 
 **Window** (Rust + GPUI, `crates/ui`): the reference shell — sidebar, transcript,
 composer, right-panel toggle. Tokens and geometry measured from Waku 0.1.20 on
-this machine (`docs/ui.md`). Icons are Kubai Icons (MIT,
-`crates/ui/assets/icons/LICENSE`) in the line style: 24 grid, 2px stroke,
-`currentColor`, exact requested size. Static SVGs; GPUI does not run their
-motion.
+this machine (`docs/ui.md`). Icons are Iconoir (MIT,
+`crates/ui/assets/icons/LICENSE`) in the regular line style: 24 grid, stroke
+normalized to 1.75 (the stock 1.5 is too thin at 11–16px), `currentColor`, exact
+requested size. Static SVGs; GPUI does not run their motion.
 
 **Agent**: OpenCode over Agent Client Protocol (`opencode acp`, stdio JSON-RPC),
 verified against **OpenCode 2.3.2**. Reasoning, tool calls and text stream into
@@ -409,5 +409,5 @@ rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
   Never push to `main`.
 - Commit messages `type(scope): summary`; one logical change per commit.
 - Docs travel with the change.
-- The current worktree is `fix/icon-line` (Kubai line icons), not yet merged;
-  `origin/main` is the truth, and the next branch starts from it.
+- The current worktree is `fix/iconoir` (Iconoir regular line icons), not yet
+  merged; `origin/main` is the truth, and the next branch starts from it.
