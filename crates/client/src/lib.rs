@@ -141,6 +141,31 @@ impl Client {
         )
     }
 
+    /// Puts a prompt ahead of the queue and aborts the running turn, so the
+    /// daemon starts it next with the agent's context intact.
+    pub fn steer(&mut self, session: &str, text: &str) -> Result<(), ClientError> {
+        send(
+            &mut self.socket,
+            &ClientRequest::Steer {
+                session: session.to_owned(),
+                text: text.to_owned(),
+            }
+            .encode()?,
+        )
+    }
+
+    /// Drops a prompt that has not started. The daemon answers with `Queue`.
+    pub fn remove_queued(&mut self, session: &str, id: &str) -> Result<(), ClientError> {
+        send(
+            &mut self.socket,
+            &ClientRequest::RemoveQueued {
+                session: session.to_owned(),
+                id: id.to_owned(),
+            }
+            .encode()?,
+        )
+    }
+
     /// Applies one of the agent's settings. The daemon answers with the
     /// refreshed `Options`, or an `Error` for an unknown session or a choice
     /// the agent refuses.

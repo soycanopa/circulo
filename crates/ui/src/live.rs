@@ -14,9 +14,6 @@ use circulo_protocol::{
 pub struct Transcript {
     pub turns: Vec<Turn>,
     pub status: Status,
-    /// The text the window just sent. `TurnStarted` carries no prompt, so it is
-    /// held here until the daemon reports the turn it belongs to.
-    pending_prompt: Option<String>,
     /// Cards waiting for an answer, oldest first: a permission and a question
     /// share the slot above the composer, so one queue keeps their order.
     pub cards: VecDeque<Card>,
@@ -83,6 +80,9 @@ pub struct Turn {
     /// did not start.
     pub prompt: String,
     pub parts: Vec<Segment>,
+    /// How this turn ended, once it has. `None` while it runs, and for history
+    /// hydrated from storage, which does not keep the reason.
+    pub finished: Option<FinishReason>,
 }
 
 /// One rendered piece of a turn, in the order it arrived. Text and reasoning
@@ -109,11 +109,12 @@ pub enum Segment {
 impl Transcript {
     pub fn apply(&mut self, message: ServerMessage) {
         match message {
-            ServerMessage::TurnStarted { turn, .. } => {
+            ServerMessage::TurnStarted { turn, prompt, .. } => {
                 self.turns.push(Turn {
                     turn,
-                    prompt: self.pending_prompt.take().unwrap_or_default(),
+                    prompt,
                     parts: Vec::new(),
+                    finished: None,
                 });
                 self.status.running = true;
                 self.status.error = None;
@@ -149,6 +150,11 @@ impl Transcript {
                 }));
             }
             ServerMessage::TurnFinished { turn, reason, .. } => {
+                // Each turn keeps its own ending: a cancelled turn must not
+                // borrow the next one's label.
+                if let Some(row) = self.turns.iter_mut().rev().find(|row| row.turn == turn) {
+                    row.finished = Some(reason);
+                }
                 // A card whose turn is over can no longer be answered: an
                 // abort cancels it in the daemon, and this is what removes it
                 // from the window without waiting for a click.
@@ -173,6 +179,7 @@ impl Transcript {
             | ServerMessage::Sessions { .. }
             | ServerMessage::Options { .. }
             | ServerMessage::Settings { .. }
+            | ServerMessage::Queue { .. }
             | ServerMessage::History { .. } => {}
         }
     }
@@ -187,6 +194,7 @@ impl Transcript {
                     turn: history.turn,
                     prompt: history.prompt,
                     parts: Vec::new(),
+                    finished: None,
                 };
                 for part in history.parts {
                     row.push(part);
@@ -195,12 +203,6 @@ impl Transcript {
             })
             .collect();
         self.status = Status::default();
-    }
-
-    /// Remembers the prompt the window is about to send, so the turn can show
-    /// it above the answer.
-    pub fn expect_prompt(&mut self, prompt: String) {
-        self.pending_prompt = Some(prompt);
     }
 }
 
@@ -275,10 +277,11 @@ impl Turn {
 mod tests {
     use super::*;
 
-    fn started(turn: u64) -> ServerMessage {
+    fn started(turn: u64, prompt: &str) -> ServerMessage {
         ServerMessage::TurnStarted {
             session: "s1".into(),
             turn,
+            prompt: prompt.into(),
         }
     }
 
@@ -352,8 +355,7 @@ mod tests {
     #[test]
     fn a_sent_prompt_is_shown_on_the_turn_it_belongs_to() {
         let mut transcript = Transcript::default();
-        transcript.expect_prompt("hello".into());
-        transcript.apply(started(1));
+        transcript.apply(started(1, "hello"));
 
         assert_eq!(transcript.turns[0].prompt, "hello");
         assert!(transcript.turns[0].parts.is_empty());
@@ -362,7 +364,7 @@ mod tests {
     #[test]
     fn deltas_accumulate_into_one_segment() {
         let mut transcript = Transcript::default();
-        transcript.apply(started(1));
+        transcript.apply(started(1, ""));
         transcript.apply(text("Hello"));
         transcript.apply(text(" world"));
 
@@ -378,7 +380,7 @@ mod tests {
     #[test]
     fn a_tool_row_updates_in_place() {
         let mut transcript = Transcript::default();
-        transcript.apply(started(1));
+        transcript.apply(started(1, ""));
         transcript.apply(part(Part::Tool {
             id: "call-1".into(),
             name: "Read".into(),
@@ -415,7 +417,7 @@ mod tests {
         // Matching only the last row would leave A spinning and open a duplicate
         // for it. That is the bug a real OpenCode run showed.
         let mut transcript = Transcript::default();
-        transcript.apply(started(1));
+        transcript.apply(started(1, ""));
         transcript.apply(part(tool("call-a", "Read", "", ToolState::Running)));
         transcript.apply(part(tool(
             "call-b",
@@ -452,7 +454,7 @@ mod tests {
     fn a_tool_without_an_id_falls_back_to_the_last_open_row() {
         // A provider without call ids still reports the same call twice.
         let mut transcript = Transcript::default();
-        transcript.apply(started(1));
+        transcript.apply(started(1, ""));
         transcript.apply(part(tool("", "Read", "", ToolState::Running)));
         transcript.apply(part(tool("", "Read", "src/lib.rs", ToolState::Done)));
 
@@ -473,7 +475,7 @@ mod tests {
     #[test]
     fn finishing_closes_the_turn() {
         let mut transcript = Transcript::default();
-        transcript.apply(started(1));
+        transcript.apply(started(1, ""));
         transcript.apply(text("done"));
         transcript.apply(ServerMessage::TurnFinished {
             session: "s1".into(),
@@ -491,9 +493,9 @@ mod tests {
         // one started. Keying by "the last row" would paint them in the wrong
         // place; the turn id is what keeps the transcript honest.
         let mut transcript = Transcript::default();
-        transcript.apply(started(1));
+        transcript.apply(started(1, ""));
         transcript.apply(text_at(1, "one"));
-        transcript.apply(started(2));
+        transcript.apply(started(2, ""));
         transcript.apply(text_at(1, " late"));
         transcript.apply(text_at(2, "two"));
 
@@ -505,7 +507,7 @@ mod tests {
     #[test]
     fn a_part_for_an_unknown_turn_is_ignored() {
         let mut transcript = Transcript::default();
-        transcript.apply(started(1));
+        transcript.apply(started(1, ""));
         transcript.apply(part_of(
             9,
             Part::Text {
@@ -520,9 +522,29 @@ mod tests {
     }
 
     #[test]
+    fn each_turn_remembers_how_it_finished() {
+        let mut transcript = Transcript::default();
+        transcript.apply(started(1, "one"));
+        transcript.apply(started(2, "two"));
+        transcript.apply(ServerMessage::TurnFinished {
+            session: "s1".into(),
+            turn: 1,
+            reason: FinishReason::Aborted,
+        });
+
+        assert_eq!(
+            transcript.turns[0].finished,
+            Some(FinishReason::Aborted),
+            "the cancelled turn owns its label, even after the next one starts"
+        );
+        assert_eq!(transcript.turns[1].finished, None);
+        assert!(transcript.status.running);
+    }
+
+    #[test]
     fn an_aborted_turn_takes_its_open_card_with_it() {
         let mut transcript = Transcript::default();
-        transcript.apply(started(1));
+        transcript.apply(started(1, ""));
         transcript.apply(ServerMessage::PermissionRequested {
             session: "s1".into(),
             turn: 1,
@@ -551,8 +573,8 @@ mod tests {
     #[test]
     fn a_late_finish_does_not_close_the_newer_turn() {
         let mut transcript = Transcript::default();
-        transcript.apply(started(1));
-        transcript.apply(started(2));
+        transcript.apply(started(1, ""));
+        transcript.apply(started(2, ""));
         transcript.apply(ServerMessage::TurnFinished {
             session: "s1".into(),
             turn: 1,

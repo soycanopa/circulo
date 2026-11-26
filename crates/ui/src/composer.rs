@@ -18,7 +18,7 @@ use crate::input::{self, TextInput};
 use crate::live::Transcript;
 use crate::mock::Workspace;
 use crate::theme::Theme;
-use circulo_protocol::ConfigOption;
+use circulo_protocol::{ConfigOption, QueuedPrompt};
 
 /// How tall the field may grow before it scrolls: four lines of body text.
 const FIELD_MAX_HEIGHT: f32 = 96.;
@@ -52,6 +52,8 @@ pub(crate) type StarHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
 pub(crate) type TabHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
 pub(crate) type EditHandler = Rc<dyn Fn(Option<String>, &mut Window, &mut App)>;
 pub(crate) type EffortHandler = Rc<dyn Fn(String, String, String, &mut Window, &mut App)>;
+/// Removing one prompt from the queue, by id. The shell owns the request.
+pub(crate) type RemoveHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
 
 /// The daemon's options as the pickers draw them: which menu is open, which
 /// model tab is showing, what choosing and starring do. A missing option id
@@ -86,6 +88,68 @@ pub(crate) struct Field<'a> {
     pub on_key: KeyHandler,
     pub on_send: SendHandler,
     pub on_stop: StopHandler,
+}
+
+/// The prompts waiting for the running turn, oldest first. They sit above the
+/// cards and the composer: the user can see exactly what will run next and drop
+/// one without touching the agent.
+pub(crate) fn queued(
+    theme: &Theme,
+    items: &[QueuedPrompt],
+    on_remove: RemoveHandler,
+) -> Option<AnyElement> {
+    if items.is_empty() {
+        return None;
+    }
+
+    Some(
+        div()
+            .id("queued")
+            .flex()
+            .flex_col()
+            .gap(px(4.))
+            .px(px(24.))
+            .pb(px(6.))
+            .children(items.iter().enumerate().map(|(index, item)| {
+                let id = item.id.clone();
+                let on_remove = Rc::clone(&on_remove);
+
+                div()
+                    .id(SharedString::from(format!("queued-{index}")))
+                    .w_full()
+                    .min_w(px(0.))
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .px(px(10.))
+                    .py(px(6.))
+                    .rounded(px(8.))
+                    .bg(theme.chip)
+                    .text_size(px(12.))
+                    .text_color(theme.text_muted)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .child(item.text.clone()),
+                    )
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("queued-remove-{index}")))
+                            .flex_shrink_0()
+                            .px(px(4.))
+                            .cursor_pointer()
+                            .text_color(theme.text_faint)
+                            .hover(|style| style.text_color(theme.text))
+                            .child("×")
+                            .on_click(move |_, window, cx| on_remove(id.clone(), window, cx)),
+                    )
+            }))
+            .into_any_element(),
+    )
 }
 
 pub(crate) fn composer(
@@ -163,6 +227,12 @@ fn input_box(
     let on_send = field.on_send;
     let on_stop = field.on_stop;
     let click_focus = focus.clone();
+    // While a turn runs, Enter queues: say so in the field.
+    let placeholder = if running {
+        "Queue a follow-up..."
+    } else {
+        "Do anything..."
+    };
 
     div()
         .id("composer")
@@ -184,7 +254,7 @@ fn input_box(
                 .max_h(px(FIELD_MAX_HEIGHT))
                 .overflow_y_scroll()
                 .whitespace_normal()
-                .child(input::field(theme, field.input, focused, "Do anything...")),
+                .child(input::field(theme, field.input, focused, placeholder)),
         )
         .child(
             div()

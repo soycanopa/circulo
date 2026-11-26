@@ -18,7 +18,7 @@ use std::thread;
 
 use std::path::PathBuf;
 
-use circulo_core::Core;
+use circulo_core::{Core, QueueState};
 use circulo_persistence::Store;
 use circulo_protocol::{ClientRequest, Hello, PROTOCOL_VERSION, ProtocolError, ServerMessage};
 use circulo_provider::Driver;
@@ -231,22 +231,39 @@ fn handle(
                         session: session.clone(),
                     },
                 );
+                emit(
+                    &outbound,
+                    ServerMessage::Queue {
+                        session: session.clone(),
+                        items: Vec::new(),
+                    },
+                );
                 // Asking the agent takes a moment; the read loop stays free.
                 push_options(Arc::clone(&core), outbound.clone(), session);
             }
-            Some(ClientRequest::Prompt { session, text }) => {
-                // A turn blocks on its own thread, so this loop stays free to
-                // read the answer to a permission card.
-                prompted.insert(session.clone());
-                let core = Arc::clone(&core);
-                let outbound = outbound.clone();
-                thread::spawn(move || {
-                    core.run_turn(&session, &text, |message| {
-                        // A client that walks away ends the turn; the writer
-                        // thread notices and stops.
-                        let _ = outbound.send(message);
-                    });
-                });
+            Some(ClientRequest::Prompt { session, text }) => match core.enqueue(&session, &text) {
+                Ok(state) => {
+                    prompted.insert(session.clone());
+                    start_queue(Arc::clone(&core), outbound.clone(), &session, state);
+                }
+                Err(message) => emit(&outbound, ServerMessage::Error { message }),
+            },
+            Some(ClientRequest::Steer { session, text }) => {
+                match core.steer(&session, &text) {
+                    Ok(state) => {
+                        // The steer prompt is in the queue and the running turn
+                        // is being cancelled; the worker starts it next.
+                        prompted.insert(session.clone());
+                        start_queue(Arc::clone(&core), outbound.clone(), &session, state);
+                    }
+                    Err(message) => emit(&outbound, ServerMessage::Error { message }),
+                }
+            }
+            Some(ClientRequest::RemoveQueued { session, id }) => {
+                match core.remove_queued(&session, &id) {
+                    Ok(items) => emit(&outbound, ServerMessage::Queue { session, items }),
+                    Err(message) => emit(&outbound, ServerMessage::Error { message }),
+                }
             }
             Some(ClientRequest::CancelTurn { session }) => {
                 if let Err(message) = core.cancel_turn(&session) {
@@ -295,6 +312,13 @@ fn handle(
                             ServerMessage::History {
                                 session: session.clone(),
                                 turns,
+                            },
+                        );
+                        emit(
+                            &outbound,
+                            ServerMessage::Queue {
+                                session: session.clone(),
+                                items: core.queued(&session),
                             },
                         );
                         push_options(Arc::clone(&core), outbound.clone(), session);
@@ -353,16 +377,43 @@ fn handle(
         }
     }
 
-    // The connection is going away with requests still open; the turns this
-    // client started have to stop waiting. The other sessions keep their cards.
+    // The connection is going away. The prompts this client queued will never
+    // run for anyone, and a turn it started should not keep the agent working
+    // for nobody. Other sessions keep theirs.
     for session in prompted {
-        core.cancel_turn_requests(&session);
+        core.clear_queue(&session);
+        let _ = core.cancel_turn(&session);
     }
     Ok(())
 }
 
 fn emit(outbound: &Sender<ServerMessage>, message: ServerMessage) {
     let _ = outbound.send(message);
+}
+
+/// Shows the refreshed queue and starts the session's worker when nobody owns
+/// it. The worker drains the whole queue on its own thread, so the read loop
+/// stays free to answer a permission card.
+fn start_queue(core: Arc<Core>, outbound: Sender<ServerMessage>, session: &str, state: QueueState) {
+    emit(
+        &outbound,
+        ServerMessage::Queue {
+            session: session.to_owned(),
+            items: state.items,
+        },
+    );
+    if !state.start_worker {
+        return;
+    }
+
+    let session = session.to_owned();
+    thread::spawn(move || {
+        core.drain(&session, |message| {
+            // A client that walks away ends the turn; the writer thread
+            // notices and stops. The close handler clears what was queued.
+            let _ = outbound.send(message);
+        });
+    });
 }
 
 /// Asks the agent for its settings on its own thread and pushes what it

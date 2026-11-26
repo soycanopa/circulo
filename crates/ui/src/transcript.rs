@@ -173,8 +173,7 @@ fn rows(workspace: &Workspace, transcript: &Transcript) -> Vec<Row> {
 
         // Only the last turn can still be running.
         let running = index + 1 == transcript.turns.len() && transcript.status.running;
-        let stopped = index + 1 == transcript.turns.len()
-            && transcript.status.finished == Some(FinishReason::Aborted);
+        let stopped = turn.finished == Some(FinishReason::Aborted);
         rows.push(Row::Divider {
             label: if running {
                 "Working…".to_owned()

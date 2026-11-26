@@ -24,7 +24,10 @@ use serde_json::Value;
 /// 2: `ConfigChoice` carries its provider, and the settings messages arrived
 /// (`GetSettings`/`SetSetting`/`Settings`). A peer at 1 would fail to decode
 /// a choice without its `provider` field.
-pub const PROTOCOL_VERSION: u32 = 2;
+/// 3: `TurnStarted` carries the prompt, so a queued turn shows what it was
+/// without the client guessing, and the queue messages arrived
+/// (`Steer`/`RemoveQueued`/`Queue`).
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// The first line a client sends.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,11 +53,20 @@ impl Hello {
 pub enum ClientRequest {
     /// Open a session, optionally attached to a project folder.
     StartSession { project: Option<String> },
-    /// Send a prompt and stream the turn back.
+    /// Send a prompt and stream the turn back. While another turn runs in the
+    /// session, the prompt is queued and starts when that one ends, in order.
     Prompt { session: String, text: String },
+    /// Redirect a running turn: the text goes ahead of the queue and the
+    /// running turn is aborted, so the agent starts the new one with its
+    /// context intact. With no turn running it is just a prompt.
+    Steer { session: String, text: String },
+    /// Drop a prompt that has not started yet. The daemon answers with the
+    /// refreshed `Queue`.
+    RemoveQueued { session: String, id: String },
     /// Stop the turn running in `session`. Its open cards are cancelled and
     /// the provider is asked to abort; the turn ends as `aborted`, not as a
-    /// failure. A session with no turn in flight is an error.
+    /// failure. Prompts already queued stay queued. A session with no turn in
+    /// flight is an error.
     CancelTurn { session: String },
     /// Answer a pending permission request. `option` is the id of one of the
     /// options the daemon offered; `None` means cancelled, which is only right
@@ -105,6 +117,8 @@ impl ClientRequest {
 const CLIENT_TYPES: &[&str] = &[
     "start_session",
     "prompt",
+    "steer",
+    "remove_queued",
     "cancel_turn",
     "answer_permission",
     "answer_question",
@@ -122,6 +136,7 @@ const SERVER_TYPES: &[&str] = &[
     "turn_finished",
     "permission_requested",
     "question_asked",
+    "queue",
     "sessions",
     "history",
     "options",
@@ -143,6 +158,10 @@ pub enum ServerMessage {
     TurnStarted {
         session: String,
         turn: u64,
+        /// The user text this turn is answering. It travels with the turn so a
+        /// queued prompt shows what it asked when it finally starts, without
+        /// the client remembering a guess.
+        prompt: String,
     },
     Part {
         session: String,
@@ -171,6 +190,12 @@ pub enum ServerMessage {
         id: String,
         question: Question,
     },
+    /// A prompt waiting for its turn, oldest first. The daemon pushes the whole
+    /// list after every change, so the window draws what is really queued.
+    Queue {
+        session: String,
+        items: Vec<QueuedPrompt>,
+    },
     /// The session list, newest first.
     Sessions {
         sessions: Vec<SessionSummary>,
@@ -197,6 +222,15 @@ pub enum ServerMessage {
     Error {
         message: String,
     },
+}
+
+/// One prompt waiting for the turn running in its session to end.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueuedPrompt {
+    /// Stable id, so the client can remove exactly this one.
+    pub id: String,
+    /// The user text, shown as-is.
+    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -410,6 +444,7 @@ mod tests {
             ServerMessage::TurnStarted {
                 session: "s1".into(),
                 turn: 7,
+                prompt: "hello".into(),
             },
             ServerMessage::Part {
                 session: "s1".into(),
@@ -469,6 +504,13 @@ mod tests {
                         required: true,
                     }],
                 },
+            },
+            ServerMessage::Queue {
+                session: "s1".into(),
+                items: vec![QueuedPrompt {
+                    id: "q-1".into(),
+                    text: "next".into(),
+                }],
             },
             ServerMessage::Sessions {
                 sessions: vec![SessionSummary {
@@ -534,6 +576,14 @@ mod tests {
             ClientRequest::Prompt {
                 session: "s1".into(),
                 text: "ship it".into(),
+            },
+            ClientRequest::Steer {
+                session: "s1".into(),
+                text: "redirect".into(),
+            },
+            ClientRequest::RemoveQueued {
+                session: "s1".into(),
+                id: "q-1".into(),
             },
             ClientRequest::CancelTurn {
                 session: "s1".into(),
