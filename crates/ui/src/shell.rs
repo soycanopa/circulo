@@ -10,7 +10,8 @@ use std::rc::Rc;
 
 use async_channel::{Receiver, Sender};
 use circulo_protocol::{
-    ClientRequest, ConfigOption, HistoryTurn, QuestionAction, ServerMessage, SessionSummary,
+    ClientRequest, ConfigOption, HistoryTurn, QuestionAction, QueuedPrompt, ServerMessage,
+    SessionSummary,
 };
 use gpui::{
     Context, FocusHandle, IntoElement, KeyDownEvent, ListState, Pixels, Point, Render, Window, div,
@@ -23,8 +24,8 @@ use serde_json::Value;
 const FAVORITES_KEY: &str = "favorites.model";
 
 use crate::composer::{
-    ChooseHandler, EditHandler, EffortHandler, Field, KeyHandler, Pickers, SendHandler,
-    StarHandler, StopHandler, TabHandler, ToggleHandler, composer,
+    ChooseHandler, EditHandler, EffortHandler, Field, KeyHandler, Pickers, RemoveHandler,
+    SendHandler, StarHandler, StopHandler, TabHandler, ToggleHandler, composer, queued,
 };
 use crate::input::TextInput;
 use crate::live::{Card, Transcript};
@@ -90,6 +91,9 @@ pub struct Shell {
     /// The model choices this client starred, in the order they were starred.
     /// Stored on the daemon side, so they survive a restart.
     favorites: Vec<String>,
+    /// Prompts waiting for the running turn, oldest first, as the daemon
+    /// reports them. Presentation only: the daemon owns the real queue.
+    queued: Vec<QueuedPrompt>,
     /// Where each picker chip sits, measured by its canvas every frame and
     /// read by the open menu the next one. Lives on the shell so the value
     /// survives the frame that wrote it — a fresh cell per render would only
@@ -137,6 +141,7 @@ impl Shell {
             open_editor: None,
             daemon,
             favorites: Vec::new(),
+            queued: Vec::new(),
             picker_anchors: Rc::new(Cell::new(BTreeMap::new())),
         };
 
@@ -224,6 +229,20 @@ impl Shell {
     /// Everything the daemon sends ends up here. Session bookkeeping stays in
     /// the shell; the rest is transcript content.
     fn receive(&mut self, message: ServerMessage) {
+        // A turn keeps running in the daemon after the window switches
+        // sessions. Its parts belong to the session that started them, not to
+        // whatever row happens to be open now.
+        if let Some(session) = live_session(&message)
+            && session != self.session
+        {
+            // A background turn still changes the sidebar's title and order,
+            // even though its transcript content belongs to another session.
+            if matches!(message, ServerMessage::TurnFinished { .. }) {
+                self.request(ClientRequest::ListSessions);
+            }
+            return;
+        }
+
         match message {
             ServerMessage::Sessions { sessions } => {
                 self.sessions = sessions;
@@ -231,8 +250,16 @@ impl Shell {
             ServerMessage::SessionStarted { session } => {
                 self.session = session;
                 self.transcript = Transcript::default();
+                self.queued.clear();
                 self.clear_options();
                 self.request(ClientRequest::ListSessions);
+            }
+            ServerMessage::Queue { session, items } => {
+                // The daemon owns the queue; a late list for a session the
+                // window left behind is not drawn.
+                if session == self.session {
+                    self.queued = items;
+                }
             }
             ServerMessage::Options { session, options } => {
                 // A late list for a session already left behind is not drawn.
@@ -251,6 +278,7 @@ impl Shell {
                 self.session = session;
                 self.transcript = Transcript::default();
                 self.transcript.hydrate(turns);
+                self.queued.clear();
                 self.clear_options();
             }
             ServerMessage::Settings { settings } => {
@@ -472,7 +500,17 @@ impl Shell {
 
         match key {
             "enter" if !modifiers.shift => {
-                self.submit(cx);
+                // A running turn takes Enter as "queue" and Cmd/Ctrl+Enter as
+                // "steer"; an idle session just sends.
+                if self.transcript.status.running {
+                    if modifiers.platform || modifiers.control {
+                        self.steer(cx);
+                    } else {
+                        self.queue_prompt(cx);
+                    }
+                } else {
+                    self.submit(cx);
+                }
                 return;
             }
             "enter" => self.input.insert("\n"),
@@ -500,10 +538,49 @@ impl Shell {
         }
 
         let text = self.input.take();
-        self.transcript.expect_prompt(text.clone());
         self.request(ClientRequest::Prompt {
             session: self.session.clone(),
             text,
+        });
+        cx.notify();
+    }
+
+    /// Sends the composer's text while a turn runs. The daemon queues it and
+    /// starts it when the current turn ends; the window draws the queue from
+    /// the daemon's answer, not from a local hope.
+    fn queue_prompt(&mut self, cx: &mut Context<Self>) {
+        if self.input.is_blank() {
+            return;
+        }
+        let text = self.input.take();
+        self.request(ClientRequest::Prompt {
+            session: self.session.clone(),
+            text,
+        });
+        cx.notify();
+    }
+
+    /// Redirects the running turn: the daemon puts this text at the front of
+    /// the queue and aborts the current turn, so it starts next with the
+    /// agent's context intact.
+    fn steer(&mut self, cx: &mut Context<Self>) {
+        if self.input.is_blank() {
+            return;
+        }
+        let text = self.input.take();
+        self.request(ClientRequest::Steer {
+            session: self.session.clone(),
+            text,
+        });
+        cx.notify();
+    }
+
+    /// Drops one prompt that has not started. The daemon answers with the
+    /// refreshed queue.
+    fn remove_queued(&mut self, id: String, cx: &mut Context<Self>) {
+        self.request(ClientRequest::RemoveQueued {
+            session: self.session.clone(),
+            id,
         });
         cx.notify();
     }
@@ -572,6 +649,20 @@ impl Shell {
         self.question_focuses.clear();
         self.focus_text = None;
         self.question_shown = None;
+    }
+}
+
+/// The session a live message belongs to. The session list, settings, errors
+/// and the handshake are not tied to one, and must pass through.
+fn live_session(message: &ServerMessage) -> Option<&str> {
+    match message {
+        ServerMessage::TurnStarted { session, .. }
+        | ServerMessage::Part { session, .. }
+        | ServerMessage::TurnFinished { session, .. }
+        | ServerMessage::PermissionRequested { session, .. }
+        | ServerMessage::QuestionAsked { session, .. }
+        | ServerMessage::Queue { session, .. } => Some(session),
+        _ => None,
     }
 }
 
@@ -664,6 +755,12 @@ impl Render for Shell {
             }
         });
 
+        let shell = cx.entity();
+        let on_remove: RemoveHandler = Rc::new(move |id, _window, cx| {
+            shell.update(cx, |shell, cx| shell.remove_queued(id, cx));
+        });
+        let queue = queued(&theme, &self.queued, on_remove);
+
         let main = div()
             .flex()
             .flex_col()
@@ -678,6 +775,7 @@ impl Render for Shell {
                 &self.list_state,
                 &title,
             ))
+            .children(queue)
             .children(card)
             .when(true, |column| {
                 let shell = cx.entity();

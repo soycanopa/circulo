@@ -145,7 +145,8 @@ message and change nothing.
   reads `cancelled`, so the provider can answer the agent honestly) and asks
   the provider to stop. The turn ends as `Aborted`, not as a failure; the UI
   closes its cards when the turn finishes. An abort with no turn in flight is
-  an error, so a stale client learns the truth.
+  an error, so a stale client learns the truth. Queued prompts are not part of
+  the turn: they stay queued and the UI can remove them.
 
 ## 6. How it was verified
 

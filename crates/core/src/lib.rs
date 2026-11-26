@@ -12,7 +12,7 @@
 #![forbid(unsafe_code)]
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use circulo_persistence::{Store, StoreError};
 use circulo_protocol::{
     ConfigOption, FinishReason, HistoryTurn, PermissionRequest, Question, QuestionAction,
-    ServerMessage, SessionSummary,
+    QueuedPrompt, ServerMessage, SessionSummary,
 };
 use circulo_provider::{Answer, Asker, Decision, Driver, SessionRef};
 use serde_json::Value;
@@ -41,8 +41,36 @@ pub struct Core {
     /// driver starts, so a cancel can find the cards that turn owns instead of
     /// closing every session's cards at once.
     in_flight: Mutex<HashMap<String, u64>>,
+    /// Prompts waiting for their turn, one FIFO per session. The session's
+    /// worker drains them; nothing here survives a daemon restart, because a
+    /// prompt that never started is not part of the transcript.
+    queues: Mutex<HashMap<String, SessionQueue>>,
     permissions: Broker<Decision>,
     questions: Broker<Answer>,
+}
+
+/// One session's pending prompts and the worker that drains them.
+#[derive(Default)]
+struct SessionQueue {
+    pending: VecDeque<QueuedPrompt>,
+    /// A worker thread is draining this session.
+    worker: bool,
+    /// The client that fed the queue is gone: finish the current turn, then
+    /// stop instead of starting the next prompt.
+    stopped: bool,
+}
+
+impl SessionQueue {
+    fn items(&self) -> Vec<QueuedPrompt> {
+        self.pending.iter().cloned().collect()
+    }
+}
+
+/// What a caller learns after a prompt joins the queue: the whole list, and
+/// whether it has to start the session's worker.
+pub struct QueueState {
+    pub items: Vec<QueuedPrompt>,
+    pub start_worker: bool,
 }
 
 impl Core {
@@ -58,6 +86,7 @@ impl Core {
             store,
             turns: AtomicU64::new(0),
             in_flight: Mutex::new(HashMap::new()),
+            queues: Mutex::new(HashMap::new()),
             permissions: Broker::new("p"),
             questions: Broker::new("q"),
         }
@@ -174,8 +203,9 @@ impl Core {
 
     /// Stops the turn running in `session`: its open cards are cancelled (the
     /// blocked asker reads `Cancelled`) and the provider is asked to abort. The
-    /// turn ends as `Aborted`. A session with no turn in flight is an error, so
-    /// a stale client gets an honest answer instead of a silent no-op.
+    /// turn ends as `Aborted`. Prompts already queued stay queued. A session
+    /// with no turn in flight is an error, so a stale client gets an honest
+    /// answer instead of a silent no-op.
     pub fn cancel_turn(&self, session: &str) -> Result<(), String> {
         let Some(turn) = self.in_flight().get(session).copied() else {
             return Err(format!("no turn is running in {session}"));
@@ -185,6 +215,128 @@ impl Core {
         self.driver
             .cancel(session)
             .map_err(|error| error.to_string())
+    }
+
+    /// Adds `text` to the session's queue. `start_worker` is true when the
+    /// caller has to run `drain` on a thread: no worker owns the session.
+    pub fn enqueue(&self, session: &str, text: &str) -> Result<QueueState, String> {
+        if !self.has_session(session) {
+            return Err(format!("unknown session {session}"));
+        }
+        let mut queues = self.queues();
+        let queue = queues.entry(session.to_owned()).or_default();
+        queue.pending.push_back(QueuedPrompt {
+            id: Uuid::new_v4().to_string(),
+            text: text.to_owned(),
+        });
+        // A live client means the worker may run again.
+        queue.stopped = false;
+        let start_worker = !queue.worker;
+        queue.worker = true;
+        Ok(QueueState {
+            items: queue.items(),
+            start_worker,
+        })
+    }
+
+    /// Puts `text` at the front and aborts the running turn, so it starts next
+    /// with the provider session's context intact. With no turn running it is
+    /// just a prompt at the front. A provider that cannot abort falls back to
+    /// running it after the current turn: the text is never lost.
+    pub fn steer(&self, session: &str, text: &str) -> Result<QueueState, String> {
+        if !self.has_session(session) {
+            return Err(format!("unknown session {session}"));
+        }
+        let state = {
+            let mut queues = self.queues();
+            let queue = queues.entry(session.to_owned()).or_default();
+            queue.pending.push_front(QueuedPrompt {
+                id: Uuid::new_v4().to_string(),
+                text: text.to_owned(),
+            });
+            queue.stopped = false;
+            let start_worker = !queue.worker;
+            queue.worker = true;
+            QueueState {
+                items: queue.items(),
+                start_worker,
+            }
+        };
+
+        // Outside the queue lock: the worker takes it between turns, and the
+        // driver may take its time. "No turn in flight" is not a failure here:
+        // the item is already at the front.
+        let _ = self.cancel_turn(session);
+        Ok(state)
+    }
+
+    /// Drops one prompt that has not started. Returns the refreshed list.
+    pub fn remove_queued(&self, session: &str, id: &str) -> Result<Vec<QueuedPrompt>, String> {
+        let mut queues = self.queues();
+        let Some(queue) = queues.get_mut(session) else {
+            return Err(format!("unknown session {session}"));
+        };
+        // The item may have started between the click and this request. A
+        // stale removal is a no-op, and the refreshed list is the honest
+        // answer; an error banner would only blame the user for a race.
+        queue.pending.retain(|item| item.id != id);
+        Ok(queue.items())
+    }
+
+    /// The prompts waiting in `session`, oldest first.
+    pub fn queued(&self, session: &str) -> Vec<QueuedPrompt> {
+        self.queues()
+            .get(session)
+            .map(SessionQueue::items)
+            .unwrap_or_default()
+    }
+
+    /// Drops everything waiting and tells the worker not to start another
+    /// prompt. The caller cancels the turn in flight separately.
+    pub fn clear_queue(&self, session: &str) {
+        let mut queues = self.queues();
+        if let Some(queue) = queues.get_mut(session) {
+            queue.pending.clear();
+            queue.stopped = true;
+        }
+    }
+
+    /// Runs the session's queue, one turn at a time, until it is empty or the
+    /// client that fed it is gone. The caller owns a thread and the emit side.
+    pub fn drain(&self, session: &str, mut emit: impl FnMut(ServerMessage)) {
+        loop {
+            let Some(item) = self.next_queued(session) else {
+                return;
+            };
+            emit(ServerMessage::Queue {
+                session: session.to_owned(),
+                items: self.queued(session),
+            });
+            self.run_turn(session, &item.text, &mut emit);
+        }
+    }
+
+    /// Pops the next prompt, or releases the worker when the queue is empty.
+    /// Claiming and releasing happen under one lock, so a prompt that arrives
+    /// just as the worker stops always gets a new worker.
+    fn next_queued(&self, session: &str) -> Option<QueuedPrompt> {
+        let mut queues = self.queues();
+        let queue = queues.get_mut(session)?;
+        if queue.stopped {
+            queue.worker = false;
+            return None;
+        }
+        match queue.pending.pop_front() {
+            Some(item) => Some(item),
+            None => {
+                queue.worker = false;
+                None
+            }
+        }
+    }
+
+    fn queues(&self) -> std::sync::MutexGuard<'_, HashMap<String, SessionQueue>> {
+        self.queues.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Drops the cards of the turn running in `session`, so the driver's
@@ -284,6 +436,7 @@ impl Core {
         emit(ServerMessage::TurnStarted {
             session: session.to_owned(),
             turn,
+            prompt: prompt.to_owned(),
         });
 
         // The driver gets two callbacks into the same emit: parts and
@@ -1059,6 +1212,182 @@ mod tests {
         assert!(core.answer_permission(&second_id, Some("allow-once".into())));
         assert_eq!(outcome(&second_messages), "chose allow-once");
         assert!(!core.cancel_turn_requests("missing"));
+    }
+
+    /// Enqueues the first prompt and starts the session worker, the way the
+    /// daemon does. The returned channel carries everything the turn emits.
+    fn start_worker(
+        core: &Arc<Core>,
+        session: &str,
+        first: &str,
+    ) -> std::sync::mpsc::Receiver<ServerMessage> {
+        let state = core.enqueue(session, first).expect("enqueue");
+        assert!(state.start_worker, "nothing owned the session yet");
+
+        let (send, receive) = std::sync::mpsc::channel();
+        let core = Arc::clone(core);
+        let session = session.to_owned();
+        std::thread::spawn(move || {
+            core.drain(&session, move |message| {
+                let _ = send.send(message);
+            });
+        });
+        receive
+    }
+
+    #[test]
+    fn prompts_queue_in_order_behind_the_running_turn() {
+        let core = Arc::new(core_with(Arc::new(AsksOnce)));
+        let session = core.start_session(None);
+        let messages = start_worker(&core, &session, "one");
+
+        let mut started = Vec::new();
+        let mut cards = 0;
+        let mut finished = 0;
+        while let Ok(message) = messages.recv() {
+            match message {
+                ServerMessage::TurnStarted { turn, prompt, .. } => started.push((turn, prompt)),
+                ServerMessage::PermissionRequested { id, .. } => {
+                    cards += 1;
+                    if cards == 1 {
+                        // The running turn owns the session; the next prompt waits.
+                        let state = core.enqueue(&session, "two").expect("queue");
+                        assert!(!state.start_worker, "the worker already owns it");
+                        assert_eq!(
+                            state
+                                .items
+                                .iter()
+                                .map(|item| item.text.as_str())
+                                .collect::<Vec<_>>(),
+                            vec!["two"]
+                        );
+                    }
+                    assert!(core.answer_permission(&id, Some("allow-once".into())));
+                }
+                ServerMessage::TurnFinished { .. } => finished += 1,
+                _ => {}
+            }
+        }
+
+        assert_eq!(finished, 2);
+        assert_eq!(
+            started,
+            vec![(1, "one".to_owned()), (2, "two".to_owned())],
+            "the second prompt starts only after the first turn ends"
+        );
+    }
+
+    #[test]
+    fn removing_a_queued_prompt_keeps_it_from_running() {
+        let core = Arc::new(core_with(Arc::new(AsksOnce)));
+        let session = core.start_session(None);
+        let messages = start_worker(&core, &session, "one");
+
+        let mut started = Vec::new();
+        let mut cards = 0;
+        while let Ok(message) = messages.recv() {
+            match message {
+                ServerMessage::TurnStarted { turn, prompt, .. } => started.push((turn, prompt)),
+                ServerMessage::PermissionRequested { id, .. } => {
+                    cards += 1;
+                    if cards == 1 {
+                        let queued = core.enqueue(&session, "two").expect("queue");
+                        let id = queued.items[0].id.clone();
+                        assert_eq!(
+                            core.remove_queued(&session, &id).expect("remove"),
+                            Vec::new()
+                        );
+                        core.enqueue(&session, "three").expect("queue again");
+                    }
+                    assert!(core.answer_permission(&id, Some("allow-once".into())));
+                }
+                _ => {}
+            }
+        }
+
+        assert_eq!(
+            started,
+            vec![(1, "one".to_owned()), (2, "three".to_owned())],
+            "the removed prompt never runs"
+        );
+    }
+
+    #[test]
+    fn a_cleared_queue_does_not_run_after_the_current_turn() {
+        let core = Arc::new(core_with(Arc::new(AsksOnce)));
+        let session = core.start_session(None);
+        let messages = start_worker(&core, &session, "one");
+
+        let mut started = Vec::new();
+        let mut first_card = true;
+        while let Ok(message) = messages.recv() {
+            match message {
+                ServerMessage::TurnStarted { turn, prompt, .. } => started.push((turn, prompt)),
+                ServerMessage::PermissionRequested { id, .. } => {
+                    if first_card {
+                        first_card = false;
+                        core.enqueue(&session, "two").expect("queue");
+                        core.clear_queue(&session);
+                        assert!(core.queued(&session).is_empty());
+                    }
+                    assert!(core.answer_permission(&id, Some("allow-once".into())));
+                }
+                _ => {}
+            }
+        }
+
+        assert_eq!(
+            started,
+            vec![(1, "one".to_owned())],
+            "the client left; nothing waiting may start"
+        );
+    }
+
+    #[test]
+    fn steering_aborts_the_running_turn_and_starts_the_new_prompt_next() {
+        let core = Arc::new(core_with(Arc::new(Stops)));
+        let session = core.start_session(None);
+        let messages = start_worker(&core, &session, "one");
+
+        // The first turn is blocked on its card when the steer arrives.
+        let mut started = Vec::new();
+        loop {
+            match messages.recv().expect("the turn is alive") {
+                ServerMessage::TurnStarted { turn, prompt, .. } => started.push((turn, prompt)),
+                ServerMessage::PermissionRequested { .. } => break,
+                _ => {}
+            }
+        }
+
+        let state = core.steer(&session, "two").expect("steer");
+        assert!(!state.start_worker, "the worker already owns it");
+        assert_eq!(state.items[0].text, "two", "the steer leads the queue");
+
+        let mut finished = Vec::new();
+        let mut cards = 0;
+        while let Ok(message) = messages.recv() {
+            match message {
+                ServerMessage::TurnStarted { turn, prompt, .. } => started.push((turn, prompt)),
+                ServerMessage::PermissionRequested { id, .. } => {
+                    cards += 1;
+                    assert!(core.answer_permission(&id, Some("allow-once".into())));
+                }
+                ServerMessage::TurnFinished { reason, .. } => finished.push(reason),
+                _ => {}
+            }
+        }
+
+        assert_eq!(
+            started,
+            vec![(1, "one".to_owned()), (2, "two".to_owned())],
+            "the steer starts right after the aborted turn"
+        );
+        assert_eq!(
+            finished,
+            vec![FinishReason::Aborted, FinishReason::Completed],
+            "the running turn aborts; the steer completes"
+        );
+        assert_eq!(cards, 1, "only the steer's turn asks");
     }
 
     #[test]

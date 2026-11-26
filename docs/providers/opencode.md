@@ -78,6 +78,16 @@ alive for the next turn. An agent that returns an error instead of `cancelled`
 (the ACP docs warn about libraries doing this) still ends the turn, but as a
 failure.
 
+## Queue and steering
+
+ACP has no notion of a second prompt inside a running turn. The core owns the
+queue: `Prompt` while a turn runs waits in order, and `Steer` puts the new text
+at the front and sends `session/cancel`. The agent ends the current turn as
+cancelled and the driver sends the steer text as the next `session/prompt`, so
+the provider session's context is preserved. Steering is a redirect, not an
+injection into the running turn; a provider that cannot abort falls back to
+running the steer text after the current turn.
+
 ## Mapping
 
 | ACP `sessionUpdate` | Circulo `Part` |

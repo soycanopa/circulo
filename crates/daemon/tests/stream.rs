@@ -107,6 +107,71 @@ fn a_client_can_stop_a_blocked_turn() {
     assert_eq!(error, None, "an abort travels as an outcome, not an error");
 }
 
+#[test]
+fn a_steer_cancels_the_running_turn_and_starts_the_new_prompt() {
+    let core = Arc::new(Core::new(Arc::new(Stops)));
+    let daemon = Daemon::with_core(core).expect("bind the daemon");
+    let url = daemon.url();
+    let token = daemon.token().to_owned();
+    thread::spawn(move || daemon.serve());
+
+    let mut client = Client::connect(&url, &token).expect("handshake");
+    let session = client.start_session(None).expect("session");
+    client.prompt(&session, "one").expect("prompt");
+
+    // The first turn is blocked on its card when the steer arrives.
+    let mut started = Vec::new();
+    loop {
+        match client.next_message().expect("message") {
+            Some(ServerMessage::TurnStarted { turn, prompt, .. }) => {
+                started.push((turn, prompt));
+            }
+            Some(ServerMessage::PermissionRequested { .. }) => break,
+            Some(_) => {}
+            None => panic!("the daemon closed the connection"),
+        }
+    }
+
+    client.steer(&session, "two").expect("steer");
+
+    let mut queued = false;
+    let mut finished = Vec::new();
+    let mut cards = 0;
+    while let Some(message) = client.next_message().expect("message") {
+        match message {
+            ServerMessage::Queue { items, .. } => {
+                queued |= items.iter().any(|item| item.text == "two");
+            }
+            ServerMessage::TurnStarted { turn, prompt, .. } => started.push((turn, prompt)),
+            ServerMessage::PermissionRequested { id, .. } => {
+                cards += 1;
+                client
+                    .answer_permission(&id, Some("allow-once"))
+                    .expect("answer");
+            }
+            ServerMessage::TurnFinished { reason, .. } => {
+                finished.push(reason);
+                if finished.len() == 2 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    assert!(queued, "the steer travels through the queue");
+    assert_eq!(
+        started,
+        vec![(1, "one".to_owned()), (2, "two".to_owned())],
+        "the steer starts right after the aborted turn"
+    );
+    assert_eq!(
+        finished,
+        vec![FinishReason::Aborted, FinishReason::Completed]
+    );
+    assert_eq!(cards, 1, "only the steer's turn asks");
+}
+
 /// A turn that blocks on a permission card until it is cancelled, the way a
 /// real agent can be stopped mid-tool.
 struct Stops;
