@@ -39,6 +39,7 @@ Order matters: prove the pipe before adding a real provider to it.
 - [x] Sidebar from the database: sessions grouped by day (Today / Yesterday / This Month / month), title, project and relative time, the open session marked; a row opens its history, `New Task` starts a session
 - [x] Beautiful markdown transcript: headings, lists, tables, fenced code, quotes, footnotes, weighted columns, cached parse
 - [x] Markdown links keep their target and open in the system browser through `InteractiveText` byte-range hit-testing
+- [x] Display math (`$$…$$`) rendered by RaTeX as a cached image block; inline `$…$` stays a source chip until an inline layout lands
 - [x] Permission cards, and question cards from ACP elicitation
 - [x] Typeable composer: Enter sends, Shift+Enter breaks the line, prompts travel mid-turn
 - [x] Tool rows keyed by the provider's call id; the transcript follows the stream with a jump-to-latest button

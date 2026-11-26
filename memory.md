@@ -11,7 +11,7 @@ lifecycle without a model call.
 
 - **State:** `main` is clean after the usage slice; fmt, clippy and tests are
   green. No feature branch is open.
-- **Next task:** math rendering (§3), then attachments/remote (§4).
+- **Next task:** attachments (§4), then remote, then the inline math layout.
 - **Backlog:** §4, ordered. The big remaining v1.0 pieces are markdown
   links/math, attachments and remote.
 - **Run it:** `cargo run -p circulo` (demo, no auth) or
@@ -21,8 +21,8 @@ lifecycle without a model call.
 - **Rules:** branch → PR → green CI → merge commit → delete branch. Never push
   to `main`. See §10.
 - **First message for the next conversation:** "Lee `memory.md` (desde §0),
-  `AGENTS.md` y `docs/`. Estamos en `main` limpio; la próxima tarea es math
-  rendering (§3) y el backlog está en §4. No pushees a `main`: branch → PR."
+  `AGENTS.md` y `docs/`. Estamos en `main` limpio; la próxima tarea es
+  attachments (§4) y el backlog está en §4. No pushees a `main`: branch → PR."
 
 ## 1. What works today
 
@@ -70,10 +70,11 @@ agent proves the lifecycle.
 - **Usage is live**: the footer shows the context ratio and cost from ACP, or
   cumulative tokens from Codex. The core sends `Usage` after each turn; it is
   not stored, so a reopened session has no gauge until its next turn.
-- **Links are hit-tested, not faked**: GPUI 0.2.2's `InteractiveText` takes
-  byte ranges and reports the clicked index, so the parser keeps `dest_url` and
-  the renderer merges adjacent runs into ranges. `cx.open_url` opens the target
-  in the system browser. No webview, no inline word layout.
+- **Display math is an image, inline math is source**: RaTeX (MIT) lays out
+  `$$…$$`, rasterizes transparent PNG at 2× and caches the `RenderImage` by
+  source; `$…$` stays a chip because a GPUI text run cannot hold an image. The
+  dependency is 0.1.x: kept behind `crates/ui/src/math.rs`, with a 4 KiB source
+  cap and a 256-entry cache, so removing it later is one module.
 - Each turn shows its own prompt above the answer.
 
 **Cards** (`permission.rs`, `question.rs`, spec in `docs/permissions.md`):
@@ -232,22 +233,27 @@ the app, `CIRCULO_OPENCODE_BIN` points the daemon at that script.
 project-level `permission` config does not change ACP behaviour; the ACP session
 advertises `loadSession: true` (unused so far).
 
-## 3. Last slice: links; next: math
+## 3. Last slice: math; next: attachments
 
-**Links landed**: the parser keeps `dest_url` on the span, `styled_parts` merges
-adjacent runs with the same target into byte ranges, and
-`InteractiveText::on_click` opens the target with `cx.open_url`; hover shows the
-pointing hand. This corrects an earlier note in this file: GPUI 0.2.2 **does**
-expose text hit-testing through `InteractiveText`, even though the low-level
-`TextLayout` is not public. Plain text still uses the cheaper `StyledText`.
+**Math landed** with the split the owner approved: display math (`$$…$$`) is
+real, inline math (`$…$`) is a mono chip with its source.
 
-**Next: math.** `pulldown-cmark` 0.13.6 already parses `$…$` and `$$…$$` behind
-`ENABLE_MATH`; the open decision is the renderer. Verified candidates:
-`ratex-parser` + `ratex-layout` + `ratex-render` (MIT, 0.1.16, a Rust KaTeX
-port that rasterizes to PNG with embedded fonts), or showing the TeX source in
-a chip until a renderer is trusted. This needs a spike for quality, binary
-size, compile time and caching before it ships. After math: attachments and
-remote.
+Display math uses RaTeX (`ratex-parser` + `ratex-layout` + `ratex-render`,
+MIT, 0.1.16, embedded KaTeX fonts). `crates/ui/src/math.rs` parses and lays out
+the TeX, rasterizes a transparent PNG at 2×, converts RGBA→BGRA and caches the
+`Arc<RenderImage>` by source (max 256 entries, source capped at 4 KiB); the
+element is sized in logical points so it stays sharp. The spike rendered
+`x^2 + \frac{1}{2} = \sqrt{y}` correctly in 1.4 ms; the real turn in the demo
+shows the integral block centered. Invalid or oversized TeX falls back to the
+source in a chip. Rendering is synchronous on first sight and cached
+afterwards; a very complex equation can still cost on the parsing frame.
+
+Inline math stays a chip because GPUI paints a paragraph as one `StyledText`
+and a run cannot hold an image. A real inline layout (text + images + wrapping)
+is the next math slice if it earns its keep.
+
+**Next: attachments** (the last Phase 1 persistence piece), then remote.
+After that: the inline math layout.
 
 ## 4. Backlog (ordered)
 
@@ -255,12 +261,9 @@ Sizes are rough: S = same session, M = a focused PR, L = a feature slice with
 its own plan.
 
 ### Next
-1. **Math rendering** — L. `pulldown-cmark` parses `$…$`/`$$…$$` with
-   `ENABLE_MATH`; the renderer is the decision. Candidates: RaTeX
-   (`ratex-parser`/`layout`/`render`, MIT, 0.1.x, PNG with embedded KaTeX
-   fonts) or TeX source in a chip until a renderer is trusted. Needs a spike
-   for quality, size and caching.
-2. **Attachments** — M/L, the last Phase 1 persistence piece.
+1. **Attachments** — M/L, the last Phase 1 persistence piece.
+2. **Inline math layout** — L. Display math is rendered; `$…$` is a source
+   chip until a text+image inline layout exists inside a paragraph.
 
 ### Control surface / UI polish
 5. **Access mode** — M. The composer label is the static mock `Full access`;
@@ -327,7 +330,7 @@ its own plan.
 | `crates/providers/demo` | Canned turn, no auth. |
 | `crates/providers/opencode` | ACP over stdio; one agent process per Circulo session, spawned in the session's project folder; `session/load` resume with self-healing fallback; permission and elicitation mapped to cards; `configOptions` applied live, queued mid-turn; a shared stdin handle sends `session/cancel` when the turn owns the slot. |
 | `crates/providers/codex` | `codex app-server` over stdio; one child per Circulo session; `thread/start` / `thread/resume` with the thread id as the key; approvals and MCP form elicitation mapped to the same cards; `model/list` for model + effort; `turn/interrupt` on a shared stdin handle; `reset` drops the child. |
-| `crates/ui` | GPUI views and presentation state: shell, sidebar (title/project/time rows), transcript (Rewind on a finished turn), rewind card, markdown, composer (project chip and queue), input, cards. |
+| `crates/ui` | GPUI views and presentation state: shell, sidebar, transcript (link hit-testing, display math, rewind), markdown, composer, cards. |
 | `crates/app` | Composition root + supervisor: spawns the daemon, connects, reopens the last session, opens the window; quit closes stdin and waits before killing. |
 
 Dependency direction is one way. The UI never imports a provider or the core.
@@ -438,6 +441,15 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   `approvalPolicy: "on-request"` and `sandbox: "workspace-write"` keep the
   agent in the project and the cards honest. `experimentalApi` is enabled only
   for the documented MCP elicitation request.
+- **Links are hit-tested by GPUI, not faked**: `InteractiveText` takes byte
+  ranges and reports the clicked index, so the parser keeps `dest_url` and the
+  renderer merges adjacent runs into ranges; `cx.open_url` opens the target. No
+  webview, no word-sized inline layout.
+- **Display math is an image, inline math is source**: RaTeX (MIT) lays out
+  `$$…$$`, rasterizes transparent PNG at 2× and caches the `RenderImage` by
+  source; `$…$` stays a chip because a GPUI text run cannot hold an image. The
+  dependency is 0.1.x, kept behind `crates/ui/src/math.rs` with a 4 KiB source
+  cap and a 256-entry cache, so removing it later is one module.
 - **MIT license**, no Waku code, no GPL contamination.
 
 ## 8. Known quirks
@@ -473,8 +485,10 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
 - A tool row with output expands on click; the output is capped at 64 KiB and
   the cap is visible in the text, not silent.
 - Links render in the accent colour with an underline and open in the system
-  browser through `InteractiveText` + `cx.open_url`; math is still not rendered
-  (the TeX source shows as code).
+  browser through `InteractiveText` + `cx.open_url`.
+- Display math is a cached image; inline math (`$…$`) is a mono chip with its
+  TeX source. A very complex equation can still cost on the frame it is first
+  parsed; the cache bounds repeats at 256 entries.
 - The usage gauge is live only and updates after a turn, not during it; ACP
   reports context and cost, Codex cumulative tokens. A reopened session starts
   without it.
