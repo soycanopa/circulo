@@ -366,6 +366,20 @@ impl Driver for OpenCode {
         handle.cancel()
     }
 
+    fn reset(&self, session: &str) {
+        // The next prompt must not continue the conversation whose files and
+        // transcript were rewound. Dropping the slot kills the child; the core
+        // refuses a rewind while a turn runs, so the lock is free.
+        self.cancels().remove(session);
+        let slot = self.live().remove(session);
+        if let Some(slot) = slot {
+            let mut attached = slot
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *attached = None;
+        }
+    }
+
     fn options(&self, session: &str) -> Result<Vec<ConfigOption>, DriverError> {
         let slot = self.live().get(session).cloned();
         if let Some(slot) = &slot

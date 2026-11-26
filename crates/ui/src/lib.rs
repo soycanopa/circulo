@@ -18,6 +18,7 @@ mod markdown;
 mod mock;
 mod permission;
 mod question;
+mod rewind;
 mod shell;
 mod sidebar;
 mod theme;

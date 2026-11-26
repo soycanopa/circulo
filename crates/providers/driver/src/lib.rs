@@ -77,6 +77,13 @@ pub trait Driver: Send + Sync {
         Err(DriverError::new("this provider cannot cancel a turn"))
     }
 
+    /// Drops any provider-side session for `session`: the next turn starts a
+    /// fresh conversation. Used after a rewind, where the files and transcript
+    /// came back but the provider has no rewind of its own.
+    fn reset(&self, session: &str) {
+        let _ = session;
+    }
+
     /// The agent's current settings for `session`, with their current values.
     /// Starts no turn; a provider that needs an agent process starts a
     /// short-lived one. Empty when the provider has no settings.

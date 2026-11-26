@@ -11,7 +11,7 @@ use std::rc::Rc;
 use async_channel::{Receiver, Sender};
 use circulo_protocol::{
     ClientRequest, ConfigOption, HistoryTurn, ProjectSummary, QuestionAction, QueuedPrompt,
-    ServerMessage, SessionSummary,
+    RewindTarget, ServerMessage, SessionSummary,
 };
 use gpui::{
     Context, FocusHandle, IntoElement, KeyDownEvent, ListState, PathPromptOptions, Pixels, Point,
@@ -35,9 +35,10 @@ use crate::permission::{Answer, permission_card};
 use crate::question::{
     Draft, Handlers, QuestionEvent, QuestionHandler, TextKeyHandler, question_card,
 };
+use crate::rewind::{RewindEvent, RewindHandler, rewind_card};
 use crate::sidebar::{project_name, sidebar};
 use crate::theme::Theme;
-use crate::transcript::{new_list_state, transcript};
+use crate::transcript::{RewindTurnHandler, new_list_state, transcript};
 
 /// What the app hands the window once the daemon is connected and a session
 /// is open. Grouped so the constructor names one thing, not eight.
@@ -106,6 +107,10 @@ pub struct Shell {
     /// it is on. Both come from the daemon, never from a guess.
     repo: bool,
     branch: Option<String>,
+    /// The turn whose rewind confirmation is open, if any.
+    pending_rewind: Option<u64>,
+    rewind_focus: FocusHandle,
+    focus_rewind: bool,
     /// Whether the composer's project menu is open.
     project_open: bool,
     /// A folder picker is open; the next `ProjectAdded` starts a session there.
@@ -167,6 +172,9 @@ impl Shell {
             current_project,
             repo: false,
             branch: None,
+            pending_rewind: None,
+            rewind_focus: cx.focus_handle(),
+            focus_rewind: false,
             project_open: false,
             adding_project: false,
             picker_anchors: Rc::new(Cell::new(BTreeMap::new())),
@@ -345,6 +353,9 @@ impl Shell {
                 self.repo = false;
                 self.branch = None;
                 self.clear_options();
+                // A rewind can empty the title; the sidebar redraws from the
+                // daemon's list, never from a local assumption.
+                self.request(ClientRequest::ListSessions);
             }
             ServerMessage::Settings { settings } => {
                 // The client's own state, the whole map. Only the favourites
@@ -651,6 +662,11 @@ impl Shell {
             return;
         }
 
+        if key == "escape" && self.pending_rewind.is_some() {
+            self.on_rewind(RewindEvent::Cancel, cx);
+            return;
+        }
+
         // Escape stops the running turn, the way the reference does. The
         // menus above got the key first; a card owns the keyboard itself.
         if key == "escape" && self.transcript.status.running {
@@ -742,6 +758,42 @@ impl Shell {
             session: self.session.clone(),
             id,
         });
+        cx.notify();
+    }
+
+    /// Opens the rewind confirmation for `turn`. The card is the only thing
+    /// that can run the destructive restore, and Cancel is its default.
+    fn ask_rewind(&mut self, turn: u64, cx: &mut Context<Self>) {
+        self.pending_rewind = Some(turn);
+        self.focus_rewind = true;
+        self.close_picker();
+        self.project_open = false;
+        cx.notify();
+    }
+
+    /// Applies the card's choice. `Before` restores the state before the
+    /// prompt and removes the turn; `After` restores the state the turn left
+    /// and removes only later turns.
+    fn on_rewind(&mut self, event: RewindEvent, cx: &mut Context<Self>) {
+        let Some(turn) = self.pending_rewind.take() else {
+            return;
+        };
+        match event {
+            RewindEvent::Cancel => {}
+            RewindEvent::Before | RewindEvent::After => {
+                let to = match event {
+                    RewindEvent::Before => RewindTarget::Start,
+                    RewindEvent::After => RewindTarget::End,
+                    RewindEvent::Cancel => unreachable!("handled above"),
+                };
+                self.request(ClientRequest::Rewind {
+                    session: self.session.clone(),
+                    turn,
+                    to,
+                });
+            }
+        }
+        self.focus_composer = true;
         cx.notify();
     }
 
@@ -856,6 +908,11 @@ impl Render for Shell {
             self.card_focus.focus(window);
         }
 
+        if self.focus_rewind && self.pending_rewind.is_some() {
+            self.focus_rewind = false;
+            self.rewind_focus.focus(window);
+        }
+
         let front = self.transcript.cards.front().cloned();
 
         // A question starts empty; answers belong to the card showing. Its text
@@ -926,6 +983,18 @@ impl Render for Shell {
         });
         let queue = queued(&theme, &self.queued, on_remove);
 
+        let rewind = self.pending_rewind.map(|turn| {
+            let shell = cx.entity();
+            let on: RewindHandler = Rc::new(move |event, _window, cx| {
+                shell.update(cx, |shell, cx| shell.on_rewind(event, cx));
+            });
+            rewind_card(&theme, turn, &self.rewind_focus, on)
+        });
+        let shell = cx.entity();
+        let on_rewind: RewindTurnHandler = Rc::new(move |turn, _window, cx| {
+            shell.update(cx, |shell, cx| shell.ask_rewind(turn, cx));
+        });
+
         let main = div()
             .flex()
             .flex_col()
@@ -939,8 +1008,11 @@ impl Render for Shell {
                 &self.transcript,
                 &self.list_state,
                 &title,
+                self.repo,
+                on_rewind,
             ))
             .children(queue)
+            .children(rewind)
             .children(card)
             .when(true, |column| {
                 let shell = cx.entity();

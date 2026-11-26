@@ -10,8 +10,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, FontWeight, IntoElement, ListAlignment, ListOffset, ListState, SharedString, div,
-    list, prelude::*, px,
+    AnyElement, App, FontWeight, IntoElement, ListAlignment, ListOffset, ListState, SharedString,
+    Window, div, list, prelude::*, px,
 };
 
 use crate::icons::icon;
@@ -19,6 +19,9 @@ use crate::live::Transcript;
 use crate::mock::Workspace;
 use crate::theme::Theme;
 use circulo_protocol::FinishReason;
+
+/// Opening the rewind confirmation for a turn. The shell owns the request.
+pub(crate) type RewindTurnHandler = Rc<dyn Fn(u64, &mut Window, &mut App)>;
 
 /// The reference keeps the transcript text off the panel edges by this much;
 /// there is no narrower reading column.
@@ -32,6 +35,8 @@ pub(crate) enum Row {
     Divider {
         label: String,
         running: bool,
+        /// The turn this divider closes; the rewind action names it.
+        turn: u64,
     },
     /// One assistant turn. Its parts are stacked inside the row, the way the
     /// reference treats a turn as one list item: the list measures a bounded
@@ -58,6 +63,8 @@ pub(crate) fn transcript(
     transcript: &Transcript,
     list_state: &ListState,
     title: &str,
+    can_rewind: bool,
+    on_rewind: RewindTurnHandler,
 ) -> impl IntoElement {
     div()
         .flex()
@@ -65,7 +72,9 @@ pub(crate) fn transcript(
         .flex_1()
         .min_h(px(0.))
         .child(header(theme, title))
-        .child(conversation(theme, workspace, transcript, list_state))
+        .child(conversation(
+            theme, workspace, transcript, list_state, can_rewind, on_rewind,
+        ))
 }
 
 fn header(theme: &Theme, title: &str) -> impl IntoElement {
@@ -89,6 +98,8 @@ fn conversation(
     workspace: &Workspace,
     transcript: &Transcript,
     list_state: &ListState,
+    can_rewind: bool,
+    on_rewind: RewindTurnHandler,
 ) -> impl IntoElement {
     let rows = Rc::new(rows(workspace, transcript));
     // The list's builder is 'static; the theme is a handful of copied colours.
@@ -108,8 +119,9 @@ fn conversation(
     // so "at the newest row" is an offset at or past the last item.
     let at_bottom = list_state.logical_scroll_top().item_ix >= list_state.item_count();
 
+    let on_rewind = on_rewind.clone();
     let list = list(state.clone(), move |index, _window, _cx| {
-        row_view(&rows[index], index, &theme)
+        row_view(&rows[index], index, &theme, can_rewind, &on_rewind)
     })
     .size_full();
 
@@ -183,6 +195,7 @@ fn rows(workspace: &Workspace, transcript: &Transcript) -> Vec<Row> {
                 workspace.worked.to_owned()
             },
             running,
+            turn: turn.turn,
         });
 
         let segments = turn
@@ -211,7 +224,13 @@ fn rows(workspace: &Workspace, transcript: &Transcript) -> Vec<Row> {
     rows
 }
 
-fn row_view(row: &Row, index: usize, theme: &Theme) -> AnyElement {
+fn row_view(
+    row: &Row,
+    index: usize,
+    theme: &Theme,
+    can_rewind: bool,
+    on_rewind: &RewindTurnHandler,
+) -> AnyElement {
     // Every row is a full-width block with a stable id, as in the reference.
     // An unbounded row is measured at its minimum width, so wrapped text is
     // reported shorter than it paints and the next row lands on top of it.
@@ -237,33 +256,57 @@ fn row_view(row: &Row, index: usize, theme: &Theme) -> AnyElement {
                     .child(text.clone()),
             )
             .into_any_element(),
-        Row::Divider { label, running } => div()
-            .id(id)
-            .w_full()
-            .min_w(px(0.))
-            .flex()
-            .items_center()
-            .gap(px(10.))
-            .pb(px(18.))
-            .child(div().flex_1().h(px(1.)).bg(theme.hairline))
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .flex()
-                    .items_center()
-                    .gap(px(4.))
-                    .text_size(px(11.5))
-                    .text_color(theme.text_faint)
-                    .when(*running, |row| {
-                        row.child(icon("icons/loader-circle.svg", 11., theme.text_faint))
-                    })
-                    .child(label.clone())
-                    .when(!*running, |row| {
-                        row.child(icon("icons/chevron-right.svg", 11., theme.text_faint))
-                    }),
-            )
-            .child(div().flex_1().h(px(1.)).bg(theme.hairline))
-            .into_any_element(),
+        Row::Divider {
+            label,
+            running,
+            turn,
+        } => {
+            let group = SharedString::from(format!("turn-{turn}"));
+            div()
+                .id(id)
+                .group(group.clone())
+                .w_full()
+                .min_w(px(0.))
+                .flex()
+                .items_center()
+                .gap(px(10.))
+                .pb(px(18.))
+                .child(div().flex_1().h(px(1.)).bg(theme.hairline))
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .flex()
+                        .items_center()
+                        .gap(px(4.))
+                        .text_size(px(11.5))
+                        .text_color(theme.text_faint)
+                        .when(*running, |row| {
+                            row.child(icon("icons/loader-circle.svg", 11., theme.text_faint))
+                        })
+                        .child(label.clone())
+                        .when(!*running, |row| {
+                            row.child(icon("icons/chevron-right.svg", 11., theme.text_faint))
+                        })
+                        .when(can_rewind && !*running, |row| {
+                            let on = Rc::clone(on_rewind);
+                            let turn = *turn;
+                            row.child(
+                                div()
+                                    .id(SharedString::from(format!("rewind-turn-{turn}")))
+                                    .flex_shrink_0()
+                                    .px(px(4.))
+                                    .cursor_pointer()
+                                    .opacity(0.)
+                                    .group_hover(group.clone(), |style| style.opacity(1.))
+                                    .hover(|style| style.text_color(theme.text))
+                                    .child("Rewind")
+                                    .on_click(move |_, window, cx| on(turn, window, cx)),
+                            )
+                        }),
+                )
+                .child(div().flex_1().h(px(1.)).bg(theme.hairline))
+                .into_any_element()
+        }
         Row::Turn(segments) => {
             let mut turn = div().id(id).w_full().min_w(px(0.)).flex().flex_col();
 

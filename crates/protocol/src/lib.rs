@@ -68,6 +68,15 @@ pub enum ClientRequest {
     /// failure. Prompts already queued stay queued. A session with no turn in
     /// flight is an error.
     CancelTurn { session: String },
+    /// Restore a turn's checkpoint and trim the transcript to the same point.
+    /// `Start` restores the state before the prompt and removes that turn;
+    /// `End` restores the state after it and keeps it. The daemon answers with
+    /// the trimmed `History` and a fresh `RepoStatus`.
+    Rewind {
+        session: String,
+        turn: u64,
+        to: RewindTarget,
+    },
     /// Answer a pending permission request. `option` is the id of one of the
     /// options the daemon offered; `None` means cancelled, which is only right
     /// when the turn itself is going away.
@@ -127,6 +136,7 @@ const CLIENT_TYPES: &[&str] = &[
     "steer",
     "remove_queued",
     "cancel_turn",
+    "rewind",
     "answer_permission",
     "answer_question",
     "list_sessions",
@@ -438,6 +448,16 @@ pub enum FinishReason {
     Aborted,
 }
 
+/// Which side of a turn a rewind restores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RewindTarget {
+    /// The state before the prompt; that turn and everything after it go.
+    Start,
+    /// The state after the turn; only later turns go.
+    End,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProtocolError {
     #[error("malformed message: {0}")]
@@ -642,6 +662,11 @@ mod tests {
             },
             ClientRequest::CancelTurn {
                 session: "s1".into(),
+            },
+            ClientRequest::Rewind {
+                session: "s1".into(),
+                turn: 7,
+                to: RewindTarget::Start,
             },
             ClientRequest::ListProjects,
             ClientRequest::AddProject {

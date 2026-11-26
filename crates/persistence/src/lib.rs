@@ -402,6 +402,47 @@ impl Store {
         Ok(())
     }
 
+    /// Trims a session to `keep_through` (inclusive): later turns and their
+    /// parts are deleted. `None` removes every turn and clears the title. The
+    /// provider key is always dropped, because after a rewind the agent context
+    /// no longer matches the files and transcript.
+    pub fn trim_turns(&self, session: &str, keep_through: Option<u64>) -> Result<(), StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+
+        match keep_through {
+            Some(turn) => {
+                transaction.execute(
+                    "DELETE FROM turns WHERE session_id = ?1 AND turn > ?2",
+                    params![session, turn as i64],
+                )?;
+                transaction.execute(
+                    "DELETE FROM parts WHERE session_id = ?1 AND turn > ?2",
+                    params![session, turn as i64],
+                )?;
+            }
+            None => {
+                transaction.execute("DELETE FROM turns WHERE session_id = ?1", params![session])?;
+                transaction.execute("DELETE FROM parts WHERE session_id = ?1", params![session])?;
+            }
+        }
+
+        transaction.execute(
+            "UPDATE sessions
+                SET provider_session = NULL,
+                    title = CASE
+                        WHEN EXISTS (SELECT 1 FROM turns WHERE session_id = ?1)
+                        THEN title
+                        ELSE ''
+                    END,
+                    updated_at = ?2
+              WHERE id = ?1",
+            params![session, now() as i64],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     /// The client's own value for `key`, if it ever set one. Settings are
     /// interface state — favourite models — so the shape is opaque here:
     /// whatever JSON went in comes back out.
@@ -744,6 +785,43 @@ mod tests {
             .expect("set");
 
         let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn trimming_a_session_removes_later_turns_and_the_provider_key() {
+        let store = store();
+        store.start_session("s1", None, "demo").expect("session");
+        for turn in 1..=3 {
+            store
+                .start_turn("s1", turn, &format!("prompt {turn}"))
+                .expect("turn");
+            store
+                .append_part("s1", turn, 0, &part(&format!("part {turn}")))
+                .expect("part");
+        }
+        store
+            .set_provider_session("s1", Some("ses_acp_1"))
+            .expect("key");
+
+        store.trim_turns("s1", Some(1)).expect("trim");
+        let transcript = store.transcript("s1").expect("transcript");
+        assert_eq!(transcript.len(), 1);
+        assert_eq!(transcript[0].turn, 1);
+        assert_eq!(transcript[0].parts, vec![part("part 1")]);
+        assert_eq!(store.sessions().expect("list")[0].title, "prompt 1");
+        assert_eq!(
+            store.provider_session("s1").expect("key"),
+            None,
+            "the agent context no longer matches the files"
+        );
+
+        store.trim_turns("s1", None).expect("trim all");
+        assert!(store.transcript("s1").expect("transcript").is_empty());
+        assert_eq!(
+            store.sessions().expect("list")[0].title,
+            "",
+            "no prompt left to title the session"
+        );
     }
 
     #[test]
