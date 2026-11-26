@@ -430,6 +430,11 @@ pub enum Part {
         name: String,
         detail: String,
         state: ToolState,
+        /// What the tool printed, sent once when it finishes. `None` when the
+        /// provider reports no output. The client shows it only when the row
+        /// is expanded, so a long command does not flood the transcript.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        output: Option<String>,
     },
 }
 
@@ -522,6 +527,7 @@ mod tests {
                     name: "Read".into(),
                     detail: "crates/core/src/lib.rs".into(),
                     state: ToolState::Done,
+                    output: Some("42 lines".into()),
                 },
             },
             ServerMessage::TurnFinished {

@@ -104,14 +104,16 @@ running the steer text after the current turn.
 |---|---|
 | `agent_message_chunk` | `Text { delta }` |
 | `agent_thought_chunk` | `Reasoning { delta }` |
-| `tool_call`, `tool_call_update` | `Tool { id, name, detail, state }`, one row per `toolCallId` |
+| `tool_call`, `tool_call_update` | `Tool { id, name, detail, state, output }`, one row per `toolCallId`; `content` text blocks accumulate into `output`, sent once when the call finishes |
 | `session/request_permission` | a permission card; the answer goes back as the chosen `optionId` |
 | `elicitation/create` (form) | a question card; `accept` returns the values keyed by schema property |
 
 `detail` prefers the tool's first location path, then `rawInput.path`. A tool is
 `Running` while pending or in progress, `Done` when completed or failed; a
-failure appends `· failed` to the detail. Unknown update kinds are ignored, so
-ACP can add them without breaking the driver.
+failure appends `· failed` to the detail. `content` blocks of type `content`
+with a text block are the tool's output: they accumulate and travel once, with
+the finished row, capped at 64 KiB. Unknown update kinds are ignored, so ACP
+can add them without breaking the driver.
 
 A permission request blocks the turn until the user answers. The card's title is
 the ACP `toolCall.title`, its detail is `rawInput.command`, then the first
@@ -142,6 +144,8 @@ a duplicate row for it.
   dropped.
 - **No timeouts.** A wedged agent blocks its connection thread; the daemon has
   one thread per connection, so it does not block another client.
+- **Tool output is capped at 64 KiB.** ACP `content` text blocks are captured;
+  `diff` and `terminal` blocks are not rendered. A truncated output says so.
 - **`opencode` must be on `PATH`.** The daemon reports the spawn failure as a
   turn error.
 

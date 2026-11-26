@@ -38,7 +38,9 @@ use crate::question::{
 use crate::rewind::{RewindEvent, RewindHandler, rewind_card};
 use crate::sidebar::{project_name, sidebar};
 use crate::theme::Theme;
-use crate::transcript::{RewindTurnHandler, new_list_state, transcript};
+use crate::transcript::{
+    RewindTurnHandler, ToggleToolHandler, TranscriptControls, new_list_state, transcript,
+};
 
 /// What the app hands the window once the daemon is connected and a session
 /// is open. Grouped so the constructor names one thing, not eight.
@@ -994,6 +996,21 @@ impl Render for Shell {
         let on_rewind: RewindTurnHandler = Rc::new(move |turn, _window, cx| {
             shell.update(cx, |shell, cx| shell.ask_rewind(turn, cx));
         });
+        let shell = cx.entity();
+        let on_toggle_tool: ToggleToolHandler = Rc::new(move |id, _window, cx| {
+            shell.update(cx, |shell, cx| {
+                let offset = shell.list_state.logical_scroll_top();
+                shell.transcript.toggle_tool(id);
+                // The row count did not change, but its height did: a reset
+                // makes the list measure it again instead of keeping the
+                // collapsed height. The offset is restored so opening a row
+                // does not jump the reader to the bottom.
+                let count = shell.list_state.item_count();
+                shell.list_state.reset(count);
+                shell.list_state.scroll_to(offset);
+                cx.notify();
+            });
+        });
 
         let main = div()
             .flex()
@@ -1008,8 +1025,11 @@ impl Render for Shell {
                 &self.transcript,
                 &self.list_state,
                 &title,
-                self.repo,
-                on_rewind,
+                TranscriptControls {
+                    can_rewind: self.repo,
+                    on_rewind,
+                    on_toggle_tool,
+                },
             ))
             .children(queue)
             .children(rewind)

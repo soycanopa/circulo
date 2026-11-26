@@ -51,7 +51,8 @@ session's slot is locked for the whole turn.
 |---|---|
 | `item/agentMessage/delta` | `Text { delta }` |
 | `item/reasoning/summaryTextDelta` | `Reasoning { delta }` |
-| `item/started` / `item/completed` with `commandExecution` | `Tool { id, name: "command", detail: command, state }` |
+| `item/started` / `item/completed` with `commandExecution` | `Tool { id, name: "command", detail: command, state, output }` |
+| `item/commandExecution/outputDelta` | accumulates into that tool's `output`, sent once with the finished row |
 | `…` with `fileChange` | `Tool { id, name: "edit", detail: changed paths }` |
 | `…` with `mcpToolCall` | `Tool { id, name: tool, detail: server }` |
 | `…` with `webSearch` | `Tool { id, name: "web search", detail: query }` |
@@ -163,17 +164,15 @@ exits on stdin EOF, so no agent process outlives the daemon.
 - **No native steering.** Codex has `turn/steer`, but the core's steering is
   provider-neutral (abort the turn, send the text next). Using `turn/steer`
   would need a protocol change; it is left for a later slice.
-- **No tool output yet.** `item/commandExecution/outputDelta` is dropped, the
-  same limitation OpenCode has today.
 
 ## Verification
 
 - Unit tests cover the mapping, the approval card and the question form.
 - `tests/scripted.rs` runs a Python `codex app-server` stand-in: a turn
-  streams, a permission card round trips, a question round trips, model and
-  effort options apply, two turns share one child, a restart resumes the
-  thread, a lost key starts fresh, cancel sends `turn/interrupt`, reset drops
-  the thread, and shutdown releases the child.
+  streams (text, reasoning, a command's output), a permission card round trips,
+  a question round trips, model and effort options apply, two turns share one
+  child, a restart resumes the thread, a lost key starts fresh, cancel sends
+  `turn/interrupt`, reset drops the thread, and shutdown releases the child.
 - `cargo test -p circulo-provider-codex --test real -- --ignored` runs the
   same lifecycle against the installed `codex`; it needs a logged-in CLI.
 
@@ -185,5 +184,6 @@ exits on stdin EOF, so no agent process outlives the daemon.
   empty, but a turn still reports the spawn or auth failure honestly.
 - **No `request_permissions` card, no URL elicitation, no
   `tool/requestUserInput`.** See above; each is answered as unsupported.
-- **Tool output and usage are not rendered.** The events exist; the wire has
-  nowhere to put them yet.
+- **No tool diffs yet.** `commandExecution` output is captured; a `fileChange`
+  item's `diff` is not. Usage (`thread/tokenUsage/updated`) is not rendered.
+  The events exist; the wire has nowhere to put the diff or the gauge yet.

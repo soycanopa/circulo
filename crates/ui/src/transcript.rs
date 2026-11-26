@@ -22,6 +22,15 @@ use circulo_protocol::FinishReason;
 
 /// Opening the rewind confirmation for a turn. The shell owns the request.
 pub(crate) type RewindTurnHandler = Rc<dyn Fn(u64, &mut Window, &mut App)>;
+/// Opening or closing a tool row. The shell owns the presentation state.
+pub(crate) type ToggleToolHandler = Rc<dyn Fn(&str, &mut Window, &mut App)>;
+
+/// The transcript's actions, grouped so its signature stays readable.
+pub(crate) struct TranscriptControls {
+    pub can_rewind: bool,
+    pub on_rewind: RewindTurnHandler,
+    pub on_toggle_tool: ToggleToolHandler,
+}
 
 /// The reference keeps the transcript text off the panel edges by this much;
 /// there is no narrower reading column.
@@ -51,9 +60,14 @@ pub(crate) enum Segment {
     Text(Rc<Vec<crate::markdown::Block>>),
     Reasoning(String),
     Tool {
+        /// The provider's call id; the row toggles open by it.
+        id: String,
         name: String,
         detail: String,
         done: bool,
+        /// What the tool printed, shown when the row is open.
+        output: Option<String>,
+        expanded: bool,
     },
 }
 
@@ -63,8 +77,7 @@ pub(crate) fn transcript(
     transcript: &Transcript,
     list_state: &ListState,
     title: &str,
-    can_rewind: bool,
-    on_rewind: RewindTurnHandler,
+    controls: TranscriptControls,
 ) -> impl IntoElement {
     div()
         .flex()
@@ -73,7 +86,7 @@ pub(crate) fn transcript(
         .min_h(px(0.))
         .child(header(theme, title))
         .child(conversation(
-            theme, workspace, transcript, list_state, can_rewind, on_rewind,
+            theme, workspace, transcript, list_state, controls,
         ))
 }
 
@@ -98,10 +111,14 @@ fn conversation(
     workspace: &Workspace,
     transcript: &Transcript,
     list_state: &ListState,
-    can_rewind: bool,
-    on_rewind: RewindTurnHandler,
+    controls: TranscriptControls,
 ) -> impl IntoElement {
     let rows = Rc::new(rows(workspace, transcript));
+    let TranscriptControls {
+        can_rewind,
+        on_rewind,
+        on_toggle_tool,
+    } = controls;
     // The list's builder is 'static; the theme is a handful of copied colours.
     let theme = *theme;
 
@@ -120,8 +137,16 @@ fn conversation(
     let at_bottom = list_state.logical_scroll_top().item_ix >= list_state.item_count();
 
     let on_rewind = on_rewind.clone();
+    let on_toggle_tool = on_toggle_tool.clone();
     let list = list(state.clone(), move |index, _window, _cx| {
-        row_view(&rows[index], index, &theme, can_rewind, &on_rewind)
+        row_view(
+            &rows[index],
+            index,
+            &theme,
+            can_rewind,
+            &on_rewind,
+            &on_toggle_tool,
+        )
     })
     .size_full();
 
@@ -205,11 +230,19 @@ fn rows(workspace: &Workspace, transcript: &Transcript) -> Vec<Row> {
                 crate::live::Segment::Text { text, parsed } => Segment::Text(parsed.blocks(text)),
                 crate::live::Segment::Reasoning(text) => Segment::Reasoning(text.clone()),
                 crate::live::Segment::Tool {
-                    name, detail, done, ..
+                    id,
+                    name,
+                    detail,
+                    done,
+                    output,
+                    expanded,
                 } => Segment::Tool {
+                    id: id.clone(),
                     name: name.clone(),
                     detail: detail.clone(),
                     done: *done,
+                    output: output.clone(),
+                    expanded: *expanded,
                 },
             })
             .collect();
@@ -230,6 +263,7 @@ fn row_view(
     theme: &Theme,
     can_rewind: bool,
     on_rewind: &RewindTurnHandler,
+    on_toggle_tool: &ToggleToolHandler,
 ) -> AnyElement {
     // Every row is a full-width block with a stable id, as in the reference.
     // An unbounded row is measured at its minimum width, so wrapped text is
@@ -312,7 +346,7 @@ fn row_view(
 
             for (segment_index, segment) in segments.iter().enumerate() {
                 let segment_id = SharedString::from(format!("row-{index}-segment-{segment_index}"));
-                turn = turn.child(segment_view(segment, segment_id, theme));
+                turn = turn.child(segment_view(segment, segment_id, theme, on_toggle_tool));
             }
 
             turn.into_any_element()
@@ -329,7 +363,12 @@ fn row_view(
     }
 }
 
-fn segment_view(segment: &Segment, id: SharedString, theme: &Theme) -> AnyElement {
+fn segment_view(
+    segment: &Segment,
+    id: SharedString,
+    theme: &Theme,
+    on_toggle_tool: &ToggleToolHandler,
+) -> AnyElement {
     match segment {
         // Agent text is CommonMark while it streams: markers become weight,
         // mono runs, list indent and code surfaces.
@@ -342,10 +381,131 @@ fn segment_view(segment: &Segment, id: SharedString, theme: &Theme) -> AnyElemen
             .child(crate::markdown::markdown(blocks, theme))
             .into_any_element(),
         Segment::Reasoning(text) => activity(&id, theme, "icons/brain.svg", None, text, true),
-        Segment::Tool { name, detail, done } => {
-            activity(&id, theme, tool_icon(name), Some(name), detail, *done)
-        }
+        Segment::Tool {
+            id: tool_id,
+            name,
+            detail,
+            done,
+            output,
+            expanded,
+        } => tool_row(
+            ToolRow {
+                row_id: &id,
+                tool_id,
+                name,
+                detail,
+                done: *done,
+                output: output.as_deref(),
+                expanded: *expanded,
+            },
+            theme,
+            on_toggle_tool,
+        ),
     }
+}
+
+/// The pieces of one tool row: the header text and the output it may reveal.
+struct ToolRow<'a> {
+    row_id: &'a SharedString,
+    tool_id: &'a str,
+    name: &'a str,
+    detail: &'a str,
+    done: bool,
+    output: Option<&'a str>,
+    expanded: bool,
+}
+
+/// A tool row plus, when opened, the output it printed. The header is the
+/// collapsed row the transcript always had; a finished tool with output grows
+/// a chevron and becomes clickable.
+fn tool_row(row: ToolRow<'_>, theme: &Theme, on_toggle_tool: &ToggleToolHandler) -> AnyElement {
+    let ToolRow {
+        row_id,
+        tool_id,
+        name,
+        detail,
+        done,
+        output,
+        expanded,
+    } = row;
+    let has_output = output.is_some_and(|text| !text.is_empty());
+    let mut column = div()
+        .id(row_id.clone())
+        .w_full()
+        .min_w(px(0.))
+        .flex_shrink_0()
+        .flex()
+        .flex_col();
+
+    let mut header = div()
+        .id(SharedString::from(format!("{row_id}-header")))
+        .w_full()
+        .min_w(px(0.))
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .min_h(px(26.))
+        .text_size(px(12.))
+        .child(icon(tool_icon(name), 13., theme.text_faint))
+        .child(
+            div()
+                .flex_shrink_0()
+                .text_color(theme.text_muted)
+                .child(name.to_owned()),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.))
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .text_color(theme.text_faint)
+                .child(flatten(detail)),
+        )
+        .child(if !done {
+            icon("icons/loader-circle.svg", 11., theme.text_faint)
+        } else if has_output && expanded {
+            icon("icons/chevron-down.svg", 11., theme.text_faint)
+        } else {
+            icon("icons/chevron-right.svg", 11., theme.text_faint)
+        });
+
+    if has_output {
+        let on = Rc::clone(on_toggle_tool);
+        let tool_id = tool_id.to_owned();
+        header = header
+            .cursor_pointer()
+            .on_click(move |_, window, cx| on(&tool_id, window, cx));
+    }
+    column = column.child(header);
+
+    if expanded && let Some(output) = output {
+        column = column.child(output_block(output, theme));
+    }
+
+    column.into_any_element()
+}
+
+/// What the tool printed, in the same chip and mono face as a fenced code
+/// block. GPUI breaks the text on `\n`, so the block needs no line layout.
+fn output_block(text: &str, theme: &Theme) -> AnyElement {
+    div()
+        .w_full()
+        .min_w(px(0.))
+        .flex_shrink_0()
+        .mt(px(2.))
+        .mb(px(6.))
+        .rounded(px(8.))
+        .bg(theme.chip)
+        .px(px(10.))
+        .py(px(8.))
+        .text_size(px(11.5))
+        .line_height(px(17.))
+        .font_family("Menlo")
+        .text_color(theme.text_muted)
+        .child(text.to_owned())
+        .into_any_element()
 }
 
 /// A reasoning part and a shell command both can carry newlines. The collapsed

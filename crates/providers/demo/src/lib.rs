@@ -70,6 +70,7 @@ impl Driver for DemoDriver {
             name: "Read".into(),
             detail: "crates/ui/src/transcript.rs".into(),
             state: ToolState::Running,
+            output: None,
         });
         thread::sleep(self.chunk_delay);
         emit(Part::Tool {
@@ -77,6 +78,9 @@ impl Driver for DemoDriver {
             name: "Read".into(),
             detail: "crates/ui/src/transcript.rs".into(),
             state: ToolState::Done,
+            output: Some(
+                "1  //! The transcript: header, and the rows the daemon streams.\n2  //!".into(),
+            ),
         });
         thread::sleep(self.chunk_delay);
         emit(Part::Tool {
@@ -84,6 +88,7 @@ impl Driver for DemoDriver {
             name: "Bash".into(),
             detail: "cargo test --workspace\ncargo clippy --workspace --all-targets".into(),
             state: ToolState::Done,
+            output: Some("test result: ok. 99 passed; 0 failed\nFinished `dev` profile".into()),
         });
 
         let answer = format!(
