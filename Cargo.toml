@@ -10,6 +10,7 @@ members = [
     "crates/protocol",
     "crates/providers/demo",
     "crates/providers/opencode",
+    "crates/providers/codex",
     "crates/providers/driver",
     "crates/ui",
 ]
@@ -41,6 +42,7 @@ circulo-git = { path = "crates/git" }
 circulo-persistence = { path = "crates/persistence" }
 circulo-protocol = { path = "crates/protocol" }
 circulo-provider = { path = "crates/providers/driver" }
+circulo-provider-codex = { path = "crates/providers/codex" }
 circulo-provider-demo = { path = "crates/providers/demo" }
 circulo-provider-opencode = { path = "crates/providers/opencode" }
 circulo-ui = { path = "crates/ui" }

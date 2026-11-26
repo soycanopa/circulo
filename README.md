@@ -6,7 +6,7 @@ One window for projects, independent sessions, and live work: streaming transcri
 
 Circulo is **inspired by** [Waku](https://github.com/egoist/waku). The product idea, the calm layout, and the way you watch an agent work are the reference. Circulo is its own application, built entirely in **Rust + GPUI** — the same GPU-accelerated UI framework behind Zed. Waku is GPL-3.0; none of its code is copied here.
 
-**Status:** the desktop is usable end to end against a real agent. The app supervises the daemon, opens stored sessions, streams OpenCode turns over ACP, renders markdown, tool rows and reasoning, answers permission and question cards, switches model and effort, keeps one agent process per session with `session/load` continuity, and can stop, queue or steer a running turn. A session lives in a project folder chosen from the composer's project chip, the agent runs there, every turn has Git start/end checkpoints, and a turn can be rewound — files, transcript and agent context together. The footer shows the real branch. The demo provider works with no auth. Still to come: a second provider. See [the implementation plan](docs/implement.md).
+**Status:** the desktop is usable end to end against a real agent. The app supervises the daemon, opens stored sessions, streams OpenCode turns over ACP and Codex turns over the app-server protocol, renders markdown, tool rows and reasoning, answers permission and question cards, switches model and effort, keeps one agent process per session with provider-native continuity, and can stop, queue or steer a running turn. A session lives in a project folder chosen from the composer's project chip, the agent runs there, every turn has Git start/end checkpoints, and a turn can be rewound — files, transcript and agent context together. The footer shows the real branch. The demo provider works with no auth. Still to come: tool output, attachments and remote. See [the implementation plan](docs/implement.md).
 
 ## Who it is for
 
@@ -59,6 +59,8 @@ The UI never talks to a CLI. Providers never import the UI or the core. The prot
 | `crates/client` | The protocol client used by the desktop, and later by mobile and remote. |
 | `crates/providers/driver` | The `Driver` trait each provider implements. |
 | `crates/providers/demo` | A provider that streams a canned turn, so the pipe is proven before a real CLI. |
+| `crates/providers/opencode` | OpenCode over Agent Client Protocol (ACP). |
+| `crates/providers/codex` | Codex over the `codex app-server` JSON-RPC protocol. |
 | `crates/persistence` | SQLite, settings and blobs. Used only by the core. |
 | `crates/git` | Worktrees and conversation-aware checkpoints. Used only by the core. |
 | `crates/ui` | GPUI views: sidebar, transcript, composer, right panel. Presentation only. |
@@ -72,8 +74,10 @@ The UI never talks to a CLI. Providers never import the UI or the core. The prot
 ## Build and run
 
 ```sh
-cargo run -p circulo          # the desktop window
+cargo run -p circulo          # the desktop window, demo provider
 cargo run -p circulo-daemon   # the daemon: prints its URL and token, then serves
+CIRCULO_PROVIDER=opencode CIRCULO_PROJECT="$PWD" cargo run -p circulo
+CIRCULO_PROVIDER=codex CIRCULO_PROJECT="$PWD" cargo run -p circulo
 ```
 
 The daemon is the core process. It prints one line with its loopback URL (`ws://…`) and token; a client presents both in the handshake. Remote and mobile are clients of the same daemon over `wss://`, so nothing needs to move when they arrive.
