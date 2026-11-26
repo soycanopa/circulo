@@ -25,7 +25,7 @@ Order matters: prove the pipe before adding a real provider to it.
 
 ## Phase 2 — Shared control surface
 - [x] Model / reasoning effort discovery and switching (`session/new` returns `configOptions`; `session/set_config_option`)
-- Message queue + steering
+- [x] Message queue and steering: `Prompt` while a turn runs queues FIFO; `Steer` puts the text at the front and aborts the running turn; the queue travels on the wire and the window can remove an item
 - [x] Abort: `CancelTurn` cancels the turn's cards, the driver sends ACP `session/cancel`, and the turn ends as `aborted`
 
 ## Phase 3 — Second provider + Git
