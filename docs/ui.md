@@ -79,6 +79,17 @@ Light has not been captured from the live app yet; these values follow the publi
 
 Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group labels, metadata and times. Task rows use 17 / 15 line height, transcript blocks 20. Code is a monospace face (`Menlo`): inline runs keep the body size, fenced blocks drop to 12 / 18 on a chip surface.
 
+### Icons
+
+Kubai Icons (MIT, `crates/ui/assets/icons/LICENSE`): the **two-tone** style for
+icons with body (folders, files, tools, settings, star, lock, monitor, loader),
+and the same library's **line** style for the simple navigation glyphs the
+two-tone set does not draw (arrows, chevrons, the reasoning brain, the panel
+toggles). Each file uses `currentColor`; the second tone is the same tint at 35%
+opacity, so dark/light and the accent apply. The provider's own mark
+(`opencode.svg`) stays. The SVGs are static: GPUI does not run the library's
+motion.
+
 ## 4. Surfaces and components (replication checklist)
 
 ### Sidebar
