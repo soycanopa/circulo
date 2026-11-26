@@ -2,27 +2,27 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-26, on `feature/codex-provider`. The suite is green
-(fmt, clippy and tests). The model-call tests in `tests/real.rs` need provider
-credit; Codex's real tests also need the CLI installed. The scripted agents
-cover the lifecycle without a model call.
+Last updated: 2026-11-26, on `main` after PR #57. The suite is green (fmt,
+clippy and tests). The model-call tests in `tests/real.rs` need provider credit;
+Codex's real tests also need the CLI installed. The scripted agents cover the
+lifecycle without a model call.
 
 ## 0. Handoff in one minute
 
-- **State:** `feature/codex-provider` adds the second provider; `main` is still
-  at `0cfc62b` until the PR merges. fmt, clippy and tests are green.
-- **Next task:** tool output in the transcript (§3), then attachments/remote
-  (§4).
-- **Backlog:** §4, ordered. The big remaining v1.0 pieces are tool output,
-  markdown links/math, attachments and remote.
+- **State:** `main` is clean after PR #57 (tool output); fmt, clippy and tests
+  are green. No feature branch is open.
+- **Next task:** usage / token / cost (§3), then attachments/remote (§4).
+- **Backlog:** §4, ordered. The big remaining v1.0 pieces are usage, markdown
+  links/math, attachments and remote.
 - **Run it:** `cargo run -p circulo` (demo, no auth) or
-  `CIRCULO_PROVIDER=opencode CIRCULO_PROJECT="$PWD" cargo run -p circulo`.
-  Checks and UI automation are in §2.
+  `CIRCULO_PROVIDER=opencode CIRCULO_PROJECT="$PWD" cargo run -p circulo`, or
+  `CIRCULO_PROVIDER=codex …` when the Codex CLI is installed. Checks and UI
+  automation are in §2.
 - **Rules:** branch → PR → green CI → merge commit → delete branch. Never push
   to `main`. See §10.
 - **First message for the next conversation:** "Lee `memory.md` (desde §0),
-  `AGENTS.md` y `docs/`. Estamos en `main` limpio; la próxima tarea es el segundo
-  provider (§3) y el backlog está en §4. No pushees a `main`: branch → PR."
+  `AGENTS.md` y `docs/`. Estamos en `main` limpio; la próxima tarea es usage /
+  token / cost (§3) y el backlog está en §4. No pushees a `main`: branch → PR."
 
 ## 1. What works today
 
@@ -227,7 +227,7 @@ advertises `loadSession: true` (unused so far).
 
 ## 3. Last slice: tool output; next: usage
 
-**Tool output landed (2026-11-26)** on `feature/tool-output`. `Part::Tool` grew
+**Tool output landed (2026-11-26, PR #57).** `Part::Tool` grew
 `output: Option<String>` (additive, `serde(default)`, no protocol version
 bump). Both drivers accumulate what the tool printed — ACP `content` text
 blocks, Codex `item/commandExecution/outputDelta` and `aggregatedOutput` — and
@@ -499,5 +499,5 @@ rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
   Never push to `main`.
 - Commit messages `type(scope): summary`; one logical change per commit.
 - Docs travel with the change.
-- The Codex branch is `feature/codex-provider`; `origin/main` is still
-  `0cfc62b`, and the next branch starts from it after this PR merges.
+- The Codex (#56) and tool-output (#57) branches merged; `origin/main` is the
+  truth, and the next branch starts from it.
