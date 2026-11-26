@@ -18,7 +18,7 @@ use crate::input::{self, TextInput};
 use crate::live::Transcript;
 use crate::mock::Workspace;
 use crate::theme::Theme;
-use circulo_protocol::{ConfigOption, ProjectSummary, QueuedPrompt};
+use circulo_protocol::{ConfigOption, Cost, ProjectSummary, QueuedPrompt, Usage};
 
 /// How tall the field may grow before it scrolls: four lines of body text.
 const FIELD_MAX_HEIGHT: f32 = 96.;
@@ -249,7 +249,12 @@ pub(crate) fn composer(
         .child(input_box(
             theme, workspace, running, &pickers, field, can_send,
         ))
-        .child(footer_bar(theme, &footer, running))
+        .child(footer_bar(
+            theme,
+            &footer,
+            running,
+            transcript.usage.as_ref(),
+        ))
 }
 
 fn input_box(
@@ -1024,7 +1029,12 @@ fn send(
     }
 }
 
-fn footer_bar(theme: &Theme, footer: &Footer<'_>, running: bool) -> impl IntoElement {
+fn footer_bar(
+    theme: &Theme,
+    footer: &Footer<'_>,
+    running: bool,
+    usage: Option<&Usage>,
+) -> impl IntoElement {
     div()
         .flex()
         .items_center()
@@ -1046,9 +1056,68 @@ fn footer_bar(theme: &Theme, footer: &Footer<'_>, running: bool) -> impl IntoEle
             )
         })
         .child(div().flex_1())
+        .when_some(usage.and_then(usage_text), |row, text| {
+            row.child(
+                div()
+                    .flex_shrink_0()
+                    .text_color(theme.text_faint)
+                    .child(text),
+            )
+        })
         .when(running, |row| {
             row.child(icon("icons/loader-circle.svg", 12., theme.text_faint))
         })
+}
+
+/// The footer's usage line: the context ratio when the provider knows it,
+/// otherwise the cumulative token count, then the cost when one is reported.
+fn usage_text(usage: &Usage) -> Option<String> {
+    let mut parts = Vec::new();
+
+    if let (Some(used), Some(size)) = (usage.context_used, usage.context_size) {
+        parts.push(format!(
+            "{} / {}",
+            compact_tokens(used),
+            compact_tokens(size)
+        ));
+    } else if let Some(total) = usage.total_tokens {
+        parts.push(format!("{} tokens", compact_tokens(total)));
+    }
+
+    if let Some(cost) = &usage.cost {
+        parts.push(cost_text(cost));
+    }
+
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+fn cost_text(cost: &Cost) -> String {
+    let amount = if cost.amount >= 0.01 {
+        format!("{:.2}", cost.amount)
+    } else {
+        format!("{:.4}", cost.amount)
+    };
+    if cost.currency == "USD" {
+        format!("${amount}")
+    } else {
+        format!("{amount} {}", cost.currency)
+    }
+}
+
+fn compact_tokens(tokens: u64) -> String {
+    let (value, suffix) = if tokens >= 1_000_000 {
+        (tokens as f64 / 1_000_000.0, "M")
+    } else if tokens >= 1_000 {
+        (tokens as f64 / 1_000.0, "k")
+    } else {
+        return tokens.to_string();
+    };
+
+    let mut text = format!("{value:.1}");
+    if text.ends_with(".0") {
+        text.truncate(text.len() - 2);
+    }
+    format!("{text}{suffix}")
 }
 
 /// The project chip under the composer. Clicking it opens the picker that Waku
@@ -1226,4 +1295,56 @@ fn meta(theme: &Theme, path: &'static str, label: impl Into<String>) -> impl Int
         .gap(px(5.))
         .child(icon(path, 12., theme.text_faint))
         .child(label.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn usage_text_prefers_the_context_ratio() {
+        let usage = Usage {
+            context_used: Some(12_400),
+            context_size: Some(200_000),
+            total_tokens: Some(99_000),
+            cost: Some(Cost {
+                amount: 0.04,
+                currency: "USD".into(),
+            }),
+            ..Usage::default()
+        };
+
+        assert_eq!(usage_text(&usage).as_deref(), Some("12.4k / 200k · $0.04"));
+    }
+
+    #[test]
+    fn usage_text_falls_back_to_cumulative_tokens() {
+        let usage = Usage {
+            total_tokens: Some(1_500),
+            ..Usage::default()
+        };
+        assert_eq!(usage_text(&usage).as_deref(), Some("1.5k tokens"));
+
+        let cost_only = Usage {
+            cost: Some(Cost {
+                amount: 12.5,
+                currency: "credits".into(),
+            }),
+            ..Usage::default()
+        };
+        assert_eq!(usage_text(&cost_only).as_deref(), Some("12.50 credits"));
+    }
+
+    #[test]
+    fn an_empty_usage_has_no_line() {
+        assert_eq!(usage_text(&Usage::default()), None);
+    }
+
+    #[test]
+    fn tokens_stay_short() {
+        assert_eq!(compact_tokens(999), "999");
+        assert_eq!(compact_tokens(1_500), "1.5k");
+        assert_eq!(compact_tokens(2_000), "2k");
+        assert_eq!(compact_tokens(1_250_000), "1.2M");
+    }
 }

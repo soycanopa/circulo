@@ -9,10 +9,10 @@ lifecycle without a model call.
 
 ## 0. Handoff in one minute
 
-- **State:** `main` is clean after PR #57 (tool output); fmt, clippy and tests
-  are green. No feature branch is open.
-- **Next task:** usage / token / cost (§3), then attachments/remote (§4).
-- **Backlog:** §4, ordered. The big remaining v1.0 pieces are usage, markdown
+- **State:** `main` is clean after the usage slice; fmt, clippy and tests are
+  green. No feature branch is open.
+- **Next task:** markdown links and math (§3), then attachments/remote (§4).
+- **Backlog:** §4, ordered. The big remaining v1.0 pieces are markdown
   links/math, attachments and remote.
 - **Run it:** `cargo run -p circulo` (demo, no auth) or
   `CIRCULO_PROVIDER=opencode CIRCULO_PROJECT="$PWD" cargo run -p circulo`, or
@@ -21,8 +21,8 @@ lifecycle without a model call.
 - **Rules:** branch → PR → green CI → merge commit → delete branch. Never push
   to `main`. See §10.
 - **First message for the next conversation:** "Lee `memory.md` (desde §0),
-  `AGENTS.md` y `docs/`. Estamos en `main` limpio; la próxima tarea es usage /
-  token / cost (§3) y el backlog está en §4. No pushees a `main`: branch → PR."
+  `AGENTS.md` y `docs/`. Estamos en `main` limpio; la próxima tarea es markdown
+  links + math (§3) y el backlog está en §4. No pushees a `main`: branch → PR."
 
 ## 1. What works today
 
@@ -67,6 +67,15 @@ agent proves the lifecycle.
   at 64 KiB. ACP text `content` blocks and Codex `outputDelta`/`aggregatedOutput`
   fill it. A part per chunk would store the same growing string repeatedly, and
   the wire stays additive without a version bump.
+- **Usage is live**: the footer shows the context ratio and cost from ACP, or
+  cumulative tokens from Codex. The core sends `Usage` after each turn; it is
+  not stored, so a reopened session has no gauge until its next turn.
+- **Usage is a live message, not a part**: `ServerMessage::Usage` carries an
+  optional context ratio, token counts and cost. The core asks the driver after
+  each turn and sends it before `TurnFinished`; it is not stored, so history and
+  a reopened session have no gauge until the next turn. ACP knows context and
+  cost; Codex knows cumulative tokens, and showing a context ratio from its
+  `total`/`last` would lie.
 - Each turn shows its own prompt above the answer.
 
 **Cards** (`permission.rs`, `question.rs`, spec in `docs/permissions.md`):
@@ -225,25 +234,20 @@ the app, `CIRCULO_OPENCODE_BIN` points the daemon at that script.
 project-level `permission` config does not change ACP behaviour; the ACP session
 advertises `loadSession: true` (unused so far).
 
-## 3. Last slice: tool output; next: usage
+## 3. Last slice: usage; next: markdown links and math
 
-**Tool output landed (2026-11-26, PR #57).** `Part::Tool` grew
-`output: Option<String>` (additive, `serde(default)`, no protocol version
-bump). Both drivers accumulate what the tool printed — ACP `content` text
-blocks, Codex `item/commandExecution/outputDelta` and `aggregatedOutput` — and
-send it once with the finished row, capped at 64 KiB with a truncation marker.
-Every chunk as its own part would store the same growing string again and
-again. A finished tool row with output is clickable and expands to the text in
-a mono chip; expansion is presentation state, never stored. The list is
-re-measured and the reader's offset restored, so opening a row does not jump to
-the bottom.
+**Usage landed** with `Usage` on the wire and a footer gauge. ACP
+`usage_update` gives the context `used / size` and a cumulative cost; Codex
+`thread/tokenUsage/updated` gives cumulative tokens. The driver keeps the last
+event and the core forwards one `Usage` message after each turn (before
+`TurnFinished`), so the gauge updates with the turn. It is not stored: history
+has no usage, and a reopened session starts without a gauge until its next
+turn. That is deliberate — usage is a live fact about the agent's session, not
+conversation content.
 
-The Codex provider landed just before (PR #56) and is unchanged by this slice.
-
-**Next: usage / token / cost** (backlog §4.1). ACP sends `usage_update` and
-Codex sends `thread/tokenUsage/updated`; both drivers ignore them and the wire
-has nowhere to put them. Add a usage part or message and the footer gauge the
-reference has. After that: markdown links and math.
+**Next: markdown links and math** (backlog §4.1). Links need GPUI hit-testing,
+which 0.2.2 does not expose; math needs a renderer decision. After that:
+attachments and remote.
 
 ## 4. Backlog (ordered)
 
@@ -251,10 +255,7 @@ Sizes are rough: S = same session, M = a focused PR, L = a feature slice with
 its own plan.
 
 ### Next
-1. **Usage / token / cost** — M. ACP sends `usage_update` and Codex sends
-   `thread/tokenUsage/updated`; the drivers ignore both and the wire has nowhere
-   to put them. Add a usage part/message and the footer gauge the reference has.
-2. **Markdown links + math** — M/L. Links need GPUI hit-testing, which 0.2.2
+1. **Markdown links + math** — M/L. Links need GPUI hit-testing, which 0.2.2
    does not expose: either text layout + element bounds, or an inline layout of
    word-sized elements. Math needs a renderer decision.
 
@@ -313,7 +314,7 @@ its own plan.
 
 | Crate | Role |
 |---|---|
-| `crates/protocol` | Wire contract, version 3: `Hello`, `ClientRequest` (+`SetOption`, `CancelTurn`, `Steer`, `RemoveQueued`, `Rewind`, `ListProjects`, `AddProject`, `RemoveProject`), `ServerMessage` (+`Options`, `Settings`, `Queue`, `Projects`, `ProjectAdded`, `RepoStatus`), `TurnStarted` with the prompt, `Part`, `PermissionRequest`, `Question`, `ConfigOption`, `QueuedPrompt`, `ProjectSummary`, `SessionSummary`, `HistoryTurn`. One JSON per WebSocket text frame; unknown types skipped. |
+| `crates/protocol` | Wire contract, version 3: `Hello`, `ClientRequest` (+`SetOption`, `CancelTurn`, `Steer`, `RemoveQueued`, `Rewind`, `ListProjects`, `AddProject`, `RemoveProject`), `ServerMessage` (+`Options`, `Settings`, `Queue`, `Projects`, `ProjectAdded`, `RepoStatus`, `Usage`), `TurnStarted` with the prompt, `Part`, `PermissionRequest`, `Question`, `ConfigOption`, `QueuedPrompt`, `ProjectSummary`, `SessionSummary`, `HistoryTurn`. One JSON per WebSocket text frame; unknown types skipped. |
 | `crates/core` | Sessions, turn orchestration, one FIFO queue per session drained by a worker, the permission/question broker (entries owned by session + turn), the project list (canonical paths), Git start/end checkpoints around each turn, rewind (restore + trim + driver reset), translation between storage and wire, carrying provider session keys both ways, abort and steer routing. Speaks only the Driver trait. |
 | `crates/persistence` | SQLite: sessions (+ provider key, project path), turns, parts, settings, projects; schema v4. `trim_turns` removes a suffix in one transaction. Owned by the core; nobody else opens it. |
 | `crates/git` | Whole-worktree snapshots with a temporary index, private `refs/circulo/...` refs, exact restore, and the current branch. Owned by the core. |
@@ -469,6 +470,9 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
 - Links render in the accent colour and are not clickable (no hit-testing in
   GPUI 0.2.2). A tool row with output expands on click; the output is capped at
   64 KiB and the cap is visible in the text, not silent.
+- The usage gauge is live only and updates after a turn, not during it; ACP
+  reports context and cost, Codex cumulative tokens. A reopened session starts
+  without it.
 - Light theme values are approximations; this machine is dark.
 - `docs/ui.md` owns the tokens and geometry; keep them there.
 - `CIRCULO_PROVIDER=codex` runs the Codex adapter; it needs `codex` on `PATH`
@@ -499,5 +503,5 @@ rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
   Never push to `main`.
 - Commit messages `type(scope): summary`; one logical change per commit.
 - Docs travel with the change.
-- The Codex (#56) and tool-output (#57) branches merged; `origin/main` is the
-  truth, and the next branch starts from it.
+- The Codex (#56), tool-output (#57) and usage branches merged; `origin/main`
+  is the truth, and the next branch starts from it.

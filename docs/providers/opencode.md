@@ -100,13 +100,14 @@ running the steer text after the current turn.
 
 ## Mapping
 
-| ACP `sessionUpdate` | Circulo `Part` |
+| ACP `sessionUpdate` | Circulo |
 |---|---|
 | `agent_message_chunk` | `Text { delta }` |
 | `agent_thought_chunk` | `Reasoning { delta }` |
 | `tool_call`, `tool_call_update` | `Tool { id, name, detail, state, output }`, one row per `toolCallId`; `content` text blocks accumulate into `output`, sent once when the call finishes |
 | `session/request_permission` | a permission card; the answer goes back as the chosen `optionId` |
 | `elicitation/create` (form) | a question card; `accept` returns the values keyed by schema property |
+| `session/update` `usage_update` | after the turn, `Usage { context_used, context_size, cost }` to the footer gauge |
 
 `detail` prefers the tool's first location path, then `rawInput.path`. A tool is
 `Running` while pending or in progress, `Done` when completed or failed; a
@@ -146,6 +147,9 @@ a duplicate row for it.
   one thread per connection, so it does not block another client.
 - **Tool output is capped at 64 KiB.** ACP `content` text blocks are captured;
   `diff` and `terminal` blocks are not rendered. A truncated output says so.
+- **Usage is reported after the turn, not live.** The driver keeps the last
+  `usage_update` and the core forwards it with `Usage`; it is not stored, so a
+  reopened session has no gauge until its next turn.
 - **`opencode` must be on `PATH`.** The daemon reports the spawn failure as a
   turn error.
 

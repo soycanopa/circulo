@@ -154,6 +154,7 @@ const SERVER_TYPES: &[&str] = &[
     "turn_started",
     "part",
     "turn_finished",
+    "usage",
     "permission_requested",
     "question_asked",
     "queue",
@@ -167,7 +168,7 @@ const SERVER_TYPES: &[&str] = &[
     "error",
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
     Welcome {
@@ -195,6 +196,13 @@ pub enum ServerMessage {
         session: String,
         turn: u64,
         reason: FinishReason,
+    },
+    /// What the agent reported about usage after a turn. Every provider reports
+    /// a different subset: ACP knows context and cost, Codex knows token counts.
+    /// The daemon sends this after the turn; it is not stored with history.
+    Usage {
+        session: String,
+        usage: Usage,
     },
     /// The agent is waiting for the user before it runs a tool. The turn stays
     /// open until `AnswerPermission` arrives.
@@ -411,6 +419,38 @@ impl ServerMessage {
     }
 }
 
+/// What the agent reported about its session's usage. Every field is optional
+/// because the protocols differ: ACP reports the context window and a
+/// cumulative cost, Codex reports token counts.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct Usage {
+    /// Tokens currently in the context window, when the provider knows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_used: Option<u64>,
+    /// The context window size, when the provider knows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_size: Option<u64>,
+    /// Cumulative tokens this session used, when the provider counts them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_tokens: Option<u64>,
+    /// Cumulative session cost, when the provider reports one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<Cost>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Cost {
+    pub amount: f64,
+    /// An ISO 4217 code, or a unit such as `credits`.
+    pub currency: String,
+}
+
 /// One piece of a turn, in the order the driver produced it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -534,6 +574,21 @@ mod tests {
                 session: "s1".into(),
                 turn: 7,
                 reason: FinishReason::Completed,
+            },
+            ServerMessage::Usage {
+                session: "s1".into(),
+                usage: Usage {
+                    context_used: Some(1200),
+                    context_size: Some(200_000),
+                    total_tokens: Some(1500),
+                    input_tokens: Some(1000),
+                    output_tokens: Some(500),
+                    cached_tokens: Some(200),
+                    cost: Some(Cost {
+                        amount: 0.04,
+                        currency: "USD".into(),
+                    }),
+                },
             },
             ServerMessage::PermissionRequested {
                 session: "s1".into(),

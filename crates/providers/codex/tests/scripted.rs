@@ -157,6 +157,18 @@ def run_turn(message):
         return
 
     reasoning(tid, turn, "r1", "thinking")
+    send({"method": "thread/tokenUsage/updated",
+          "params": {"threadId": tid, "turnId": turn,
+                     "tokenUsage": {
+                         "total": {"totalTokens": 1500, "inputTokens": 1000,
+                                   "cachedInputTokens": 200, "outputTokens": 500,
+                                   "cacheWriteInputTokens": 0,
+                                   "reasoningOutputTokens": 0},
+                         "last": {"totalTokens": 300, "inputTokens": 200,
+                                  "cachedInputTokens": 0, "outputTokens": 100,
+                                  "cacheWriteInputTokens": 0,
+                                  "reasoningOutputTokens": 0},
+                         "modelContextWindow": 200000}}})
     send({"method": "item/started",
           "params": {"threadId": tid, "turnId": turn,
                      "item": {"type": "commandExecution", "id": "cmd1",
@@ -394,6 +406,11 @@ fn a_turn_streams_text_reasoning_and_tools() {
         Part::Tool { name, state: circulo_protocol::ToolState::Done, output: Some(output), .. }
             if name == "command" && output == "test output\nall good"
     )));
+
+    let usage = driver.usage("s1").expect("usage");
+    assert_eq!(usage.total_tokens, Some(1500));
+    assert_eq!(usage.input_tokens, Some(1000));
+    assert_eq!(usage.output_tokens, Some(500));
 }
 
 #[test]

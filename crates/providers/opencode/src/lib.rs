@@ -30,8 +30,8 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
 use circulo_protocol::{
-    ConfigChoice, ConfigOption, Part, PermissionOption, PermissionOptionKind, PermissionRequest,
-    Question, QuestionField, QuestionKind, ToolState,
+    ConfigChoice, ConfigOption, Cost, Part, PermissionOption, PermissionOptionKind,
+    PermissionRequest, Question, QuestionField, QuestionKind, ToolState, Usage,
 };
 use circulo_provider::{Asker, Decision, Driver, DriverError, SessionRef};
 use serde_json::{Value, json};
@@ -419,6 +419,12 @@ impl Driver for OpenCode {
         }
         live.clear();
     }
+
+    fn usage(&self, session: &str) -> Option<Usage> {
+        let slot = self.live().get(session).cloned()?;
+        let attached = Self::peek(&slot)?;
+        attached.as_ref().and_then(|live| live.agent.usage.clone())
+    }
 }
 
 /// The agent refused nothing: out-of-turn calls never prompt, so a permission
@@ -603,6 +609,8 @@ struct Agent {
     /// I/O with this process failed; it serves no further turns and its
     /// holder drops it rather than hand work to a corpse.
     dead: bool,
+    /// The latest `usage_update` this agent sent.
+    usage: Option<Usage>,
 }
 
 impl Agent {
@@ -635,6 +643,7 @@ impl Agent {
             next_id: 1,
             last_config: Value::Null,
             dead: false,
+            usage: None,
         })
     }
 
@@ -701,6 +710,12 @@ impl Agent {
             match message.get("method").and_then(Value::as_str) {
                 Some("session/update") => {
                     if let Some(update) = message.pointer("/params/update") {
+                        if update.get("sessionUpdate").and_then(Value::as_str)
+                            == Some("usage_update")
+                            && let Some(usage) = usage_from(update)
+                        {
+                            self.usage = Some(usage);
+                        }
                         apply_update(update, tools, emit);
                     }
                 }
@@ -1008,6 +1023,26 @@ fn append_output(output: &mut String, delta: &str) {
     output.push_str(TRUNCATED);
 }
 
+/// ACP's `usage_update`: context used and size, plus an optional cumulative
+/// cost. The rest of `Usage` stays empty because ACP does not report it.
+fn usage_from(update: &Value) -> Option<Usage> {
+    let used = update.get("used").and_then(Value::as_u64)?;
+    let size = update.get("size").and_then(Value::as_u64)?;
+    let cost = update.get("cost").and_then(|cost| {
+        Some(Cost {
+            amount: cost.get("amount").and_then(Value::as_f64)?,
+            currency: cost.get("currency").and_then(Value::as_str)?.to_owned(),
+        })
+    });
+
+    Some(Usage {
+        context_used: Some(used),
+        context_size: Some(size),
+        cost,
+        ..Usage::default()
+    })
+}
+
 /// Maps one ACP `session/update` to zero or more protocol parts. Unknown update
 /// kinds are ignored: ACP adds them over time.
 fn apply_update(update: &Value, tools: &mut HashMap<String, Tool>, emit: &mut dyn FnMut(Part)) {
@@ -1251,6 +1286,26 @@ mod tests {
             } => assert!(detail.ends_with("· failed")),
             other => panic!("expected a tool row, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_usage_update_carries_context_and_cost() {
+        let usage = usage_from(&json!({
+            "used": 1200,
+            "size": 200000,
+            "cost": {"amount": 0.04, "currency": "USD"}
+        }))
+        .expect("usage");
+
+        assert_eq!(usage.context_used, Some(1200));
+        assert_eq!(usage.context_size, Some(200000));
+        assert_eq!(
+            usage.cost,
+            Some(Cost {
+                amount: 0.04,
+                currency: "USD".into()
+            })
+        );
     }
 
     #[test]

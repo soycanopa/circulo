@@ -709,6 +709,15 @@ impl Core {
         }
         drop(in_flight);
 
+        // The gauge updates before the turn closes, so a finished turn never
+        // shows last turn's numbers.
+        if let Some(usage) = self.driver.usage(session) {
+            send(ServerMessage::Usage {
+                session: session.to_owned(),
+                usage,
+            });
+        }
+
         send(ServerMessage::TurnFinished {
             session: session.to_owned(),
             turn,
@@ -1117,10 +1126,48 @@ mod tests {
         }
     }
 
+    struct ReportsUsage;
+
+    impl Driver for ReportsUsage {
+        fn name(&self) -> &'static str {
+            "usage"
+        }
+
+        fn start_turn(
+            &self,
+            _: SessionRef<'_>,
+            _: &str,
+            _: &mut dyn Asker,
+            emit: &mut dyn FnMut(Part),
+        ) -> Result<Option<String>, DriverError> {
+            emit(Part::Text { delta: "hi".into() });
+            Ok(None)
+        }
+
+        fn options(&self, _: &str) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Ok(Vec::new())
+        }
+
+        fn set_option(
+            &self,
+            _: &str,
+            _id: &str,
+            _value: &str,
+        ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Err(DriverError::new("this agent has no settings"))
+        }
+
+        fn usage(&self, _: &str) -> Option<circulo_protocol::Usage> {
+            Some(circulo_protocol::Usage {
+                total_tokens: Some(1500),
+                ..circulo_protocol::Usage::default()
+            })
+        }
+    }
+
     fn core_with(driver: Arc<dyn Driver>) -> Core {
         Core::new(driver)
     }
-
     fn core_with_store(driver: Arc<dyn Driver>) -> Core {
         let store = Arc::new(circulo_persistence::Store::in_memory().expect("store"));
         Core::with_store(driver, Some(store))
@@ -1141,6 +1188,30 @@ mod tests {
         assert!(
             core.set_option(&session, "model", "x").is_err(),
             "and nothing to set"
+        );
+    }
+
+    #[test]
+    fn a_turn_forwards_usage_without_storing_it() {
+        let core = core_with_store(Arc::new(ReportsUsage));
+        let session = core.start_session(None);
+        let mut messages = Vec::new();
+
+        core.run_turn(&session, "hello", |message| messages.push(message));
+
+        assert!(
+            messages.iter().any(|message| matches!(
+                message,
+                ServerMessage::Usage { usage, .. }
+                    if usage.total_tokens == Some(1500)
+            )),
+            "the client heard the usage before the turn closed"
+        );
+        let turns = core.transcript(&session).expect("transcript");
+        assert_eq!(
+            turns[0].parts,
+            vec![Part::Text { delta: "hi".into() }],
+            "usage is not conversation content"
         );
     }
 

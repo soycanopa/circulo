@@ -15,7 +15,7 @@
 
 use std::collections::BTreeMap;
 
-use circulo_protocol::{ConfigOption, Part, PermissionRequest, Question, QuestionAction};
+use circulo_protocol::{ConfigOption, Part, PermissionRequest, Question, QuestionAction, Usage};
 
 /// The two sides of one conversation. The Circulo session is stable on the
 /// wire and in storage; the provider's key for its own side (an ACP session
@@ -97,6 +97,14 @@ pub trait Driver: Send + Sync {
         id: &str,
         value: &str,
     ) -> Result<Vec<ConfigOption>, DriverError>;
+
+    /// The latest usage the agent reported for `session`, if it reports any.
+    /// The core asks after each turn and forwards it to the client; it is not
+    /// stored with history. A provider without usage keeps the default.
+    fn usage(&self, session: &str) -> Option<Usage> {
+        let _ = session;
+        None
+    }
 
     /// The daemon is going away: release everything the provider keeps
     /// alive — its agent processes above all. Turns still in flight end on

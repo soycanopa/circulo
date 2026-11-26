@@ -12,7 +12,7 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-use circulo_protocol::{ConfigChoice, ConfigOption, Part, ToolState};
+use circulo_protocol::{ConfigChoice, ConfigOption, Cost, Part, ToolState, Usage};
 use circulo_provider::{Asker, Driver, DriverError, SessionRef};
 
 pub struct DemoDriver {
@@ -135,6 +135,23 @@ impl Driver for DemoDriver {
 
         self.overrides().insert(id.to_owned(), value.to_owned());
         Ok(demo_options(&self.overrides()))
+    }
+
+    /// Canned usage, so the footer gauge has something to draw without an
+    /// agent. The shape matches what ACP reports.
+    fn usage(&self, _: &str) -> Option<Usage> {
+        Some(Usage {
+            context_used: Some(12_400),
+            context_size: Some(200_000),
+            total_tokens: Some(12_400),
+            input_tokens: Some(9_000),
+            output_tokens: Some(3_400),
+            cached_tokens: Some(0),
+            cost: Some(Cost {
+                amount: 0.04,
+                currency: "USD".into(),
+            }),
+        })
     }
 }
 

@@ -33,6 +33,7 @@ Order matters: prove the pipe before adding a real provider to it.
 - [x] Git checkpoints captured at turn start and end, stored under `refs/circulo/...`; the composer footer shows the real branch when the project is a repository
 - [x] Conversation-aware rewind: restore a checkpoint, trim the transcript, drop the provider session, and confirm the destructive parts in a card
 - [x] Codex adapter: `codex app-server` over stdio, with approvals, questions, model/effort, thread resume and interrupt behind the same `Driver`
+- [x] Usage: the drivers keep the last usage event and the core forwards a `Usage` message after each turn; the composer footer draws the context ratio or token count plus cost
 
 ## Phase 4 — UI polish
 - [x] Sidebar from the database: sessions grouped by day (Today / Yesterday / This Month / month), title, project and relative time, the open session marked; a row opens its history, `New Task` starts a session
