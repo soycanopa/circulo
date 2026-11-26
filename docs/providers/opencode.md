@@ -58,6 +58,26 @@ at a time — while other sessions keep moving. A model or effort switch made
 while a turn is running is queued and lands at the turn's end: the picker
 sees its value at once, the session reads it from the next turn.
 
+## Cancellation
+
+`CancelTurn` reaches the driver as `Driver::cancel(session)`. The turn thread
+owns the session's slot for the whole turn, so the driver keeps a second handle
+— the child's stdin behind a mutex and the ACP session id — that another thread
+can use to send the ACP notification:
+
+```json
+{"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":"sess_…"}}
+```
+
+The core cancels the turn's open cards first, so a permission the agent is
+waiting on is answered `cancelled`, as ACP requires. The agent then responds to
+`session/prompt` with `stopReason: "cancelled"`; the driver turns that into
+`DriverError::cancelled`, and the core reports `FinishReason::Aborted` without
+an error banner. Parts already sent stay in the transcript; the child stays
+alive for the next turn. An agent that returns an error instead of `cancelled`
+(the ACP docs warn about libraries doing this) still ends the turn, but as a
+failure.
+
 ## Mapping
 
 | ACP `sessionUpdate` | Circulo `Part` |

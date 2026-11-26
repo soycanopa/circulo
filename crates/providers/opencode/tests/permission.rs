@@ -74,6 +74,19 @@ for line in sys.stdin:
             entry["current"] = params["value"]
             send({"jsonrpc": "2.0", "id": message["id"],
                   "result": {"configOptions": config_options()}})
+    elif method == "session/prompt" and MODE == "cancel":
+        prompt = message["id"]
+        send({"jsonrpc": "2.0", "method": "session/update",
+              "params": {"sessionId": "s1",
+                         "update": {"sessionUpdate": "agent_message_chunk",
+                                    "content": {"type": "text", "text": "working"}}}})
+        # Stay busy until the client sends the ACP cancellation notification.
+        for line in sys.stdin:
+            incoming = json.loads(line)
+            if incoming.get("method") == "session/cancel":
+                break
+        send({"jsonrpc": "2.0", "id": prompt,
+              "result": {"stopReason": "cancelled"}})
     elif method == "session/prompt" and MODE == "question":
         send({"jsonrpc": "2.0", "id": 901, "method": "elicitation/create",
               "params": {
@@ -320,6 +333,54 @@ fn a_cancelled_request_reads_as_cancelled_on_the_agent_side() {
     let (parts, _) = run(&agent, None);
 
     assert_eq!(text(&parts), "chosen=cancelled");
+}
+
+#[test]
+fn a_cancelled_turn_reads_as_cancelled_not_as_a_failure() {
+    let agent = ScriptedAgent::with_mode("turn-cancel", "cancel");
+    let driver = std::sync::Arc::new(OpenCode::with_binary(
+        agent.directory.clone(),
+        agent.binary(),
+    ));
+    let (parts_tx, parts_rx) = std::sync::mpsc::channel();
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+
+    let turn_driver = std::sync::Arc::clone(&driver);
+    let thread = std::thread::spawn(move || {
+        let mut asker = Picks {
+            option: None,
+            choice: None,
+            note: None,
+            asked: Vec::new(),
+            questions: Vec::new(),
+        };
+        let mut parts = Vec::new();
+        let result = turn_driver.start_turn(SessionRef::new("s1"), "go", &mut asker, &mut |part| {
+            let _ = parts_tx.send(part.clone());
+            parts.push(part);
+        });
+        let _ = done_tx.send((result, parts));
+    });
+
+    // The turn is visibly working and the agent is waiting for the cancel.
+    loop {
+        match parts_rx.recv() {
+            Ok(Part::Text { delta }) if delta == "working" => break,
+            Ok(_) => {}
+            Err(_) => panic!("the turn ended before it started working"),
+        }
+    }
+
+    driver.cancel("s1").expect("the agent is attached");
+    let (result, parts) = done_rx.recv().expect("the turn ended");
+    let error = result.expect_err("a cancelled turn is not a success");
+
+    assert!(
+        error.is_cancelled(),
+        "the core has to tell an abort from a failure: {error}"
+    );
+    assert_eq!(text(&parts), "working", "parts already sent stay");
+    thread.join().expect("the turn thread");
 }
 
 /// A driver and the scripted agent it spawns. The agent stays alive for the

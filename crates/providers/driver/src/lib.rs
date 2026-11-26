@@ -60,11 +60,20 @@ pub trait Driver: Send + Sync {
         emit: &mut dyn FnMut(Part),
     ) -> Result<Option<String>, DriverError>;
 
+    /// Stops the turn running for `session`, if any. Called from another
+    /// thread while `start_turn` is blocked in the provider, so it must not
+    /// wait for that turn to finish. A provider that can interrupt asks its
+    /// agent to stop and lets `start_turn` return `DriverError::cancelled`;
+    /// one that cannot says so, and the core reports the abort as failed.
+    fn cancel(&self, session: &str) -> Result<(), DriverError> {
+        let _ = session;
+        Err(DriverError::new("this provider cannot cancel a turn"))
+    }
+
     /// The agent's current settings for `session`, with their current values.
     /// Starts no turn; a provider that needs an agent process starts a
     /// short-lived one. Empty when the provider has no settings.
     fn options(&self, session: &str) -> Result<Vec<ConfigOption>, DriverError>;
-
     /// Applies the user's choice for `session` and returns the refreshed list,
     /// as the agent reports it. The choice survives later turns: a provider
     /// whose agent forgets between processes re-applies it.
@@ -131,11 +140,31 @@ pub enum Decision {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("the provider failed: {0}")]
-pub struct DriverError(String);
+#[error("the provider failed: {message}")]
+pub struct DriverError {
+    message: String,
+    /// The provider stopped because the user asked it to. The core reports
+    /// `FinishReason::Aborted` and shows no error.
+    cancelled: bool,
+}
 
 impl DriverError {
     pub fn new(message: impl Into<String>) -> Self {
-        Self(message.into())
+        Self {
+            message: message.into(),
+            cancelled: false,
+        }
+    }
+
+    /// The turn ended because the user cancelled it, not because it failed.
+    pub fn cancelled(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            cancelled: true,
+        }
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled
     }
 }

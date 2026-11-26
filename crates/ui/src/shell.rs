@@ -24,7 +24,7 @@ const FAVORITES_KEY: &str = "favorites.model";
 
 use crate::composer::{
     ChooseHandler, EditHandler, EffortHandler, Field, KeyHandler, Pickers, SendHandler,
-    StarHandler, TabHandler, ToggleHandler, composer,
+    StarHandler, StopHandler, TabHandler, ToggleHandler, composer,
 };
 use crate::input::TextInput;
 use crate::live::{Card, Transcript};
@@ -36,6 +36,18 @@ use crate::question::{
 use crate::sidebar::sidebar;
 use crate::theme::Theme;
 use crate::transcript::{new_list_state, transcript};
+
+/// What the app hands the window once the daemon is connected and a session
+/// is open. Grouped so the constructor names one thing, not eight.
+pub struct Startup {
+    pub receiver: Receiver<ServerMessage>,
+    pub requests: Sender<ClientRequest>,
+    pub session: String,
+    pub draft: String,
+    pub history: Vec<HistoryTurn>,
+    pub sessions: Vec<SessionSummary>,
+    pub daemon: String,
+}
 
 pub struct Shell {
     workspace: Workspace,
@@ -88,16 +100,17 @@ pub struct Shell {
 impl Shell {
     /// Starts listening to the daemon. Messages wake the view only when they
     /// arrive, so an idle window costs nothing.
-    pub fn new(
-        cx: &mut Context<Self>,
-        receiver: Receiver<ServerMessage>,
-        requests: Sender<ClientRequest>,
-        session: String,
-        draft: String,
-        history: Vec<HistoryTurn>,
-        sessions: Vec<SessionSummary>,
-        daemon: String,
-    ) -> Self {
+    pub fn new(cx: &mut Context<Self>, startup: Startup) -> Self {
+        let Startup {
+            receiver,
+            requests,
+            session,
+            draft,
+            history,
+            sessions,
+            daemon,
+        } = startup;
+
         let mut transcript = Transcript::default();
         transcript.hydrate(history);
 
@@ -135,7 +148,7 @@ impl Shell {
         // so a test can see a menu without a click. It opens on a timer, not
         // on the first frame — the chip's canvas has to have measured once,
         // or the menu would anchor to zero and pin itself to the corner.
-        if let Some(id) = std::env::var("CIRCULO_OPEN_PICKER").ok() {
+        if let Ok(id) = std::env::var("CIRCULO_OPEN_PICKER") {
             cx.spawn(async move |this, cx| {
                 cx.background_executor()
                     .timer(std::time::Duration::from_millis(400))
@@ -450,6 +463,13 @@ impl Shell {
             return;
         }
 
+        // Escape stops the running turn, the way the reference does. The
+        // menus above got the key first; a card owns the keyboard itself.
+        if key == "escape" && self.transcript.status.running {
+            self.stop_turn(cx);
+            return;
+        }
+
         match key {
             "enter" if !modifiers.shift => {
                 self.submit(cx);
@@ -484,6 +504,19 @@ impl Shell {
         self.request(ClientRequest::Prompt {
             session: self.session.clone(),
             text,
+        });
+        cx.notify();
+    }
+
+    /// Stops the turn running in the open session. The daemon cancels its
+    /// cards and asks the agent to abort; the transcript closes it as aborted,
+    /// not as an error.
+    fn stop_turn(&mut self, cx: &mut Context<Self>) {
+        if !self.transcript.status.running {
+            return;
+        }
+        self.request(ClientRequest::CancelTurn {
+            session: self.session.clone(),
         });
         cx.notify();
     }
@@ -656,6 +689,10 @@ impl Render for Shell {
                     shell.update(cx, |shell, cx| shell.submit(cx));
                 });
                 let shell = cx.entity();
+                let on_stop: StopHandler = Rc::new(move |_window, cx| {
+                    shell.update(cx, |shell, cx| shell.stop_turn(cx));
+                });
+                let shell = cx.entity();
                 let on_toggle: ToggleHandler = Rc::new(move |id, _window, cx| {
                     shell.update(cx, |shell, cx| shell.toggle_picker(id, cx));
                 });
@@ -708,6 +745,7 @@ impl Render for Shell {
                         focused,
                         on_key,
                         on_send,
+                        on_stop,
                     },
                 ))
             });

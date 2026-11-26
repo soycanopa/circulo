@@ -14,7 +14,7 @@ use std::thread;
 
 use circulo_client::Client;
 use circulo_protocol::ClientRequest;
-use circulo_ui::{Assets, Shell};
+use circulo_ui::{Assets, Shell, Startup};
 use gpui::{
     App, AppContext, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions, point, px,
     size,
@@ -127,13 +127,15 @@ fn main() -> ExitCode {
                     cx.new(|cx| {
                         Shell::new(
                             cx,
-                            receiver.clone(),
-                            answers_tx.clone(),
-                            session,
-                            draft.clone(),
-                            history,
-                            sessions,
-                            daemon,
+                            Startup {
+                                receiver: receiver.clone(),
+                                requests: answers_tx.clone(),
+                                session,
+                                draft: draft.clone(),
+                                history,
+                                sessions,
+                                daemon,
+                            },
                         )
                     })
                 },

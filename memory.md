@@ -2,12 +2,12 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-23, pickers-and-settings branch (PR open against
-`f10adcd`); 104 tests green; CI covers fmt + clippy + test on macOS. The
-model-call tests in `tests/real.rs` need OpenCode credit, which this account
-has none of right now (2026-11-23): they fail with "Insufficient balance".
-The no-model-call load probe (`cargo test -p circulo-provider-opencode
---lib -- --ignored`) passes against 2.3.2.
+Last updated: 2026-11-26, on `fix/latent-bugs` after PR #43 merged; 112
+tests green; CI covers fmt + clippy + test on macOS. The model-call tests in
+`tests/real.rs` need OpenCode credit, which this account has none of right now
+(2026-11-23): they fail with "Insufficient balance". The no-model-call load
+probe (`cargo test -p circulo-provider-opencode --lib -- --ignored`) passes
+against 2.3.2.
 
 ## 1. What works today
 
@@ -81,6 +81,20 @@ to kill. Verified without model calls: `tests/continuity.rs` (scripted
 agent counting prompts per process, sessions kept in a directory across
 processes) and the real load probe.
 
+**Abort**: a running turn can be stopped. The composer's send circle becomes a
+stop square while `Status.running`, Escape stops too (menus and cards get the
+key first). The daemon routes `CancelTurn` to the core, which closes exactly
+that turn's cards — each broker entry remembers its session and turn — and asks
+the driver to `cancel(session)`. OpenCode keeps a second handle to the child's
+stdin (mutex + ACP session id) because the turn owns the slot, and sends ACP
+`session/cancel`; `stopReason: "cancelled"` becomes `DriverError::cancelled`,
+and the core reports `FinishReason::Aborted` with no error banner (the divider
+reads `Stopped`). Parts already streamed stay; the child stays alive for the
+next turn. `TurnFinished`
+drops any card its turn left open. Verified without model calls:
+`tests/permission.rs` (`FAKE_ACP_MODE=cancel`), a core test with a blocking
+driver, and a daemon/client round trip.
+
 **Storage** (`crates/persistence`, rusqlite bundled): sessions, turns and parts in
 `~/.circulo/circulo.db`; `CIRCULO_HOME` overrides the directory. The core writes
 on every turn; the app reopens the newest session and hydrates its history.
@@ -130,45 +144,60 @@ the app, `CIRCULO_OPENCODE_BIN` points the daemon at that script.
 project-level `permission` config does not change ACP behaviour; the ACP session
 advertises `loadSession: true` (unused so far).
 
-## 3. Next task: steering and abort
+## 3. Next task: message queue and steering
 
-Session continuity landed (2026-11-23): one agent process per Circulo
-session, the ACP session id in SQLite, `session/load` on restart, mid-turn
-switches queued to the turn's end, clean daemon shutdown. What the model-call
-tests would still prove, once there is credit: a real two-turn conversation
-sharing context (`a_real_session_remembers_across_turns`) and a real restart
-resuming (`a_real_session_resumes_after_a_restart`). Everything else is
-proven against the scripted agent and the real load probe.
+Abort landed (2026-11-26): `CancelTurn`, a stop button and Escape, per-turn card
+ownership, ACP `session/cancel`, `FinishReason::Aborted`. The same work fixed
+two latent bugs: parts are routed by turn id instead of "the last row", and a
+reopened session keeps its project.
 
-**Why steering/abort next:** a blocking turn can currently only be answered,
-not stopped. The permission broker cancels cards when the client leaves, but
-a running turn has no way to be interrupted or to receive a queued message.
+Session continuity landed (2026-11-23): one agent process per Circulo session,
+the ACP session id in SQLite, `session/load` on restart, mid-turn switches
+queued to the turn's end, clean daemon shutdown. What the model-call tests would
+still prove, once there is credit: a real two-turn conversation sharing context
+(`a_real_session_remembers_across_turns`) and a real restart resuming
+(`a_real_session_resumes_after_a_restart`). Everything else is proven against
+the scripted agent and the real load probe.
+
+**Why queue/steer next:** a running turn can now be stopped, but the composer
+still refuses to send while one runs (`shell.rs` `submit`) and the core has no
+per-session queue. `docs/ux.md` already fixes the interaction: Enter queues,
+Cmd/Ctrl+Enter steers, Escape aborts.
 
 **Plan:**
-1. Protocol: a `CancelTurn { session }` request and a queued-message shape
-   (`Prompt` while a turn runs steers or queues — decide with Waku's UX as
-   the reference).
-2. Driver trait: `cancel(session)` alongside `start_turn`; ACP
-   `session/cancel` for OpenCode. Cancelling must also cancel open
-   permission/question cards of that turn.
-3. Core: route the cancel, mark the turn `FinishReason::Cancelled` (new
-   reason on the wire), keep the transcript honest about what ran.
-4. Verify: steer mid-turn against OpenCode 2.3.2, cancel mid-tool, cancel
-   while a card is open.
+1. Core: a FIFO queue per session, fed by `Prompt`. A turn is registered and
+   `TurnStarted` is emitted only when it actually starts, so queued messages do
+   not open an empty row or race the running turn. Serialise the session there
+   instead of relying on the driver's slot lock.
+2. Wire: send the queue state so the UI draws it honestly (queued items, their
+   order, remove). `Prompt` while running enqueues; decide whether the daemon
+   answers `Queued` or pushes a whole `Queue` message. Do not let the UI hope.
+3. Steer: ACP has no steer. The honest semantic is "cancel the current turn,
+   then send the new prompt" (the provider session keeps the context). Confirm
+   with the owner before shipping the label; it must not read as a live
+   injection if it aborts first.
+4. UI: queued messages above the composer with remove; Enter/Cmd+Enter wiring;
+   the stop square stays for the running turn.
+5. Verify: two prompts queue in order, transcript rows stay aligned per turn,
+   cancel a queued item, steer mid-tool against OpenCode 2.3.2.
 
 ## 4. After that, in plan order
 
-1. **Steering and abort** (Phase 2): queue a message mid-turn, cancel a turn.
-   Abort must also cancel open permission/question requests.
-2. **Git checkpoints and rewind** (Phase 3), with `crates/git` still an empty
-   scaffold.
-3. **A second provider** (Claude Code or Codex) to prove the Driver trait.
-4. **Clickable links and math** in markdown. Links need GPUI text hit-testing,
+1. **Message queue and steering** (Phase 2), above.
+2. **Projects and a folder picker** before Git: real `projects` table, project
+   in `StartSession`, `SessionRef` carrying the cwd, one OpenCode child per
+   session in its own directory, sidebar grouped by project, real footer.
+   Today `StartSession` always sends `project: None` and the driver's `cwd` is
+   global (`CIRCULO_PROJECT`).
+3. **Git checkpoints and rewind** (Phase 3), with `crates/git` still an empty
+   scaffold. It needs per-session worktrees, so projects come first.
+4. **A second provider** (Claude Code or Codex) to prove the Driver trait.
+5. **Clickable links and math** in markdown. Links need GPUI text hit-testing,
    which 0.2.2 does not expose: either keep the text layout plus element bounds,
    or build an inline layout from word-sized elements.
-5. **Settings (JSON) and the attachment blob store**, the two pieces
-   `docs/implement.md` Phase 1 leaves open inside persistence.
-6. **Remote/pairing** (`docs/remote.md`): QR with a saved tailcat key + `--allow`;
+6. **Attachments blob store**, the piece `docs/implement.md` Phase 1 still
+   leaves open inside persistence.
+7. **Remote/pairing** (`docs/remote.md`): QR with a saved tailcat key + `--allow`;
    the desktop owns the tunnel. `tailcat` is not installed here. Open question:
    what the QR payload carries.
 
@@ -176,14 +205,14 @@ a running turn has no way to be interrupted or to receive a queued message.
 
 | Crate | Role |
 |---|---|
-| `crates/protocol` | Wire contract, version 1: `Hello`, `ClientRequest` (+`SetOption`), `ServerMessage` (+`Options`), `Part`, `PermissionRequest`, `Question`, `ConfigOption`, `SessionSummary`, `HistoryTurn`. One JSON per WebSocket text frame; unknown types skipped. |
-| `crates/core` | Sessions, turn orchestration, the permission/question broker, translation between storage and wire, carrying provider session keys both ways. Speaks only the Driver trait. |
+| `crates/protocol` | Wire contract, version 2: `Hello`, `ClientRequest` (+`SetOption`, `CancelTurn`), `ServerMessage` (+`Options`, `Settings`), `Part`, `PermissionRequest`, `Question`, `ConfigOption`, `SessionSummary`, `HistoryTurn`. One JSON per WebSocket text frame; unknown types skipped. |
+| `crates/core` | Sessions, turn orchestration, the permission/question broker (entries owned by session + turn), translation between storage and wire, carrying provider session keys both ways, abort routing. Speaks only the Driver trait. |
 | `crates/persistence` | SQLite: sessions (+ provider key), turns, parts; schema v2. Owned by the core; nobody else opens it. |
 | `crates/daemon` | Loopback WebSocket, token handshake, reader + writer per connection, provider chosen by `CIRCULO_PROVIDER`, database from `CIRCULO_HOME`, clean shutdown on stdin EOF. |
 | `crates/client` | Handshake, blocking read loop, a splittable writer half. No GPUI. |
-| `crates/providers/driver` | `Driver { name, start_turn(SessionRef, prompt, ask, emit) -> Option<key>, options(session), set_option(session, id, value), shutdown() }` and `Asker { permission, question }`. |
+| `crates/providers/driver` | `Driver { name, start_turn(SessionRef, prompt, ask, emit) -> Option<key>, cancel(session), options(session), set_option(session, id, value), shutdown() }` and `Asker { permission, question }`. `DriverError` carries whether the turn was cancelled, so the core can report `Aborted` instead of `Failed`. |
 | `crates/providers/demo` | Canned turn, no auth. |
-| `crates/providers/opencode` | ACP over stdio; one agent process per Circulo session; `session/load` resume with self-healing fallback; permission and elicitation mapped to cards; `configOptions` applied live, queued mid-turn. |
+| `crates/providers/opencode` | ACP over stdio; one agent process per Circulo session; `session/load` resume with self-healing fallback; permission and elicitation mapped to cards; `configOptions` applied live, queued mid-turn; a shared stdin handle sends `session/cancel` when the turn owns the slot. |
 | `crates/ui` | GPUI views and presentation state: shell, sidebar, transcript, markdown, composer, input, cards. |
 | `crates/app` | Composition root + supervisor: spawns the daemon, connects, reopens the last session, opens the window; quit closes stdin and waits before killing. |
 
@@ -219,6 +248,10 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   per turn, the core stores it in `sessions.provider_session` and hands it
   back; nothing reads its content. A lost session degrades to a fresh
   conversation — continuity self-heals, it never fails a turn.
+- **Abort is an outcome, not a failure**: `DriverError::cancelled` becomes
+  `FinishReason::Aborted`, with no error banner, and cards the turn left open
+  go away. The broker entry owns its session and turn, so cancelling one session
+  never closes another's card. ACP has no steer; queue/steer is the next task.
 - **Mid-turn switches queue to the turn's end**: the picker updates at once
   (promised value), the agent reads it from the next turn. A live, idle
   session applies directly.
@@ -243,7 +276,8 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   daemon logs one line per probe. Harmless.
 - The composer's input has no selection, undo, IME or paste; the caret is a block
   painted as a `TextRun` background.
-- A turn cannot be stopped or steered yet — that is the next task (§3).
+- A turn can be stopped (stop button or Escape), but not queued or steered yet
+  — that is the next task (§3).
 - Links render in the accent colour and are not clickable (no hit-testing in
   GPUI 0.2.2).
 - Light theme values are approximations; this machine is dark.
@@ -254,9 +288,9 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
 ## 9. Docs map
 
 `docs/`: `prd.md`, `trd.md`, `ux.md`, `ui.md` (tokens, components, transcript
-rules), `flow.md`, `implement.md` (phases; Phase 1 is done except settings and
-attachments), `permissions.md` (cards: reference design, ACP contract, wire,
-failure modes), `providers/opencode.md`, `remote.md`.
+rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
+`permissions.md` (cards: reference design, ACP contract, wire, failure modes),
+`providers/opencode.md` (ACP, continuity, cancellation), `remote.md`.
 
 ## 10. Repo flow (do not skip)
 
@@ -264,5 +298,5 @@ failure modes), `providers/opencode.md`, `remote.md`.
   Never push to `main`.
 - Commit messages `type(scope): summary`; one logical change per commit.
 - Docs travel with the change.
-- The current worktree sits on a merged feature branch; `origin/main` is the
-  truth, and the next branch starts from it.
+- The current worktree is `fix/latent-bugs` (abort + three fixes), not yet
+  merged; `origin/main` is the truth, and the next branch starts from it.
