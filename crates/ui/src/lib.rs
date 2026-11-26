@@ -15,6 +15,7 @@ mod icons;
 mod input;
 mod live;
 mod markdown;
+mod math;
 mod mock;
 mod permission;
 mod question;
