@@ -30,8 +30,9 @@ Order matters: prove the pipe before adding a real provider to it.
 
 ## Phase 3 — Second provider + Git
 - [x] Projects: the composer's project chip lists canonical folders, `New project…` uses the native picker, `No project` is a row, and a session's agent runs in its project's `cwd`; the sidebar row keeps title / project / time
+- [x] Git checkpoints captured at turn start and end, stored under `refs/circulo/...`; the composer footer shows the real branch when the project is a repository
+- Conversation-aware rewind: restore a checkpoint and trim the transcript together
 - Claude Code or Codex adapter
-- Conversation-aware Git checkpoints and rewind
 
 ## Phase 4 — UI polish
 - [x] Sidebar from the database: sessions grouped by day (Today / Yesterday / This Month / month), title, project and relative time, the open session marked; a row opens its history, `New Task` starts a session

@@ -46,9 +46,9 @@ After this change:
    session falls back to the driver's configured folder. `options`/`set_option`
    keep the driver's folder: they only discover/apply agent-global settings, and
    the stored overrides are re-applied on the next real turn.
-6. **No branch in the data yet.** The footer keeps its previous shape
-   (`project · Local · branch`); the branch is still the mock label until Git
-   checkpoints land. Reading `.git/HEAD` belongs to the Git crate, not here.
+6. **The branch is read, not edited.** `RepoStatus` carries the real branch
+   when the project is a repository; the footer hides the chip for a plain
+   folder. A branch picker and worktrees are out of scope for this slice.
 
 ## Schema (version 4)
 
