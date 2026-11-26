@@ -278,6 +278,21 @@ impl Store {
         Ok(found.is_some())
     }
 
+    /// The project folder this session belongs to, if any. A missing session
+    /// reads as `None` too; callers that care check `has_session` first.
+    pub fn session_project(&self, id: &str) -> Result<Option<String>, StoreError> {
+        let project = self
+            .connection()
+            .query_row(
+                "SELECT project FROM sessions WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(project)
+    }
+
     /// The provider's own key for this session, from its last turn. `None`
     /// while no turn has run, or when the provider keeps no session of its own.
     pub fn provider_session(&self, id: &str) -> Result<Option<String>, StoreError> {
@@ -443,6 +458,15 @@ mod tests {
         assert_eq!(sessions[0].title, "", "the first prompt titles it");
         assert!(store.has_session("s1").expect("has"));
         assert!(!store.has_session("nope").expect("has"));
+        assert_eq!(
+            store.session_project("s1").expect("project").as_deref(),
+            Some("/tmp/project")
+        );
+        assert_eq!(
+            store.session_project("nope").expect("project"),
+            None,
+            "a missing session reads as no project, like a session without one"
+        );
     }
 
     #[test]

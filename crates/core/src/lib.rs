@@ -89,11 +89,14 @@ impl Core {
             return Ok(false);
         }
 
+        let project = store.session_project(id)?;
         let mut open = self.open_sessions();
         if !open.iter().any(|session| session.id == id) {
             open.push(Session {
                 id: id.to_owned(),
-                project: None,
+                // The project is part of the session, not of the window that
+                // happened to create it: a restart has to bring it back too.
+                project,
             });
         }
         Ok(true)
@@ -652,13 +655,20 @@ mod tests {
         let store = Arc::new(circulo_persistence::Store::in_memory().expect("store"));
 
         let core = Core::with_store(Arc::new(Echo), Some(Arc::clone(&store)));
-        let session = core.start_session(None);
+        let session = core.start_session(Some("/tmp/project".into()));
         core.run_turn(&session, "one", |_| {});
 
         let restarted = Core::with_store(Arc::new(Echo), Some(store));
         assert!(restarted.reopen_session(&session).expect("reopen"));
         assert!(!restarted.reopen_session("missing").expect("reopen"));
         assert_eq!(restarted.transcript(&session).expect("transcript").len(), 1);
+
+        let open = restarted.open_sessions();
+        assert_eq!(
+            open[0].project.as_deref(),
+            Some("/tmp/project"),
+            "a reopened session keeps the project it was created in"
+        );
     }
 
     #[test]
