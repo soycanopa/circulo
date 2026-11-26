@@ -42,6 +42,16 @@ pub(crate) type SendHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 /// What the stop button does while a turn is running. The shell owns it, the
 /// same way it owns sending.
 pub(crate) type StopHandler = Rc<dyn Fn(&mut Window, &mut App)>;
+pub(crate) type AttachHandler = Rc<dyn Fn(&mut Window, &mut App)>;
+pub(crate) type RemoveAttachmentHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// A file the user picked but has not sent yet. The daemon ingests it when the
+/// prompt leaves the composer; the path is local to the daemon host.
+#[derive(Clone)]
+pub(crate) struct PendingAttachment {
+    pub path: String,
+    pub name: String,
+}
 /// Opening or closing an option menu, and picking a value. The shell owns
 /// both, because both change its state.
 pub(crate) type ToggleHandler = Rc<dyn Fn(Option<String>, &mut Window, &mut App)>;
@@ -107,6 +117,9 @@ pub(crate) struct Field<'a> {
     pub on_key: KeyHandler,
     pub on_send: SendHandler,
     pub on_stop: StopHandler,
+    pub attachments: &'a [PendingAttachment],
+    pub on_attach: AttachHandler,
+    pub on_remove_attachment: RemoveAttachmentHandler,
 }
 
 /// The prompts waiting for the running turn, oldest first. They sit above the
@@ -155,6 +168,19 @@ pub(crate) fn queued(
                             .text_ellipsis()
                             .child(item.text.clone()),
                     )
+                    .when(!item.attachments.is_empty(), |row| {
+                        row.child(
+                            div()
+                                .flex_shrink_0()
+                                .flex()
+                                .items_center()
+                                .gap(px(3.))
+                                .text_size(px(11.5))
+                                .text_color(theme.text_faint)
+                                .child(icon("icons/attachment.svg", 11., theme.text_faint))
+                                .child(item.attachments.len().to_string()),
+                        )
+                    })
                     .child(
                         div()
                             .id(SharedString::from(format!("queued-remove-{index}")))
@@ -257,6 +283,66 @@ pub(crate) fn composer(
         ))
 }
 
+fn attachments_row(
+    theme: &Theme,
+    attachments: &[PendingAttachment],
+    on_remove: RemoveAttachmentHandler,
+) -> impl IntoElement {
+    div()
+        .id("composer-attachments")
+        .w_full()
+        .flex()
+        .flex_wrap()
+        .gap(px(4.))
+        .children(attachments.iter().enumerate().map(|(index, attachment)| {
+            let on = Rc::clone(&on_remove);
+            div()
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .h(px(22.))
+                .px(px(6.))
+                .rounded(px(6.))
+                .bg(theme.chip)
+                .text_size(px(11.5))
+                .text_color(theme.text_muted)
+                .child(icon("icons/file-text.svg", 11., theme.text_faint))
+                .child(
+                    div()
+                        .max_w(px(180.))
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .child(attachment.name.clone()),
+                )
+                .child(
+                    div()
+                        .id(SharedString::from(format!("attachment-remove-{index}")))
+                        .flex_shrink_0()
+                        .cursor_pointer()
+                        .text_color(theme.text_faint)
+                        .hover(|style| style.text_color(theme.text))
+                        .child("×")
+                        .on_click(move |_, window, cx| on(index, window, cx)),
+                )
+        }))
+}
+
+fn attach_button(theme: &Theme, on_attach: AttachHandler) -> AnyElement {
+    div()
+        .id("attach-files")
+        .size(px(22.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(6.))
+        .cursor_pointer()
+        .hover(|style| style.bg(theme.hover))
+        .child(icon("icons/attachment.svg", 13., theme.text_faint))
+        .on_click(move |_, window, cx| on_attach(window, cx))
+        .into_any_element()
+}
+
 fn input_box(
     theme: &Theme,
     workspace: &Workspace,
@@ -270,6 +356,9 @@ fn input_box(
     let on_key = field.on_key;
     let on_send = field.on_send;
     let on_stop = field.on_stop;
+    let attachments = field.attachments;
+    let on_attach = field.on_attach;
+    let on_remove_attachment = field.on_remove_attachment;
     let click_focus = focus.clone();
     // While a turn runs, Enter queues: say so in the field.
     let placeholder = if running {
@@ -292,6 +381,9 @@ fn input_box(
         .track_focus(focus)
         .on_key_down(move |event, window, cx| on_key(event, window, cx))
         .on_click(move |_, window, _| click_focus.focus(window))
+        .when(!attachments.is_empty(), |box_| {
+            box_.child(attachments_row(theme, attachments, on_remove_attachment))
+        })
         .child(
             div()
                 .id("composer-field")
@@ -305,6 +397,7 @@ fn input_box(
                 .flex()
                 .items_center()
                 .gap(px(4.))
+                .child(attach_button(theme, on_attach))
                 .child(slot(theme, pickers, "model", None, workspace.model))
                 .child(static_picker(
                     theme,

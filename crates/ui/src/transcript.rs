@@ -18,7 +18,7 @@ use crate::icons::icon;
 use crate::live::Transcript;
 use crate::mock::Workspace;
 use crate::theme::Theme;
-use circulo_protocol::FinishReason;
+use circulo_protocol::{AttachmentSummary, FinishReason};
 
 /// Opening the rewind confirmation for a turn. The shell owns the request.
 pub(crate) type RewindTurnHandler = Rc<dyn Fn(u64, &mut Window, &mut App)>;
@@ -40,7 +40,10 @@ const OVERDRAW: f32 = 400.;
 
 /// One row of the transcript, owned so the list can render it lazily.
 pub(crate) enum Row {
-    Message(String),
+    Message {
+        text: String,
+        attachments: Vec<AttachmentSummary>,
+    },
     Divider {
         label: String,
         running: bool,
@@ -206,7 +209,10 @@ fn rows(workspace: &Workspace, transcript: &Transcript) -> Vec<Row> {
     let mut rows = Vec::new();
 
     for (index, turn) in transcript.turns.iter().enumerate() {
-        rows.push(Row::Message(turn.prompt.clone()));
+        rows.push(Row::Message {
+            text: turn.prompt.clone(),
+            attachments: turn.attachments.clone(),
+        });
 
         // Only the last turn can still be running.
         let running = index + 1 == transcript.turns.len() && transcript.status.running;
@@ -271,7 +277,7 @@ fn row_view(
     let id = SharedString::from(format!("row-{index}"));
 
     match row {
-        Row::Message(text) => div()
+        Row::Message { text, attachments } => div()
             .id(id)
             .w_full()
             .min_w(px(0.))
@@ -282,12 +288,18 @@ fn row_view(
             .child(
                 div()
                     .max_w(px(520.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
                     .px(px(15.))
                     .py(px(9.))
                     .rounded(px(12.))
                     .bg(theme.chip)
                     .text_size(px(13.))
-                    .child(text.clone()),
+                    .child(text.clone())
+                    .when(!attachments.is_empty(), |bubble| {
+                        bubble.child(message_attachments(attachments, theme))
+                    }),
             )
             .into_any_element(),
         Row::Divider {
@@ -413,6 +425,36 @@ struct ToolRow<'a> {
     done: bool,
     output: Option<&'a str>,
     expanded: bool,
+}
+
+/// The files a user turn carried, under the prompt inside the bubble.
+fn message_attachments(attachments: &[AttachmentSummary], theme: &Theme) -> AnyElement {
+    div()
+        .flex()
+        .flex_wrap()
+        .gap(px(4.))
+        .children(attachments.iter().map(|attachment| {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .h(px(20.))
+                .px(px(6.))
+                .rounded(px(6.))
+                .bg(theme.selection)
+                .text_size(px(11.))
+                .text_color(theme.text_muted)
+                .child(icon("icons/file-text.svg", 11., theme.text_faint))
+                .child(
+                    div()
+                        .max_w(px(200.))
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .child(attachment.name.clone()),
+                )
+        }))
+        .into_any_element()
 }
 
 /// A tool row plus, when opened, the output it printed. The header is the

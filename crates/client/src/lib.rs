@@ -162,11 +162,23 @@ impl Client {
 
     /// Sends a prompt. The turn arrives through [`Client::next_message`].
     pub fn prompt(&mut self, session: &str, text: &str) -> Result<(), ClientError> {
+        self.prompt_with(session, text, Vec::new())
+    }
+
+    /// Sends a prompt with files on the daemon host. The daemon copies them
+    /// into its blob store before the turn starts.
+    pub fn prompt_with(
+        &mut self,
+        session: &str,
+        text: &str,
+        attachments: Vec<String>,
+    ) -> Result<(), ClientError> {
         send(
             &mut self.socket,
             &ClientRequest::Prompt {
                 session: session.to_owned(),
                 text: text.to_owned(),
+                attachments,
             }
             .encode()?,
         )
@@ -206,11 +218,21 @@ impl Client {
     /// Puts a prompt ahead of the queue and aborts the running turn, so the
     /// daemon starts it next with the agent's context intact.
     pub fn steer(&mut self, session: &str, text: &str) -> Result<(), ClientError> {
+        self.steer_with(session, text, Vec::new())
+    }
+
+    pub fn steer_with(
+        &mut self,
+        session: &str,
+        text: &str,
+        attachments: Vec<String>,
+    ) -> Result<(), ClientError> {
         send(
             &mut self.socket,
             &ClientRequest::Steer {
                 session: session.to_owned(),
                 text: text.to_owned(),
+                attachments,
             }
             .encode()?,
         )
@@ -314,11 +336,21 @@ impl ClientWriter {
     /// Sends a prompt over the writer half of a split, so the composer can send
     /// while the reader is blocked on the previous turn.
     pub fn prompt(&mut self, session: &str, text: &str) -> Result<(), ClientError> {
+        self.prompt_with(session, text, Vec::new())
+    }
+
+    pub fn prompt_with(
+        &mut self,
+        session: &str,
+        text: &str,
+        attachments: Vec<String>,
+    ) -> Result<(), ClientError> {
         send(
             &mut self.socket,
             &ClientRequest::Prompt {
                 session: session.to_owned(),
                 text: text.to_owned(),
+                attachments,
             }
             .encode()?,
         )

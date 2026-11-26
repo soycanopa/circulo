@@ -33,7 +33,7 @@ use circulo_protocol::{
     ConfigChoice, ConfigOption, Part, PermissionOption, PermissionOptionKind, PermissionRequest,
     Question, QuestionField, QuestionKind, ToolState, Usage,
 };
-use circulo_provider::{Answer, Asker, Decision, Driver, DriverError, SessionRef};
+use circulo_provider::{Answer, Asker, Attachment, Decision, Driver, DriverError, SessionRef};
 use serde_json::{Value, json};
 
 /// The agent works in the project and asks before it leaves it. `never` would
@@ -330,6 +330,7 @@ impl Driver for Codex {
         emit: &mut dyn FnMut(Part),
     ) -> Result<Option<String>, DriverError> {
         let slot = self.slot_for(session_ref.id);
+        let input = turn_input(prompt, session_ref.attachments)?;
 
         // Held for the whole turn: the agent answers one prompt at a time.
         let mut slot = slot
@@ -356,7 +357,7 @@ impl Driver for Codex {
 
         let run = attached.agent.run_turn(
             &attached.thread,
-            prompt,
+            input,
             &overrides,
             handle.as_ref(),
             ask,
@@ -603,6 +604,49 @@ fn opened(result: &Value, missing: &str) -> Result<Opened, DriverError> {
     })
 }
 
+/// Codex accepts text and local images in a turn. An image becomes
+/// `localImage`; a text file is inlined (capped) because the protocol has no
+/// file-content input. The blob path is local to the daemon, where the agent
+/// runs.
+const MAX_INLINE_TEXT: usize = 256 * 1024;
+const TEXT_TRUNCATED: &str = "\n… [truncated]";
+
+fn turn_input(prompt: &str, attachments: &[Attachment]) -> Result<Vec<Value>, DriverError> {
+    let mut input = vec![json!({"type": "text", "text": prompt})];
+
+    for attachment in attachments {
+        if attachment.mime.starts_with("image/") {
+            input.push(json!({
+                "type": "localImage",
+                "path": attachment.path.to_string_lossy(),
+            }));
+        } else {
+            let bytes = std::fs::read(&attachment.path).map_err(|error| {
+                DriverError::new(format!("cannot read {}: {error}", attachment.name))
+            })?;
+            input.push(json!({
+                "type": "text",
+                "text": format!(
+                    "Attached file: {}\n```\n{}\n```",
+                    attachment.name,
+                    inline_text(&bytes)
+                ),
+            }));
+        }
+    }
+
+    Ok(input)
+}
+
+fn inline_text(bytes: &[u8]) -> String {
+    let end = bytes.len().min(MAX_INLINE_TEXT);
+    let mut text = String::from_utf8_lossy(&bytes[..end]).into_owned();
+    if end < bytes.len() {
+        text.push_str(TEXT_TRUNCATED);
+    }
+    text
+}
+
 /// Codex reports cumulative token counts, not the current context: `total` is
 /// the whole session, `last` is one turn. Showing a context ratio from either
 /// would lie, so the gauge shows the cumulative tokens it really knows.
@@ -781,7 +825,7 @@ impl Agent {
     fn run_turn(
         &mut self,
         thread: &str,
-        prompt: &str,
+        input: Vec<Value>,
         overrides: &BTreeMap<String, String>,
         handle: Option<&CancelHandle>,
         ask: &mut dyn Asker,
@@ -792,7 +836,7 @@ impl Agent {
 
         let mut params = json!({
             "threadId": thread,
-            "input": [{"type": "text", "text": prompt}],
+            "input": input,
         });
         if let Some(model) = overrides.get("model") {
             params["model"] = json!(model);

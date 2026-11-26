@@ -90,6 +90,7 @@ fn recall(driver: &OpenCode, resume: Option<&str>) -> String {
                 id: "s1",
                 resume,
                 cwd: None,
+                attachments: &[],
             },
             "Which fruit did I ask you to remember? Reply with exactly that one word.",
             &mut NoAsker,

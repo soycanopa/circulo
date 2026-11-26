@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use circulo_protocol::{ConfigOption, Part, PermissionRequest, Question, QuestionAction, Usage};
 
@@ -32,17 +33,31 @@ pub struct SessionRef<'a> {
     /// or `None` for a projectless session, where the provider falls back to
     /// its configured directory.
     pub cwd: Option<&'a str>,
+    /// The files this turn carries, already copied into the core's blob store.
+    /// A provider that cannot take files ignores them; the text still runs.
+    pub attachments: &'a [Attachment],
 }
 
 impl<'a> SessionRef<'a> {
-    /// A session with nothing to resume and no project folder.
+    /// A session with nothing to resume, no project folder and no files.
     pub fn new(id: &'a str) -> Self {
         Self {
             id,
             resume: None,
             cwd: None,
+            attachments: &[],
         }
     }
+}
+
+/// One file the user attached, as the provider needs it: metadata plus the
+/// stored blob the agent can read. The core owns the blob; a provider never
+/// copies or deletes it.
+pub struct Attachment {
+    pub name: String,
+    pub mime: String,
+    pub size: u64,
+    pub path: PathBuf,
 }
 
 pub trait Driver: Send + Sync {

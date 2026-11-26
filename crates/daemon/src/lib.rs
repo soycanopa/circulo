@@ -255,15 +255,23 @@ fn handle(
                 push_repo_status(Arc::clone(&core), outbound.clone(), session.clone());
                 push_options(Arc::clone(&core), outbound.clone(), session);
             }
-            Some(ClientRequest::Prompt { session, text }) => match core.enqueue(&session, &text) {
+            Some(ClientRequest::Prompt {
+                session,
+                text,
+                attachments,
+            }) => match core.enqueue_with(&session, &text, attachments) {
                 Ok(state) => {
                     prompted.insert(session.clone());
                     start_queue(Arc::clone(&core), outbound.clone(), &session, state);
                 }
                 Err(message) => emit(&outbound, ServerMessage::Error { message }),
             },
-            Some(ClientRequest::Steer { session, text }) => {
-                match core.steer(&session, &text) {
+            Some(ClientRequest::Steer {
+                session,
+                text,
+                attachments,
+            }) => {
+                match core.steer_with(&session, &text, attachments) {
                     Ok(state) => {
                         // The steer prompt is in the queue and the running turn
                         // is being cancelled; the worker starts it next.

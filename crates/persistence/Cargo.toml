@@ -8,6 +8,10 @@ repository.workspace = true
 
 [dependencies]
 circulo-protocol.workspace = true
+# Content-addressed blob names for attachments. BLAKE3 is fast and gives a
+# hex digest without another crate.
+blake3 = "1"
 rusqlite = { version = "0.43", features = ["bundled"] }
 serde_json.workspace = true
 thiserror.workspace = true
+uuid.workspace = true

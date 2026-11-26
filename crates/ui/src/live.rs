@@ -7,8 +7,8 @@
 use std::collections::VecDeque;
 
 use circulo_protocol::{
-    FinishReason, HistoryTurn, Part, PermissionOption, QuestionField, ServerMessage, ToolState,
-    Usage,
+    AttachmentSummary, FinishReason, HistoryTurn, Part, PermissionOption, QuestionField,
+    ServerMessage, ToolState, Usage,
 };
 
 #[derive(Default)]
@@ -86,6 +86,8 @@ pub struct Turn {
     /// What the user sent, shown above the turn. Empty for a turn the window
     /// did not start.
     pub prompt: String,
+    /// Files the turn carried, for the chips in the user bubble.
+    pub attachments: Vec<AttachmentSummary>,
     pub parts: Vec<Segment>,
     /// How this turn ended, once it has. `None` while it runs, and for history
     /// hydrated from storage, which does not keep the reason.
@@ -120,10 +122,16 @@ pub enum Segment {
 impl Transcript {
     pub fn apply(&mut self, message: ServerMessage) {
         match message {
-            ServerMessage::TurnStarted { turn, prompt, .. } => {
+            ServerMessage::TurnStarted {
+                turn,
+                prompt,
+                attachments,
+                ..
+            } => {
                 self.turns.push(Turn {
                     turn,
                     prompt,
+                    attachments,
                     parts: Vec::new(),
                     finished: None,
                 });
@@ -212,6 +220,7 @@ impl Transcript {
                 let mut row = Turn {
                     turn: history.turn,
                     prompt: history.prompt,
+                    attachments: history.attachments,
                     parts: Vec::new(),
                     finished: None,
                 };
@@ -339,6 +348,7 @@ mod tests {
             session: "s1".into(),
             turn,
             prompt: prompt.into(),
+            attachments: Vec::new(),
         }
     }
 
@@ -389,6 +399,7 @@ mod tests {
                         delta: "world".into(),
                     },
                 ],
+                attachments: Vec::new(),
             },
             HistoryTurn {
                 turn: 2,
@@ -396,6 +407,7 @@ mod tests {
                 parts: vec![Part::Text {
                     delta: "again".into(),
                 }],
+                attachments: Vec::new(),
             },
         ]);
 
@@ -577,6 +589,25 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn a_turn_started_carries_its_attachment_chips() {
+        let mut transcript = Transcript::default();
+        transcript.apply(ServerMessage::TurnStarted {
+            session: "s1".into(),
+            turn: 1,
+            prompt: "look".into(),
+            attachments: vec![AttachmentSummary {
+                id: "a-1".into(),
+                name: "shot.png".into(),
+                mime: "image/png".into(),
+                size: 10,
+            }],
+        });
+
+        assert_eq!(transcript.turns[0].attachments.len(), 1);
+        assert_eq!(transcript.turns[0].attachments[0].name, "shot.png");
     }
 
     #[test]

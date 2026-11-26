@@ -56,6 +56,7 @@ fn a_real_turn_streams_and_remembers_across_turns() {
                 id: "circulo-real-1",
                 resume: key.as_deref(),
                 cwd: None,
+                attachments: &[],
             },
             "Reply with the single word: again",
             &mut ask,

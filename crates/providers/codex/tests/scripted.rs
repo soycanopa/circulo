@@ -18,7 +18,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use circulo_protocol::{Part, PermissionRequest, Question, QuestionKind};
-use circulo_provider::{Answer, Asker, Decision, Driver, SessionRef};
+use circulo_provider::{Answer, Asker, Attachment, Decision, Driver, SessionRef};
 use circulo_provider_codex::Codex;
 
 /// A fake `codex app-server`. `FAKE_CODEX_MODE` picks what a turn does:
@@ -124,6 +124,12 @@ def run_turn(message):
                 respond(incoming, {})
                 completed(tid, turn, "interrupted")
                 return
+        return
+
+    if MODE == "attachments":
+        kinds = ",".join(item.get("type", "?") for item in params.get("input", []))
+        text(tid, turn, "m1", "input=" + kinds)
+        completed(tid, turn)
         return
 
     if MODE == "permission":
@@ -414,6 +420,53 @@ fn a_turn_streams_text_reasoning_and_tools() {
 }
 
 #[test]
+fn attachments_travel_as_a_local_image_and_inline_text() {
+    let agent = ScriptedAgent::new("attachments", "attachments");
+    let image = agent.project().join("shot.png");
+    fs::write(&image, b"png").expect("image");
+    let note = agent.project().join("note.txt");
+    fs::write(&note, "hello").expect("note");
+
+    let attachments = vec![
+        Attachment {
+            name: "shot.png".into(),
+            mime: "image/png".into(),
+            size: 3,
+            path: image,
+        },
+        Attachment {
+            name: "note.txt".into(),
+            mime: "text/plain".into(),
+            size: 5,
+            path: note,
+        },
+    ];
+
+    let driver = Codex::with_binary(agent.project(), agent.binary());
+    let mut ask = Refuse;
+    let mut parts = Vec::new();
+    driver
+        .start_turn(
+            SessionRef {
+                id: "s1",
+                resume: None,
+                cwd: None,
+                attachments: &attachments,
+            },
+            "go",
+            &mut ask,
+            &mut |part| parts.push(part),
+        )
+        .expect("turn");
+
+    assert!(
+        text(&parts).contains("input=text,localImage,text"),
+        "{}",
+        text(&parts)
+    );
+}
+
+#[test]
 fn a_permission_card_round_trips() {
     let agent = ScriptedAgent::new("permission", "permission");
     let driver = Codex::with_binary(agent.project(), agent.binary());
@@ -528,6 +581,7 @@ fn the_session_project_reaches_the_agent() {
                 id: "s1",
                 resume: None,
                 cwd: Some(project.to_str().expect("utf-8 path")),
+                attachments: &[],
             },
             "where",
             &mut ask,
@@ -577,6 +631,7 @@ fn a_restart_resumes_the_thread() {
                 id: "s1",
                 resume: Some(&key),
                 cwd: None,
+                attachments: &[],
             },
             "two",
             &mut ask,
@@ -605,6 +660,7 @@ fn a_lost_key_starts_a_fresh_thread() {
                 id: "s1",
                 resume: Some("thr_404"),
                 cwd: None,
+                attachments: &[],
             },
             "one",
             &mut ask,

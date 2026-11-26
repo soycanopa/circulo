@@ -20,10 +20,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 use circulo_git::CheckpointKind;
 use circulo_persistence::{Store, StoreError};
 use circulo_protocol::{
-    ConfigOption, FinishReason, HistoryTurn, PermissionRequest, ProjectSummary, Question,
-    QuestionAction, QueuedPrompt, RewindTarget, ServerMessage, SessionSummary,
+    AttachmentSummary, ConfigOption, FinishReason, HistoryTurn, PermissionRequest, ProjectSummary,
+    Question, QuestionAction, QueuedPrompt, RewindTarget, ServerMessage, SessionSummary,
 };
-use circulo_provider::{Answer, Asker, Decision, Driver, SessionRef};
+use circulo_provider::{
+    Answer, Asker, Attachment as DriverAttachment, Decision, Driver, SessionRef,
+};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -51,6 +53,20 @@ pub struct Core {
     rewinding: Mutex<HashSet<String>>,
     permissions: Broker<Decision>,
     questions: Broker<Answer>,
+}
+
+/// Files the UI is allowed to attach: raster images and text. A provider may
+/// still handle a subset, but the core refuses binaries instead of storing a
+/// blob no agent will read.
+fn supported_attachment(mime: &str) -> bool {
+    matches!(
+        mime,
+        "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+    ) || mime.starts_with("text/")
+        || matches!(
+            mime,
+            "application/json" | "application/toml" | "application/yaml" | "application/xml"
+        )
 }
 
 /// One session's pending prompts and the worker that drains them.
@@ -230,6 +246,7 @@ impl Core {
                 turn: turn.turn,
                 prompt: turn.prompt,
                 parts: turn.parts,
+                attachments: turn.attachments,
             })
             .collect())
     }
@@ -382,17 +399,30 @@ impl Core {
     /// Adds `text` to the session's queue. `start_worker` is true when the
     /// caller has to run `drain` on a thread: no worker owns the session.
     pub fn enqueue(&self, session: &str, text: &str) -> Result<QueueState, String> {
+        self.enqueue_with(session, text, Vec::new())
+    }
+
+    /// Queues a prompt with files. The files are copied into the blob store
+    /// now, so a queued prompt cannot lose them while it waits.
+    pub fn enqueue_with(
+        &self,
+        session: &str,
+        text: &str,
+        attachments: Vec<String>,
+    ) -> Result<QueueState, String> {
         if !self.has_session(session) {
             return Err(format!("unknown session {session}"));
         }
         if self.rewinding().contains(session) {
             return Err(format!("a rewind is in progress in {session}"));
         }
+        let attachments = self.ingest_attachments(&attachments)?;
         let mut queues = self.queues();
         let queue = queues.entry(session.to_owned()).or_default();
         queue.pending.push_back(QueuedPrompt {
             id: Uuid::new_v4().to_string(),
             text: text.to_owned(),
+            attachments,
         });
         // A live client means the worker may run again.
         queue.stopped = false;
@@ -409,18 +439,29 @@ impl Core {
     /// just a prompt at the front. A provider that cannot abort falls back to
     /// running it after the current turn: the text is never lost.
     pub fn steer(&self, session: &str, text: &str) -> Result<QueueState, String> {
+        self.steer_with(session, text, Vec::new())
+    }
+
+    pub fn steer_with(
+        &self,
+        session: &str,
+        text: &str,
+        attachments: Vec<String>,
+    ) -> Result<QueueState, String> {
         if !self.has_session(session) {
             return Err(format!("unknown session {session}"));
         }
         if self.rewinding().contains(session) {
             return Err(format!("a rewind is in progress in {session}"));
         }
+        let attachments = self.ingest_attachments(&attachments)?;
         let state = {
             let mut queues = self.queues();
             let queue = queues.entry(session.to_owned()).or_default();
             queue.pending.push_front(QueuedPrompt {
                 id: Uuid::new_v4().to_string(),
                 text: text.to_owned(),
+                attachments,
             });
             queue.stopped = false;
             let start_worker = !queue.worker;
@@ -480,7 +521,7 @@ impl Core {
                 session: session.to_owned(),
                 items: self.queued(session),
             });
-            self.run_turn(session, &item.text, &mut emit);
+            self.run_turn_prompt(session, item, &mut emit);
         }
     }
 
@@ -505,6 +546,44 @@ impl Core {
 
     fn queues(&self) -> std::sync::MutexGuard<'_, HashMap<String, SessionQueue>> {
         self.queues.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Copies the picked paths into the blob store and returns what the wire
+    /// and the queue carry. A prompt with no store cannot carry files.
+    fn ingest_attachments(&self, paths: &[String]) -> Result<Vec<AttachmentSummary>, String> {
+        if paths.is_empty() {
+            return Ok(Vec::new());
+        }
+        let store = self
+            .store
+            .as_ref()
+            .ok_or_else(|| "this daemon has no attachment store".to_owned())?;
+        if paths.len() > 8 {
+            return Err("a prompt carries at most 8 files".to_owned());
+        }
+
+        let mut summaries = Vec::with_capacity(paths.len());
+        let mut total = 0_u64;
+        for path in paths {
+            let stored = store
+                .put_attachment(std::path::Path::new(path))
+                .map_err(|error| error.to_string())?;
+            if !supported_attachment(&stored.mime) {
+                return Err(format!("{} is not an image or a text file", stored.name));
+            }
+            total = total.saturating_add(stored.size);
+            if total > 20 * 1024 * 1024 {
+                return Err("a prompt carries at most 20 MiB of files".to_owned());
+            }
+            summaries.push(AttachmentSummary {
+                id: stored.id,
+                name: stored.name,
+                mime: stored.mime,
+                size: stored.size,
+            });
+        }
+
+        Ok(summaries)
     }
 
     /// Drops the cards of the turn running in `session`, so the driver's
@@ -590,6 +669,23 @@ impl Core {
     /// core and stable for the duration of the turn, so a client can attach
     /// parts to the turn that produced them.
     pub fn run_turn(&self, session: &str, prompt: &str, mut emit: impl FnMut(ServerMessage)) {
+        self.run_turn_prompt(
+            session,
+            QueuedPrompt {
+                id: String::new(),
+                text: prompt.to_owned(),
+                attachments: Vec::new(),
+            },
+            &mut emit,
+        );
+    }
+
+    fn run_turn_prompt(
+        &self,
+        session: &str,
+        prompt: QueuedPrompt,
+        mut emit: impl FnMut(ServerMessage),
+    ) {
         if !self.has_session(session) {
             emit(ServerMessage::Error {
                 message: format!("unknown session {session}"),
@@ -610,15 +706,34 @@ impl Core {
         emit(ServerMessage::TurnStarted {
             session: session.to_owned(),
             turn,
-            prompt: prompt.to_owned(),
+            prompt: prompt.text.clone(),
+            attachments: prompt.attachments.clone(),
         });
 
         // The driver gets two callbacks into the same emit: parts and
         // questions. `RefCell` keeps that honest without cloning the wire.
         let emit = RefCell::new(emit);
-        if let Some(store) = &self.store {
-            let _ = store.start_turn(session, turn, prompt);
-        }
+        let attachments =
+            if let Some(store) = &self.store {
+                let _ = store.start_turn(session, turn, &prompt.text);
+                let _ = store.link_turn_attachments(session, turn, &prompt.attachments);
+                prompt
+                    .attachments
+                    .iter()
+                    .filter_map(|summary| {
+                        store.attachment(&summary.id).ok().flatten().map(|stored| {
+                            DriverAttachment {
+                                name: stored.name,
+                                mime: stored.mime,
+                                size: stored.size,
+                                path: stored.path,
+                            }
+                        })
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
 
         let part_session = session.to_owned();
         let mut position = 0;
@@ -671,8 +786,9 @@ impl Core {
                 id: session,
                 resume: resume.as_deref(),
                 cwd: project.as_deref(),
+                attachments: &attachments,
             },
-            prompt,
+            &prompt.text,
             &mut asker,
             &mut parts,
         );
@@ -1126,6 +1242,53 @@ mod tests {
         }
     }
 
+    type SeenAttachment = (String, String, u64, std::path::PathBuf);
+
+    struct SeesAttachments {
+        seen: Arc<Mutex<Vec<SeenAttachment>>>,
+    }
+
+    impl Driver for SeesAttachments {
+        fn name(&self) -> &'static str {
+            "attachments"
+        }
+
+        fn start_turn(
+            &self,
+            session: SessionRef<'_>,
+            prompt: &str,
+            _: &mut dyn Asker,
+            emit: &mut dyn FnMut(Part),
+        ) -> Result<Option<String>, DriverError> {
+            let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
+            for attachment in session.attachments {
+                seen.push((
+                    attachment.name.clone(),
+                    attachment.mime.clone(),
+                    attachment.size,
+                    attachment.path.clone(),
+                ));
+            }
+            emit(Part::Text {
+                delta: prompt.to_owned(),
+            });
+            Ok(None)
+        }
+
+        fn options(&self, _: &str) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Ok(Vec::new())
+        }
+
+        fn set_option(
+            &self,
+            _: &str,
+            _id: &str,
+            _value: &str,
+        ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Err(DriverError::new("this agent has no settings"))
+        }
+    }
+
     struct ReportsUsage;
 
     impl Driver for ReportsUsage {
@@ -1189,6 +1352,95 @@ mod tests {
             core.set_option(&session, "model", "x").is_err(),
             "and nothing to set"
         );
+    }
+
+    #[test]
+    fn a_turn_carries_its_attachments_to_the_driver_and_history() {
+        let directory =
+            std::env::temp_dir().join(format!("circulo-core-attach-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("temp dir");
+        let source = directory.join("note.txt");
+        std::fs::write(&source, "hello").expect("source");
+
+        let store = Arc::new(Store::open(&directory.join("circulo.db")).expect("store"));
+        let stored = store.put_attachment(&source).expect("blob");
+        let summary = AttachmentSummary {
+            id: stored.id.clone(),
+            name: stored.name.clone(),
+            mime: stored.mime.clone(),
+            size: stored.size,
+        };
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let core = Core::with_store(
+            Arc::new(SeesAttachments { seen: seen.clone() }),
+            Some(store),
+        );
+        let session = core.start_session(None);
+
+        let mut messages = Vec::new();
+        core.run_turn_prompt(
+            &session,
+            QueuedPrompt {
+                id: "q1".into(),
+                text: "look".into(),
+                attachments: vec![summary.clone()],
+            },
+            |message| messages.push(message),
+        );
+
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            &[(
+                "note.txt".to_owned(),
+                "text/plain".to_owned(),
+                5,
+                stored.path.clone()
+            )]
+        );
+        assert!(messages.iter().any(|message| matches!(
+            message,
+            ServerMessage::TurnStarted { attachments, .. }
+                if attachments == &vec![summary.clone()]
+        )));
+        assert_eq!(
+            core.transcript(&session).expect("history")[0].attachments,
+            vec![summary]
+        );
+
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_binary_file_is_refused_before_a_turn() {
+        let directory =
+            std::env::temp_dir().join(format!("circulo-core-binary-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("temp dir");
+        let source = directory.join("thing.bin");
+        std::fs::write(&source, [0_u8, 1, 2]).expect("source");
+
+        let store = Arc::new(Store::open(&directory.join("circulo.db")).expect("store"));
+        let core = Core::with_store(
+            Arc::new(SeesAttachments {
+                seen: Arc::default(),
+            }),
+            Some(store),
+        );
+        let session = core.start_session(None);
+
+        let error = match core.enqueue_with(
+            &session,
+            "look",
+            vec![source.to_string_lossy().into_owned()],
+        ) {
+            Ok(_) => panic!("a binary attachment must be refused"),
+            Err(error) => error,
+        };
+        assert!(error.contains("not an image or a text file"), "{error}");
+
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     #[test]

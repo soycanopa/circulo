@@ -23,6 +23,7 @@ icon_assets!(
     "arrow-left.svg",
     "arrow-right.svg",
     "arrow-up.svg",
+    "attachment.svg",
     "brain.svg",
     "chevron-down.svg",
     "chevron-right.svg",

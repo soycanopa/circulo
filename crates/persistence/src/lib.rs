@@ -17,9 +17,10 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use circulo_protocol::Part;
+use circulo_protocol::{AttachmentSummary, Part};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
+use uuid::Uuid;
 
 /// Where the database lives when `CIRCULO_HOME` is not set.
 const HOME_DIRECTORY: &str = ".circulo";
@@ -32,7 +33,7 @@ const DATABASE_FILE: &str = "circulo.db";
 /// where it left off. 3 added `settings`, the client's own key/value store —
 /// the model favourites, and whatever the interface remembers next. 4 added
 /// `projects`, the folders a session can belong to.
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 /// The database path: `CIRCULO_HOME/circulo.db`, or `~/.circulo/circulo.db`.
 ///
@@ -95,13 +96,31 @@ pub struct TurnRecord {
     pub turn: u64,
     pub prompt: String,
     pub parts: Vec<Part>,
+    pub attachments: Vec<AttachmentSummary>,
 }
 
 /// The handle the core holds. One connection behind a mutex: writes come from
 /// turn threads, reads from the connection that answers a client.
 pub struct Store {
     connection: Mutex<Connection>,
+    /// Where attachment bytes live: `<database dir>/blobs`. `None` for an
+    /// in-memory store, which has no directory to own.
+    blobs: Option<PathBuf>,
 }
+
+/// One attachment the store accepted: metadata plus the blob path the provider
+/// can read. The id is the row the wire and `turn_attachments` refer to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredAttachment {
+    pub id: String,
+    pub name: String,
+    pub mime: String,
+    pub size: u64,
+    pub path: PathBuf,
+}
+
+/// One file may not exceed this; the core applies a smaller total budget.
+pub const MAX_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024;
 
 impl Store {
     /// Opens the database, creating its directory and schema when missing.
@@ -112,6 +131,7 @@ impl Store {
 
         let store = Self {
             connection: Mutex::new(Connection::open(path)?),
+            blobs: path.parent().map(|directory| directory.join("blobs")),
         };
         store.migrate()?;
         Ok(store)
@@ -121,6 +141,7 @@ impl Store {
     pub fn in_memory() -> Result<Self, StoreError> {
         let store = Self {
             connection: Mutex::new(Connection::open_in_memory()?),
+            blobs: None,
         };
         store.migrate()?;
         Ok(store)
@@ -230,6 +251,31 @@ impl Store {
 
             transaction.pragma_update(None, "user_version", 4)?;
             transaction.commit()?;
+        }
+
+        if version < 5 {
+            connection.execute_batch(
+                r#"
+                CREATE TABLE IF NOT EXISTS attachments (
+                    id          TEXT PRIMARY KEY,
+                    hash        TEXT NOT NULL,
+                    name        TEXT NOT NULL,
+                    mime        TEXT NOT NULL,
+                    size        INTEGER NOT NULL,
+                    created_at  INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS attachments_hash ON attachments (hash);
+
+                CREATE TABLE IF NOT EXISTS turn_attachments (
+                    session_id     TEXT NOT NULL,
+                    turn           INTEGER NOT NULL,
+                    position       INTEGER NOT NULL,
+                    attachment_id  TEXT NOT NULL REFERENCES attachments(id),
+                    PRIMARY KEY (session_id, turn, position)
+                );
+                PRAGMA user_version = 5;
+                "#,
+            )?;
         }
 
         Ok(())
@@ -420,10 +466,18 @@ impl Store {
                     "DELETE FROM parts WHERE session_id = ?1 AND turn > ?2",
                     params![session, turn as i64],
                 )?;
+                transaction.execute(
+                    "DELETE FROM turn_attachments WHERE session_id = ?1 AND turn > ?2",
+                    params![session, turn as i64],
+                )?;
             }
             None => {
                 transaction.execute("DELETE FROM turns WHERE session_id = ?1", params![session])?;
                 transaction.execute("DELETE FROM parts WHERE session_id = ?1", params![session])?;
+                transaction.execute(
+                    "DELETE FROM turn_attachments WHERE session_id = ?1",
+                    params![session],
+                )?;
             }
         }
 
@@ -489,6 +543,148 @@ impl Store {
     }
 
     /// Every turn of a session, in order, with its parts in order.
+    /// Copies a file into the blob store and records it. The same bytes under
+    /// the same name are written once; each call gets its own attachment row.
+    pub fn put_attachment(&self, source: &Path) -> Result<StoredAttachment, StoreError> {
+        let blobs = self.blobs.as_ref().ok_or_else(|| {
+            StoreError::Invalid("this store has no attachment directory".to_owned())
+        })?;
+
+        let metadata = std::fs::metadata(source)?;
+        if !metadata.is_file() {
+            return Err(StoreError::Invalid(format!(
+                "{} is not a file",
+                source.display()
+            )));
+        }
+        if metadata.len() > MAX_ATTACHMENT_BYTES {
+            return Err(StoreError::Invalid(format!(
+                "{} is larger than {} MiB",
+                source.display(),
+                MAX_ATTACHMENT_BYTES / (1024 * 1024)
+            )));
+        }
+
+        let name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| !name.is_empty() && *name != "." && *name != "..")
+            .ok_or_else(|| {
+                StoreError::Invalid(format!("{} has no usable file name", source.display()))
+            })?
+            .to_owned();
+
+        let bytes = std::fs::read(source)?;
+        if bytes.len() as u64 > MAX_ATTACHMENT_BYTES {
+            return Err(StoreError::Invalid(format!(
+                "{} grew past {} MiB while being read",
+                source.display(),
+                MAX_ATTACHMENT_BYTES / (1024 * 1024)
+            )));
+        }
+
+        let hash = blake3::hash(&bytes).to_hex().to_string();
+        let directory = blobs.join(&hash);
+        std::fs::create_dir_all(&directory)?;
+        let path = directory.join(&name);
+        if !path.exists() {
+            std::fs::write(&path, &bytes)?;
+        }
+
+        let id = Uuid::new_v4().to_string();
+        let mime = mime_for(&name);
+        let size = bytes.len() as u64;
+        self.connection().execute(
+            "INSERT INTO attachments (id, hash, name, mime, size, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, hash, name, mime, size as i64, now() as i64],
+        )?;
+
+        Ok(StoredAttachment {
+            id,
+            name,
+            mime,
+            size,
+            path,
+        })
+    }
+
+    /// The attachment row and the blob path the provider can read.
+    pub fn attachment(&self, id: &str) -> Result<Option<StoredAttachment>, StoreError> {
+        let Some(blobs) = &self.blobs else {
+            return Ok(None);
+        };
+        let row = self
+            .connection()
+            .query_row(
+                "SELECT hash, name, mime, size FROM attachments WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                    ))
+                },
+            )
+            .optional()?;
+
+        Ok(row.map(|(hash, name, mime, size)| StoredAttachment {
+            id: id.to_owned(),
+            path: blobs.join(hash).join(&name),
+            name,
+            mime,
+            size: size as u64,
+        }))
+    }
+
+    /// Binds the attachments to the turn that carried them, in order.
+    pub fn link_turn_attachments(
+        &self,
+        session: &str,
+        turn: u64,
+        attachments: &[AttachmentSummary],
+    ) -> Result<(), StoreError> {
+        let mut connection = self.connection();
+        let transaction = connection.transaction()?;
+        for (position, attachment) in attachments.iter().enumerate() {
+            transaction.execute(
+                "INSERT OR REPLACE INTO turn_attachments
+                    (session_id, turn, position, attachment_id)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![session, turn as i64, position as i64, attachment.id],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// The attachments of one turn, in the order the user chose them.
+    pub fn turn_attachments(
+        &self,
+        session: &str,
+        turn: u64,
+    ) -> Result<Vec<AttachmentSummary>, StoreError> {
+        let connection = self.connection();
+        let mut statement = connection.prepare(
+            "SELECT a.id, a.name, a.mime, a.size
+               FROM turn_attachments ta
+               JOIN attachments a ON a.id = ta.attachment_id
+              WHERE ta.session_id = ?1 AND ta.turn = ?2
+              ORDER BY ta.position",
+        )?;
+        let rows = statement.query_map(params![session, turn as i64], |row| {
+            Ok(AttachmentSummary {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                mime: row.get(2)?,
+                size: row.get::<_, i64>(3)? as u64,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     pub fn transcript(&self, session: &str) -> Result<Vec<TurnRecord>, StoreError> {
         let connection = self.connection();
         let mut turns = Vec::new();
@@ -504,6 +700,7 @@ impl Store {
                 turn,
                 prompt,
                 parts: Vec::new(),
+                attachments: Vec::new(),
             });
         }
 
@@ -522,6 +719,31 @@ impl Store {
             }
         }
 
+        let mut statement = connection.prepare(
+            "SELECT ta.turn, a.id, a.name, a.mime, a.size
+               FROM turn_attachments ta
+               JOIN attachments a ON a.id = ta.attachment_id
+              WHERE ta.session_id = ?1
+              ORDER BY ta.turn, ta.position",
+        )?;
+        let rows = statement.query_map(params![session], |row| {
+            Ok((
+                row.get::<_, i64>(0)? as u64,
+                AttachmentSummary {
+                    id: row.get(1)?,
+                    name: row.get(2)?,
+                    mime: row.get(3)?,
+                    size: row.get::<_, i64>(4)? as u64,
+                },
+            ))
+        })?;
+        for row in rows {
+            let (turn, attachment) = row?;
+            if let Some(record) = turns.iter_mut().find(|record| record.turn == turn) {
+                record.attachments.push(attachment);
+            }
+        }
+
         Ok(turns)
     }
 
@@ -535,6 +757,44 @@ impl Store {
 
 /// The session title is the first prompt, cut at a word boundary near 60
 /// characters so the sidebar row stays one line.
+/// The MIME type from the extension. Unknown files stay octet-stream so the
+/// core can refuse them instead of guessing.
+fn mime_for(name: &str) -> String {
+    let extension = Path::new(name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    let mime = match extension.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "txt" | "log" => "text/plain",
+        "md" | "markdown" => "text/markdown",
+        "json" => "application/json",
+        "toml" => "application/toml",
+        "yaml" | "yml" => "application/yaml",
+        "xml" => "application/xml",
+        "csv" => "text/csv",
+        "html" | "htm" => "text/html",
+        "css" => "text/css",
+        "rs" => "text/x-rust",
+        "py" => "text/x-python",
+        "js" => "text/javascript",
+        "ts" => "text/typescript",
+        "tsx" => "text/tsx",
+        "jsx" => "text/jsx",
+        "sh" | "bash" | "zsh" => "text/x-shellscript",
+        "sql" => "text/x-sql",
+        _ => "application/octet-stream",
+    };
+
+    mime.to_owned()
+}
+
 fn title_from(prompt: &str) -> String {
     let line = prompt.lines().next().unwrap_or_default().trim();
     if line.chars().count() <= 60 {
@@ -959,6 +1219,49 @@ mod tests {
             store.setting("favorites.model").expect("read"),
             Some(serde_json::json!(["a"]))
         );
+
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn attachments_copy_once_link_to_a_turn_and_survive_a_trim() {
+        let directory = std::env::temp_dir().join(format!("circulo-attach-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("temp dir");
+        let source = directory.join("shot.txt");
+        std::fs::write(&source, "hello").expect("source");
+
+        let store = Store::open(&directory.join("circulo.db")).expect("store");
+        let first = store.put_attachment(&source).expect("first");
+        let second = store.put_attachment(&source).expect("second");
+
+        assert_eq!(first.mime, "text/plain");
+        assert_eq!(std::fs::read_to_string(&first.path).expect("blob"), "hello");
+        assert_ne!(first.id, second.id, "each pick is its own row");
+        assert_eq!(first.path, second.path, "same bytes, one blob");
+
+        store.start_session("s1", None, "demo").expect("session");
+        store.start_turn("s1", 1, "look").expect("turn");
+        let summary = AttachmentSummary {
+            id: first.id.clone(),
+            name: first.name.clone(),
+            mime: first.mime.clone(),
+            size: first.size,
+        };
+        store
+            .link_turn_attachments("s1", 1, std::slice::from_ref(&summary))
+            .expect("link");
+
+        let turns = store.transcript("s1").expect("transcript");
+        assert_eq!(turns[0].attachments, vec![summary]);
+
+        store.trim_turns("s1", None).expect("trim");
+        assert!(store.transcript("s1").expect("empty").is_empty());
+        assert!(
+            store.turn_attachments("s1", 1).expect("links").is_empty(),
+            "the turn link went with the turn"
+        );
+        assert!(first.path.exists(), "the blob stays until a GC lands");
 
         let _ = std::fs::remove_dir_all(&directory);
     }
