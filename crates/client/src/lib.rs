@@ -18,8 +18,8 @@ use std::net::TcpStream;
 use std::collections::BTreeMap;
 
 use circulo_protocol::{
-    ClientRequest, Hello, HistoryTurn, PROTOCOL_VERSION, ProtocolError, QuestionAction,
-    ServerMessage, SessionSummary,
+    ClientRequest, Hello, HistoryTurn, PROTOCOL_VERSION, ProjectSummary, ProtocolError,
+    QuestionAction, ServerMessage, SessionSummary,
 };
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket};
@@ -86,6 +86,49 @@ impl Client {
         loop {
             match self.next_message()? {
                 Some(ServerMessage::Sessions { sessions }) => return Ok(sessions),
+                Some(ServerMessage::Error { message }) => {
+                    return Err(ClientError::Refused(message));
+                }
+                Some(_) => continue,
+                None => return Err(ClientError::Closed),
+            }
+        }
+    }
+
+    /// The folders the user added, for the sidebar.
+    pub fn list_projects(&mut self) -> Result<Vec<ProjectSummary>, ClientError> {
+        send(&mut self.socket, &ClientRequest::ListProjects.encode()?)?;
+        self.wait_projects()
+    }
+
+    /// Adds a folder as a project and returns the refreshed list.
+    pub fn add_project(&mut self, path: &str) -> Result<Vec<ProjectSummary>, ClientError> {
+        send(
+            &mut self.socket,
+            &ClientRequest::AddProject {
+                path: path.to_owned(),
+            }
+            .encode()?,
+        )?;
+        self.wait_projects()
+    }
+
+    /// Removes a project from the list and returns the refreshed list.
+    pub fn remove_project(&mut self, path: &str) -> Result<Vec<ProjectSummary>, ClientError> {
+        send(
+            &mut self.socket,
+            &ClientRequest::RemoveProject {
+                path: path.to_owned(),
+            }
+            .encode()?,
+        )?;
+        self.wait_projects()
+    }
+
+    fn wait_projects(&mut self) -> Result<Vec<ProjectSummary>, ClientError> {
+        loop {
+            match self.next_message()? {
+                Some(ServerMessage::Projects { projects }) => return Ok(projects),
                 Some(ServerMessage::Error { message }) => {
                     return Err(ClientError::Refused(message));
                 }

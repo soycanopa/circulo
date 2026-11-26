@@ -2,8 +2,8 @@
 //! settings. Width and paddings are the measured reference values.
 //!
 //! Sessions come from the database through the daemon, grouped by the day they
-//! were last touched. A row opens its session; `New Task` starts one. What is
-//! still stand-in is the project name and branch in the composer footer.
+//! were last touched. A row shows its title, the project below it, and the time
+//! on the right; the project is chosen in the composer, as in the reference.
 
 use chrono::{DateTime, Datelike, Local, TimeZone};
 use circulo_protocol::SessionSummary;
@@ -22,6 +22,7 @@ pub(crate) fn sidebar(
     theme: &Theme,
     sessions: &[SessionSummary],
     open: &str,
+    working: Option<std::time::Duration>,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement {
     div()
@@ -33,7 +34,7 @@ pub(crate) fn sidebar(
         .bg(theme.sidebar)
         .child(window_controls(theme))
         .child(actions(theme, cx))
-        .child(task_list(theme, sessions, open, cx))
+        .child(task_list(theme, sessions, open, working, cx))
         .child(settings(theme))
 }
 
@@ -95,6 +96,7 @@ fn task_list(
     theme: &Theme,
     sessions: &[SessionSummary],
     open: &str,
+    working: Option<std::time::Duration>,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement {
     let now = Local::now();
@@ -110,7 +112,7 @@ fn task_list(
 
     let sections = groups
         .iter()
-        .map(|(label, rows)| section(theme, label, rows, open, now, cx).into_any_element())
+        .map(|(label, rows)| section(theme, label, rows, open, working, now, cx).into_any_element())
         .collect::<Vec<_>>();
 
     div()
@@ -129,14 +131,13 @@ fn section(
     label: &str,
     sessions: &[&SessionSummary],
     open: &str,
+    working: Option<std::time::Duration>,
     now: DateTime<Local>,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement {
-    let holds_open = sessions.iter().any(|session| session.id == open);
-
     let rows = sessions
         .iter()
-        .map(|session| row(theme, session, open, now, cx).into_any_element())
+        .map(|session| row(theme, session, open, working, now, cx).into_any_element())
         .collect::<Vec<_>>();
 
     div()
@@ -152,11 +153,7 @@ fn section(
                 .px(px(14.))
                 .text_size(px(11.5))
                 .text_color(theme.text_muted)
-                .child(label.to_owned())
-                .child(div().flex_1())
-                .when(holds_open, |row| {
-                    row.child(icon("icons/folder-plus.svg", 14., theme.text_faint))
-                }),
+                .child(label.to_owned()),
         )
         .children(rows)
 }
@@ -165,6 +162,7 @@ fn row(
     theme: &Theme,
     session: &SessionSummary,
     open: &str,
+    working: Option<std::time::Duration>,
     now: DateTime<Local>,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement {
@@ -175,6 +173,13 @@ fn row(
         session.title.clone()
     };
     let project = project_name(session.project.as_deref());
+    let time = if selected {
+        working
+            .map(working_label)
+            .unwrap_or_else(|| ago(session.updated_at, now))
+    } else {
+        ago(session.updated_at, now)
+    };
     let id = session.id.clone();
 
     div()
@@ -205,7 +210,7 @@ fn row(
                 .child(icon("icons/folder.svg", 12., theme.text_faint))
                 .child(project)
                 .child(div().flex_1())
-                .child(ago(session.updated_at, now)),
+                .child(time),
         )
         .when(!selected, |row| {
             row.hover(move |style| style.bg(theme.hover))
@@ -226,7 +231,7 @@ fn settings(theme: &Theme) -> impl IntoElement {
 
 /// The project a session belongs to, as a folder name. Sessions created without
 /// a project say so, as the reference does.
-fn project_name(project: Option<&str>) -> String {
+pub(crate) fn project_name(project: Option<&str>) -> String {
     match project {
         Some(path) => std::path::Path::new(path)
             .file_name()
@@ -254,6 +259,16 @@ fn group_label(updated_at: u64, now: DateTime<Local>) -> String {
         "This Month".to_owned()
     } else {
         format!("{} {}", date.format("%B"), date.year())
+    }
+}
+
+/// The open turn's elapsed time, as the reference writes it in the row.
+fn working_label(elapsed: std::time::Duration) -> String {
+    let seconds = elapsed.as_secs();
+    match seconds {
+        0..=59 => format!("Working {seconds}s"),
+        60..=3_599 => format!("Working {}m", seconds / 60),
+        _ => format!("Working {}h", seconds / 3_600),
     }
 }
 

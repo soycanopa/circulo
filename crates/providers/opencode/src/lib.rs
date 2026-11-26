@@ -159,14 +159,23 @@ impl OpenCode {
     /// restarted daemon a continuation instead of a reset. A key the agent
     /// no longer knows starts a fresh conversation rather than failing the
     /// turn: the new key comes back, the store heals, the transcript stays.
-    fn attach(&self, resume: Option<&str>, ask: &mut dyn Asker) -> Result<Attached, DriverError> {
-        let mut agent = Agent::spawn(&self.binary, &self.cwd)?;
+    ///
+    /// The session's project folder decides the agent's working directory; a
+    /// projectless session uses the driver's configured fallback.
+    fn attach(
+        &self,
+        resume: Option<&str>,
+        cwd: Option<&str>,
+        ask: &mut dyn Asker,
+    ) -> Result<Attached, DriverError> {
+        let cwd = cwd.map(PathBuf::from).unwrap_or_else(|| self.cwd.clone());
+        let mut agent = Agent::spawn(&self.binary, &cwd)?;
         let session = match resume {
-            Some(key) => match load_session(&mut agent, key, &self.cwd, ask) {
+            Some(key) => match load_session(&mut agent, key, &cwd, ask) {
                 Ok(session) => session,
-                Err(_) => open_session(&mut agent, &self.cwd, ask)?,
+                Err(_) => open_session(&mut agent, &cwd, ask)?,
             },
-            None => open_session(&mut agent, &self.cwd, ask)?,
+            None => open_session(&mut agent, &cwd, ask)?,
         };
         let applied = self.overrides().clone();
         let options = self.recall(&mut agent, &session, ask);
@@ -306,7 +315,7 @@ impl Driver for OpenCode {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if slot.is_none() {
-            let attached = self.attach(session_ref.resume, ask)?;
+            let attached = self.attach(session_ref.resume, session_ref.cwd, ask)?;
             // The cancel handle points at the same child, so another thread
             // can ask the agent to stop while this turn holds the slot.
             self.cancels().insert(

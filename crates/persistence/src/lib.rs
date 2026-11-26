@@ -30,8 +30,9 @@ const DATABASE_FILE: &str = "circulo.db";
 /// 1 created the tables. 2 added `sessions.provider_session`, the provider's
 /// own key for a session, so a restart can hand it back and the agent resumes
 /// where it left off. 3 added `settings`, the client's own key/value store —
-/// the model favourites, and whatever the interface remembers next.
-const SCHEMA_VERSION: i64 = 3;
+/// the model favourites, and whatever the interface remembers next. 4 added
+/// `projects`, the folders a session can belong to.
+const SCHEMA_VERSION: i64 = 4;
 
 /// The database path: `CIRCULO_HOME/circulo.db`, or `~/.circulo/circulo.db`.
 ///
@@ -78,6 +79,14 @@ pub struct SessionSummary {
     pub title: String,
     /// Seconds since the Unix epoch, bumped by every turn.
     pub updated_at: u64,
+}
+
+/// A folder the user added, shown in the sidebar and selectable for a new
+/// session. The canonical path is the key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectRecord {
+    pub path: String,
+    pub name: String,
 }
 
 /// One turn of a session, ready to be drawn again.
@@ -183,6 +192,44 @@ impl Store {
                 PRAGMA user_version = 3;
                 "#,
             )?;
+        }
+
+        if version < 4 {
+            // A project is a folder; the path is its key. Existing sessions
+            // already carry one, so the table starts with what they know
+            // instead of an empty sidebar.
+            let transaction = connection.unchecked_transaction()?;
+            transaction.execute_batch(
+                r#"
+                CREATE TABLE IF NOT EXISTS projects (
+                    path        TEXT PRIMARY KEY,
+                    name        TEXT NOT NULL,
+                    created_at  INTEGER NOT NULL
+                );
+                "#,
+            )?;
+
+            let paths = {
+                let mut statement = transaction.prepare(
+                    "SELECT DISTINCT project FROM sessions
+                      WHERE project IS NOT NULL AND project <> ''",
+                )?;
+                statement
+                    .query_map([], |row| row.get::<_, String>(0))?
+                    .collect::<Result<Vec<_>, _>>()?
+            };
+
+            let created = now() as i64;
+            for path in paths {
+                transaction.execute(
+                    "INSERT OR IGNORE INTO projects (path, name, created_at)
+                     VALUES (?1, ?2, ?3)",
+                    params![path, project_name(&path), created],
+                )?;
+            }
+
+            transaction.pragma_update(None, "user_version", 4)?;
+            transaction.commit()?;
         }
 
         Ok(())
@@ -291,6 +338,43 @@ impl Store {
             .optional()?
             .flatten();
         Ok(project)
+    }
+
+    /// The folders the user added, sorted for the sidebar.
+    pub fn projects(&self) -> Result<Vec<ProjectRecord>, StoreError> {
+        let connection = self.connection();
+        let mut statement = connection
+            .prepare("SELECT path, name FROM projects ORDER BY name COLLATE NOCASE, path")?;
+        let rows = statement.query_map([], |row| {
+            Ok(ProjectRecord {
+                path: row.get(0)?,
+                name: row.get(1)?,
+            })
+        })?;
+
+        let mut projects = Vec::new();
+        for row in rows {
+            projects.push(row?);
+        }
+        Ok(projects)
+    }
+
+    /// Adds a project, or refreshes its name when the path is already known.
+    pub fn add_project(&self, path: &str, name: &str) -> Result<(), StoreError> {
+        self.connection().execute(
+            "INSERT INTO projects (path, name, created_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(path) DO UPDATE SET name = excluded.name",
+            params![path, name, now() as i64],
+        )?;
+        Ok(())
+    }
+
+    /// Removes a project from the list. Its sessions stay, and the folder is
+    /// not touched: this is a sidebar entry, not a delete.
+    pub fn remove_project(&self, path: &str) -> Result<(), StoreError> {
+        self.connection()
+            .execute("DELETE FROM projects WHERE path = ?1", params![path])?;
+        Ok(())
     }
 
     /// The provider's own key for this session, from its last turn. `None`
@@ -421,6 +505,15 @@ fn title_from(prompt: &str) -> String {
         Some((head, _)) if head.chars().count() > 30 => format!("{head}…"),
         _ => format!("{cut}…"),
     }
+}
+
+/// The display name of a project folder: its last component, or the whole path
+/// when there is none (`/`).
+fn project_name(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_owned())
 }
 
 fn now() -> u64 {
@@ -628,8 +721,8 @@ mod tests {
                 .expect("schema 1");
             connection
                 .execute(
-                    "INSERT INTO sessions (id, provider, created_at, updated_at)
-                     VALUES ('s1', 'demo', 0, 0)",
+                    "INSERT INTO sessions (id, project, provider, created_at, updated_at)
+                     VALUES ('s1', '/tmp/project', 'demo', 0, 0)",
                     [],
                 )
                 .expect("row");
@@ -638,11 +731,55 @@ mod tests {
         let store = Store::open(&path).expect("open migrates");
         assert_eq!(store.sessions().expect("list")[0].id, "s1", "data survived");
         assert_eq!(store.provider_session("s1").expect("key"), None);
+        assert_eq!(
+            store.projects().expect("projects"),
+            vec![ProjectRecord {
+                path: "/tmp/project".into(),
+                name: "project".into(),
+            }],
+            "the migration backfills projects from the sessions that know one"
+        );
         store
             .set_provider_session("s1", Some("ses_acp_1"))
             .expect("set");
 
         let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn projects_are_added_listed_and_removed() {
+        let store = store();
+
+        store.add_project("/tmp/zeta", "zeta").expect("add zeta");
+        store.add_project("/tmp/alpha", "alpha").expect("add alpha");
+        assert_eq!(
+            store
+                .projects()
+                .expect("list")
+                .into_iter()
+                .map(|project| project.name)
+                .collect::<Vec<_>>(),
+            vec!["alpha", "zeta"],
+            "the sidebar gets a stable order"
+        );
+
+        // Adding the same path again refreshes the name instead of duplicating.
+        store
+            .add_project("/tmp/alpha", "Alpha Renamed")
+            .expect("add again");
+        let projects = store.projects().expect("list");
+        assert_eq!(projects.len(), 2);
+        assert_eq!(projects[0].name, "Alpha Renamed");
+
+        store.remove_project("/tmp/alpha").expect("remove");
+        assert_eq!(
+            store.projects().expect("list"),
+            vec![ProjectRecord {
+                path: "/tmp/zeta".into(),
+                name: "zeta".into(),
+            }],
+            "removing a project does not touch its sessions"
+        );
     }
 
     #[test]

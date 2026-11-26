@@ -2,7 +2,7 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-26, on `main` after PR #45; 118
+Last updated: 2026-11-26, on `feature/projects` after PR #46; 124
 tests green; CI covers fmt + clippy + test on macOS. The model-call tests in
 `tests/real.rs` need OpenCode credit, which this account has none of right now
 (2026-11-23): they fail with "Insufficient balance". The no-model-call load
@@ -111,6 +111,20 @@ in memory only: a daemon restart drops them, and a prompt that never started is
 not in the transcript. Verified in core (FIFO order, remove, clear, steer) and
 through the daemon (`Prompt`/`Steer`/`Queue`/`CancelTurn`).
 
+**Projects**: a project is a canonical folder; a session is located in one. The
+composer's project chip (not a sidebar section) opens the list, `New project…`
+(native picker) and `No project`. Choosing a folder starts or reuses the blank
+session for that folder, carrying the draft; a started session is never
+repointed. `New Task` stays in the current project and reuses its blank task.
+The daemon canonicalizes the path and `AddProject` answers `ProjectAdded` with
+the canonical path before the refreshed `Projects` list. `SessionRef.cwd` gives
+OpenCode a child per session in its own folder; projectless sessions use the
+daemon folder. The sidebar row keeps the reference shape: title, project with a
+folder icon, and the trailing time (`Working Ns` for the open running turn,
+otherwise relative time). Schema v4 adds `projects` and backfills from
+sessions. The table is the picker's list; removing an entry leaves the folder
+and its sessions.
+
 **Storage** (`crates/persistence`, rusqlite bundled): sessions, turns and parts in
 `~/.circulo/circulo.db`; `CIRCULO_HOME` overrides the directory. The core writes
 on every turn; the app reopens the newest session and hydrates its history.
@@ -160,14 +174,13 @@ the app, `CIRCULO_OPENCODE_BIN` points the daemon at that script.
 project-level `permission` config does not change ACP behaviour; the ACP session
 advertises `loadSession: true` (unused so far).
 
-## 3. Next task: projects and a folder picker
+## 3. Next task: Git checkpoints and rewind
 
-Queue and steering landed (2026-11-26): per-session FIFO in the core, `TurnStarted`
-carries the prompt (wire v3), `Steer` = cancel + next prompt, the queue travels
-whole on the wire, and the window can remove an item. Abort landed just before:
-`CancelTurn`, stop button/Escape, per-turn card ownership, ACP `session/cancel`.
-The same work fixed two latent bugs: parts are routed by turn id instead of "the
-last row", and a reopened session keeps its project.
+Projects landed (2026-11-26), following Waku: the composer's project chip picks a
+canonical folder, choosing one starts or reuses the blank session for it, and
+the sidebar row stays title / project / time. `SessionRef.cwd` puts each
+OpenCode child in its session's folder. Queue/steer landed just before (wire v3,
+per-session FIFO, `Steer` = cancel + next prompt), and abort before that.
 
 Session continuity landed (2026-11-23): one agent process per Circulo session,
 the ACP session id in SQLite, `session/load` on restart, mid-turn switches
@@ -177,39 +190,32 @@ still prove, once there is credit: a real two-turn conversation sharing context
 (`a_real_session_resumes_after_a_restart`). Everything else is proven against
 the scripted agent and the real load probe.
 
-**Why projects next:** sessions currently carry an optional project string, but
-nothing creates one: `StartSession` always sends `project: None`, the composer
-footer still reads `mock.rs`, and the OpenCode driver uses one global `cwd`
-(`CIRCULO_PROJECT`) for every session. Git checkpoints need per-session
-worktrees, so projects come first.
+**Why Git next:** projects gave every session a folder, which is the prerequisite
+for worktrees and conversation-aware checkpoints. `crates/git` is still an empty
+scaffold.
 
 **Plan:**
-1. Persistence: a `projects` table (path, name, last opened), `session_project`
-   already exists; `start_session` gets a real project id/path.
-2. Wire: `ListProjects`, `AddProject`/`RemoveProject`, `SessionSummary`/`Project`
-   shapes; `StartSession` carries the project. Adding messages is additive, but
-   `StartSession` and `SessionSummary` may need a version bump if their shape
-   changes.
-3. Driver: `SessionRef` carries the session's `cwd`; `OpenCode` stops holding one
-   process-wide directory and spawns each session's child in its own project.
-4. UI: Add project (folder picker on the client host, loopback today), sidebar
-   grouped by project, real footer (project and branch), the no-project
-   onboarding from `docs/ui.md`.
-5. Verify: two projects, one session each, different cwds; reopen after a daemon
-   restart keeps the project; a projectless session still works.
+1. `crates/git`: a worktree per session when the project is a repo, and a
+   checkpoint that pairs a commit (or tree) with the conversation position.
+2. Core: create the checkpoint at the start of a turn and after it; expose
+   rewind so files and transcript move together.
+3. Wire/UI: a turn context action to rewind, a confirmation for uncommitted
+   work, and the real branch in the composer footer (today it is the mock
+   `main`).
+4. Verify: two sessions in one repo do not share a worktree by accident; rewind
+   restores files and the transcript; a project that is not a repo degrades to
+   "no checkpoints".
 
 ## 4. After that, in plan order
 
-1. **Projects and a folder picker**, above.
-2. **Git checkpoints and rewind** (Phase 3), with `crates/git` still an empty
-   scaffold. It needs per-session worktrees, so projects come first.
-3. **A second provider** (Claude Code or Codex) to prove the Driver trait.
-4. **Clickable links and math** in markdown. Links need GPUI text hit-testing,
+1. **Git checkpoints and rewind** (Phase 3), above.
+2. **A second provider** (Claude Code or Codex) to prove the Driver trait.
+3. **Clickable links and math** in markdown. Links need GPUI text hit-testing,
    which 0.2.2 does not expose: either keep the text layout plus element bounds,
    or build an inline layout from word-sized elements.
-5. **Attachments blob store**, the piece `docs/implement.md` Phase 1 still
+4. **Attachments blob store**, the piece `docs/implement.md` Phase 1 still
    leaves open inside persistence.
-6. **Remote/pairing** (`docs/remote.md`): QR with a saved tailcat key + `--allow`;
+5. **Remote/pairing** (`docs/remote.md`): QR with a saved tailcat key + `--allow`;
    the desktop owns the tunnel. `tailcat` is not installed here. Open question:
    what the QR payload carries.
 
@@ -217,15 +223,15 @@ worktrees, so projects come first.
 
 | Crate | Role |
 |---|---|
-| `crates/protocol` | Wire contract, version 3: `Hello`, `ClientRequest` (+`SetOption`, `CancelTurn`, `Steer`, `RemoveQueued`), `ServerMessage` (+`Options`, `Settings`, `Queue`), `TurnStarted` with the prompt, `Part`, `PermissionRequest`, `Question`, `ConfigOption`, `QueuedPrompt`, `SessionSummary`, `HistoryTurn`. One JSON per WebSocket text frame; unknown types skipped. |
-| `crates/core` | Sessions, turn orchestration, one FIFO queue per session drained by a worker, the permission/question broker (entries owned by session + turn), translation between storage and wire, carrying provider session keys both ways, abort and steer routing. Speaks only the Driver trait. |
-| `crates/persistence` | SQLite: sessions (+ provider key), turns, parts; schema v2. Owned by the core; nobody else opens it. |
+| `crates/protocol` | Wire contract, version 3: `Hello`, `ClientRequest` (+`SetOption`, `CancelTurn`, `Steer`, `RemoveQueued`, `ListProjects`, `AddProject`, `RemoveProject`), `ServerMessage` (+`Options`, `Settings`, `Queue`, `Projects`, `ProjectAdded`), `TurnStarted` with the prompt, `Part`, `PermissionRequest`, `Question`, `ConfigOption`, `QueuedPrompt`, `ProjectSummary`, `SessionSummary`, `HistoryTurn`. One JSON per WebSocket text frame; unknown types skipped. |
+| `crates/core` | Sessions, turn orchestration, one FIFO queue per session drained by a worker, the permission/question broker (entries owned by session + turn), the project list (canonical paths), translation between storage and wire, carrying provider session keys both ways, abort and steer routing. Speaks only the Driver trait. |
+| `crates/persistence` | SQLite: sessions (+ provider key, project path), turns, parts, settings, projects; schema v4. Owned by the core; nobody else opens it. |
 | `crates/daemon` | Loopback WebSocket, token handshake, reader + writer per connection, provider chosen by `CIRCULO_PROVIDER`, database from `CIRCULO_HOME`, one queue worker per session, clear-and-abort on connection close, clean shutdown on stdin EOF. |
 | `crates/client` | Handshake, blocking read loop, a splittable writer half, `prompt`/`steer`/`remove_queued`/`cancel_turn`. No GPUI. |
-| `crates/providers/driver` | `Driver { name, start_turn(SessionRef, prompt, ask, emit) -> Option<key>, cancel(session), options(session), set_option(session, id, value), shutdown() }` and `Asker { permission, question }`. `DriverError` carries whether the turn was cancelled, so the core can report `Aborted` instead of `Failed`. |
+| `crates/providers/driver` | `Driver { name, start_turn(SessionRef, prompt, ask, emit) -> Option<key>, cancel(session), options(session), set_option(session, id, value), shutdown() }`, `SessionRef { id, resume, cwd }`, and `Asker { permission, question }`. `DriverError` carries whether the turn was cancelled, so the core can report `Aborted` instead of `Failed`. |
 | `crates/providers/demo` | Canned turn, no auth. |
-| `crates/providers/opencode` | ACP over stdio; one agent process per Circulo session; `session/load` resume with self-healing fallback; permission and elicitation mapped to cards; `configOptions` applied live, queued mid-turn; a shared stdin handle sends `session/cancel` when the turn owns the slot. |
-| `crates/ui` | GPUI views and presentation state: shell, sidebar, transcript, markdown, composer, input, cards. |
+| `crates/providers/opencode` | ACP over stdio; one agent process per Circulo session, spawned in the session's project folder; `session/load` resume with self-healing fallback; permission and elicitation mapped to cards; `configOptions` applied live, queued mid-turn; a shared stdin handle sends `session/cancel` when the turn owns the slot. |
+| `crates/ui` | GPUI views and presentation state: shell, sidebar (title/project/time rows), transcript, markdown, composer (project chip and queue), input, cards. |
 | `crates/app` | Composition root + supervisor: spawns the daemon, connects, reopens the last session, opens the window; quit closes stdin and waits before killing. |
 
 Dependency direction is one way. The UI never imports a provider or the core.
@@ -275,6 +281,19 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   `session/prompt` with the same context. A provider that cannot abort falls
   back to running it after the current turn. A closing connection clears its
   queues and aborts its turn.
+- **A project is a canonical folder, chosen in the composer**: the sidebar row
+  stays title / project / time, as in Waku, and the project chip in the composer
+  is the picker. Choosing a folder starts or reuses the blank session for that
+  folder; a started session is never repointed. `New Task` stays in the current
+  project and reuses its blank task. The project list is not a sidebar section.
+- **`ProjectAdded` carries the canonical path**: the picker's path and the
+  stored path can differ (`/tmp` vs `/private/tmp`), so the daemon answers with
+  the path it actually stored before the refreshed list, and the client starts
+  the session there.
+- **`SessionRef.cwd` is the session's project**: one OpenCode child per session
+  in its folder; a projectless session falls back to the daemon's folder.
+  `options`/`set_option` keep the fallback because they only discover/apply
+  agent-global settings, and the stored overrides land on the next real turn.
 - **Mid-turn switches queue to the turn's end**: the picker updates at once
   (promised value), the agent reads it from the next turn. A live, idle
   session applies directly.
@@ -305,6 +324,12 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   it is a redirect, not an injection into the running turn.
 - History stores prompts and parts, not the finish reason: reopening a session
   shows every stored turn as `Worked`, including one that was stopped.
+- The branch in the composer footer is still the mock `main`; Git checkpoints
+  bring the real one. The project chip next to it is real and is the picker.
+- Blank sessions are reused per project (as in Waku), but there is no delete
+  session yet: a blank task for a project the user abandoned stays in the list.
+- `RemoveProject` exists on the wire; the composer menu does not expose removal
+  yet. Removing a project never touches its folder or its sessions.
 - Links render in the accent colour and are not clickable (no hit-testing in
   GPUI 0.2.2).
 - Light theme values are approximations; this machine is dark.
@@ -317,7 +342,9 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
 `docs/`: `prd.md`, `trd.md`, `ux.md`, `ui.md` (tokens, components, transcript
 rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
 `permissions.md` (cards: reference design, ACP contract, wire, failure modes),
-`providers/opencode.md` (ACP, continuity, cancellation), `remote.md`.
+`projects.md` (canonical folders, composer picker, per-session cwd),
+`providers/opencode.md` (ACP, continuity, project folder, cancellation),
+`remote.md`.
 
 ## 10. Repo flow (do not skip)
 
@@ -325,5 +352,6 @@ rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
   Never push to `main`.
 - Commit messages `type(scope): summary`; one logical change per commit.
 - Docs travel with the change.
-- The queue/steer branch merged as PR #45; `origin/main` is the truth, and the
-  next branch starts from it.
+- The current worktree is `feature/projects` (canonical folders, composer
+  project chip, per-session cwd), not yet merged; `origin/main` is the truth,
+  and the next branch starts from it.

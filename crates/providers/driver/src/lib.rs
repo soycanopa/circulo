@@ -28,13 +28,20 @@ pub struct SessionRef<'a> {
     /// if any. A provider that remembers its sessions uses it to resume the
     /// same conversation after a restart.
     pub resume: Option<&'a str>,
+    /// The folder this session's agent runs in: the project's canonical path,
+    /// or `None` for a projectless session, where the provider falls back to
+    /// its configured directory.
+    pub cwd: Option<&'a str>,
 }
 
 impl<'a> SessionRef<'a> {
-    /// A session with nothing to resume: its first turn, or a provider that
-    /// keeps no session of its own.
+    /// A session with nothing to resume and no project folder.
     pub fn new(id: &'a str) -> Self {
-        Self { id, resume: None }
+        Self {
+            id,
+            resume: None,
+            cwd: None,
+        }
     }
 }
 

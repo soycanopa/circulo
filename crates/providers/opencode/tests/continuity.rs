@@ -490,6 +490,7 @@ fn a_restarted_driver_resumes_the_stored_session() {
             SessionRef {
                 id: "s1",
                 resume: Some(&key),
+                cwd: None,
             },
             "go",
             &mut ask,
@@ -526,6 +527,7 @@ fn a_lost_session_starts_fresh_rather_than_failing() {
             SessionRef {
                 id: "s1",
                 resume: Some("gone"),
+                cwd: None,
             },
             "go",
             &mut ask,

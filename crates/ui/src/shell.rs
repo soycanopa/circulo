@@ -10,12 +10,12 @@ use std::rc::Rc;
 
 use async_channel::{Receiver, Sender};
 use circulo_protocol::{
-    ClientRequest, ConfigOption, HistoryTurn, QuestionAction, QueuedPrompt, ServerMessage,
-    SessionSummary,
+    ClientRequest, ConfigOption, HistoryTurn, ProjectSummary, QuestionAction, QueuedPrompt,
+    ServerMessage, SessionSummary,
 };
 use gpui::{
-    Context, FocusHandle, IntoElement, KeyDownEvent, ListState, Pixels, Point, Render, Window, div,
-    prelude::*, px,
+    Context, FocusHandle, IntoElement, KeyDownEvent, ListState, PathPromptOptions, Pixels, Point,
+    Render, Window, div, prelude::*, px,
 };
 use serde_json::Value;
 
@@ -24,8 +24,9 @@ use serde_json::Value;
 const FAVORITES_KEY: &str = "favorites.model";
 
 use crate::composer::{
-    ChooseHandler, EditHandler, EffortHandler, Field, KeyHandler, Pickers, RemoveHandler,
-    SendHandler, StarHandler, StopHandler, TabHandler, ToggleHandler, composer, queued,
+    ChooseHandler, EditHandler, EffortHandler, Field, KeyHandler, Pickers, ProjectActionHandler,
+    ProjectChooseHandler, ProjectPicker, ProjectToggleHandler, RemoveHandler, SendHandler,
+    StarHandler, StopHandler, TabHandler, ToggleHandler, composer, queued,
 };
 use crate::input::TextInput;
 use crate::live::{Card, Transcript};
@@ -34,7 +35,7 @@ use crate::permission::{Answer, permission_card};
 use crate::question::{
     Draft, Handlers, QuestionEvent, QuestionHandler, TextKeyHandler, question_card,
 };
-use crate::sidebar::sidebar;
+use crate::sidebar::{project_name, sidebar};
 use crate::theme::Theme;
 use crate::transcript::{new_list_state, transcript};
 
@@ -94,6 +95,17 @@ pub struct Shell {
     /// Prompts waiting for the running turn, oldest first, as the daemon
     /// reports them. Presentation only: the daemon owns the real queue.
     queued: Vec<QueuedPrompt>,
+    /// The folders the user added, as the daemon reports them. The composer's
+    /// project chip draws them; the sidebar does not.
+    projects: Vec<ProjectSummary>,
+    /// The folder the open session lives in, canonical. It updates as soon as
+    /// a project is chosen, before the session list catches up, so the chip and
+    /// `New Task` never fall back to "No project" by accident.
+    current_project: Option<String>,
+    /// Whether the composer's project menu is open.
+    project_open: bool,
+    /// A folder picker is open; the next `ProjectAdded` starts a session there.
+    adding_project: bool,
     /// Where each picker chip sits, measured by its canvas every frame and
     /// read by the open menu the next one. Lives on the shell so the value
     /// survives the frame that wrote it — a fresh cell per render would only
@@ -117,6 +129,11 @@ impl Shell {
 
         let mut transcript = Transcript::default();
         transcript.hydrate(history);
+
+        let current_project = sessions
+            .iter()
+            .find(|summary| summary.id == session)
+            .and_then(|summary| summary.project.clone());
 
         let shell = Self {
             workspace: mock::workspace(),
@@ -142,12 +159,18 @@ impl Shell {
             daemon,
             favorites: Vec::new(),
             queued: Vec::new(),
+            projects: Vec::new(),
+            current_project,
+            project_open: false,
+            adding_project: false,
             picker_anchors: Rc::new(Cell::new(BTreeMap::new())),
         };
 
         // The client's own settings: the pickers want their favourites before
         // the first model menu opens.
         shell.request(ClientRequest::GetSettings);
+        // The folders the user added; the sidebar draws them before any click.
+        shell.request(ClientRequest::ListProjects);
 
         // A development hook, like CIRCULO_PROMPT: open one picker at startup
         // so a test can see a menu without a click. It opens on a timer, not
@@ -245,12 +268,30 @@ impl Shell {
 
         match message {
             ServerMessage::Sessions { sessions } => {
+                if let Some(summary) = sessions.iter().find(|summary| summary.id == self.session) {
+                    self.current_project = summary.project.clone();
+                }
                 self.sessions = sessions;
+            }
+            ServerMessage::Projects { projects } => {
+                self.projects = projects;
+            }
+            ServerMessage::ProjectAdded { path } => {
+                // The folder picker's answer: the daemon accepted it and
+                // canonicalized it, so this is the path a session must carry.
+                if self.adding_project {
+                    self.adding_project = false;
+                    self.current_project = Some(path.clone());
+                    self.request(ClientRequest::StartSession {
+                        project: Some(path),
+                    });
+                }
             }
             ServerMessage::SessionStarted { session } => {
                 self.session = session;
                 self.transcript = Transcript::default();
                 self.queued.clear();
+                self.project_open = false;
                 self.clear_options();
                 self.request(ClientRequest::ListSessions);
             }
@@ -275,10 +316,14 @@ impl Shell {
                 }
             }
             ServerMessage::History { session, turns } => {
+                if let Some(summary) = self.sessions.iter().find(|summary| summary.id == session) {
+                    self.current_project = summary.project.clone();
+                }
                 self.session = session;
                 self.transcript = Transcript::default();
                 self.transcript.hydrate(turns);
                 self.queued.clear();
+                self.project_open = false;
                 self.clear_options();
             }
             ServerMessage::Settings { settings } => {
@@ -301,14 +346,53 @@ impl Shell {
                 // The turn changed the title and the order of the list.
                 self.request(ClientRequest::ListSessions);
             }
+            other @ ServerMessage::Error { .. } => {
+                // A failed add must not leave the next project list looking
+                // like a picker answer.
+                self.adding_project = false;
+                self.transcript.apply(other);
+            }
             other => self.transcript.apply(other),
         }
     }
 
-    /// Starts a session. The daemon answers with `SessionStarted`.
-    pub(crate) fn new_session(&mut self, cx: &mut Context<Self>) {
-        self.request(ClientRequest::StartSession { project: None });
+    /// Opens the unstarted session that already lives in `project`, or starts
+    /// one. The reference reuses a blank task for the same project instead of
+    /// stacking empty rows; a task with a prompt is never reused.
+    fn open_or_start(&mut self, project: Option<String>, cx: &mut Context<Self>) {
+        if self.current_project == project
+            && self.transcript.turns.is_empty()
+            && !self.transcript.status.running
+        {
+            // Already the blank task for this project. Still repaint: the
+            // project menu may have just closed.
+            cx.notify();
+            return;
+        }
+
+        let draft = self
+            .sessions
+            .iter()
+            .find(|session| {
+                session.project.as_deref() == project.as_deref() && session.title.is_empty()
+            })
+            .map(|session| session.id.clone());
+
+        match draft {
+            Some(session) => self.request(ClientRequest::OpenSession { session }),
+            None => self.request(ClientRequest::StartSession {
+                project: project.clone(),
+            }),
+        }
+        self.current_project = project;
         cx.notify();
+    }
+
+    /// Starts a session in the project the open session lives in. A blank task
+    /// for that project is reused, as in the reference.
+    pub(crate) fn new_session(&mut self, cx: &mut Context<Self>) {
+        let project = self.current_project.clone();
+        self.open_or_start(project, cx);
     }
 
     /// Opens a stored session. The daemon answers with its history.
@@ -318,6 +402,56 @@ impl Shell {
         }
         self.request(ClientRequest::OpenSession { session: id });
         cx.notify();
+    }
+
+    /// Opens or closes the composer's project menu.
+    pub(crate) fn toggle_project(&mut self, cx: &mut Context<Self>) {
+        self.project_open = !self.project_open;
+        if self.project_open {
+            self.close_picker();
+        }
+        cx.notify();
+    }
+
+    /// Choosing a project starts or reuses a session located in it, carrying
+    /// the draft. It never mutates the running session's working directory.
+    pub(crate) fn choose_project(&mut self, path: String, cx: &mut Context<Self>) {
+        self.project_open = false;
+        self.open_or_start(Some(path), cx);
+    }
+
+    /// The no-project row: a session with no folder.
+    pub(crate) fn choose_no_project(&mut self, cx: &mut Context<Self>) {
+        self.project_open = false;
+        self.open_or_start(None, cx);
+    }
+
+    /// Opens the native folder picker. The daemon canonicalizes the folder and
+    /// answers `ProjectAdded`; that answer starts the session in it.
+    pub(crate) fn add_project(&mut self, cx: &mut Context<Self>) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("Add project".into()),
+        });
+        self.project_open = false;
+
+        cx.spawn(async move |this, cx| {
+            // The receiver yields `Result<Result<Option<Vec<PathBuf>>>, _>`:
+            // the platform may refuse, and the user may cancel.
+            if let Ok(Ok(Some(mut paths))) = picked.await
+                && let Some(path) = paths.pop()
+            {
+                let path = path.to_string_lossy().into_owned();
+                let _ = this.update(cx, |shell, cx| {
+                    shell.adding_project = true;
+                    shell.request(ClientRequest::AddProject { path });
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
     }
 
     fn request(&self, request: ClientRequest) {
@@ -487,6 +621,12 @@ impl Shell {
 
         if key == "escape" && self.open_picker.is_some() {
             self.close_picker();
+            cx.notify();
+            return;
+        }
+
+        if key == "escape" && self.project_open {
+            self.project_open = false;
             cx.notify();
             return;
         }
@@ -680,6 +820,10 @@ impl Render for Shell {
             .filter(|title| !title.is_empty())
             .unwrap_or_else(|| "New session".to_owned());
 
+        // The footer describes the open session, not a project selected
+        // somewhere else; the chip follows `StartSession` at once.
+        let project = project_name(self.current_project.as_deref());
+
         // The composer has the keyboard unless a card is asking.
         if self.focus_composer {
             self.focus_composer = false;
@@ -816,6 +960,22 @@ impl Render for Shell {
                         shell.choose_model_effort(model, effort, value, cx)
                     });
                 });
+                let shell = cx.entity();
+                let on_project_toggle: ProjectToggleHandler = Rc::new(move |_window, cx| {
+                    shell.update(cx, |shell, cx| shell.toggle_project(cx));
+                });
+                let shell = cx.entity();
+                let on_project_choose: ProjectChooseHandler = Rc::new(move |path, _window, cx| {
+                    shell.update(cx, |shell, cx| shell.choose_project(path, cx));
+                });
+                let shell = cx.entity();
+                let on_project_new: ProjectActionHandler = Rc::new(move |_window, cx| {
+                    shell.update(cx, |shell, cx| shell.add_project(cx));
+                });
+                let shell = cx.entity();
+                let on_project_none: ProjectActionHandler = Rc::new(move |_window, cx| {
+                    shell.update(cx, |shell, cx| shell.choose_no_project(cx));
+                });
                 let focused = self.composer_focus.is_focused(window);
 
                 column.child(composer(
@@ -845,6 +1005,17 @@ impl Render for Shell {
                         on_send,
                         on_stop,
                     },
+                    &project,
+                    ProjectPicker {
+                        projects: &self.projects,
+                        current: self.current_project.as_deref(),
+                        open: self.project_open,
+                        anchors: Rc::clone(&self.picker_anchors),
+                        on_toggle: on_project_toggle,
+                        on_choose: on_project_choose,
+                        on_new: on_project_new,
+                        on_none: on_project_none,
+                    },
                 ))
             });
 
@@ -852,7 +1023,13 @@ impl Render for Shell {
             .flex()
             .size_full()
             .text_color(theme.text)
-            .child(sidebar(&theme, &self.sessions, &self.session, cx))
+            .child(sidebar(
+                &theme,
+                &self.sessions,
+                &self.session,
+                self.transcript.working_for(),
+                cx,
+            ))
             .child(main)
     }
 }

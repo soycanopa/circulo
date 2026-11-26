@@ -19,8 +19,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use circulo_persistence::{Store, StoreError};
 use circulo_protocol::{
-    ConfigOption, FinishReason, HistoryTurn, PermissionRequest, Question, QuestionAction,
-    QueuedPrompt, ServerMessage, SessionSummary,
+    ConfigOption, FinishReason, HistoryTurn, PermissionRequest, ProjectSummary, Question,
+    QuestionAction, QueuedPrompt, ServerMessage, SessionSummary,
 };
 use circulo_provider::{Answer, Asker, Decision, Driver, SessionRef};
 use serde_json::Value;
@@ -111,6 +111,59 @@ impl Core {
                 updated_at: session.updated_at,
             })
             .collect())
+    }
+
+    /// The folders the user added, as the sidebar draws them. A memory-only
+    /// core has none.
+    pub fn projects(&self) -> Result<Vec<ProjectSummary>, StoreError> {
+        let Some(store) = &self.store else {
+            return Ok(Vec::new());
+        };
+        Ok(store
+            .projects()?
+            .into_iter()
+            .map(|project| ProjectSummary {
+                path: project.path,
+                name: project.name,
+            })
+            .collect())
+    }
+
+    /// Adds a folder as a project. The daemon owns the filesystem, so the path
+    /// is canonicalized and checked here; a path that is not a directory is an
+    /// honest error to the client. Returns the whole list, the way the wire
+    /// answers.
+    pub fn add_project(&self, path: &str) -> Result<(String, Vec<ProjectSummary>), String> {
+        let Some(store) = &self.store else {
+            return Err("this daemon has no project store".to_owned());
+        };
+        let canonical =
+            std::fs::canonicalize(path).map_err(|error| format!("cannot open {path}: {error}"))?;
+        if !canonical.is_dir() {
+            return Err(format!("{} is not a folder", canonical.display()));
+        }
+        let name = canonical
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| canonical.to_string_lossy().into_owned());
+        let canonical = canonical.to_string_lossy().into_owned();
+        store
+            .add_project(&canonical, &name)
+            .map_err(|error| error.to_string())?;
+        let projects = self.projects().map_err(|error| error.to_string())?;
+        Ok((canonical, projects))
+    }
+
+    /// Removes a project from the list. The folder and its sessions stay:
+    /// this is a sidebar entry, not a delete.
+    pub fn remove_project(&self, path: &str) -> Result<Vec<ProjectSummary>, String> {
+        let Some(store) = &self.store else {
+            return Err("this daemon has no project store".to_owned());
+        };
+        store
+            .remove_project(path)
+            .map_err(|error| error.to_string())?;
+        self.projects().map_err(|error| error.to_string())
     }
 
     /// Opens a session that already exists in the database so a client can
@@ -476,10 +529,18 @@ impl Core {
             Some(store) => store.provider_session(session).ok().flatten(),
             None => None,
         };
+        // The project is the folder the agent runs in. A session without one
+        // leaves the provider on its configured fallback.
+        let project = self
+            .open_sessions()
+            .iter()
+            .find(|open| open.id == session)
+            .and_then(|open| open.project.clone());
         let result = self.driver.start_turn(
             SessionRef {
                 id: session,
                 resume: resume.as_deref(),
+                cwd: project.as_deref(),
             },
             prompt,
             &mut asker,
@@ -672,6 +733,44 @@ mod tests {
             emit(Part::Text {
                 delta: prompt.to_owned(),
             });
+            Ok(None)
+        }
+
+        fn options(&self, _: &str) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Ok(Vec::new())
+        }
+
+        fn set_option(
+            &self,
+            _: &str,
+            _id: &str,
+            _value: &str,
+        ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Err(DriverError::new("this agent has no settings"))
+        }
+    }
+
+    /// A driver that records the folder each turn was given.
+    struct SeesCwd {
+        seen: Arc<Mutex<Vec<Option<String>>>>,
+    }
+
+    impl Driver for SeesCwd {
+        fn name(&self) -> &'static str {
+            "sees-cwd"
+        }
+
+        fn start_turn(
+            &self,
+            session: SessionRef<'_>,
+            _: &str,
+            _: &mut dyn Asker,
+            _: &mut dyn FnMut(Part),
+        ) -> Result<Option<String>, DriverError> {
+            self.seen
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(session.cwd.map(str::to_owned));
             Ok(None)
         }
 
@@ -950,6 +1049,65 @@ mod tests {
             Some("/tmp/project"),
             "a reopened session keeps the project it was created in"
         );
+    }
+
+    #[test]
+    fn the_session_project_is_the_drivers_cwd() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let core = core_with(Arc::new(SeesCwd {
+            seen: Arc::clone(&seen),
+        }));
+
+        let project = core.start_session(Some("/tmp/project".into()));
+        core.run_turn(&project, "go", |_| {});
+        let projectless = core.start_session(None);
+        core.run_turn(&projectless, "go", |_| {});
+
+        let seen = seen.lock().unwrap_or_else(PoisonError::into_inner);
+        assert_eq!(
+            seen.as_slice(),
+            &[Some("/tmp/project".to_owned()), None],
+            "the provider sees the project folder, and no folder when there is none"
+        );
+    }
+
+    #[test]
+    fn projects_are_added_with_a_real_folder_and_removed() {
+        let directory =
+            std::env::temp_dir().join(format!("circulo-core-project-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).expect("temp project");
+        let canonical = std::fs::canonicalize(&directory).expect("canonical");
+
+        let store = Arc::new(circulo_persistence::Store::in_memory().expect("store"));
+        let core = Core::with_store(Arc::new(Echo), Some(store));
+
+        let (added, projects) = core
+            .add_project(directory.to_str().expect("utf-8"))
+            .expect("add");
+        assert_eq!(added, canonical.to_string_lossy());
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].path, canonical.to_string_lossy());
+        assert_eq!(
+            projects[0].name,
+            directory.file_name().expect("name").to_string_lossy()
+        );
+
+        // A path that is not a folder, and a missing one, are refused.
+        let file = directory.join("file.txt");
+        std::fs::write(&file, "x").expect("file");
+        assert!(core.add_project(file.to_str().expect("utf-8")).is_err());
+        assert!(core.add_project("/definitely/not/here").is_err());
+
+        core.remove_project(&projects[0].path).expect("remove");
+        assert!(core.projects().expect("list").is_empty());
+        std::fs::remove_dir_all(&directory).expect("cleanup");
+    }
+
+    #[test]
+    fn a_memory_only_core_refuses_to_store_a_project() {
+        let core = Core::new(Arc::new(Echo));
+        assert!(core.add_project("/tmp").is_err());
+        assert!(core.projects().expect("list").is_empty());
     }
 
     #[test]

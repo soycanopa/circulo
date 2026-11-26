@@ -26,6 +26,7 @@ const AGENT: &str = r#"
 import json, os, sys
 
 MODE = os.environ.get("FAKE_ACP_MODE", "permission")
+CWD = ""
 
 CONFIG = {
     "model": {"name": "Model",
@@ -61,6 +62,7 @@ for line in sys.stdin:
     elif method == "session/new":
         for key, value in DEFAULTS.items():
             CONFIG[key]["current"] = value
+        CWD = message.get("params", {}).get("cwd", "")
         send({"jsonrpc": "2.0", "id": message["id"],
               "result": {"sessionId": "s1", "configOptions": config_options()}})
     elif method == "session/set_config_option":
@@ -74,6 +76,13 @@ for line in sys.stdin:
             entry["current"] = params["value"]
             send({"jsonrpc": "2.0", "id": message["id"],
                   "result": {"configOptions": config_options()}})
+    elif method == "session/prompt" and MODE == "cwd":
+        send({"jsonrpc": "2.0", "method": "session/update",
+              "params": {"sessionId": "s1",
+                         "update": {"sessionUpdate": "agent_message_chunk",
+                                    "content": {"type": "text", "text": "cwd=" + CWD}}}})
+        send({"jsonrpc": "2.0", "id": message["id"],
+              "result": {"stopReason": "end_turn"}})
     elif method == "session/prompt" and MODE == "cancel":
         prompt = message["id"]
         send({"jsonrpc": "2.0", "method": "session/update",
@@ -381,6 +390,53 @@ fn a_cancelled_turn_reads_as_cancelled_not_as_a_failure() {
     );
     assert_eq!(text(&parts), "working", "parts already sent stay");
     thread.join().expect("the turn thread");
+}
+
+#[test]
+fn the_session_folder_reaches_the_agent() {
+    let agent = ScriptedAgent::with_mode("cwd", "cwd");
+    let project = agent.directory.join("project");
+    fs::create_dir_all(&project).expect("project folder");
+    let driver = OpenCode::with_binary(agent.directory.clone(), agent.binary());
+    let mut asker = Picks {
+        option: None,
+        choice: None,
+        note: None,
+        asked: Vec::new(),
+        questions: Vec::new(),
+    };
+
+    let mut parts: Vec<Part> = Vec::new();
+    driver
+        .start_turn(
+            SessionRef {
+                id: "s1",
+                resume: None,
+                cwd: project.to_str(),
+            },
+            "go",
+            &mut asker,
+            &mut |part| parts.push(part),
+        )
+        .expect("turn");
+    assert_eq!(
+        text(&parts),
+        format!("cwd={}", project.display()),
+        "the agent starts in the session's project"
+    );
+
+    // A projectless session falls back to the driver's configured folder.
+    let mut parts: Vec<Part> = Vec::new();
+    driver
+        .start_turn(SessionRef::new("s2"), "go", &mut asker, &mut |part| {
+            parts.push(part)
+        })
+        .expect("turn");
+    assert_eq!(
+        text(&parts),
+        format!("cwd={}", agent.directory.display()),
+        "no project keeps the daemon's folder"
+    );
 }
 
 /// A driver and the scripted agent it spawns. The agent stays alive for the

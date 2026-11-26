@@ -84,6 +84,13 @@ pub enum ClientRequest {
     /// Continue a session the database already holds. The daemon answers with
     /// its history.
     OpenSession { session: String },
+    /// The folders the user added, for the sidebar and the next session.
+    ListProjects,
+    /// Add a folder as a project. The daemon canonicalizes it and answers with
+    /// the whole `Projects` list; a path that is not a directory is an error.
+    AddProject { path: String },
+    /// Drop a project from the list. Its sessions and the folder stay.
+    RemoveProject { path: String },
     /// Apply one of the agent's own settings. The daemon answers with
     /// `Options` carrying the refreshed list, or `Error` when the session is
     /// unknown or the agent refuses the choice.
@@ -124,6 +131,9 @@ const CLIENT_TYPES: &[&str] = &[
     "answer_question",
     "list_sessions",
     "open_session",
+    "list_projects",
+    "add_project",
+    "remove_project",
     "set_option",
     "get_settings",
     "set_setting",
@@ -138,6 +148,8 @@ const SERVER_TYPES: &[&str] = &[
     "question_asked",
     "queue",
     "sessions",
+    "projects",
+    "project_added",
     "history",
     "options",
     "settings",
@@ -200,6 +212,18 @@ pub enum ServerMessage {
     Sessions {
         sessions: Vec<SessionSummary>,
     },
+    /// The folders the user added, the whole list. The daemon answers
+    /// `ListProjects`, `AddProject` and `RemoveProject` with this, so the
+    /// sidebar draws what is stored.
+    Projects {
+        projects: Vec<ProjectSummary>,
+    },
+    /// The folder an `AddProject` actually stored: the daemon canonicalized
+    /// it, so this is the path a session must carry. Sent just before the
+    /// refreshed `Projects` list.
+    ProjectAdded {
+        path: String,
+    },
     /// A stored transcript, so a client can draw a session again. Its parts are
     /// history, not a live turn: nothing is streaming.
     History {
@@ -231,6 +255,14 @@ pub struct QueuedPrompt {
     pub id: String,
     /// The user text, shown as-is.
     pub text: String,
+}
+
+/// A folder the user added. The canonical path is the key; the name is the
+/// folder's last component, for the sidebar.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectSummary {
+    pub path: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -520,6 +552,15 @@ mod tests {
                     updated_at: 1_763_000_000,
                 }],
             },
+            ServerMessage::Projects {
+                projects: vec![ProjectSummary {
+                    path: "/tmp/project".into(),
+                    name: "project".into(),
+                }],
+            },
+            ServerMessage::ProjectAdded {
+                path: "/tmp/project".into(),
+            },
             ServerMessage::History {
                 session: "s1".into(),
                 turns: vec![HistoryTurn {
@@ -587,6 +628,13 @@ mod tests {
             },
             ClientRequest::CancelTurn {
                 session: "s1".into(),
+            },
+            ClientRequest::ListProjects,
+            ClientRequest::AddProject {
+                path: "/tmp/project".into(),
+            },
+            ClientRequest::RemoveProject {
+                path: "/tmp/project".into(),
             },
             ClientRequest::SetOption {
                 session: "s1".into(),
