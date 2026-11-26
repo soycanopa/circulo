@@ -9,11 +9,11 @@ lifecycle without a model call.
 
 ## 0. Handoff in one minute
 
-- **State:** `main` is clean after the usage slice; fmt, clippy and tests are
-  green. No feature branch is open.
+- **State:** `main` is clean after the display-math slice; fmt, clippy and tests
+  are green. No feature branch is open.
 - **Next task:** attachments (§4), then remote, then the inline math layout.
-- **Backlog:** §4, ordered. The big remaining v1.0 pieces are markdown
-  links/math, attachments and remote.
+- **Backlog:** §4, ordered. The big remaining v1.0 pieces are attachments,
+  remote and the inline math layout.
 - **Run it:** `cargo run -p circulo` (demo, no auth) or
   `CIRCULO_PROVIDER=opencode CIRCULO_PROJECT="$PWD" cargo run -p circulo`, or
   `CIRCULO_PROVIDER=codex …` when the Codex CLI is installed. Checks and UI
