@@ -60,8 +60,13 @@ agent proves the lifecycle.
   (superscript refs, numbered list at the end, dangling refs stay literal), bold,
   italic, inline code, strikethrough, links (coloured, **not clickable**).
   Parse is cached per segment (`markdown::Cached`).
-- Tool rows carry the provider's call id (`Part::Tool.id`), so an update finds
-  its row even when another tool started in between.
+- **Tool rows carry the provider's call id (`Part::Tool.id`), so an update finds
+  its row even when another tool started in between.**
+- **Tool output travels once, with the finished row**: `Part::Tool.output` is
+  `Option<String>`, absent while the call runs and present when it ends, capped
+  at 64 KiB. ACP text `content` blocks and Codex `outputDelta`/`aggregatedOutput`
+  fill it. A part per chunk would store the same growing string repeatedly, and
+  the wire stays additive without a version bump.
 - Each turn shows its own prompt above the answer.
 
 **Cards** (`permission.rs`, `question.rs`, spec in `docs/permissions.md`):
@@ -220,29 +225,25 @@ the app, `CIRCULO_OPENCODE_BIN` points the daemon at that script.
 project-level `permission` config does not change ACP behaviour; the ACP session
 advertises `loadSession: true` (unused so far).
 
-## 3. Last slice: Codex provider; next: tool output
+## 3. Last slice: tool output; next: usage
 
-**Codex landed (2026-11-26)** on `feature/codex-provider`, the owner's pick
-between Claude Code and Codex. It speaks `codex app-server` over stdio
-(JSON-RPC 2.0, one message per line without the `jsonrpc` header). One child per
-Circulo session, the thread id as the stored key, `thread/resume` with
-`excludeTurns` after a restart and a fresh thread when the key is lost.
-Approvals map to the existing cards with the four documented decisions,
-`mcpServer/elicitation/request` maps to question cards (the `experimentalApi`
-capability is enabled only for that), `model/list` feeds both pickers, and
-`turn/interrupt` aborts. The daemon selects it with
-`CIRCULO_PROVIDER=codex`; `CIRCULO_CODEX_BIN` points at a pinned build or the
-scripted test agent. No core or UI change was needed, which is the point: the
-Driver boundary held.
+**Tool output landed (2026-11-26)** on `feature/tool-output`. `Part::Tool` grew
+`output: Option<String>` (additive, `serde(default)`, no protocol version
+bump). Both drivers accumulate what the tool printed — ACP `content` text
+blocks, Codex `item/commandExecution/outputDelta` and `aggregatedOutput` — and
+send it once with the finished row, capped at 64 KiB with a truncation marker.
+Every chunk as its own part would store the same growing string again and
+again. A finished tool row with output is clickable and expands to the text in
+a mono chip; expansion is presentation state, never stored. The list is
+re-measured and the reader's offset restored, so opening a row does not jump to
+the bottom.
 
-**Next: tool output** (backlog §4.1). ACP `tool_call_update` content and Codex
-`item/commandExecution/outputDelta` are dropped today, so a real turn shows the
-command, not what it printed. Add an output part or a collapsed tool card, map
-both providers, and cover it with the scripted agents.
+The Codex provider landed just before (PR #56) and is unchanged by this slice.
 
-The OpenCode continuity contract is unchanged (`docs/providers/opencode.md`);
-the model-call tests remain the only unproven part, because this account has no
-OpenCode credit and the Codex CLI is not installed here yet.
+**Next: usage / token / cost** (backlog §4.1). ACP sends `usage_update` and
+Codex sends `thread/tokenUsage/updated`; both drivers ignore them and the wire
+has nowhere to put them. Add a usage part or message and the footer gauge the
+reference has. After that: markdown links and math.
 
 ## 4. Backlog (ordered)
 
@@ -250,14 +251,10 @@ Sizes are rough: S = same session, M = a focused PR, L = a feature slice with
 its own plan.
 
 ### Next
-1. **Tool output** — M. `Part::Tool` carries name/detail/state only; ACP
-   `tool_call_update` content and Codex `item/commandExecution/outputDelta` are
-   dropped. A real turn shows the command, not what it printed. Add output (part
-   or collapsed tool card) and fixtures for both providers.
-2. **Usage / token / cost** — M. ACP sends `usage_update` and Codex sends
+1. **Usage / token / cost** — M. ACP sends `usage_update` and Codex sends
    `thread/tokenUsage/updated`; the drivers ignore both and the wire has nowhere
    to put them. Add a usage part/message and the footer gauge the reference has.
-3. **Markdown links + math** — M/L. Links need GPUI hit-testing, which 0.2.2
+2. **Markdown links + math** — M/L. Links need GPUI hit-testing, which 0.2.2
    does not expose: either text layout + element bounds, or an inline layout of
    word-sized elements. Math needs a renderer decision.
 
@@ -470,14 +467,15 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   (stock 1.5 is too thin at 11–16px), `currentColor`, exact size. Static SVGs;
   GPUI does not run their motion. The Kubai two-tone/line experiments are gone.
 - Links render in the accent colour and are not clickable (no hit-testing in
-  GPUI 0.2.2).
+  GPUI 0.2.2). A tool row with output expands on click; the output is capped at
+  64 KiB and the cap is visible in the text, not silent.
 - Light theme values are approximations; this machine is dark.
 - `docs/ui.md` owns the tokens and geometry; keep them there.
 - `CIRCULO_PROVIDER=codex` runs the Codex adapter; it needs `codex` on `PATH`
   (or `CIRCULO_CODEX_BIN`). `model/list` may need a signed-in account, so the
   pickers can be empty without one. `request_permissions`, URL/device
-  elicitation and `tool/requestUserInput` are answered as unsupported; tool
-  output and usage are not rendered yet.
+  elicitation and `tool/requestUserInput` are answered as unsupported; usage is
+  not rendered and a `fileChange` diff is not captured (the paths are).
 - The Codex CLI is not installed on this machine, so its live tests are
   `--ignored`; the scripted app server in `tests/scripted.rs` proves the
   lifecycle without a model call.
