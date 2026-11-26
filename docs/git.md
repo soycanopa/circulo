@@ -1,6 +1,6 @@
 # Circulo — Git checkpoints
 
-- **Status:** Capture and branch status implemented (2026-11-26). Rewind next.
+- **Status:** Capture, branch status and rewind implemented (2026-11-26).
 - **Related:** [PRD](prd.md) · [TRD](trd.md) · [Implementation](implement.md) · [Projects](projects.md).
 - **Reference:** Waku's checkpoint module (ideas only; no code copied).
 
@@ -17,8 +17,9 @@
 - A turn's refs are:
   `refs/circulo/session-<uuid>/turn-<n>-start` and `...-turn-<n>-end`.
   They keep the commits reachable across garbage collection.
-- Rewind is not wired to the UI yet. The restore primitive exists and has
-  tests.
+- A turn's divider offers **Rewind** on hover. A confirmation card restores the
+  snapshot, trims the transcript and drops the provider session; `Before this
+  turn` and `After this turn` pick the start or end snapshot.
 
 ## Capture
 
@@ -46,27 +47,30 @@ This is exact: tracked edits go back to the snapshot and files created after it
 are removed. Ignored files are left alone. It is destructive by design, so the
 rewind UI must confirm before calling it.
 
-## The rewind plan
+## Rewind
 
 - **Target:** a turn's start or end snapshot. Rewinding to the **start** of turn
   N restores the files as they were before the prompt and removes turn N and
   everything after it; rewinding to the **end** of turn N keeps N and removes
   only later turns.
-- **Transcript:** the core deletes the trimmed turns and parts from SQLite and
-  answers with a fresh `History`, so files and transcript move together.
-- **Provider context:** ACP has no rewind/fork primitive. The honest v1 drops
-  the stored provider session key after a rewind, so the next prompt starts a
-  fresh agent conversation over the restored files. The transcript stays; the
-  agent's internal memory of the removed turns does not. This must be visible in
-  the confirmation.
-- **UI:** a per-turn action (hover or context) offers "Rewind to before this
-  turn" / "Rewind to here". A card above the composer confirms: files restored,
-  later turns removed, untracked files created after the checkpoint deleted, and
-  the agent context reset. Cancel is the default.
+- **Transcript:** `Store::trim_turns` deletes the trimmed turns and parts in one
+  transaction, clears the title when no turn remains, and always drops the
+  provider key. The core answers with a fresh `History`, so files and transcript
+  move together.
+- **Provider context:** ACP has no rewind/fork primitive. The driver's `reset`
+  drops the session's child (and the stored key is gone), so the next prompt
+  starts a fresh agent conversation over the restored files. The transcript
+  stays; the agent's internal memory of the removed turns does not. The card
+  says this.
+- **UI:** the "Worked" divider grows a quiet **Rewind** action on hover. A card
+  above the composer offers `Before this turn` (start snapshot), `After this
+  turn` (end snapshot) and `Cancel`. The card explains the file restore, the
+  later-turn removal and the fresh agent context. Enter and Escape cancel.
 - **Wire:** `Rewind { session, turn, to: Start | End }`; the daemon answers with
-  `History` (trimmed) and `RepoStatus`.
-- **Safety:** refuse while a turn is in flight; refuse when the ref is missing;
-  require the project to be a repository.
+  an empty `Queue`, the trimmed `History`, and a fresh `RepoStatus`.
+- **Safety:** refuse while a turn is in flight or another rewind runs; clear the
+  session's queue and stop its worker; refuse when the ref is missing; require
+  the project to be a repository.
 
 ## Worktrees
 
@@ -83,14 +87,21 @@ projects model stable.
   and reads the current branch.
 - Core tests: a repo project leaves `turn-1-start` and `turn-1-end` refs and
   reports the branch; a plain folder produces no refs and `(false, None)`.
+- Core rewind tests: `Start` restores the state before the prompt and removes
+  that turn; `End` restores what the turn left; a plain folder, a running turn
+  and a missing ref are honest errors. The provider key is cleared.
 - Manual smoke: a real repository project showed the real `main` branch in the
   footer, and a demo turn left both refs under `refs/circulo/session-<id>/`.
+  Two turns, a file edited between them and a later untracked file: Rewind →
+  Before turn 2 restored the "between" file, deleted the untracked one and left
+  only turn 1 in the transcript.
 
 ## Out of scope for this slice
 
-- The rewind UI and transcript truncation (next).
 - Provider-native rewind/fork (ACP does not offer one).
 - Worktrees per session.
 - Diff/file summaries per checkpoint; the right panel will read the refs.
 - Deleting checkpoint refs when a session is deleted; there is no session delete
   yet.
+- A rewind history/undo: a rewind is final for the transcript, though the refs
+  stay until a future cleanup.

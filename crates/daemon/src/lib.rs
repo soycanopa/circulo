@@ -271,6 +271,31 @@ fn handle(
                     emit(&outbound, ServerMessage::Error { message });
                 }
             }
+            Some(ClientRequest::Rewind { session, turn, to }) => {
+                // Restoring files can take a moment; the read loop stays free.
+                let core = Arc::clone(&core);
+                let outbound = outbound.clone();
+                thread::spawn(move || match core.rewind(&session, turn, to) {
+                    Ok(turns) => {
+                        emit(
+                            &outbound,
+                            ServerMessage::Queue {
+                                session: session.clone(),
+                                items: Vec::new(),
+                            },
+                        );
+                        emit(
+                            &outbound,
+                            ServerMessage::History {
+                                session: session.clone(),
+                                turns,
+                            },
+                        );
+                        push_repo_status(Arc::clone(&core), outbound, session);
+                    }
+                    Err(message) => emit(&outbound, ServerMessage::Error { message }),
+                });
+            }
             Some(ClientRequest::AnswerPermission { id, option }) => {
                 if !core.answer_permission(&id, option) {
                     emit(

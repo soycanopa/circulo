@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 
 use circulo_protocol::{
     ClientRequest, Hello, HistoryTurn, PROTOCOL_VERSION, ProjectSummary, ProtocolError,
-    QuestionAction, ServerMessage, SessionSummary,
+    QuestionAction, RewindTarget, ServerMessage, SessionSummary,
 };
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket};
@@ -179,6 +179,25 @@ impl Client {
             &mut self.socket,
             &ClientRequest::CancelTurn {
                 session: session.to_owned(),
+            }
+            .encode()?,
+        )
+    }
+
+    /// Restores a turn's checkpoint and trims the transcript to it. The daemon
+    /// answers with the trimmed `History`.
+    pub fn rewind(
+        &mut self,
+        session: &str,
+        turn: u64,
+        to: RewindTarget,
+    ) -> Result<(), ClientError> {
+        send(
+            &mut self.socket,
+            &ClientRequest::Rewind {
+                session: session.to_owned(),
+                turn,
+                to,
             }
             .encode()?,
         )

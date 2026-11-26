@@ -12,7 +12,7 @@
 #![forbid(unsafe_code)]
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -21,7 +21,7 @@ use circulo_git::CheckpointKind;
 use circulo_persistence::{Store, StoreError};
 use circulo_protocol::{
     ConfigOption, FinishReason, HistoryTurn, PermissionRequest, ProjectSummary, Question,
-    QuestionAction, QueuedPrompt, ServerMessage, SessionSummary,
+    QuestionAction, QueuedPrompt, RewindTarget, ServerMessage, SessionSummary,
 };
 use circulo_provider::{Answer, Asker, Decision, Driver, SessionRef};
 use serde_json::Value;
@@ -46,6 +46,9 @@ pub struct Core {
     /// worker drains them; nothing here survives a daemon restart, because a
     /// prompt that never started is not part of the transcript.
     queues: Mutex<HashMap<String, SessionQueue>>,
+    /// Sessions whose project files are being restored. A turn must not start
+    /// while the folder is mid-restore.
+    rewinding: Mutex<HashSet<String>>,
     permissions: Broker<Decision>,
     questions: Broker<Answer>,
 }
@@ -88,6 +91,7 @@ impl Core {
             turns: AtomicU64::new(0),
             in_flight: Mutex::new(HashMap::new()),
             queues: Mutex::new(HashMap::new()),
+            rewinding: Mutex::new(HashSet::new()),
             permissions: Broker::new("p"),
             questions: Broker::new("q"),
         }
@@ -294,11 +298,95 @@ impl Core {
             .map_err(|error| error.to_string())
     }
 
+    /// Restores a turn's checkpoint and trims the transcript to the same point.
+    /// `Start` removes the turn itself (the prompt is resent); `End` keeps it
+    /// and removes only later turns.
+    ///
+    /// Refuses while a turn runs, and drops any queued prompts: a rewind owns
+    /// the session while it restores. The provider session is dropped too,
+    /// because ACP has no rewind of its own; the next prompt starts fresh over
+    /// the restored files.
+    pub fn rewind(
+        &self,
+        session: &str,
+        turn: u64,
+        to: RewindTarget,
+    ) -> Result<Vec<HistoryTurn>, String> {
+        if !self.has_session(session) {
+            return Err(format!("unknown session {session}"));
+        }
+        {
+            let mut rewinding = self.rewinding();
+            if !rewinding.insert(session.to_owned()) {
+                return Err(format!("a rewind is already running in {session}"));
+            }
+        }
+
+        let result = self.rewind_now(session, turn, to);
+        self.rewinding().remove(session);
+        result
+    }
+
+    fn rewind_now(
+        &self,
+        session: &str,
+        turn: u64,
+        to: RewindTarget,
+    ) -> Result<Vec<HistoryTurn>, String> {
+        if self.in_flight().contains_key(session) {
+            return Err(format!("a turn is running in {session}"));
+        }
+        // No queued prompt may start while the folder is being restored.
+        self.clear_queue(session);
+
+        let Some(store) = &self.store else {
+            return Err("this daemon has no history store".to_owned());
+        };
+        let project = self
+            .open_sessions()
+            .iter()
+            .find(|open| open.id == session)
+            .and_then(|open| open.project.clone());
+        let Some(project) = project else {
+            return Err(format!("session {session} has no project folder"));
+        };
+        let id =
+            Uuid::parse_str(session).map_err(|_| format!("session {session} has no checkpoint"))?;
+        let kind = match to {
+            RewindTarget::Start => CheckpointKind::Start,
+            RewindTarget::End => CheckpointKind::End,
+        };
+        let commit = circulo_git::resolved(std::path::Path::new(&project), id, turn, kind)
+            .ok_or_else(|| format!("no checkpoint for turn {turn}"))?;
+        circulo_git::restore(std::path::Path::new(&project), &commit)
+            .map_err(|error| error.to_string())?;
+
+        let keep = match to {
+            RewindTarget::Start => Some(turn.saturating_sub(1)),
+            RewindTarget::End => Some(turn),
+        };
+        store
+            .trim_turns(session, keep)
+            .map_err(|error| error.to_string())?;
+        self.driver.reset(session);
+
+        self.transcript(session).map_err(|error| error.to_string())
+    }
+
+    fn rewinding(&self) -> std::sync::MutexGuard<'_, HashSet<String>> {
+        self.rewinding
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
     /// Adds `text` to the session's queue. `start_worker` is true when the
     /// caller has to run `drain` on a thread: no worker owns the session.
     pub fn enqueue(&self, session: &str, text: &str) -> Result<QueueState, String> {
         if !self.has_session(session) {
             return Err(format!("unknown session {session}"));
+        }
+        if self.rewinding().contains(session) {
+            return Err(format!("a rewind is in progress in {session}"));
         }
         let mut queues = self.queues();
         let queue = queues.entry(session.to_owned()).or_default();
@@ -323,6 +411,9 @@ impl Core {
     pub fn steer(&self, session: &str, text: &str) -> Result<QueueState, String> {
         if !self.has_session(session) {
             return Err(format!("unknown session {session}"));
+        }
+        if self.rewinding().contains(session) {
+            return Err(format!("a rewind is in progress in {session}"));
         }
         let state = {
             let mut queues = self.queues();
@@ -502,6 +593,12 @@ impl Core {
         if !self.has_session(session) {
             emit(ServerMessage::Error {
                 message: format!("unknown session {session}"),
+            });
+            return;
+        }
+        if self.rewinding().contains(session) {
+            emit(ServerMessage::Error {
+                message: format!("a rewind is in progress in {session}"),
             });
             return;
         }
@@ -1137,6 +1234,93 @@ mod tests {
             CheckpointKind::Start
         ));
         assert_eq!(core.repo_status(&session), (false, None));
+
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_rewind_restores_the_files_and_trims_the_transcript() {
+        let Some(directory) = git_repo() else {
+            return;
+        };
+        let store = Arc::new(circulo_persistence::Store::in_memory().expect("store"));
+        let core = Core::with_store(Arc::new(Echo), Some(Arc::clone(&store)));
+        let project = directory.to_string_lossy().into_owned();
+        let session = core.start_session(Some(project));
+
+        core.run_turn(&session, "one", |_| {});
+        // An edit between turns belongs to the next turn's start snapshot.
+        std::fs::write(directory.join("a.txt"), "between").expect("edit");
+        core.run_turn(&session, "two", |_| {});
+        std::fs::write(directory.join("a.txt"), "after").expect("edit");
+        std::fs::write(directory.join("new.txt"), "later").expect("new file");
+        store
+            .set_provider_session(&session, Some("ses_acp_1"))
+            .expect("key");
+
+        let turns = core
+            .rewind(&session, 2, RewindTarget::Start)
+            .expect("rewind start");
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].prompt, "one");
+        assert_eq!(
+            std::fs::read_to_string(directory.join("a.txt")).expect("a.txt"),
+            "between",
+            "the start snapshot is the state before the prompt"
+        );
+        assert!(
+            !directory.join("new.txt").exists(),
+            "files created after the checkpoint are removed"
+        );
+        assert_eq!(
+            store.provider_session(&session).expect("key"),
+            None,
+            "the agent context no longer matches the files"
+        );
+
+        let turns = core
+            .rewind(&session, 1, RewindTarget::End)
+            .expect("rewind end");
+        assert_eq!(turns.len(), 1);
+        assert_eq!(
+            std::fs::read_to_string(directory.join("a.txt")).expect("a.txt"),
+            "one",
+            "the end snapshot is the state the turn left"
+        );
+
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_rewind_refuses_while_a_turn_runs() {
+        let core = Arc::new(core_with(Arc::new(AsksOnce)));
+        let session = core.start_session(None);
+        let messages = run_in_background(Arc::clone(&core), session.clone());
+        next_card(&messages);
+
+        let error = core
+            .rewind(&session, 1, RewindTarget::Start)
+            .expect_err("a running turn cannot be rewound");
+        assert!(error.contains("a turn is running"), "{error}");
+
+        core.cancel_turn_requests(&session);
+        while messages.recv().is_ok() {}
+    }
+
+    #[test]
+    fn a_rewind_without_a_checkpoint_is_an_error() {
+        let directory =
+            std::env::temp_dir().join(format!("circulo-core-rewind-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).expect("temp");
+        let store = Arc::new(circulo_persistence::Store::in_memory().expect("store"));
+        let core = Core::with_store(Arc::new(Echo), Some(store));
+        let session = core.start_session(Some(directory.to_string_lossy().into_owned()));
+        core.run_turn(&session, "go", |_| {});
+
+        let error = core
+            .rewind(&session, 1, RewindTarget::Start)
+            .expect_err("a plain folder has no checkpoint");
+        assert!(error.contains("no checkpoint"), "{error}");
 
         let _ = std::fs::remove_dir_all(&directory);
     }

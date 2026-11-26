@@ -97,6 +97,7 @@ Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group la
 - [x] `Worked for …` divider with hairline rules and a disclosure chevron.
 - [x] Assistant blocks: heading, paragraph, bullet, inline code, bold.
 - [x] Live parts from the daemon: reasoning row, tool row that updates from running to done, streamed text with paragraphs.
+- [x] Rewind: a finished turn's divider shows a quiet `Rewind` on hover; the card above the composer offers `Before this turn`, `After this turn` and `Cancel`, says that files are restored, later turns removed, untracked files deleted and the agent context reset, and defaults to Cancel.
 - [x] Rendered through a GPUI `List` of turn rows, as the reference does, not a plain flex column.
 
 ### How the transcript is rendered
