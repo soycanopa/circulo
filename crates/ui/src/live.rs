@@ -66,6 +66,9 @@ pub struct Status {
 
 #[derive(Default)]
 pub struct Turn {
+    /// The daemon's id for this turn. Parts carry it too; that is what keeps a
+    /// late part of an older turn from landing in the row of a newer one.
+    pub turn: u64,
     /// What the user sent, shown above the turn. Empty for a turn the window
     /// did not start.
     pub prompt: String,
@@ -96,8 +99,9 @@ pub enum Segment {
 impl Transcript {
     pub fn apply(&mut self, message: ServerMessage) {
         match message {
-            ServerMessage::TurnStarted { .. } => {
+            ServerMessage::TurnStarted { turn, .. } => {
                 self.turns.push(Turn {
+                    turn,
                     prompt: self.pending_prompt.take().unwrap_or_default(),
                     parts: Vec::new(),
                 });
@@ -105,9 +109,12 @@ impl Transcript {
                 self.status.error = None;
                 self.status.finished = None;
             }
-            ServerMessage::Part { part, .. } => {
-                if let Some(turn) = self.turns.last_mut() {
-                    turn.push(part);
+            ServerMessage::Part { turn, part, .. } => {
+                // The turn id, not "the last row": an update that belongs to an
+                // older turn has to find its own row, and a part for a turn
+                // this client never saw is not guessed into another one.
+                if let Some(row) = self.turns.iter_mut().rev().find(|row| row.turn == turn) {
+                    row.push(part);
                 }
             }
             ServerMessage::PermissionRequested { id, request, .. } => {
@@ -125,9 +132,14 @@ impl Transcript {
                     fields: question.fields,
                 }));
             }
-            ServerMessage::TurnFinished { reason, .. } => {
-                self.status.running = false;
-                self.status.finished = Some(reason);
+            ServerMessage::TurnFinished { turn, reason, .. } => {
+                // A queued turn may already be running; only the newest turn
+                // decides the status line, so a late finish of an older one
+                // cannot hide that the session is still busy.
+                if self.turns.last().is_some_and(|row| row.turn == turn) {
+                    self.status.running = false;
+                    self.status.finished = Some(reason);
+                }
             }
             ServerMessage::Error { message } => {
                 self.status.error = Some(message);
@@ -151,14 +163,15 @@ impl Transcript {
         self.turns = turns
             .into_iter()
             .map(|history| {
-                let mut turn = Turn {
+                let mut row = Turn {
+                    turn: history.turn,
                     prompt: history.prompt,
                     parts: Vec::new(),
                 };
                 for part in history.parts {
-                    turn.push(part);
+                    row.push(part);
                 }
-                turn
+                row
             })
             .collect();
         self.status = Status::default();
@@ -250,17 +263,35 @@ mod tests {
     }
 
     fn part(part: Part) -> ServerMessage {
+        part_of(1, part)
+    }
+
+    fn part_of(turn: u64, part: Part) -> ServerMessage {
         ServerMessage::Part {
             session: "s1".into(),
-            turn: 1,
+            turn,
             part,
         }
     }
 
     fn text(delta: &str) -> ServerMessage {
-        part(Part::Text {
-            delta: delta.into(),
-        })
+        text_at(1, delta)
+    }
+
+    fn text_at(turn: u64, delta: &str) -> ServerMessage {
+        part_of(
+            turn,
+            Part::Text {
+                delta: delta.into(),
+            },
+        )
+    }
+
+    fn text_of(turn: &Turn) -> &str {
+        match &turn.parts[0] {
+            Segment::Text { text, .. } => text,
+            _ => panic!("expected text"),
+        }
     }
 
     #[test]
@@ -432,6 +463,62 @@ mod tests {
 
         assert!(!transcript.status.running);
         assert_eq!(transcript.status.finished, Some(FinishReason::Completed));
+    }
+
+    #[test]
+    fn a_late_part_lands_in_the_turn_that_owns_it() {
+        // A queued or cancelled turn can still deliver updates after the next
+        // one started. Keying by "the last row" would paint them in the wrong
+        // place; the turn id is what keeps the transcript honest.
+        let mut transcript = Transcript::default();
+        transcript.apply(started(1));
+        transcript.apply(text_at(1, "one"));
+        transcript.apply(started(2));
+        transcript.apply(text_at(1, " late"));
+        transcript.apply(text_at(2, "two"));
+
+        assert_eq!(transcript.turns.len(), 2);
+        assert_eq!(text_of(&transcript.turns[0]), "one late");
+        assert_eq!(text_of(&transcript.turns[1]), "two");
+    }
+
+    #[test]
+    fn a_part_for_an_unknown_turn_is_ignored() {
+        let mut transcript = Transcript::default();
+        transcript.apply(started(1));
+        transcript.apply(part_of(
+            9,
+            Part::Text {
+                delta: "stray".into(),
+            },
+        ));
+
+        assert!(
+            transcript.turns[0].parts.is_empty(),
+            "a part without its turn has nowhere honest to go"
+        );
+    }
+
+    #[test]
+    fn a_late_finish_does_not_close_the_newer_turn() {
+        let mut transcript = Transcript::default();
+        transcript.apply(started(1));
+        transcript.apply(started(2));
+        transcript.apply(ServerMessage::TurnFinished {
+            session: "s1".into(),
+            turn: 1,
+            reason: FinishReason::Completed,
+        });
+
+        assert!(transcript.status.running, "the newer turn is still open");
+        assert_eq!(transcript.status.finished, None);
+
+        transcript.apply(ServerMessage::TurnFinished {
+            session: "s1".into(),
+            turn: 2,
+            reason: FinishReason::Completed,
+        });
+        assert!(!transcript.status.running);
     }
 
     #[test]
