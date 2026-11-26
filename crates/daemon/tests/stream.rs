@@ -6,7 +6,11 @@ use std::thread;
 use circulo_client::{Client, ClientError};
 use circulo_core::Core;
 use circulo_daemon::Daemon;
-use circulo_protocol::{ConfigOption, FinishReason, Part, ServerMessage, ToolState};
+use circulo_protocol::{
+    ConfigOption, FinishReason, Part, PermissionOption, PermissionOptionKind, PermissionRequest,
+    ServerMessage, ToolState,
+};
+use circulo_provider::{Asker, Decision, Driver, DriverError, SessionRef};
 use circulo_provider_demo::DemoDriver;
 
 fn daemon() -> (Daemon, String, String) {
@@ -60,6 +64,97 @@ fn a_client_streams_a_turn_from_the_daemon() {
     );
     assert!(text.contains("streamed in deltas"));
     assert_eq!(finished, Some(FinishReason::Completed));
+}
+
+#[test]
+fn a_client_can_stop_a_blocked_turn() {
+    let core = Arc::new(Core::new(Arc::new(Stops)));
+    let daemon = Daemon::with_core(core).expect("bind the daemon");
+    let url = daemon.url();
+    let token = daemon.token().to_owned();
+    thread::spawn(move || daemon.serve());
+
+    let mut client = Client::connect(&url, &token).expect("handshake");
+    let session = client.start_session(None).expect("session");
+    client.prompt(&session, "go").expect("prompt");
+
+    // The turn is blocked on its card; this is the state the stop button sees.
+    loop {
+        match client.next_message().expect("message") {
+            Some(ServerMessage::PermissionRequested { .. }) => break,
+            Some(_) => continue,
+            None => panic!("the daemon closed the connection"),
+        }
+    }
+    client.cancel_turn(&session).expect("cancel");
+
+    let mut reason = None;
+    let mut error = None;
+    while let Some(message) = client.next_message().expect("message") {
+        match message {
+            ServerMessage::TurnFinished {
+                reason: finished, ..
+            } => {
+                reason = Some(finished);
+                break;
+            }
+            ServerMessage::Error { message } => error = Some(message),
+            _ => {}
+        }
+    }
+
+    assert_eq!(reason, Some(FinishReason::Aborted));
+    assert_eq!(error, None, "an abort travels as an outcome, not an error");
+}
+
+/// A turn that blocks on a permission card until it is cancelled, the way a
+/// real agent can be stopped mid-tool.
+struct Stops;
+
+impl Driver for Stops {
+    fn name(&self) -> &'static str {
+        "stops"
+    }
+
+    fn start_turn(
+        &self,
+        _: SessionRef<'_>,
+        _: &str,
+        ask: &mut dyn Asker,
+        _: &mut dyn FnMut(Part),
+    ) -> Result<Option<String>, DriverError> {
+        let decision = ask.permission(PermissionRequest {
+            title: "Keep going?".into(),
+            detail: String::new(),
+            options: vec![PermissionOption {
+                id: "allow".into(),
+                label: "Allow".into(),
+                kind: PermissionOptionKind::AllowOnce,
+            }],
+        });
+
+        match decision {
+            Decision::Selected(_) => Ok(None),
+            Decision::Cancelled => Err(DriverError::cancelled("the user stopped the turn")),
+        }
+    }
+
+    fn cancel(&self, _: &str) -> Result<(), DriverError> {
+        Ok(())
+    }
+
+    fn options(&self, _: &str) -> Result<Vec<ConfigOption>, DriverError> {
+        Ok(Vec::new())
+    }
+
+    fn set_option(
+        &self,
+        _: &str,
+        _id: &str,
+        _value: &str,
+    ) -> Result<Vec<ConfigOption>, DriverError> {
+        Err(DriverError::new("this agent has no settings"))
+    }
 }
 
 /// Reads until the daemon reports the session's options. The list is pushed

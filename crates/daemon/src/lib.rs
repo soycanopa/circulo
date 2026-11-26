@@ -96,7 +96,6 @@ impl Daemon {
 
                     // The accepted socket inherits the listener's nonblocking
                     // flag, and the WebSocket handshake blocks on purpose.
-                    let mut stream = stream;
                     let _ = stream.set_nonblocking(false);
 
                     thread::spawn(move || {
@@ -248,6 +247,11 @@ fn handle(
                         let _ = outbound.send(message);
                     });
                 });
+            }
+            Some(ClientRequest::CancelTurn { session }) => {
+                if let Err(message) = core.cancel_turn(&session) {
+                    emit(&outbound, ServerMessage::Error { message });
+                }
             }
             Some(ClientRequest::AnswerPermission { id, option }) => {
                 if !core.answer_permission(&id, option) {

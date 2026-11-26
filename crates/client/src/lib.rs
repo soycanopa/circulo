@@ -129,6 +129,18 @@ impl Client {
         )
     }
 
+    /// Stops the turn running in `session`. The daemon cancels its open cards
+    /// and asks the provider to abort; the turn ends as `Aborted`.
+    pub fn cancel_turn(&mut self, session: &str) -> Result<(), ClientError> {
+        send(
+            &mut self.socket,
+            &ClientRequest::CancelTurn {
+                session: session.to_owned(),
+            }
+            .encode()?,
+        )
+    }
+
     /// Applies one of the agent's settings. The daemon answers with the
     /// refreshed `Options`, or an `Error` for an unknown session or a choice
     /// the agent refuses.

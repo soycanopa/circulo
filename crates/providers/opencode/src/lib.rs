@@ -52,6 +52,10 @@ pub struct OpenCode {
     /// parking anyone else's, and two turns on one session queue the way an
     /// agent requires — one prompt at a time.
     live: Mutex<HashMap<String, Arc<Mutex<Option<Attached>>>>>,
+    /// What a cancel needs while a turn holds its slot: the child's stdin and
+    /// the ACP session id. The slot itself is locked for the whole turn, so
+    /// this is the handle that lets another thread send `session/cancel`.
+    cancels: Mutex<HashMap<String, CancelHandle>>,
 }
 
 /// The agent side of one Circulo session: the process, its ACP session and
@@ -69,6 +73,27 @@ struct Attached {
     applied: BTreeMap<String, String>,
 }
 
+/// What a cancel needs while the turn owns the slot.
+#[derive(Clone)]
+struct CancelHandle {
+    stdin: Arc<Mutex<ChildStdin>>,
+    /// The ACP session id inside that child.
+    session: String,
+}
+
+impl CancelHandle {
+    fn cancel(&self) -> Result<(), DriverError> {
+        write_line(
+            &self.stdin,
+            &json!({
+                "jsonrpc": "2.0",
+                "method": "session/cancel",
+                "params": {"sessionId": self.session},
+            }),
+        )
+    }
+}
+
 impl OpenCode {
     pub fn new(cwd: impl Into<PathBuf>) -> Self {
         Self {
@@ -76,6 +101,7 @@ impl OpenCode {
             binary: PathBuf::from("opencode"),
             overrides: Mutex::new(BTreeMap::new()),
             live: Mutex::new(HashMap::new()),
+            cancels: Mutex::new(HashMap::new()),
         }
     }
 
@@ -87,6 +113,7 @@ impl OpenCode {
             binary: binary.into(),
             overrides: Mutex::new(BTreeMap::new()),
             live: Mutex::new(HashMap::new()),
+            cancels: Mutex::new(HashMap::new()),
         }
     }
 
@@ -98,6 +125,12 @@ impl OpenCode {
 
     fn live(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Mutex<Option<Attached>>>>> {
         self.live
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn cancels(&self) -> std::sync::MutexGuard<'_, HashMap<String, CancelHandle>> {
+        self.cancels
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
@@ -273,7 +306,17 @@ impl Driver for OpenCode {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if slot.is_none() {
-            *slot = Some(self.attach(session_ref.resume, ask)?);
+            let attached = self.attach(session_ref.resume, ask)?;
+            // The cancel handle points at the same child, so another thread
+            // can ask the agent to stop while this turn holds the slot.
+            self.cancels().insert(
+                session_ref.id.to_owned(),
+                CancelHandle {
+                    stdin: Arc::clone(&attached.agent.stdin),
+                    session: attached.session.clone(),
+                },
+            );
+            *slot = Some(attached);
         }
         let attached = slot.as_mut().expect("attached just above");
 
@@ -297,20 +340,30 @@ impl Driver for OpenCode {
                 // the stored key bring the session back on the next one.
                 if attached.agent.dead {
                     *slot = None;
+                    self.cancels().remove(session_ref.id);
                 }
                 Err(error)
             }
         }
     }
 
+    fn cancel(&self, session: &str) -> Result<(), DriverError> {
+        let handle = self.cancels().get(session).cloned();
+        let Some(handle) = handle else {
+            return Err(DriverError::new(format!(
+                "no agent is attached to session {session}"
+            )));
+        };
+        handle.cancel()
+    }
+
     fn options(&self, session: &str) -> Result<Vec<ConfigOption>, DriverError> {
         let slot = self.live().get(session).cloned();
-        if let Some(slot) = &slot {
-            if let Some(attached) = Self::peek(slot) {
-                if let Some(live) = attached.as_ref() {
-                    return Ok(live.options.clone());
-                }
-            }
+        if let Some(slot) = &slot
+            && let Some(attached) = Self::peek(slot)
+            && let Some(live) = attached.as_ref()
+        {
+            return Ok(live.options.clone());
         }
 
         // Nothing live: what a fresh session reports is what there is.
@@ -334,6 +387,7 @@ impl Driver for OpenCode {
         // streaming keeps its Arc inside the turn thread and its child dies
         // when the turn ends — or with us, since the agent reads our stdin
         // and closes on EOF either way.
+        self.cancels().clear();
         let mut live = self.live();
         for slot in live.values() {
             if let Ok(mut attached) = slot.try_lock() {
@@ -517,7 +571,7 @@ fn config_options(value: &Value) -> Vec<ConfigOption> {
 /// One `opencode acp` process: a JSON-RPC peer on stdin and stdout.
 struct Agent {
     child: Child,
-    stdin: ChildStdin,
+    stdin: Arc<Mutex<ChildStdin>>,
     stdout: BufReader<ChildStdout>,
     next_id: u64,
     /// The last `session/new` result, so a caller can validate a choice
@@ -553,7 +607,7 @@ impl Agent {
 
         Ok(Self {
             child,
-            stdin,
+            stdin: Arc::new(Mutex::new(stdin)),
             stdout: BufReader::new(stdout),
             next_id: 1,
             last_config: Value::Null,
@@ -614,6 +668,9 @@ impl Agent {
                 let result = response(message)?;
                 return match result.get("stopReason").and_then(Value::as_str) {
                     None | Some("end_turn") => Ok(()),
+                    // The user asked for it through `session/cancel`; that is
+                    // an abort, not a provider failure.
+                    Some("cancelled") => Err(DriverError::cancelled("the user stopped the turn")),
                     Some(reason) => Err(DriverError::new(format!("the agent stopped: {reason}"))),
                 };
             }
@@ -694,17 +751,7 @@ impl Agent {
     }
 
     fn send(&mut self, message: Value) -> Result<(), DriverError> {
-        let mut line =
-            serde_json::to_string(&message).map_err(|error| DriverError::new(error.to_string()))?;
-        line.push('\n');
-
-        self.stdin
-            .write_all(line.as_bytes())
-            .and_then(|()| self.stdin.flush())
-            .map_err(|error| {
-                self.dead = true;
-                DriverError::new(format!("opencode acp: {error}"))
-            })
+        write_line(&self.stdin, &message).inspect_err(|_| self.dead = true)
     }
 
     fn receive(&mut self) -> Result<Value, DriverError> {
@@ -736,6 +783,23 @@ impl Drop for Agent {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+/// One JSON-RPC line on the child's stdin. The mutex is what lets a cancel
+/// write while the turn thread is blocked reading the child's stdout; both
+/// sides share the same handle.
+fn write_line(stdin: &Mutex<ChildStdin>, message: &Value) -> Result<(), DriverError> {
+    let mut line =
+        serde_json::to_string(message).map_err(|error| DriverError::new(error.to_string()))?;
+    line.push('\n');
+
+    let mut stdin = stdin
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    stdin
+        .write_all(line.as_bytes())
+        .and_then(|()| stdin.flush())
+        .map_err(|error| DriverError::new(format!("opencode acp: {error}")))
 }
 
 fn response(message: Value) -> Result<Value, DriverError> {

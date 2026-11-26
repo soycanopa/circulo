@@ -172,6 +172,21 @@ impl Core {
         self.questions.answer(id, answer)
     }
 
+    /// Stops the turn running in `session`: its open cards are cancelled (the
+    /// blocked asker reads `Cancelled`) and the provider is asked to abort. The
+    /// turn ends as `Aborted`. A session with no turn in flight is an error, so
+    /// a stale client gets an honest answer instead of a silent no-op.
+    pub fn cancel_turn(&self, session: &str) -> Result<(), String> {
+        let Some(turn) = self.in_flight().get(session).copied() else {
+            return Err(format!("no turn is running in {session}"));
+        };
+        self.permissions.cancel_turn(session, turn);
+        self.questions.cancel_turn(session, turn);
+        self.driver
+            .cancel(session)
+            .map_err(|error| error.to_string())
+    }
+
     /// Drops the cards of the turn running in `session`, so the driver's
     /// blocked asker reads `Cancelled` and the turn can end. A session with no
     /// turn in flight is untouched, and so is every other session.
@@ -320,16 +335,18 @@ impl Core {
 
         // Whatever the provider handed back is what the next turn — maybe of
         // the next daemon — resumes with. `None` clears a stale key.
-        if let Ok(key) = &result {
-            if let Some(store) = &self.store {
-                let _ = store.set_provider_session(session, key.as_deref());
-            }
+        if let Ok(key) = &result
+            && let Some(store) = &self.store
+        {
+            let _ = store.set_provider_session(session, key.as_deref());
         }
 
         let send = |message| (emit.borrow_mut())(message);
 
         let reason = match result {
             Ok(_) => FinishReason::Completed,
+            // The user stopped the turn; that is an outcome, not a failure.
+            Err(error) if error.is_cancelled() => FinishReason::Aborted,
             Err(error) => {
                 send(ServerMessage::Error {
                     message: error.to_string(),
@@ -338,18 +355,20 @@ impl Core {
             }
         };
 
+        // Only this turn's registration is cleared: a newer turn on the same
+        // session owns the slot by now. It goes before `TurnFinished` so a
+        // client that cancels right after seeing it cannot hit a dead turn.
+        let mut in_flight = self.in_flight();
+        if in_flight.get(session) == Some(&turn) {
+            in_flight.remove(session);
+        }
+        drop(in_flight);
+
         send(ServerMessage::TurnFinished {
             session: session.to_owned(),
             turn,
             reason,
         });
-
-        // Only this turn's registration is cleared: a newer turn on the same
-        // session owns the slot by now.
-        let mut in_flight = self.in_flight();
-        if in_flight.get(session) == Some(&turn) {
-            in_flight.remove(session);
-        }
     }
 
     fn in_flight(&self) -> std::sync::MutexGuard<'_, HashMap<String, u64>> {
@@ -553,6 +572,61 @@ mod tests {
             };
             emit(Part::Text { delta });
             Ok(None)
+        }
+
+        fn options(&self, _: &str) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Ok(Vec::new())
+        }
+
+        fn set_option(
+            &self,
+            _: &str,
+            _id: &str,
+            _value: &str,
+        ) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
+            Err(DriverError::new("this agent has no settings"))
+        }
+    }
+
+    /// A driver whose turn blocks on a permission card and reports an abort
+    /// when that card is cancelled, the way a real provider does.
+    struct Stops;
+
+    impl Driver for Stops {
+        fn name(&self) -> &'static str {
+            "stops"
+        }
+
+        fn start_turn(
+            &self,
+            _: SessionRef<'_>,
+            _: &str,
+            ask: &mut dyn Asker,
+            emit: &mut dyn FnMut(Part),
+        ) -> Result<Option<String>, DriverError> {
+            let decision = ask.permission(PermissionRequest {
+                title: "Keep going?".into(),
+                detail: String::new(),
+                options: vec![circulo_protocol::PermissionOption {
+                    id: "allow".into(),
+                    label: "Allow".into(),
+                    kind: circulo_protocol::PermissionOptionKind::AllowOnce,
+                }],
+            });
+
+            match decision {
+                Decision::Selected(_) => {
+                    emit(Part::Text {
+                        delta: "finished".into(),
+                    });
+                    Ok(None)
+                }
+                Decision::Cancelled => Err(DriverError::cancelled("the user stopped the turn")),
+            }
+        }
+
+        fn cancel(&self, _: &str) -> Result<(), DriverError> {
+            Ok(())
         }
 
         fn options(&self, _: &str) -> Result<Vec<circulo_protocol::ConfigOption>, DriverError> {
@@ -987,12 +1061,47 @@ mod tests {
         assert!(!core.cancel_turn_requests("missing"));
     }
 
+    #[test]
+    fn aborting_a_turn_ends_it_as_aborted_without_an_error() {
+        let core = Arc::new(core_with(Arc::new(Stops)));
+        let session = core.start_session(None);
+        let messages = run_in_background(Arc::clone(&core), session.clone());
+
+        // The turn is blocked on its card; this is the state the stop button
+        // sees. The card goes away and the driver reports the abort.
+        next_card(&messages);
+        core.cancel_turn(&session).expect("the turn was running");
+
+        let mut reason = None;
+        let mut error = None;
+        while let Ok(message) = messages.recv() {
+            match message {
+                ServerMessage::TurnFinished {
+                    reason: finished, ..
+                } => {
+                    reason = Some(finished);
+                    break;
+                }
+                ServerMessage::Error { message } => error = Some(message),
+                _ => {}
+            }
+        }
+
+        assert_eq!(reason, Some(FinishReason::Aborted));
+        assert_eq!(error, None, "an abort is not a failure");
+        assert_eq!(
+            core.cancel_turn(&session),
+            Err(format!("no turn is running in {session}"))
+        );
+    }
+
     /// Waits for the turn's permission card and returns its id.
     fn next_card(messages: &std::sync::mpsc::Receiver<ServerMessage>) -> String {
         loop {
-            match messages.recv().expect("the turn is alive") {
-                ServerMessage::PermissionRequested { id, .. } => return id,
-                _ => {}
+            if let ServerMessage::PermissionRequested { id, .. } =
+                messages.recv().expect("the turn is alive")
+            {
+                return id;
             }
         }
     }

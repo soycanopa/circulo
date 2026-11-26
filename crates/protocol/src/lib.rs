@@ -52,6 +52,10 @@ pub enum ClientRequest {
     StartSession { project: Option<String> },
     /// Send a prompt and stream the turn back.
     Prompt { session: String, text: String },
+    /// Stop the turn running in `session`. Its open cards are cancelled and
+    /// the provider is asked to abort; the turn ends as `aborted`, not as a
+    /// failure. A session with no turn in flight is an error.
+    CancelTurn { session: String },
     /// Answer a pending permission request. `option` is the id of one of the
     /// options the daemon offered; `None` means cancelled, which is only right
     /// when the turn itself is going away.
@@ -101,6 +105,7 @@ impl ClientRequest {
 const CLIENT_TYPES: &[&str] = &[
     "start_session",
     "prompt",
+    "cancel_turn",
     "answer_permission",
     "answer_question",
     "list_sessions",
@@ -529,6 +534,9 @@ mod tests {
             ClientRequest::Prompt {
                 session: "s1".into(),
                 text: "ship it".into(),
+            },
+            ClientRequest::CancelTurn {
+                session: "s1".into(),
             },
             ClientRequest::SetOption {
                 session: "s1".into(),
