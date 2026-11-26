@@ -18,6 +18,7 @@ use crate::icons::icon;
 use crate::live::Transcript;
 use crate::mock::Workspace;
 use crate::theme::Theme;
+use circulo_protocol::FinishReason;
 
 /// The reference keeps the transcript text off the panel edges by this much;
 /// there is no narrower reading column.
@@ -172,9 +173,13 @@ fn rows(workspace: &Workspace, transcript: &Transcript) -> Vec<Row> {
 
         // Only the last turn can still be running.
         let running = index + 1 == transcript.turns.len() && transcript.status.running;
+        let stopped = index + 1 == transcript.turns.len()
+            && transcript.status.finished == Some(FinishReason::Aborted);
         rows.push(Row::Divider {
             label: if running {
                 "Working…".to_owned()
+            } else if stopped {
+                "Stopped".to_owned()
             } else {
                 workspace.worked.to_owned()
             },

@@ -88,8 +88,9 @@ that turn's cards — each broker entry remembers its session and turn — and a
 the driver to `cancel(session)`. OpenCode keeps a second handle to the child's
 stdin (mutex + ACP session id) because the turn owns the slot, and sends ACP
 `session/cancel`; `stopReason: "cancelled"` becomes `DriverError::cancelled`,
-and the core reports `FinishReason::Aborted` with no error banner. Parts
-already streamed stay; the child stays alive for the next turn. `TurnFinished`
+and the core reports `FinishReason::Aborted` with no error banner (the divider
+reads `Stopped`). Parts already streamed stay; the child stays alive for the
+next turn. `TurnFinished`
 drops any card its turn left open. Verified without model calls:
 `tests/permission.rs` (`FAKE_ACP_MODE=cancel`), a core test with a blocking
 driver, and a daemon/client round trip.
