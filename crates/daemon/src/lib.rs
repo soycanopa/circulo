@@ -22,6 +22,7 @@ use circulo_core::{Core, QueueState};
 use circulo_persistence::Store;
 use circulo_protocol::{ClientRequest, Hello, PROTOCOL_VERSION, ProtocolError, ServerMessage};
 use circulo_provider::Driver;
+use circulo_provider_codex::Codex;
 use circulo_provider_demo::DemoDriver;
 use circulo_provider_opencode::OpenCode;
 use tungstenite::protocol::{Role, WebSocketConfig};
@@ -144,6 +145,18 @@ fn driver() -> Arc<dyn Driver> {
             match std::env::var("CIRCULO_OPENCODE_BIN") {
                 Ok(binary) => Arc::new(OpenCode::with_binary(cwd, binary)),
                 Err(_) => Arc::new(OpenCode::new(cwd)),
+            }
+        }
+        Ok("codex") => {
+            let cwd = std::env::var("CIRCULO_PROJECT")
+                .map(PathBuf::from)
+                .or_else(|_| std::env::current_dir())
+                .unwrap_or_else(|_| PathBuf::from("."));
+            // The same development hook as OpenCode: a scripted app server,
+            // or a pinned Codex build.
+            match std::env::var("CIRCULO_CODEX_BIN") {
+                Ok(binary) => Arc::new(Codex::with_binary(cwd, binary)),
+                Err(_) => Arc::new(Codex::new(cwd)),
             }
         }
         _ => Arc::new(DemoDriver::new()),

@@ -11,6 +11,7 @@ circulo-core.workspace = true
 circulo-persistence.workspace = true
 circulo-protocol.workspace = true
 circulo-provider-demo.workspace = true
+circulo-provider-codex.workspace = true
 circulo-provider-opencode.workspace = true
 circulo-provider.workspace = true
 thiserror.workspace = true
