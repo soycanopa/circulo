@@ -1,9 +1,9 @@
 //! Icons, embedded at compile time.
 //!
-//! They come from [Kubai Icons](https://icons.kubai.design) (MIT), the line
-//! style: a 24 grid with a 2px stroke, drawn with `currentColor`, so the theme
-//! tints every state. `opencode.svg` is the provider's own mark, kept to
-//! identify it in the picker.
+//! They come from [Iconoir](https://iconoir.com) (MIT), the regular line set:
+//! a 24 grid with a 1.5 stroke, drawn with `currentColor`, so the theme tints
+//! every state. `opencode.svg` is the provider's own mark, kept to identify it
+//! in the picker.
 
 use gpui::{Rgba, div, prelude::*, px, svg};
 
