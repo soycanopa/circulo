@@ -187,6 +187,7 @@ impl Transcript {
             | ServerMessage::Queue { .. }
             | ServerMessage::Projects { .. }
             | ServerMessage::ProjectAdded { .. }
+            | ServerMessage::RepoStatus { .. }
             | ServerMessage::History { .. } => {}
         }
     }
