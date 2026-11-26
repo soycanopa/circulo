@@ -2,21 +2,19 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-26, on `main` after PR #54; 134
-tests green; CI covers fmt + clippy + test on macOS. The model-call tests in
-`tests/real.rs` need OpenCode credit, which this account has none of right now
-(2026-11-23): they fail with "Insufficient balance". The no-model-call load
-probe (`cargo test -p circulo-provider-opencode --lib -- --ignored`) passes
-against 2.3.2.
+Last updated: 2026-11-26, on `feature/codex-provider`. The suite is green
+(fmt, clippy and tests). The model-call tests in `tests/real.rs` need provider
+credit; Codex's real tests also need the CLI installed. The scripted agents
+cover the lifecycle without a model call.
 
 ## 0. Handoff in one minute
 
-- **State:** `main` is clean after PR #54 (Iconoir icons); 134 tests, fmt and
-  clippy green. No feature branch is open.
-- **Next task:** a second provider — Claude Code or Codex (§3). The choice is
-  not made; ask the owner.
-- **Backlog:** §4, ordered. The big remaining v1.0 pieces are the second
-  provider, markdown links/math, attachments and remote.
+- **State:** `feature/codex-provider` adds the second provider; `main` is still
+  at `0cfc62b` until the PR merges. fmt, clippy and tests are green.
+- **Next task:** tool output in the transcript (§3), then attachments/remote
+  (§4).
+- **Backlog:** §4, ordered. The big remaining v1.0 pieces are tool output,
+  markdown links/math, attachments and remote.
 - **Run it:** `cargo run -p circulo` (demo, no auth) or
   `CIRCULO_PROVIDER=opencode CIRCULO_PROJECT="$PWD" cargo run -p circulo`.
   Checks and UI automation are in §2.
@@ -43,6 +41,16 @@ requested size. Static SVGs; GPUI does not run their motion.
 verified against **OpenCode 2.3.2**. Reasoning, tool calls and text stream into
 the window. The demo provider (`crates/providers/demo`) still works with no auth
 and exercises the shapes.
+
+**Second agent — Codex**: `codex app-server` over stdio (JSON-RPC 2.0, one
+message per line). One child per Circulo session; the thread id is the stored
+key and `thread/resume` continues it after a restart. Approvals
+(`item/commandExecution/requestApproval`, `item/fileChange/requestApproval`)
+become the same permission cards, MCP form elicitation becomes a question card,
+`model/list` feeds the model/effort pickers, `turn/interrupt` aborts, and
+`reset` drops the child. Spec in `docs/providers/codex.md`; the real CLI is not
+installed on this machine, so its live tests are `--ignored` and the scripted
+agent proves the lifecycle.
 
 **Transcript** (`transcript.rs`, `markdown.rs`):
 - GPUI `List` of turn rows, bottom-anchored: it follows the stream, and scrolling
@@ -180,6 +188,7 @@ both sides, which is what lets an answer reach the daemon while a turn blocks.
 ```sh
 cargo run -p circulo                                            # demo provider, no auth
 CIRCULO_PROVIDER=opencode CIRCULO_PROJECT="$PWD" cargo run -p circulo
+CIRCULO_PROVIDER=codex CIRCULO_PROJECT="$PWD" cargo run -p circulo
 CIRCULO_HOME=/tmp/circulo-test … cargo run -p circulo           # a throwaway database
 CIRCULO_PROMPT="…" … cargo run -p circulo                       # seeds the composer draft
 cargo run -p circulo-daemon                                     # daemon alone
@@ -187,9 +196,10 @@ cargo run -p circulo-daemon                                     # daemon alone
 
 Checks: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets`,
 `cargo test --workspace`. Real-provider tests (spend model calls, need
-credit): `cargo test -p circulo-provider-opencode --test real -- --ignored`.
-No-credit verification: the continuity suite (`tests/continuity.rs`) and the
-load probe (`cargo test -p circulo-provider-opencode --lib -- --ignored`).
+credit): `cargo test -p circulo-provider-opencode --test real -- --ignored`
+and `cargo test -p circulo-provider-codex --test real -- --ignored` (needs the
+Codex CLI installed and signed in). No-credit verification: the continuity
+suites and the scripted agents.
 
 **Watching the UI without a human**: `screencapture -x -R<x>,<y>,<w>,<h>` with the
 window bounds from
@@ -210,41 +220,29 @@ the app, `CIRCULO_OPENCODE_BIN` points the daemon at that script.
 project-level `permission` config does not change ACP behaviour; the ACP session
 advertises `loadSession: true` (unused so far).
 
-## 3. Next task: a second provider
+## 3. Last slice: Codex provider; next: tool output
 
-Rewind landed (2026-11-26): a finished turn's divider offers Rewind; the card
-picks `Before this turn` (start snapshot, turn removed) or `After this turn` (end
-snapshot, later turns removed); the core refuses while a turn runs, clears the
-queue, restores the worktree, trims turns/parts in one transaction, drops the
-provider key, resets the driver's child and answers with the trimmed history.
-Checkpoint capture and the real branch landed just before; projects, queue/steer
-and abort before that.
+**Codex landed (2026-11-26)** on `feature/codex-provider`, the owner's pick
+between Claude Code and Codex. It speaks `codex app-server` over stdio
+(JSON-RPC 2.0, one message per line without the `jsonrpc` header). One child per
+Circulo session, the thread id as the stored key, `thread/resume` with
+`excludeTurns` after a restart and a fresh thread when the key is lost.
+Approvals map to the existing cards with the four documented decisions,
+`mcpServer/elicitation/request` maps to question cards (the `experimentalApi`
+capability is enabled only for that), `model/list` feeds both pickers, and
+`turn/interrupt` aborts. The daemon selects it with
+`CIRCULO_PROVIDER=codex`; `CIRCULO_CODEX_BIN` points at a pinned build or the
+scripted test agent. No core or UI change was needed, which is the point: the
+Driver boundary held.
 
-Session continuity landed (2026-11-23): one agent process per Circulo session,
-the ACP session id in SQLite, `session/load` on restart, mid-turn switches
-queued to the turn's end, clean daemon shutdown. What the model-call tests would
-still prove, once there is credit: a real two-turn conversation sharing context
-(`a_real_session_remembers_across_turns`) and a real restart resuming
-(`a_real_session_resumes_after_a_restart`). Everything else is proven against
-the scripted agent and the real load probe.
+**Next: tool output** (backlog §4.1). ACP `tool_call_update` content and Codex
+`item/commandExecution/outputDelta` are dropped today, so a real turn shows the
+command, not what it printed. Add an output part or a collapsed tool card, map
+both providers, and cover it with the scripted agents.
 
-**Why a second provider next:** the Driver trait has only been proven by OpenCode
-(and the demo). The PRD's v1.0 bar is at least OpenCode plus Claude Code or
-Codex; a second adapter is what proves the boundary is real, not shaped around
-one agent.
-
-**Plan:**
-1. Pick one: Claude Code or Codex; read its official protocol/docs first, no API
-   guessing.
-2. New crate under `crates/providers/`, implementing `Driver`, `Asker`,
-   `cancel`, `reset`, options and continuity with the provider's own session
-   key.
-3. Fixtures or a scripted counterpart for the protocol shapes, the way
-   OpenCode's tests do; real-CLI tests behind `--ignored`.
-4. Prove: a turn streams, a permission/question card works, a model/effort
-   option applies, continuity survives a daemon restart, rewind drops the
-   provider session.
-5. The daemon picks it with `CIRCULO_PROVIDER`; no core or UI rewrite.
+The OpenCode continuity contract is unchanged (`docs/providers/opencode.md`);
+the model-call tests remain the only unproven part, because this account has no
+OpenCode credit and the Codex CLI is not installed here yet.
 
 ## 4. Backlog (ordered)
 
@@ -252,15 +250,14 @@ Sizes are rough: S = same session, M = a focused PR, L = a feature slice with
 its own plan.
 
 ### Next
-1. **Second provider** (Claude Code or Codex) — L, §3. The owner has not chosen;
-   ask first. No core or UI rewrite: a new `crates/providers/*` behind `Driver`.
-2. **Tool output** — M. `Part::Tool` carries name/detail/state only; ACP
-   `tool_call_update` content is dropped. A real turn shows the command, not
-   what it printed. Add output (part or collapsed tool card) and a fixture.
-3. **Usage / token / cost** — M. ACP sends `usage_update`; the driver ignores it
-   and the wire has nowhere to put it. Add a usage part/message and the footer
-   gauge the reference has.
-4. **Markdown links + math** — M/L. Links need GPUI hit-testing, which 0.2.2
+1. **Tool output** — M. `Part::Tool` carries name/detail/state only; ACP
+   `tool_call_update` content and Codex `item/commandExecution/outputDelta` are
+   dropped. A real turn shows the command, not what it printed. Add output (part
+   or collapsed tool card) and fixtures for both providers.
+2. **Usage / token / cost** — M. ACP sends `usage_update` and Codex sends
+   `thread/tokenUsage/updated`; the drivers ignore both and the wire has nowhere
+   to put them. Add a usage part/message and the footer gauge the reference has.
+3. **Markdown links + math** — M/L. Links need GPUI hit-testing, which 0.2.2
    does not expose: either text layout + element bounds, or an inline layout of
    word-sized elements. Math needs a renderer decision.
 
@@ -323,11 +320,12 @@ its own plan.
 | `crates/core` | Sessions, turn orchestration, one FIFO queue per session drained by a worker, the permission/question broker (entries owned by session + turn), the project list (canonical paths), Git start/end checkpoints around each turn, rewind (restore + trim + driver reset), translation between storage and wire, carrying provider session keys both ways, abort and steer routing. Speaks only the Driver trait. |
 | `crates/persistence` | SQLite: sessions (+ provider key, project path), turns, parts, settings, projects; schema v4. `trim_turns` removes a suffix in one transaction. Owned by the core; nobody else opens it. |
 | `crates/git` | Whole-worktree snapshots with a temporary index, private `refs/circulo/...` refs, exact restore, and the current branch. Owned by the core. |
-| `crates/daemon` | Loopback WebSocket, token handshake, reader + writer per connection, provider chosen by `CIRCULO_PROVIDER`, database from `CIRCULO_HOME`, one queue worker per session, project/repo status pushes, clear-and-abort on connection close, clean shutdown on stdin EOF. |
+| `crates/daemon` | Loopback WebSocket, token handshake, reader + writer per connection, provider chosen by `CIRCULO_PROVIDER` (`demo`, `opencode`, `codex`), database from `CIRCULO_HOME`, one queue worker per session, project/repo status pushes, clear-and-abort on connection close, clean shutdown on stdin EOF. |
 | `crates/client` | Handshake, blocking read loop, a splittable writer half, `prompt`/`steer`/`remove_queued`/`cancel_turn`/`rewind` and the project calls. No GPUI. |
 | `crates/providers/driver` | `Driver { name, start_turn(SessionRef, prompt, ask, emit) -> Option<key>, cancel(session), reset(session), options(session), set_option(session, id, value), shutdown() }`, `SessionRef { id, resume, cwd }`, and `Asker { permission, question }`. `DriverError` carries whether the turn was cancelled, so the core can report `Aborted` instead of `Failed`. |
 | `crates/providers/demo` | Canned turn, no auth. |
 | `crates/providers/opencode` | ACP over stdio; one agent process per Circulo session, spawned in the session's project folder; `session/load` resume with self-healing fallback; permission and elicitation mapped to cards; `configOptions` applied live, queued mid-turn; a shared stdin handle sends `session/cancel` when the turn owns the slot. |
+| `crates/providers/codex` | `codex app-server` over stdio; one child per Circulo session; `thread/start` / `thread/resume` with the thread id as the key; approvals and MCP form elicitation mapped to the same cards; `model/list` for model + effort; `turn/interrupt` on a shared stdin handle; `reset` drops the child. |
 | `crates/ui` | GPUI views and presentation state: shell, sidebar (title/project/time rows), transcript (Rewind on a finished turn), rewind card, markdown, composer (project chip and queue), input, cards. |
 | `crates/app` | Composition root + supervisor: spawns the daemon, connects, reopens the last session, opens the window; quit closes stdin and waits before killing. |
 
@@ -434,6 +432,11 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   agent's order instead of alphabetical.
 - **Remote**: tailcat recommended (no account, `TailcatKit` for iOS), tailnet and
   `wss://` supported, token stays mandatory.
+- **Codex uses the app server, not `codex exec --json`**: approvals, interrupt
+  and thread resume are first-class there; the batch stream has none of them.
+  `approvalPolicy: "on-request"` and `sandbox: "workspace-write"` keep the
+  agent in the project and the cards honest. `experimentalApi` is enabled only
+  for the documented MCP elicitation request.
 - **MIT license**, no Waku code, no GPL contamination.
 
 ## 8. Known quirks
@@ -470,6 +473,14 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   GPUI 0.2.2).
 - Light theme values are approximations; this machine is dark.
 - `docs/ui.md` owns the tokens and geometry; keep them there.
+- `CIRCULO_PROVIDER=codex` runs the Codex adapter; it needs `codex` on `PATH`
+  (or `CIRCULO_CODEX_BIN`). `model/list` may need a signed-in account, so the
+  pickers can be empty without one. `request_permissions`, URL/device
+  elicitation and `tool/requestUserInput` are answered as unsupported; tool
+  output and usage are not rendered yet.
+- The Codex CLI is not installed on this machine, so its live tests are
+  `--ignored`; the scripted app server in `tests/scripted.rs` proves the
+  lifecycle without a model call.
 - The mock labels left in `mock.rs` are the model, access mode, agent mode and
   the composer's picker text.
 
@@ -481,6 +492,7 @@ rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
 `projects.md` (canonical folders, composer picker, per-session cwd),
 `git.md` (checkpoint refs, capture, restore, rewind),
 `providers/opencode.md` (ACP, continuity, project folder, cancellation),
+`providers/codex.md` (app server, approvals, elicitation, thread resume),
 `remote.md`.
 
 ## 10. Repo flow (do not skip)
@@ -489,5 +501,5 @@ rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
   Never push to `main`.
 - Commit messages `type(scope): summary`; one logical change per commit.
 - Docs travel with the change.
-- The Iconoir branch merged as PR #54; `origin/main` is the truth, and the next
-  branch starts from it.
+- The Codex branch is `feature/codex-provider`; `origin/main` is still
+  `0cfc62b`, and the next branch starts from it after this PR merges.
