@@ -1,8 +1,12 @@
 //! Icons, embedded at compile time.
 //!
-//! The SVGs come from [Lucide](https://lucide.dev) (ISC license), the same
-//! visual family the reference uses. They are tinted with the theme through
-//! `currentColor`, so one file serves every state.
+//! They come from [Kubai Icons](https://icons.kubai.design) (MIT): the
+//! two-tone style for icons with body, and the same author's line style for
+//! the simple navigation glyphs the two-tone set does not draw (arrows,
+//! chevrons, the reasoning mark, the panel toggles). Every file uses
+//! `currentColor`, and the second tone is the same colour at reduced opacity,
+//! so the theme tints the whole icon. `opencode.svg` is the provider's own
+//! mark, kept to identify it in the picker.
 
 use gpui::{Rgba, div, prelude::*, px, svg};
 
@@ -22,7 +26,6 @@ icon_assets!(
     "arrow-left.svg",
     "arrow-right.svg",
     "arrow-up.svg",
-    "asterisk.svg",
     "brain.svg",
     "chevron-down.svg",
     "chevron-right.svg",

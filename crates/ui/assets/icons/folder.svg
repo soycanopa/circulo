@@ -1,15 +1,1 @@
-<!-- @license lucide-static v1.77.0 - ISC -->
-<svg
-  class="lucide lucide-folder"
-  xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="currentColor"
-  stroke-width="2"
-  stroke-linecap="round"
-  stroke-linejoin="round"
->
-  <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="24" height="24" fill="none"><defs><mask id="folder-d-g1" maskUnits="userSpaceOnUse" x="-2" y="-2" width="20" height="20"><rect x="-2" y="-2" width="20" height="20" fill="#fff"/><g><path d="M1 4.7C1 3.586 1 2.879 1.439 2.439C1.879 2 2.586 2 3.7 2L5 2C5.415 2 6.121 2 6.561 2.439C7 2.879 7 3.586 7 4L7 4L10.5 4C12.357 4 13.536 4 14.268 4.732C15 5.464 15 6.643 15 8.5L15 9.5C15 11.357 15 12.536 14.268 13.268C13.536 14 12.357 14 10.5 14L5.5 14C3.643 14 2.464 14 1.732 13.268C1 12.536 1 11.357 1 9.5Z" fill="#000" stroke="#000" stroke-width="2" stroke-linejoin="round"/></g></mask></defs><g><g mask="url(#folder-d-g1)"><g><path d="M6.5 8.2C6.5 7.085 6.5 6.379 6.939 5.939C7.379 5.5 8.085 5.5 9.2 5.5L10.3 5.5C11.415 5.5 12.121 5.5 12.561 5.939C13 6.379 13 7.085 13 8.2L13 9.3C13 10.415 13 11.121 12.561 11.561C12.121 12 11.415 12 10.3 12L9.2 12C8.085 12 7.379 12 6.939 11.561C6.5 11.121 6.5 10.415 6.5 9.3Z" fill="currentColor"/></g></g><g><path d="M1 4.7C1 3.586 1 2.879 1.439 2.439C1.879 2 2.586 2 3.7 2L5 2C5.415 2 6.121 2 6.561 2.439C7 2.879 7 3.586 7 4L7 4L10.5 4C12.357 4 13.536 4 14.268 4.732C15 5.464 15 6.643 15 8.5L15 9.5C15 11.357 15 12.536 14.268 13.268C13.536 14 12.357 14 10.5 14L5.5 14C3.643 14 2.464 14 1.732 13.268C1 12.536 1 11.357 1 9.5Z" fill="currentColor" fill-opacity="0.35"/></g><g><path d="M9 11.375C9 11.03 9.28 10.75 9.625 10.75L12.375 10.75C12.72 10.75 13 11.03 13 11.375L13 11.375C13 11.72 12.72 12 12.375 12L9.625 12C9.28 12 9 11.72 9 11.375Z" fill="currentColor"/></g></g></svg>
