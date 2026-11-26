@@ -31,7 +31,7 @@ Order matters: prove the pipe before adding a real provider to it.
 ## Phase 3 — Second provider + Git
 - [x] Projects: the composer's project chip lists canonical folders, `New project…` uses the native picker, `No project` is a row, and a session's agent runs in its project's `cwd`; the sidebar row keeps title / project / time
 - [x] Git checkpoints captured at turn start and end, stored under `refs/circulo/...`; the composer footer shows the real branch when the project is a repository
-- Conversation-aware rewind: restore a checkpoint and trim the transcript together
+- [x] Conversation-aware rewind: restore a checkpoint, trim the transcript, drop the provider session, and confirm the destructive parts in a card
 - Claude Code or Codex adapter
 
 ## Phase 4 — UI polish

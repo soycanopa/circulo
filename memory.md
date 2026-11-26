@@ -2,7 +2,7 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-26, on `feature/git-checkpoints` after PR #48; 130
+Last updated: 2026-11-26, on `feature/rewind` after PR #49; 134
 tests green; CI covers fmt + clippy + test on macOS. The model-call tests in
 `tests/real.rs` need OpenCode credit, which this account has none of right now
 (2026-11-23): they fail with "Insufficient balance". The no-model-call load
@@ -130,10 +130,14 @@ of the project worktree before the provider starts and after it returns, stored
 as a dangling commit under
 `refs/circulo/session-<uuid>/turn-<n>-start|end`. The capture uses a temporary
 index (`GIT_INDEX_FILE`), so the user's branch, index and working tree are never
-touched; ignored files stay out. `restore` is the exact inverse (`git restore
---source=... --worktree --staged`, `git clean -fd`, index reset) and is tested;
-the UI rewind is next. `RepoStatus` gives the window the real branch, or tells
-it to hide the chip for a plain folder. A Git failure never fails a turn.
+touched; ignored files stay out. A finished turn's divider offers **Rewind** on
+hover; the confirmation card picks the start snapshot (Before this turn, the turn
+goes too) or the end snapshot (After this turn, only later turns go), restores
+the worktree, trims turns and parts in one transaction, clears the title when
+nothing remains, drops the provider key and resets the driver's child, so the
+next prompt starts a fresh agent conversation over the restored files. A Git
+failure never fails a turn. `RepoStatus` gives the window the real branch, or
+tells it to hide the chip for a plain folder.
 
 **Storage** (`crates/persistence`, rusqlite bundled): sessions, turns and parts in
 `~/.circulo/circulo.db`; `CIRCULO_HOME` overrides the directory. The core writes
@@ -184,13 +188,15 @@ the app, `CIRCULO_OPENCODE_BIN` points the daemon at that script.
 project-level `permission` config does not change ACP behaviour; the ACP session
 advertises `loadSession: true` (unused so far).
 
-## 3. Next task: rewind from a checkpoint
+## 3. Next task: a second provider
 
-Checkpoint capture landed (2026-11-26): `crates/git` snapshots the whole
-worktree before and after every turn under
-`refs/circulo/session-<uuid>/turn-<n>-start|end`, using a temporary index so the
-user's index is untouched; `restore` is implemented and tested. `RepoStatus`
-puts the real branch in the footer. Projects and queue/steer landed just before.
+Rewind landed (2026-11-26): a finished turn's divider offers Rewind; the card
+picks `Before this turn` (start snapshot, turn removed) or `After this turn` (end
+snapshot, later turns removed); the core refuses while a turn runs, clears the
+queue, restores the worktree, trims turns/parts in one transaction, drops the
+provider key, resets the driver's child and answers with the trimmed history.
+Checkpoint capture and the real branch landed just before; projects, queue/steer
+and abort before that.
 
 Session continuity landed (2026-11-23): one agent process per Circulo session,
 the ACP session id in SQLite, `session/load` on restart, mid-turn switches
@@ -200,36 +206,33 @@ still prove, once there is credit: a real two-turn conversation sharing context
 (`a_real_session_resumes_after_a_restart`). Everything else is proven against
 the scripted agent and the real load probe.
 
-**Why rewind next:** the snapshots exist and `restore` works, but nothing calls
-it. A rewind must move files and transcript together, and the confirmation has
-to be honest about two things: files created after the snapshot are deleted, and
-ACP has no provider-side rewind, so the next prompt starts a fresh agent
-conversation over the restored files.
+**Why a second provider next:** the Driver trait has only been proven by OpenCode
+(and the demo). The PRD's v1.0 bar is at least OpenCode plus Claude Code or
+Codex; a second adapter is what proves the boundary is real, not shaped around
+one agent.
 
 **Plan:**
-1. Wire: `Rewind { session, turn, to: Start | End }`. The daemon answers with a
-   trimmed `History` and a fresh `RepoStatus`.
-2. Core: refuse while a turn is in flight; resolve the checkpoint ref; call
-   `circulo_git::restore`; delete turns/parts after the target; drop the stored
-   provider session key; emit the trimmed history.
-3. UI: a per-turn action ("Rewind to before this turn" / "Rewind to here") and a
-   confirmation card above the composer. Cancel is the default. The card says
-   files restored, later turns removed, untracked files deleted, agent context
-   reset.
-4. Verify: rewind to start and to end; files and transcript agree; a plain
-   folder, a missing ref and a turn in flight are honest errors; no rewind
-   leaves a stale queue.
+1. Pick one: Claude Code or Codex; read its official protocol/docs first, no API
+   guessing.
+2. New crate under `crates/providers/`, implementing `Driver`, `Asker`,
+   `cancel`, `reset`, options and continuity with the provider's own session
+   key.
+3. Fixtures or a scripted counterpart for the protocol shapes, the way
+   OpenCode's tests do; real-CLI tests behind `--ignored`.
+4. Prove: a turn streams, a permission/question card works, a model/effort
+   option applies, continuity survives a daemon restart, rewind drops the
+   provider session.
+5. The daemon picks it with `CIRCULO_PROVIDER`; no core or UI rewrite.
 
 ## 4. After that, in plan order
 
-1. **Rewind from a checkpoint** (Phase 3), above.
-2. **A second provider** (Claude Code or Codex) to prove the Driver trait.
-3. **Clickable links and math** in markdown. Links need GPUI text hit-testing,
+1. **A second provider** (Claude Code or Codex), above.
+2. **Clickable links and math** in markdown. Links need GPUI text hit-testing,
    which 0.2.2 does not expose: either keep the text layout plus element bounds,
    or build an inline layout from word-sized elements.
-4. **Attachments blob store**, the piece `docs/implement.md` Phase 1 still
+3. **Attachments blob store**, the piece `docs/implement.md` Phase 1 still
    leaves open inside persistence.
-5. **Remote/pairing** (`docs/remote.md`): QR with a saved tailcat key + `--allow`;
+4. **Remote/pairing** (`docs/remote.md`): QR with a saved tailcat key + `--allow`;
    the desktop owns the tunnel. `tailcat` is not installed here. Open question:
    what the QR payload carries.
 
@@ -237,16 +240,16 @@ conversation over the restored files.
 
 | Crate | Role |
 |---|---|
-| `crates/protocol` | Wire contract, version 3: `Hello`, `ClientRequest` (+`SetOption`, `CancelTurn`, `Steer`, `RemoveQueued`, `ListProjects`, `AddProject`, `RemoveProject`), `ServerMessage` (+`Options`, `Settings`, `Queue`, `Projects`, `ProjectAdded`, `RepoStatus`), `TurnStarted` with the prompt, `Part`, `PermissionRequest`, `Question`, `ConfigOption`, `QueuedPrompt`, `ProjectSummary`, `SessionSummary`, `HistoryTurn`. One JSON per WebSocket text frame; unknown types skipped. |
-| `crates/core` | Sessions, turn orchestration, one FIFO queue per session drained by a worker, the permission/question broker (entries owned by session + turn), the project list (canonical paths), Git start/end checkpoints around each turn, translation between storage and wire, carrying provider session keys both ways, abort and steer routing. Speaks only the Driver trait. |
-| `crates/persistence` | SQLite: sessions (+ provider key, project path), turns, parts, settings, projects; schema v4. Owned by the core; nobody else opens it. |
+| `crates/protocol` | Wire contract, version 3: `Hello`, `ClientRequest` (+`SetOption`, `CancelTurn`, `Steer`, `RemoveQueued`, `Rewind`, `ListProjects`, `AddProject`, `RemoveProject`), `ServerMessage` (+`Options`, `Settings`, `Queue`, `Projects`, `ProjectAdded`, `RepoStatus`), `TurnStarted` with the prompt, `Part`, `PermissionRequest`, `Question`, `ConfigOption`, `QueuedPrompt`, `ProjectSummary`, `SessionSummary`, `HistoryTurn`. One JSON per WebSocket text frame; unknown types skipped. |
+| `crates/core` | Sessions, turn orchestration, one FIFO queue per session drained by a worker, the permission/question broker (entries owned by session + turn), the project list (canonical paths), Git start/end checkpoints around each turn, rewind (restore + trim + driver reset), translation between storage and wire, carrying provider session keys both ways, abort and steer routing. Speaks only the Driver trait. |
+| `crates/persistence` | SQLite: sessions (+ provider key, project path), turns, parts, settings, projects; schema v4. `trim_turns` removes a suffix in one transaction. Owned by the core; nobody else opens it. |
 | `crates/git` | Whole-worktree snapshots with a temporary index, private `refs/circulo/...` refs, exact restore, and the current branch. Owned by the core. |
 | `crates/daemon` | Loopback WebSocket, token handshake, reader + writer per connection, provider chosen by `CIRCULO_PROVIDER`, database from `CIRCULO_HOME`, one queue worker per session, project/repo status pushes, clear-and-abort on connection close, clean shutdown on stdin EOF. |
 | `crates/client` | Handshake, blocking read loop, a splittable writer half, `prompt`/`steer`/`remove_queued`/`cancel_turn`. No GPUI. |
-| `crates/providers/driver` | `Driver { name, start_turn(SessionRef, prompt, ask, emit) -> Option<key>, cancel(session), options(session), set_option(session, id, value), shutdown() }`, `SessionRef { id, resume, cwd }`, and `Asker { permission, question }`. `DriverError` carries whether the turn was cancelled, so the core can report `Aborted` instead of `Failed`. |
+| `crates/providers/driver` | `Driver { name, start_turn(SessionRef, prompt, ask, emit) -> Option<key>, cancel(session), reset(session), options(session), set_option(session, id, value), shutdown() }`, `SessionRef { id, resume, cwd }`, and `Asker { permission, question }`. `DriverError` carries whether the turn was cancelled, so the core can report `Aborted` instead of `Failed`. |
 | `crates/providers/demo` | Canned turn, no auth. |
 | `crates/providers/opencode` | ACP over stdio; one agent process per Circulo session, spawned in the session's project folder; `session/load` resume with self-healing fallback; permission and elicitation mapped to cards; `configOptions` applied live, queued mid-turn; a shared stdin handle sends `session/cancel` when the turn owns the slot. |
-| `crates/ui` | GPUI views and presentation state: shell, sidebar (title/project/time rows), transcript, markdown, composer (project chip and queue), input, cards. |
+| `crates/ui` | GPUI views and presentation state: shell, sidebar (title/project/time rows), transcript (Rewind on a finished turn), rewind card, markdown, composer (project chip and queue), input, cards. |
 | `crates/app` | Composition root + supervisor: spawns the daemon, connects, reopens the last session, opens the window; quit closes stdin and waits before killing. |
 
 Dependency direction is one way. The UI never imports a provider or the core.
@@ -295,6 +298,15 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   over the restored files. The confirmation says so.
 - **Worktrees are optional**: checkpoints work in the project folder itself;
   worktrees per session come later without changing the ref format.
+- **Rewind moves files, transcript and agent context together, honestly**: the
+  worktree restores exactly, `trim_turns` removes the later turns/parts in one
+  transaction, the title clears when nothing remains, the provider key is
+  dropped and `Driver::reset` kills the child, so the next prompt starts a fresh
+  agent conversation over the restored files. ACP has no rewind/fork; the card
+  says so.
+- **A rewind owns the session while it runs**: it refuses with a turn in flight
+  or another rewind, clears the queue and stops the worker, and is the only
+  destructive action behind a confirmation card with Cancel as the default.
 - **Abort is an outcome, not a failure**: `DriverError::cancelled` becomes
   `FinishReason::Aborted`, with no error banner, and cards the turn left open
   go away. The broker entry owns its session and turn, so cancelling one session
@@ -359,9 +371,11 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
 - Checkpoint refs accumulate per turn; there is no session delete and no ref
   cleanup yet. A checkpoint is a whole-worktree `git add -A` twice per turn, so a
   huge repo pays for it.
-- Rewind is not wired to the UI yet: `circulo_git::restore` is tested, but nothing
-  calls it. The plan in `docs/git.md` says the provider context starts fresh
-  after a rewind because ACP has no rewind/fork.
+- Rewind is file-exact but has no undo: the transcript is trimmed, and the older
+  checkpoint refs remain but there is no history UI. The agent's provider session
+  is reset, because ACP has no rewind/fork; the card says so.
+- A rewind of turn 1 leaves the session blank and clears its title, but blank
+  rows are not deleted.
 - Blank sessions are reused per project (as in Waku), but there is no delete
   session yet: a blank task for a project the user abandoned stays in the list.
 - `RemoveProject` exists on the wire; the composer menu does not expose removal
@@ -389,6 +403,5 @@ rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
   Never push to `main`.
 - Commit messages `type(scope): summary`; one logical change per commit.
 - Docs travel with the change.
-- The current worktree is `feature/git-checkpoints` (git crate, turn
-  checkpoints, real branch), not yet merged; `origin/main` is the truth, and the
-  next branch starts from it.
+- The current worktree is `feature/rewind` (rewind wire, core, card), not yet
+  merged; `origin/main` is the truth, and the next branch starts from it.
