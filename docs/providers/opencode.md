@@ -27,10 +27,16 @@ documented message set, so it is the honest integration.
    which resumes the agent's own history (see "Session continuity").
    The stored choices are re-applied with `session/set_config_option` in both
    cases, because a set lasts only for the session that received it.
-3. `session/prompt` with one text part. Updates stream as
-   `session/update` notifications until the response arrives.
+3. `session/prompt` with the text part plus one block per attachment: an
+   `image` block (base64) when the agent advertises `promptCapabilities.image`,
+   otherwise a `resource_link` to the blob. Updates stream as `session/update`
+   notifications until the response arrives.
 4. The process stays alive: one `opencode acp` child per Circulo session,
    released when the daemon winds down (the driver's `shutdown`).
+
+The client does not advertise `fs.readTextFile`, so a `resource_link` is a path
+the agent reads itself. The core has already copied the file into its blob
+store; the path is stable for the life of the turn.
 
 ## Session continuity
 

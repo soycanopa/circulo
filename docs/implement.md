@@ -20,7 +20,7 @@ Order matters: prove the pipe before adding a real provider to it.
 5. [x] Client crate: handshake, requests, streamed messages. Integration test against a real daemon.
 6. [x] Wire the desktop: the app supervises the daemon, streams parts into the transcript, and the daemon exits with the app.
 7. [x] OpenCode adapter behind the same Driver trait (ACP over stdio).
-8. [x] Local persistence (SQLite), owned by the core: sessions, turns and parts in `~/.circulo/circulo.db` (`CIRCULO_HOME` overrides), the app reopens the newest session with its history. Settings followed as the `settings` table (schema 3); the attachment store still follows.
+8. [x] Local persistence (SQLite), owned by the core: sessions, turns and parts in `~/.circulo/circulo.db` (`CIRCULO_HOME` overrides), the app reopens the newest session with its history. Settings followed as the `settings` table (schema 3); attachments followed as the content-addressed blob store and schema 5.
 9. [x] Session continuity: one agent process per Circulo session, the ACP session id stored in SQLite, `session/load` on a daemon restart, mid-turn option switches land at the turn's end, clean daemon shutdown with no orphaned agent processes.
 
 ## Phase 2 — Shared control surface
@@ -40,6 +40,7 @@ Order matters: prove the pipe before adding a real provider to it.
 - [x] Beautiful markdown transcript: headings, lists, tables, fenced code, quotes, footnotes, weighted columns, cached parse
 - [x] Markdown links keep their target and open in the system browser through `InteractiveText` byte-range hit-testing
 - [x] Display math (`$$…$$`) rendered by RaTeX as a cached image block; inline `$…$` stays a source chip until an inline layout lands
+- [x] Attachments: images and text files in the composer, copied into a content-addressed blob store, carried through the wire and drawn as chips
 - [x] Permission cards, and question cards from ACP elicitation
 - [x] Typeable composer: Enter sends, Shift+Enter breaks the line, prompts travel mid-turn
 - [x] Tool rows keyed by the provider's call id; the transcript follows the stream with a jump-to-latest button

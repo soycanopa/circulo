@@ -55,11 +55,23 @@ pub enum ClientRequest {
     StartSession { project: Option<String> },
     /// Send a prompt and stream the turn back. While another turn runs in the
     /// session, the prompt is queued and starts when that one ends, in order.
-    Prompt { session: String, text: String },
+    Prompt {
+        session: String,
+        text: String,
+        /// Paths on the daemon host. The daemon ingests them into its blob
+        /// store before the prompt is queued; remote clients will upload bytes.
+        #[serde(default)]
+        attachments: Vec<String>,
+    },
     /// Redirect a running turn: the text goes ahead of the queue and the
     /// running turn is aborted, so the agent starts the new one with its
     /// context intact. With no turn running it is just a prompt.
-    Steer { session: String, text: String },
+    Steer {
+        session: String,
+        text: String,
+        #[serde(default)]
+        attachments: Vec<String>,
+    },
     /// Drop a prompt that has not started yet. The daemon answers with the
     /// refreshed `Queue`.
     RemoveQueued { session: String, id: String },
@@ -186,6 +198,9 @@ pub enum ServerMessage {
         /// queued prompt shows what it asked when it finally starts, without
         /// the client remembering a guess.
         prompt: String,
+        /// The files this turn carries, as the store knows them.
+        #[serde(default)]
+        attachments: Vec<AttachmentSummary>,
     },
     Part {
         session: String,
@@ -282,6 +297,19 @@ pub struct QueuedPrompt {
     pub id: String,
     /// The user text, shown as-is.
     pub text: String,
+    /// Files waiting with the prompt.
+    #[serde(default)]
+    pub attachments: Vec<AttachmentSummary>,
+}
+
+/// A file the user attached, as the store knows it. The bytes live in the
+/// daemon's content-addressed blob store; the wire carries only this metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttachmentSummary {
+    pub id: String,
+    pub name: String,
+    pub mime: String,
+    pub size: u64,
 }
 
 /// A folder the user added. The canonical path is the key; the name is the
@@ -307,6 +335,9 @@ pub struct HistoryTurn {
     pub turn: u64,
     pub prompt: String,
     pub parts: Vec<Part>,
+    /// Files the turn carried, so a reopened session can draw the chips.
+    #[serde(default)]
+    pub attachments: Vec<AttachmentSummary>,
 }
 
 /// What the agent is asking, in the agent's own words, plus the options the
@@ -551,6 +582,12 @@ mod tests {
                 session: "s1".into(),
                 turn: 7,
                 prompt: "hello".into(),
+                attachments: vec![AttachmentSummary {
+                    id: "a-1".into(),
+                    name: "shot.png".into(),
+                    mime: "image/png".into(),
+                    size: 1234,
+                }],
             },
             ServerMessage::Part {
                 session: "s1".into(),
@@ -632,6 +669,7 @@ mod tests {
                 items: vec![QueuedPrompt {
                     id: "q-1".into(),
                     text: "next".into(),
+                    attachments: Vec::new(),
                 }],
             },
             ServerMessage::Sessions {
@@ -662,6 +700,7 @@ mod tests {
                     turn: 1,
                     prompt: "hello".into(),
                     parts: vec![Part::Text { delta: "hi".into() }],
+                    attachments: Vec::new(),
                 }],
             },
             ServerMessage::Options {
@@ -712,10 +751,12 @@ mod tests {
             ClientRequest::Prompt {
                 session: "s1".into(),
                 text: "ship it".into(),
+                attachments: vec!["/tmp/shot.png".into()],
             },
             ClientRequest::Steer {
                 session: "s1".into(),
                 text: "redirect".into(),
+                attachments: Vec::new(),
             },
             ClientRequest::RemoveQueued {
                 session: "s1".into(),

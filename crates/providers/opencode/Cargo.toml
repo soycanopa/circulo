@@ -7,12 +7,15 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+base64 = "0.22"
 circulo-protocol.workspace = true
 circulo-provider.workspace = true
 # preserve_order keeps a form's fields in the order the agent wrote them; a
 # card that reorders its questions is a card that reads wrong.
 serde_json = { workspace = true, features = ["preserve_order"] }
 thiserror.workspace = true
+# A blob path becomes a `file://` URI for ACP resource links.
+url = "2"
 
 [dev-dependencies]
 serde_json.workspace = true

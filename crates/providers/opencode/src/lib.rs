@@ -29,17 +29,18 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
+use base64::Engine as _;
 use circulo_protocol::{
     ConfigChoice, ConfigOption, Cost, Part, PermissionOption, PermissionOptionKind,
     PermissionRequest, Question, QuestionField, QuestionKind, ToolState, Usage,
 };
-use circulo_provider::{Asker, Decision, Driver, DriverError, SessionRef};
+use circulo_provider::{Asker, Attachment, Decision, Driver, DriverError, SessionRef};
 use serde_json::{Value, json};
+use url::Url;
 
 /// ACP version this driver speaks. `initialize` returns the same number or the
 /// agent refuses the client.
 const ACP_VERSION: u64 = 1;
-
 pub struct OpenCode {
     cwd: PathBuf,
     binary: PathBuf,
@@ -308,6 +309,7 @@ impl Driver for OpenCode {
         emit: &mut dyn FnMut(Part),
     ) -> Result<Option<String>, DriverError> {
         let slot = self.slot_for(session_ref.id);
+        let attachments = session_ref.attachments;
 
         // Held for the whole turn: the agent answers one prompt at a time,
         // and a second turn on this session waits instead of interleaving.
@@ -330,9 +332,14 @@ impl Driver for OpenCode {
         let attached = slot.as_mut().expect("attached just above");
 
         let mut tools = HashMap::new();
-        let run = attached
-            .agent
-            .prompt(&attached.session, prompt, &mut tools, ask, emit);
+        let run = attached.agent.prompt(
+            &attached.session,
+            prompt,
+            attachments,
+            &mut tools,
+            ask,
+            emit,
+        );
 
         match run {
             Ok(()) => {
@@ -486,6 +493,11 @@ fn initialize(agent: &mut Agent, ask: &mut dyn Asker) -> Result<(), DriverError>
             "opencode speaks ACP version {version:?}, this driver speaks {ACP_VERSION}"
         )));
     }
+
+    agent.supports_images = welcome
+        .pointer("/agentCapabilities/promptCapabilities/image")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     Ok(())
 }
 
@@ -611,6 +623,8 @@ struct Agent {
     dead: bool,
     /// The latest `usage_update` this agent sent.
     usage: Option<Usage>,
+    /// The agent's `initialize` said it can take images in a prompt.
+    supports_images: bool,
 }
 
 impl Agent {
@@ -644,6 +658,7 @@ impl Agent {
             last_config: Value::Null,
             dead: false,
             usage: None,
+            supports_images: false,
         })
     }
 
@@ -677,19 +692,21 @@ impl Agent {
         &mut self,
         session: &str,
         text: &str,
+        attachments: &[Attachment],
         tools: &mut HashMap<String, Tool>,
         ask: &mut dyn Asker,
         emit: &mut dyn FnMut(Part),
     ) -> Result<(), DriverError> {
         let id = self.next_id;
         self.next_id += 1;
+        let prompt = prompt_blocks(text, attachments, self.supports_images)?;
         self.send(json!({
             "jsonrpc": "2.0",
             "id": id,
             "method": "session/prompt",
             "params": {
                 "sessionId": session,
-                "prompt": [{"type": "text", "text": text}]
+                "prompt": prompt
             }
         }))?;
 
@@ -1021,6 +1038,48 @@ fn append_output(output: &mut String, delta: &str) {
     }
     output.push_str(&delta[..end]);
     output.push_str(TRUNCATED);
+}
+
+/// The ACP prompt: the user's text plus one block per file. An image goes as
+/// base64 `image` when the agent advertises that capability; everything else
+/// is a `resource_link` to the blob, which ACP requires agents to support.
+fn prompt_blocks(
+    text: &str,
+    attachments: &[Attachment],
+    supports_images: bool,
+) -> Result<Vec<Value>, DriverError> {
+    let mut blocks = vec![json!({"type": "text", "text": text})];
+
+    for attachment in attachments {
+        let uri = file_uri(&attachment.path);
+        if attachment.mime.starts_with("image/") && supports_images {
+            let bytes = std::fs::read(&attachment.path).map_err(|error| {
+                DriverError::new(format!("cannot read {}: {error}", attachment.name))
+            })?;
+            blocks.push(json!({
+                "type": "image",
+                "data": base64::engine::general_purpose::STANDARD.encode(bytes),
+                "mimeType": attachment.mime,
+                "uri": uri,
+            }));
+        } else {
+            blocks.push(json!({
+                "type": "resource_link",
+                "uri": uri,
+                "name": attachment.name,
+                "mimeType": attachment.mime,
+                "size": attachment.size,
+            }));
+        }
+    }
+
+    Ok(blocks)
+}
+
+fn file_uri(path: &Path) -> String {
+    Url::from_file_path(path)
+        .map(|url| url.to_string())
+        .unwrap_or_else(|_| format!("file://{}", path.display()))
 }
 
 /// ACP's `usage_update`: context used and size, plus an optional cumulative

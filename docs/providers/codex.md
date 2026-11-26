@@ -34,9 +34,11 @@ card or stop a turn; the app server can.
    `excludeTurns: true` (the transcript already lives in SQLite; loading the
    agent's turns again would only cost time). The answer carries
    `thread.id`, which is the continuity key.
-2. **Turn.** `turn/start` with `threadId` and one text input, plus the stored
-   `model` and `effort` overrides when there are any. The response carries
-   `turn.id`; notifications stream until `turn/completed`.
+2. **Turn.** `turn/start` with `threadId` and one text input, plus one item
+   per attachment — `localImage { path }` for an image, a second text input
+   with the file's content for text (capped at 256 KiB, because the protocol
+   has no file-content input) — and the stored `model` and `effort` overrides.
+   The response carries `turn.id`; notifications stream until `turn/completed`.
 3. **Finish.** `turn/completed` with `status: "completed"` ends the turn,
    `"interrupted"` becomes `DriverError::cancelled`, and `"failed"` carries the
    turn's `error.message`. A dead child ends the turn as a failure and is
@@ -189,6 +191,9 @@ exits on stdin EOF, so no agent process outlives the daemon.
   item's `diff` is not. Usage is forwarded as cumulative tokens (`total`), not
   as a context ratio: Codex reports `total` and `last` per turn and the model's
   window, but not the tokens currently in context, so a ratio would lie.
+- **Attachments:** images are `localImage` paths into the core's blob store;
+  text files are inlined, capped at 256 KiB. Codex has no file-content input,
+  so a large text file costs tokens and is visibly truncated.
 - **Usage is not stored.** The driver keeps the last
   `thread/tokenUsage/updated` and the core forwards it after the turn; a
   reopened session has no gauge until its next turn.

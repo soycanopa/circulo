@@ -24,9 +24,10 @@ use serde_json::Value;
 const FAVORITES_KEY: &str = "favorites.model";
 
 use crate::composer::{
-    ChooseHandler, EditHandler, EffortHandler, Field, Footer, KeyHandler, Pickers,
-    ProjectActionHandler, ProjectChooseHandler, ProjectPicker, ProjectToggleHandler, RemoveHandler,
-    SendHandler, StarHandler, StopHandler, TabHandler, ToggleHandler, composer, queued,
+    AttachHandler, ChooseHandler, EditHandler, EffortHandler, Field, Footer, KeyHandler,
+    PendingAttachment, Pickers, ProjectActionHandler, ProjectChooseHandler, ProjectPicker,
+    ProjectToggleHandler, RemoveAttachmentHandler, RemoveHandler, SendHandler, StarHandler,
+    StopHandler, TabHandler, ToggleHandler, composer, queued,
 };
 use crate::input::TextInput;
 use crate::live::{Card, Transcript};
@@ -60,6 +61,9 @@ pub struct Shell {
     /// The session every prompt goes to. The app opens it once at startup.
     session: String,
     input: TextInput,
+    /// Files picked for the prompt being composed. The daemon ingests them
+    /// when the prompt is sent.
+    attachments: Vec<PendingAttachment>,
     composer_focus: FocusHandle,
     focus_composer: bool,
     list_state: ListState,
@@ -151,6 +155,7 @@ impl Shell {
             transcript,
             session,
             input: TextInput::with_text(draft),
+            attachments: Vec::new(),
             composer_focus: cx.focus_handle(),
             focus_composer: true,
             list_state: new_list_state(),
@@ -669,6 +674,13 @@ impl Shell {
             return;
         }
 
+        // Cmd/Ctrl+Shift+A opens the file picker. The paperclip is the
+        // discoverable path; this keeps the composer keyboard-first.
+        if key == "a" && modifiers.shift && (modifiers.platform || modifiers.control) {
+            self.attach_files(cx);
+            return;
+        }
+
         // Escape stops the running turn, the way the reference does. The
         // menus above got the key first; a card owns the keyboard itself.
         if key == "escape" && self.transcript.status.running {
@@ -708,6 +720,54 @@ impl Shell {
         cx.notify();
     }
 
+    /// Opens the native file picker and queues the chosen files for the next
+    /// prompt. The daemon validates and copies them when the prompt is sent.
+    pub(crate) fn attach_files(&mut self, cx: &mut Context<Self>) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: true,
+            prompt: Some("Attach files".into()),
+        });
+
+        cx.spawn(async move |this, cx| {
+            if let Ok(Ok(Some(paths))) = picked.await {
+                let _ = this.update(cx, |shell, cx| {
+                    for path in paths {
+                        if shell.attachments.len() >= 8 {
+                            break;
+                        }
+                        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                            continue;
+                        };
+                        let path = path.to_string_lossy().into_owned();
+                        if !shell
+                            .attachments
+                            .iter()
+                            .any(|attachment| attachment.path == path)
+                        {
+                            shell.attachments.push(PendingAttachment {
+                                path,
+                                name: name.to_owned(),
+                            });
+                        }
+                    }
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
+    }
+
+    /// Hands the picked paths to the request and clears the chips. The daemon
+    /// ingests them before the turn starts.
+    fn take_attachments(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.attachments)
+            .into_iter()
+            .map(|attachment| attachment.path)
+            .collect()
+    }
+
     /// Sends the composer's text as a prompt. The transcript remembers it, so
     /// the turn shows what was asked above what came back.
     fn submit(&mut self, cx: &mut Context<Self>) {
@@ -716,9 +776,11 @@ impl Shell {
         }
 
         let text = self.input.take();
+        let attachments = self.take_attachments();
         self.request(ClientRequest::Prompt {
             session: self.session.clone(),
             text,
+            attachments,
         });
         cx.notify();
     }
@@ -731,9 +793,11 @@ impl Shell {
             return;
         }
         let text = self.input.take();
+        let attachments = self.take_attachments();
         self.request(ClientRequest::Prompt {
             session: self.session.clone(),
             text,
+            attachments,
         });
         cx.notify();
     }
@@ -746,9 +810,11 @@ impl Shell {
             return;
         }
         let text = self.input.take();
+        let attachments = self.take_attachments();
         self.request(ClientRequest::Steer {
             session: self.session.clone(),
             text,
+            attachments,
         });
         cx.notify();
     }
@@ -1089,6 +1155,20 @@ impl Render for Shell {
                 let on_project_none: ProjectActionHandler = Rc::new(move |_window, cx| {
                     shell.update(cx, |shell, cx| shell.choose_no_project(cx));
                 });
+                let shell = cx.entity();
+                let on_attach: AttachHandler = Rc::new(move |_window, cx| {
+                    shell.update(cx, |shell, cx| shell.attach_files(cx));
+                });
+                let shell = cx.entity();
+                let on_remove_attachment: RemoveAttachmentHandler =
+                    Rc::new(move |index, _window, cx| {
+                        shell.update(cx, |shell, cx| {
+                            if index < shell.attachments.len() {
+                                shell.attachments.remove(index);
+                            }
+                            cx.notify();
+                        });
+                    });
                 let focused = self.composer_focus.is_focused(window);
 
                 column.child(composer(
@@ -1117,6 +1197,9 @@ impl Render for Shell {
                         on_key,
                         on_send,
                         on_stop,
+                        attachments: &self.attachments,
+                        on_attach,
+                        on_remove_attachment,
                     },
                     Footer {
                         project: &project,

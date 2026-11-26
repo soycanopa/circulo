@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::collections::BTreeMap;
 
 use circulo_protocol::{Part, PermissionRequest, Question};
-use circulo_provider::{Answer, Asker, Decision, Driver, SessionRef};
+use circulo_provider::{Answer, Asker, Attachment, Decision, Driver, SessionRef};
 use circulo_provider_opencode::OpenCode;
 
 /// A fake agent that asks for permission before it answers the prompt.
@@ -58,7 +58,8 @@ for line in sys.stdin:
 
     if method == "initialize":
         send({"jsonrpc": "2.0", "id": message["id"],
-              "result": {"protocolVersion": 1, "agentCapabilities": {}}})
+              "result": {"protocolVersion": 1,
+                         "agentCapabilities": {"promptCapabilities": {"image": True}}}})
     elif method == "session/new":
         for key, value in DEFAULTS.items():
             CONFIG[key]["current"] = value
@@ -121,6 +122,16 @@ for line in sys.stdin:
               "params": {"sessionId": "s1",
                          "update": {"sessionUpdate": "agent_message_chunk",
                                     "content": {"type": "text", "text": text}}}})
+        send({"jsonrpc": "2.0", "id": message["id"],
+              "result": {"stopReason": "end_turn"}})
+    elif method == "session/prompt" and MODE == "attachments":
+        blocks = message.get("params", {}).get("prompt", [])
+        kinds = ",".join(block.get("type", "?") for block in blocks)
+        send({"jsonrpc": "2.0", "method": "session/update",
+              "params": {"sessionId": "s1",
+                         "update": {"sessionUpdate": "agent_message_chunk",
+                                    "content": {"type": "text",
+                                                "text": "blocks=" + kinds}}}})
         send({"jsonrpc": "2.0", "id": message["id"],
               "result": {"stopReason": "end_turn"}})
     elif method == "session/prompt":
@@ -274,6 +285,59 @@ fn text(parts: &[Part]) -> String {
 }
 
 #[test]
+fn attachments_travel_as_an_image_and_a_resource_link() {
+    let agent = ScriptedAgent::with_mode("attachments", "attachments");
+    let image = agent.directory.join("shot.png");
+    fs::write(&image, b"png").expect("image");
+    let note = agent.directory.join("note.txt");
+    fs::write(&note, "hello").expect("note");
+
+    let attachments = vec![
+        Attachment {
+            name: "shot.png".into(),
+            mime: "image/png".into(),
+            size: 3,
+            path: image,
+        },
+        Attachment {
+            name: "note.txt".into(),
+            mime: "text/plain".into(),
+            size: 5,
+            path: note,
+        },
+    ];
+
+    let driver = OpenCode::with_binary(agent.directory.clone(), agent.binary());
+    let mut asker = Picks {
+        option: None,
+        choice: None,
+        note: None,
+        asked: Vec::new(),
+        questions: Vec::new(),
+    };
+    let mut parts = Vec::new();
+    driver
+        .start_turn(
+            SessionRef {
+                id: "s1",
+                resume: None,
+                cwd: None,
+                attachments: &attachments,
+            },
+            "go",
+            &mut asker,
+            &mut |part| parts.push(part),
+        )
+        .expect("turn");
+
+    assert!(
+        text(&parts).contains("blocks=text,image,resource_link"),
+        "{}",
+        text(&parts)
+    );
+}
+
+#[test]
 fn the_agent_gets_the_option_the_user_chose() {
     let agent = ScriptedAgent::new("allow");
     let (parts, asker) = run(&agent, Some("allow-once"));
@@ -413,6 +477,7 @@ fn the_session_folder_reaches_the_agent() {
                 id: "s1",
                 resume: None,
                 cwd: project.to_str(),
+                attachments: &[],
             },
             "go",
             &mut asker,

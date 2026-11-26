@@ -622,6 +622,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "blake3"
+version = "1.8.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64c0e36294adc8db531500e3f2b8ec75c4af9177271e9c6d33f93609d56e57cd"
+dependencies = [
+ "arrayvec",
+ "cc",
+ "cfg-if",
+ "constant_time_eq",
+ "cpufeatures 0.3.1",
+]
+
+[[package]]
 name = "block"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -932,10 +945,12 @@ dependencies = [
 name = "circulo-persistence"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "circulo-protocol",
  "rusqlite",
  "serde_json",
  "thiserror 2.0.21",
+ "uuid",
 ]
 
 [[package]]
@@ -977,10 +992,12 @@ dependencies = [
 name = "circulo-provider-opencode"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "circulo-protocol",
  "circulo-provider",
  "serde_json",
  "thiserror 2.0.21",
+ "url",
 ]
 
 [[package]]
@@ -1151,6 +1168,15 @@ dependencies = [
  "getrandom 0.2.17",
  "once_cell",
  "tiny-keccak",
+]
+
+[[package]]
+name = "constant_time_eq"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "144e7f1de087984240b7816d47f698b414979faa6f40839c5b86d6bd47db57b7"
+dependencies = [
+ "rustversion",
 ]
 
 [[package]]
