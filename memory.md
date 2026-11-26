@@ -2,7 +2,7 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-26, on `feature/queue-and-steer` after PR #44 merged; 118
+Last updated: 2026-11-26, on `main` after PR #45; 118
 tests green; CI covers fmt + clippy + test on macOS. The model-call tests in
 `tests/real.rs` need OpenCode credit, which this account has none of right now
 (2026-11-23): they fail with "Insufficient balance". The no-model-call load
@@ -325,6 +325,5 @@ rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
   Never push to `main`.
 - Commit messages `type(scope): summary`; one logical change per commit.
 - Docs travel with the change.
-- The current worktree is `feature/queue-and-steer` (queue, steer and the wire
-  v3 shapes), not yet merged; `origin/main` is the truth, and the next branch
-  starts from it.
+- The queue/steer branch merged as PR #45; `origin/main` is the truth, and the
+  next branch starts from it.
