@@ -126,7 +126,7 @@ message and change nothing.
 |---|---|
 | `crates/protocol` | `PermissionRequested`, `AnswerPermission`, `QuestionAsked`, `AnswerQuestion`, `PermissionOption*`, `Question*`; all additive, older peers skip them |
 | `crates/providers/driver` | `Asker` trait: `permission(...) -> Decision` and `question(...) -> Answer`; `start_turn` takes it as an argument |
-| `crates/core` | `PermissionBroker`: id, pending senders, `answer(id, decision)`. `run_turn` builds an asker that emits the message and **blocks** on the reply channel; a closed channel (client gone) reads as cancelled |
+| `crates/core` | `Broker`: id, owner turn, pending senders, `answer(id, decision)`. `run_turn` builds an asker that emits the message and **blocks** on the reply channel; a closed channel reads as cancelled. Each entry remembers its turn, so `cancel_turn(session)` drops exactly that turn's requests and leaves every other session alone |
 | `crates/providers/opencode` | turns the ACP request into a `PermissionRequest` (title from `toolCall.title`, detail from the command/path in `rawInput`/`locations`), and answers ACP with the chosen `optionId` |
 | `crates/daemon` | while a turn runs the connection must keep reading, so writes move to a writer thread over a cloned socket (`WebSocket::from_raw_socket`); the reader loop stays on the connection thread and routes `AnswerPermission` to the broker |
 | `crates/client` | `answer_permission(id, option)` |
@@ -141,8 +141,11 @@ message and change nothing.
   one card at a time, oldest first; answering pops it.
 - **Answer for an unknown id.** Ignored with an `Error` message; the pending
   card stays.
-- **Turn aborted.** No abort exists yet; when it lands it must cancel every
-  open request, because the agent will not accept an answer after `cancelled`.
+- **Turn aborted.** `CancelTurn` cancels that turn's open requests (the asker
+  reads `cancelled`, so the provider can answer the agent honestly) and asks
+  the provider to stop. The turn ends as `Aborted`, not as a failure; the UI
+  closes its cards when the turn finishes. An abort with no turn in flight is
+  an error, so a stale client learns the truth.
 
 ## 6. How it was verified
 

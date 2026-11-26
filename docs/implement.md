@@ -26,7 +26,7 @@ Order matters: prove the pipe before adding a real provider to it.
 ## Phase 2 — Shared control surface
 - [x] Model / reasoning effort discovery and switching (`session/new` returns `configOptions`; `session/set_config_option`)
 - Message queue + steering
-- Abort
+- [x] Abort: `CancelTurn` cancels the turn's cards, the driver sends ACP `session/cancel`, and the turn ends as `aborted`
 
 ## Phase 3 — Second provider + Git
 - Claude Code or Codex adapter
