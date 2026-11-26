@@ -10,6 +10,7 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::HashSet;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -217,6 +218,10 @@ fn handle(
         },
     );
 
+    // The sessions this connection has sent prompts to. When it goes away,
+    // only their cards are cancelled; another client's turn keeps running.
+    let mut prompted = HashSet::new();
+
     while let Some(line) = next(&mut socket)? {
         match ClientRequest::decode(&line)? {
             Some(ClientRequest::StartSession { project }) => {
@@ -233,6 +238,7 @@ fn handle(
             Some(ClientRequest::Prompt { session, text }) => {
                 // A turn blocks on its own thread, so this loop stays free to
                 // read the answer to a permission card.
+                prompted.insert(session.clone());
                 let core = Arc::clone(&core);
                 let outbound = outbound.clone();
                 thread::spawn(move || {
@@ -343,9 +349,11 @@ fn handle(
         }
     }
 
-    // The connection is going away with requests still open; every waiting
-    // driver has to stop waiting.
-    core.cancel_permissions();
+    // The connection is going away with requests still open; the turns this
+    // client started have to stop waiting. The other sessions keep their cards.
+    for session in prompted {
+        core.cancel_turn_requests(&session);
+    }
     Ok(())
 }
 

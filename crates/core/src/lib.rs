@@ -37,6 +37,10 @@ pub struct Core {
     /// The database. `None` for a memory-only core, which is what a test wants.
     store: Option<Arc<Store>>,
     turns: AtomicU64,
+    /// The turn running for each session. `run_turn` registers it before the
+    /// driver starts, so a cancel can find the cards that turn owns instead of
+    /// closing every session's cards at once.
+    in_flight: Mutex<HashMap<String, u64>>,
     permissions: Broker<Decision>,
     questions: Broker<Answer>,
 }
@@ -53,6 +57,7 @@ impl Core {
             sessions: Mutex::new(Vec::new()),
             store,
             turns: AtomicU64::new(0),
+            in_flight: Mutex::new(HashMap::new()),
             permissions: Broker::new("p"),
             questions: Broker::new("q"),
         }
@@ -167,9 +172,21 @@ impl Core {
         self.questions.answer(id, answer)
     }
 
-    /// Drops every open request: the client is gone, so nothing can answer.
-    /// The waiting drivers read that as cancelled and end their turns.
-    pub fn cancel_permissions(&self) {
+    /// Drops the cards of the turn running in `session`, so the driver's
+    /// blocked asker reads `Cancelled` and the turn can end. A session with no
+    /// turn in flight is untouched, and so is every other session.
+    pub fn cancel_turn_requests(&self, session: &str) -> bool {
+        let Some(turn) = self.in_flight().get(session).copied() else {
+            return false;
+        };
+        self.permissions.cancel_turn(session, turn);
+        self.questions.cancel_turn(session, turn);
+        true
+    }
+
+    /// Drops every open request: the daemon is going away, so nothing can
+    /// answer. The waiting drivers read that as cancelled and end their turns.
+    pub fn cancel_all_requests(&self) {
         self.permissions.cancel_all();
         self.questions.cancel_all();
     }
@@ -178,7 +195,7 @@ impl Core {
     /// and the provider must let its agents go — their processes belong to
     /// the provider, and this is what keeps none of them behind.
     pub fn shutdown(&self) {
-        self.cancel_permissions();
+        self.cancel_all_requests();
         self.driver.shutdown();
     }
 
@@ -246,6 +263,9 @@ impl Core {
         }
 
         let turn = self.turns.fetch_add(1, Ordering::Relaxed) + 1;
+        // Registered before the client hears the turn started: a cancel that
+        // arrives right after that message has to find it.
+        self.in_flight().insert(session.to_owned(), turn);
         emit(ServerMessage::TurnStarted {
             session: session.to_owned(),
             turn,
@@ -323,6 +343,19 @@ impl Core {
             turn,
             reason,
         });
+
+        // Only this turn's registration is cleared: a newer turn on the same
+        // session owns the slot by now.
+        let mut in_flight = self.in_flight();
+        if in_flight.get(session) == Some(&turn) {
+            in_flight.remove(session);
+        }
+    }
+
+    fn in_flight(&self) -> std::sync::MutexGuard<'_, HashMap<String, u64>> {
+        self.in_flight
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     fn open_sessions(&self) -> std::sync::MutexGuard<'_, Vec<Session>> {
@@ -342,7 +375,7 @@ struct TurnAsker<'a, F: FnMut(ServerMessage)> {
 
 impl<F: FnMut(ServerMessage)> Asker for TurnAsker<'_, F> {
     fn permission(&mut self, request: PermissionRequest) -> Decision {
-        let (id, answer) = self.permissions.open();
+        let (id, answer) = self.permissions.open(self.session, self.turn);
 
         (self.emit.borrow_mut())(ServerMessage::PermissionRequested {
             session: self.session.to_owned(),
@@ -359,7 +392,7 @@ impl<F: FnMut(ServerMessage)> Asker for TurnAsker<'_, F> {
     }
 
     fn question(&mut self, question: Question) -> Answer {
-        let (id, answer) = self.questions.open();
+        let (id, answer) = self.questions.open(self.session, self.turn);
 
         (self.emit.borrow_mut())(ServerMessage::QuestionAsked {
             session: self.session.to_owned(),
@@ -375,11 +408,19 @@ impl<F: FnMut(ServerMessage)> Asker for TurnAsker<'_, F> {
 }
 
 /// Open requests of one kind, keyed by the id the client saw. The prefix keeps
-/// permissions and questions apart on the wire ("p-3", "q-4").
+/// permissions and questions apart on the wire ("p-3", "q-4"), and each entry
+/// remembers which turn owns it: cancelling one turn must leave the cards of
+/// every other session alone.
 struct Broker<T> {
     prefix: &'static str,
     next: AtomicU64,
-    pending: Mutex<HashMap<String, Sender<T>>>,
+    pending: Mutex<HashMap<String, Pending<T>>>,
+}
+
+struct Pending<T> {
+    session: String,
+    turn: u64,
+    sender: Sender<T>,
 }
 
 impl<T> Broker<T> {
@@ -391,33 +432,46 @@ impl<T> Broker<T> {
         }
     }
 
-    fn open(&self) -> (String, Receiver<T>) {
+    fn open(&self, session: &str, turn: u64) -> (String, Receiver<T>) {
         let id = format!(
             "{}-{}",
             self.prefix,
             self.next.fetch_add(1, Ordering::Relaxed) + 1
         );
         let (send, receive) = channel();
-        self.pending().insert(id.clone(), send);
+        self.pending().insert(
+            id.clone(),
+            Pending {
+                session: session.to_owned(),
+                turn,
+                sender: send,
+            },
+        );
         (id, receive)
     }
 
     fn answer(&self, id: &str, answer: T) -> bool {
         let sender = self.pending().remove(id);
-        sender.is_some_and(|sender| sender.send(answer).is_ok())
+        sender.is_some_and(|pending| pending.sender.send(answer).is_ok())
     }
 
     fn close(&self, id: &str) {
         self.pending().remove(id);
     }
 
+    /// Drops the requests owned by one turn. Dropping the senders is the
+    /// cancellation: the waiting askers wake with a closed channel and answer
+    /// the provider with cancelled.
+    fn cancel_turn(&self, session: &str, turn: u64) {
+        self.pending()
+            .retain(|_, pending| pending.session != session || pending.turn != turn);
+    }
+
     fn cancel_all(&self) {
-        // Dropping the senders is the cancellation: every waiting asker wakes
-        // with a closed channel and answers the agent with cancelled.
         self.pending().clear();
     }
 
-    fn pending(&self) -> std::sync::MutexGuard<'_, HashMap<String, Sender<T>>> {
+    fn pending(&self) -> std::sync::MutexGuard<'_, HashMap<String, Pending<T>>> {
         self.pending.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
@@ -888,13 +942,15 @@ mod tests {
     fn a_client_that_goes_away_cancels_the_request() {
         let core = Arc::new(core_with(Arc::new(AsksOnce)));
         let session = core.start_session(None);
-        let messages = run_in_background(Arc::clone(&core), session);
+        let messages = run_in_background(Arc::clone(&core), session.clone());
 
         let mut text = None;
         while let Ok(message) = messages.recv() {
             match message {
                 // The client is gone the moment the card would have appeared.
-                ServerMessage::PermissionRequested { .. } => core.cancel_permissions(),
+                ServerMessage::PermissionRequested { .. } => {
+                    core.cancel_turn_requests(&session);
+                }
                 ServerMessage::Part {
                     part: Part::Text { delta },
                     ..
@@ -905,6 +961,54 @@ mod tests {
         }
 
         assert_eq!(text.as_deref(), Some("cancelled"), "nothing ran");
+    }
+
+    #[test]
+    fn cancelling_one_session_leaves_another_turn_alone() {
+        let core = Arc::new(core_with(Arc::new(AsksOnce)));
+        let first = core.start_session(None);
+        let second = core.start_session(None);
+        let first_messages = run_in_background(Arc::clone(&core), first.clone());
+        let second_messages = run_in_background(Arc::clone(&core), second.clone());
+
+        // Both turns are blocked on their own card.
+        next_card(&first_messages);
+        let second_id = next_card(&second_messages);
+
+        assert!(
+            core.cancel_turn_requests(&first),
+            "the first turn was running"
+        );
+        assert_eq!(outcome(&first_messages), "cancelled");
+
+        // The other session never noticed: its card is still open and answerable.
+        assert!(core.answer_permission(&second_id, Some("allow-once".into())));
+        assert_eq!(outcome(&second_messages), "chose allow-once");
+        assert!(!core.cancel_turn_requests("missing"));
+    }
+
+    /// Waits for the turn's permission card and returns its id.
+    fn next_card(messages: &std::sync::mpsc::Receiver<ServerMessage>) -> String {
+        loop {
+            match messages.recv().expect("the turn is alive") {
+                ServerMessage::PermissionRequested { id, .. } => return id,
+                _ => {}
+            }
+        }
+    }
+
+    /// Waits for the turn's answer text.
+    fn outcome(messages: &std::sync::mpsc::Receiver<ServerMessage>) -> String {
+        loop {
+            match messages.recv().expect("the turn is alive") {
+                ServerMessage::Part {
+                    part: Part::Text { delta },
+                    ..
+                } => return delta,
+                ServerMessage::TurnFinished { .. } => panic!("the turn ended without text"),
+                _ => {}
+            }
+        }
     }
 
     #[test]
