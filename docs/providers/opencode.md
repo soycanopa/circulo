@@ -58,6 +58,16 @@ at a time — while other sessions keep moving. A model or effort switch made
 while a turn is running is queued and lands at the turn's end: the picker
 sees its value at once, the session reads it from the next turn.
 
+## Project folder
+
+`SessionRef.cwd` carries the session's canonical project path. The driver
+spawns that session's child there and sends the same path as `cwd` in
+`session/new` and `session/load`. A projectless session falls back to the
+driver's configured folder (the daemon's cwd / `CIRCULO_PROJECT`). One child
+per session still holds: two sessions in different projects are two processes
+in two folders, and switching a started session to another project is not a
+thing the interface does.
+
 ## Cancellation
 
 `CancelTurn` reaches the driver as `Driver::cancel(session)`. The turn thread

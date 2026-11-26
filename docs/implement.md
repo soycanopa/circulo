@@ -29,6 +29,7 @@ Order matters: prove the pipe before adding a real provider to it.
 - [x] Abort: `CancelTurn` cancels the turn's cards, the driver sends ACP `session/cancel`, and the turn ends as `aborted`
 
 ## Phase 3 — Second provider + Git
+- [x] Projects: the composer's project chip lists canonical folders, `New project…` uses the native picker, `No project` is a row, and a session's agent runs in its project's `cwd`; the sidebar row keeps title / project / time
 - Claude Code or Codex adapter
 - Conversation-aware Git checkpoints and rewind
 

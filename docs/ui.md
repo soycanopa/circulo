@@ -84,10 +84,10 @@ Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group la
 ### Sidebar
 - [x] Window controls row: traffic lights, sidebar toggle, back and forward.
 - [x] `New Task` and `Search` rows with icons.
-- [x] Date-grouped session list from the database: Today / Yesterday / This Month / month name, title from the first prompt, project folder, relative time, selection. The folder affordance marks the group that holds the open session. A row opens its history; `New Task` starts a session.
-- [x] Task row: one-line title, project with folder icon, relative time right-aligned, selected and hover states.
+- [x] Date-grouped session list from the database: Today / Yesterday / This Month / month name, title from the first prompt, project folder, relative time, selection. A row opens its history; `New Task` starts a session in the current project and reuses a blank one for it.
+- [x] Task row: one-line title, project with folder icon, and the trailing time right-aligned — `Working Ns` while the open turn runs, otherwise how long ago. Selected and hover states.
 - [x] Settings at the bottom.
-- [ ] The no-project onboarding screen was removed when sessions became real: `New Task` starts an empty session. Projects will bring it back with a folder picker.
+- [ ] The no-project onboarding screen: the composer's `No project` row covers the choice, but the centered empty state is still pending.
 - [ ] Group filter affordance (the live app shows one next to the folder when a group is active).
 - [ ] Search field, context menus, drag-reorder, pinning and archiving.
 
@@ -141,13 +141,13 @@ Agent text is CommonMark plus the GitHub extensions agents actually write (table
 - [x] Shared controls: model, reasoning effort, access mode, agent mode; send button.
 - [x] Model, effort and mode pickers fed by the daemon's `Options`: click opens the agent's choices with the current one marked, Escape closes, choosing sends `SetOption` and the refreshed list redraws the labels. Access stays a mock label.
 - [x] Compact menus (360 × 320, scrolling): the model menu has two tabs — **Favorites** (star icon) and the agent's name (layers icon), the star on every row, starred models stored through the settings wire and leading the menu when they exist — and the agent's list grouped under one heading per provider (`DeepSeek`, `OpenCode`, …), with the vendor tag stripped from each name by the driver. Effort and mode share the container without tabs.
-- [x] Footer: project, `Local`, branch, activity indicator.
+- [x] Footer: the project chip is the project picker (folders, `New project…`, `No project`; choosing starts or reuses a session there), then `Local`, the branch and the activity indicator. The branch is still a mock label until Git.
 - [x] Provider glyph in the model picker: the tab carries the agent's name and the layers icon.
 - [x] Effort editor beside the model menu: hovered rows gain an `Edit` affordance, and clicking it floats the agent's effort choices level with that row — one editor, moved between rows. Picking a value applies the model with it in one decision (two `SetOption`s, the model only when it changed); Escape or a closed menu dismisses it. The editor anchors to the row's measured position and flips upward near the window's bottom edge. `CIRCULO_OPEN_PICKER` and `CIRCULO_OPEN_EDIT` open both without a click for testing.
 - [x] Stop while a turn runs: the send circle becomes a stop square and Escape stops too (menus and cards keep their own Escape). The daemon cancels the turn's cards, the provider aborts, and the transcript closes it as `Stopped` without an error banner.
 - [x] Queue and steer: while a turn runs, Enter queues the composer's text and Cmd/Ctrl+Enter steers; queued prompts sit above the cards and composer, oldest first, with an `×` per row. The daemon owns the queue and pushes the whole list after every change; starting a queued prompt closes its row and opens its turn with the prompt it carries.
 - [ ] Usage gauge, attachments.
-- [ ] The empty-state folder picker and the “don’t work in a project” action (both need the core).
+- [ ] The centered empty-state project picker; the composer chip already offers `No project`.
 - [ ] Selection, undo, IME composition, and paste: the buffer is deliberately single-carets-at-the-end-of-a-line for now (`crates/ui/src/input.rs`).
 
 ### Missing for v1.0
