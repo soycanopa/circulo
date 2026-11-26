@@ -1,25 +1,25 @@
 //! Stand-in labels for the parts of the window the core does not own yet.
 //!
-//! Sessions come from the database now; the project name, the branch and the
-//! composer's pickers do not. When projects and `configOptions` land, those
-//! fields move to the core too and this module goes away.
+//! Sessions and projects come from the database now; the model, access mode,
+//! agent mode and the "Worked" divider do not. When the control surface and
+//! the turn footer land, those fields move to the core too and this module
+//! goes away.
 
 pub(crate) struct Workspace {
-    pub project: &'static str,
-    pub branch: &'static str,
     pub model: &'static str,
     pub access: &'static str,
     pub agent_mode: &'static str,
     pub worked: &'static str,
+    /// The branch label is still a stand-in until Git checkpoints land.
+    pub branch: &'static str,
 }
 
 pub(crate) fn workspace() -> Workspace {
     Workspace {
-        project: "circulo",
-        branch: "main",
         model: "DeepSeek V4 Flash",
         access: "Full access",
         agent_mode: "Build",
         worked: "Worked",
+        branch: "main",
     }
 }

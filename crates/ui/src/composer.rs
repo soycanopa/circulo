@@ -18,7 +18,7 @@ use crate::input::{self, TextInput};
 use crate::live::Transcript;
 use crate::mock::Workspace;
 use crate::theme::Theme;
-use circulo_protocol::{ConfigOption, QueuedPrompt};
+use circulo_protocol::{ConfigOption, ProjectSummary, QueuedPrompt};
 
 /// How tall the field may grow before it scrolls: four lines of body text.
 const FIELD_MAX_HEIGHT: f32 = 96.;
@@ -54,6 +54,25 @@ pub(crate) type EditHandler = Rc<dyn Fn(Option<String>, &mut Window, &mut App)>;
 pub(crate) type EffortHandler = Rc<dyn Fn(String, String, String, &mut Window, &mut App)>;
 /// Removing one prompt from the queue, by id. The shell owns the request.
 pub(crate) type RemoveHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
+/// The project chip's menu: open/close, choose a project, add a folder, or go
+/// projectless. The shell owns every action because each starts a session.
+pub(crate) type ProjectToggleHandler = Rc<dyn Fn(&mut Window, &mut App)>;
+pub(crate) type ProjectChooseHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
+pub(crate) type ProjectActionHandler = Rc<dyn Fn(&mut Window, &mut App)>;
+
+/// The folders a session can live in, as the composer's project chip draws
+/// them. `current` is the open session's canonical path, so the menu can mark
+/// where it already is.
+pub(crate) struct ProjectPicker<'a> {
+    pub projects: &'a [ProjectSummary],
+    pub current: Option<&'a str>,
+    pub open: bool,
+    pub anchors: Rc<Cell<BTreeMap<String, Point<Pixels>>>>,
+    pub on_toggle: ProjectToggleHandler,
+    pub on_choose: ProjectChooseHandler,
+    pub on_new: ProjectActionHandler,
+    pub on_none: ProjectActionHandler,
+}
 
 /// The daemon's options as the pickers draw them: which menu is open, which
 /// model tab is showing, what choosing and starring do. A missing option id
@@ -158,6 +177,8 @@ pub(crate) fn composer(
     transcript: &Transcript,
     pickers: Pickers<'_>,
     field: Field<'_>,
+    project: &str,
+    project_picker: ProjectPicker<'_>,
 ) -> Div {
     let running = transcript.status.running;
     let can_send = !field.input.is_blank() && !running;
@@ -200,17 +221,27 @@ pub(crate) fn composer(
         ))
     });
 
+    let project_menu_view = if project_picker.open {
+        let map = project_picker.anchors.take();
+        let anchor = map.get("project").copied();
+        project_picker.anchors.set(map);
+        anchor.map(|anchor| project_menu(theme, &project_picker, anchor))
+    } else {
+        None
+    };
+
     div()
         .flex()
         .flex_col()
         .px(px(24.))
         .pb(px(10.))
+        .children(project_menu_view)
         .children(menu)
         .children(editor)
         .child(input_box(
             theme, workspace, running, &pickers, field, can_send,
         ))
-        .child(footer(theme, workspace, running))
+        .child(footer(theme, workspace, project, &project_picker, running))
 }
 
 fn input_box(
@@ -985,7 +1016,13 @@ fn send(
     }
 }
 
-fn footer(theme: &Theme, workspace: &Workspace, running: bool) -> impl IntoElement {
+fn footer(
+    theme: &Theme,
+    workspace: &Workspace,
+    project: &str,
+    picker: &ProjectPicker<'_>,
+    running: bool,
+) -> impl IntoElement {
     div()
         .flex()
         .items_center()
@@ -994,7 +1031,7 @@ fn footer(theme: &Theme, workspace: &Workspace, running: bool) -> impl IntoEleme
         .px(px(4.))
         .text_size(px(11.5))
         .text_color(theme.text_faint)
-        .child(meta(theme, "icons/folder.svg", workspace.project))
+        .child(project_chip(theme, project, picker))
         .child(meta(theme, "icons/monitor.svg", "Local"))
         .child(
             div()
@@ -1011,11 +1048,179 @@ fn footer(theme: &Theme, workspace: &Workspace, running: bool) -> impl IntoEleme
         })
 }
 
-fn meta(theme: &Theme, path: &'static str, label: &'static str) -> impl IntoElement {
+/// The project chip under the composer. Clicking it opens the picker that Waku
+/// puts here: the folders a task can live in, plus a new folder and no folder.
+fn project_chip(theme: &Theme, project: &str, picker: &ProjectPicker<'_>) -> impl IntoElement {
+    let track = Rc::clone(&picker.anchors);
+    let on_toggle = Rc::clone(&picker.on_toggle);
+    let open = picker.open;
+
+    div()
+        .id("project-chip")
+        .flex()
+        .items_center()
+        .gap(px(5.))
+        .h(px(22.))
+        .px(px(4.))
+        .rounded(px(6.))
+        .cursor_pointer()
+        .when(open, |row| row.bg(theme.hover))
+        .hover(move |style| style.bg(theme.hover))
+        .child(canvas(
+            move |bounds, _, _| {
+                let mut anchors = track.take();
+                anchors.insert("project".to_owned(), bounds.origin);
+                track.set(anchors);
+            },
+            |_, _, _, _| {},
+        ))
+        .child(icon("icons/folder.svg", 12., theme.text_faint))
+        .child(
+            div()
+                .max_w(px(180.))
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .child(project.to_owned()),
+        )
+        .child(icon("icons/chevron-down.svg", 10., theme.text_faint))
+        .on_click(move |_, window, cx| on_toggle(window, cx))
+}
+
+/// The project menu, above its chip. Choosing a project starts a session in it,
+/// so the menu is a navigation surface, not a setting on the running task.
+fn project_menu(theme: &Theme, picker: &ProjectPicker<'_>, anchor: Point<Pixels>) -> AnyElement {
+    let mut rows = div().flex().flex_col();
+
+    if picker.projects.is_empty() {
+        rows = rows.child(
+            div()
+                .px(px(8.))
+                .py(px(10.))
+                .text_size(px(12.))
+                .text_color(theme.text_faint)
+                .child("No projects yet"),
+        );
+    }
+
+    for (index, project) in picker.projects.iter().enumerate() {
+        let path = project.path.clone();
+        let on_choose = Rc::clone(&picker.on_choose);
+        let current = picker.current == Some(project.path.as_str());
+
+        rows = rows.child(
+            div()
+                .id(SharedString::from(format!("project-choice-{index}")))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .px(px(8.))
+                .py(px(6.))
+                .rounded(px(6.))
+                .cursor_pointer()
+                .text_size(px(12.5))
+                .text_color(if current {
+                    theme.text
+                } else {
+                    theme.text_muted
+                })
+                .when(current, |row| row.bg(theme.selection))
+                .hover(move |style| style.bg(theme.hover))
+                .child(icon("icons/folder.svg", 13., theme.text_faint))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.))
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .child(project.name.clone()),
+                )
+                .when(current, |row| {
+                    row.child(div().text_color(theme.accent).child("✓"))
+                })
+                .on_click(move |_, window, cx| on_choose(path.clone(), window, cx)),
+        );
+    }
+
+    let on_new = Rc::clone(&picker.on_new);
+    let on_none = Rc::clone(&picker.on_none);
+    rows = rows
+        .child(div().h(px(1.)).mx(px(4.)).my(px(4.)).bg(theme.hairline))
+        .child(
+            div()
+                .id("project-new")
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .px(px(8.))
+                .py(px(6.))
+                .rounded(px(6.))
+                .cursor_pointer()
+                .text_size(px(12.5))
+                .text_color(theme.text_muted)
+                .hover(move |style| style.bg(theme.hover))
+                .child(icon("icons/folder-plus.svg", 13., theme.text_faint))
+                .child("New project...")
+                .on_click(move |_, window, cx| on_new(window, cx)),
+        )
+        .child(
+            div()
+                .id("project-none")
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .px(px(8.))
+                .py(px(6.))
+                .rounded(px(6.))
+                .cursor_pointer()
+                .text_size(px(12.5))
+                .text_color(theme.text_muted)
+                .hover(move |style| style.bg(theme.hover))
+                .child(icon("icons/folder.svg", 13., theme.text_faint))
+                .child("No project")
+                .on_click(move |_, window, cx| on_none(window, cx)),
+        );
+
+    let menu = div()
+        .w(px(280.))
+        .flex()
+        .flex_col()
+        .p(px(6.))
+        .rounded(px(10.))
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.surface)
+        .shadow_md()
+        .child(
+            div()
+                .px(px(8.))
+                .py(px(4.))
+                .text_size(px(11.5))
+                .text_color(theme.text_faint)
+                .child("Project"),
+        )
+        .child(
+            rows.id("project-menu-rows")
+                .max_h(px(320.))
+                .overflow_y_scroll(),
+        );
+
+    deferred(
+        anchored()
+            .anchor(Corner::BottomLeft)
+            .position(anchor)
+            .offset(point(px(0.), px(-8.)))
+            .child(menu),
+    )
+    .into_any_element()
+}
+
+fn meta(theme: &Theme, path: &'static str, label: impl Into<String>) -> impl IntoElement {
     div()
         .flex()
         .items_center()
         .gap(px(5.))
         .child(icon(path, 12., theme.text_faint))
-        .child(label)
+        .child(label.into())
 }

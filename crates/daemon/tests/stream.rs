@@ -6,9 +6,10 @@ use std::thread;
 use circulo_client::{Client, ClientError};
 use circulo_core::Core;
 use circulo_daemon::Daemon;
+use circulo_persistence::Store;
 use circulo_protocol::{
     ConfigOption, FinishReason, Part, PermissionOption, PermissionOptionKind, PermissionRequest,
-    ServerMessage, ToolState,
+    ProjectSummary, ServerMessage, ToolState,
 };
 use circulo_provider::{Asker, Decision, Driver, DriverError, SessionRef};
 use circulo_provider_demo::DemoDriver;
@@ -170,6 +171,72 @@ fn a_steer_cancels_the_running_turn_and_starts_the_new_prompt() {
         vec![FinishReason::Aborted, FinishReason::Completed]
     );
     assert_eq!(cards, 1, "only the steer's turn asks");
+}
+
+#[test]
+fn projects_round_trip_and_a_session_carries_one() {
+    let store = Arc::new(Store::in_memory().expect("store"));
+    let core = Arc::new(Core::with_store(
+        Arc::new(DemoDriver::instant()),
+        Some(store),
+    ));
+    let daemon = Daemon::with_core(core).expect("bind the daemon");
+    let url = daemon.url();
+    let token = daemon.token().to_owned();
+    thread::spawn(move || daemon.serve());
+
+    let directory =
+        std::env::temp_dir().join(format!("circulo-daemon-project-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("project folder");
+    let path = directory.to_string_lossy().into_owned();
+    let canonical = std::fs::canonicalize(&directory)
+        .expect("canonical")
+        .to_string_lossy()
+        .into_owned();
+
+    let mut client = Client::connect(&url, &token).expect("handshake");
+    assert_eq!(client.list_projects().expect("list"), Vec::new());
+
+    let projects = client.add_project(&path).expect("add");
+    assert_eq!(
+        projects,
+        vec![ProjectSummary {
+            path: canonical.clone(),
+            name: directory
+                .file_name()
+                .expect("name")
+                .to_string_lossy()
+                .into_owned(),
+        }]
+    );
+
+    let session = client
+        .start_session(Some(canonical.clone()))
+        .expect("session");
+    let sessions = client.list_sessions().expect("sessions");
+    let summary = sessions
+        .iter()
+        .find(|summary| summary.id == session)
+        .expect("the new session is listed");
+    assert_eq!(
+        summary.project.as_deref(),
+        Some(canonical.as_str()),
+        "the session carries the project path"
+    );
+
+    assert!(
+        client
+            .remove_project(&canonical)
+            .expect("remove")
+            .is_empty()
+    );
+    let sessions = client.list_sessions().expect("sessions again");
+    assert!(
+        sessions.iter().any(|summary| summary.id == session),
+        "removing a project keeps its sessions"
+    );
+
+    let _ = std::fs::remove_dir_all(&directory);
 }
 
 /// A turn that blocks on a permission card until it is cancelled, the way a

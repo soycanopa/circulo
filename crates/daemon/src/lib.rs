@@ -303,6 +303,35 @@ fn handle(
                     },
                 ),
             },
+            Some(ClientRequest::ListProjects) => match core.projects() {
+                Ok(projects) => emit(&outbound, ServerMessage::Projects { projects }),
+                Err(error) => emit(
+                    &outbound,
+                    ServerMessage::Error {
+                        message: error.to_string(),
+                    },
+                ),
+            },
+            Some(ClientRequest::AddProject { path }) => {
+                // Canonicalizing can touch a network volume; the read loop
+                // stays free while it happens.
+                let core = Arc::clone(&core);
+                let outbound = outbound.clone();
+                thread::spawn(move || match core.add_project(&path) {
+                    Ok((canonical, projects)) => {
+                        // The picker's path and the stored path can differ
+                        // (symlinks, `/tmp`): tell the client which one a
+                        // session must carry before the list.
+                        emit(&outbound, ServerMessage::ProjectAdded { path: canonical });
+                        emit(&outbound, ServerMessage::Projects { projects });
+                    }
+                    Err(message) => emit(&outbound, ServerMessage::Error { message }),
+                });
+            }
+            Some(ClientRequest::RemoveProject { path }) => match core.remove_project(&path) {
+                Ok(projects) => emit(&outbound, ServerMessage::Projects { projects }),
+                Err(message) => emit(&outbound, ServerMessage::Error { message }),
+            },
             Some(ClientRequest::OpenSession { session }) => {
                 let reopened = core.reopen_session(&session);
                 match (reopened, core.transcript(&session)) {

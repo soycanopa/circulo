@@ -86,7 +86,11 @@ fn recall(driver: &OpenCode, resume: Option<&str>) -> String {
     let mut parts = Vec::new();
     let key = driver
         .start_turn(
-            SessionRef { id: "s1", resume },
+            SessionRef {
+                id: "s1",
+                resume,
+                cwd: None,
+            },
             "Which fruit did I ask you to remember? Reply with exactly that one word.",
             &mut NoAsker,
             &mut |part| parts.push(part),

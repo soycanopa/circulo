@@ -14,6 +14,9 @@ use circulo_protocol::{
 pub struct Transcript {
     pub turns: Vec<Turn>,
     pub status: Status,
+    /// When the current turn started, for the sidebar's `Working 12s` label.
+    /// `None` while idle.
+    turn_started: Option<std::time::Instant>,
     /// Cards waiting for an answer, oldest first: a permission and a question
     /// share the slot above the composer, so one queue keeps their order.
     pub cards: VecDeque<Card>,
@@ -119,6 +122,7 @@ impl Transcript {
                 self.status.running = true;
                 self.status.error = None;
                 self.status.finished = None;
+                self.turn_started = Some(std::time::Instant::now());
             }
             ServerMessage::Part { turn, part, .. } => {
                 // The turn id, not "the last row": an update that belongs to an
@@ -165,6 +169,7 @@ impl Transcript {
                 if self.turns.last().is_some_and(|row| row.turn == turn) {
                     self.status.running = false;
                     self.status.finished = Some(reason);
+                    self.turn_started = None;
                 }
             }
             ServerMessage::Error { message } => {
@@ -180,6 +185,8 @@ impl Transcript {
             | ServerMessage::Options { .. }
             | ServerMessage::Settings { .. }
             | ServerMessage::Queue { .. }
+            | ServerMessage::Projects { .. }
+            | ServerMessage::ProjectAdded { .. }
             | ServerMessage::History { .. } => {}
         }
     }
@@ -203,6 +210,16 @@ impl Transcript {
             })
             .collect();
         self.status = Status::default();
+        self.turn_started = None;
+    }
+
+    /// How long the running turn has been working. The sidebar shows it in the
+    /// open session's row, the way the reference does.
+    pub fn working_for(&self) -> Option<std::time::Duration> {
+        if !self.status.running {
+            return None;
+        }
+        self.turn_started.map(|started| started.elapsed())
     }
 }
 
