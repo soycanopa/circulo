@@ -2,7 +2,7 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-26, on `feature/rewind` after PR #49; 134
+Last updated: 2026-11-26, on `feature/kubai-icons` after PR #50; 134
 tests green; CI covers fmt + clippy + test on macOS. The model-call tests in
 `tests/real.rs` need OpenCode credit, which this account has none of right now
 (2026-11-23): they fail with "Insufficient balance". The no-model-call load
@@ -17,7 +17,10 @@ turn, quit, and find the session again.
 
 **Window** (Rust + GPUI, `crates/ui`): the reference shell — sidebar, transcript,
 composer, right-panel toggle. Tokens and geometry measured from Waku 0.1.20 on
-this machine (`docs/ui.md`).
+this machine (`docs/ui.md`). Icons are Kubai Icons (MIT,
+`crates/ui/assets/icons/LICENSE`): two-tone for content, the same library's line
+style for arrows/chevrons/reasoning/panel toggles, tinted with `currentColor` and
+a 35%-opacity second tone. Static SVGs; GPUI does not run their motion.
 
 **Agent**: OpenCode over Agent Client Protocol (`opencode acp`, stdio JSON-RPC),
 verified against **OpenCode 2.3.2**. Reasoning, tool calls and text stream into
@@ -380,6 +383,9 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   session yet: a blank task for a project the user abandoned stays in the list.
 - `RemoveProject` exists on the wire; the composer menu does not expose removal
   yet. Removing a project never touches its folder or its sessions.
+- Icons are Kubai Icons (MIT): two-tone where the library has one, line for
+  arrows/chevrons/reasoning/panels. They are static SVGs; GPUI does not run the
+  library's hover motion.
 - Links render in the accent colour and are not clickable (no hit-testing in
   GPUI 0.2.2).
 - Light theme values are approximations; this machine is dark.
@@ -403,5 +409,5 @@ rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
   Never push to `main`.
 - Commit messages `type(scope): summary`; one logical change per commit.
 - Docs travel with the change.
-- The current worktree is `feature/rewind` (rewind wire, core, card), not yet
+- The current worktree is `feature/kubai-icons` (Kubai two-tone icons), not yet
   merged; `origin/main` is the truth, and the next branch starts from it.
