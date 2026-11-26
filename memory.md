@@ -2,12 +2,29 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-26, on `fix/iconoir` after PR #53; 134
+Last updated: 2026-11-26, on `main` after PR #54; 134
 tests green; CI covers fmt + clippy + test on macOS. The model-call tests in
 `tests/real.rs` need OpenCode credit, which this account has none of right now
 (2026-11-23): they fail with "Insufficient balance". The no-model-call load
 probe (`cargo test -p circulo-provider-opencode --lib -- --ignored`) passes
 against 2.3.2.
+
+## 0. Handoff in one minute
+
+- **State:** `main` is clean after PR #54 (Iconoir icons); 134 tests, fmt and
+  clippy green. No feature branch is open.
+- **Next task:** a second provider — Claude Code or Codex (§3). The choice is
+  not made; ask the owner.
+- **Backlog:** §4, ordered. The big remaining v1.0 pieces are the second
+  provider, markdown links/math, attachments and remote.
+- **Run it:** `cargo run -p circulo` (demo, no auth) or
+  `CIRCULO_PROVIDER=opencode CIRCULO_PROJECT="$PWD" cargo run -p circulo`.
+  Checks and UI automation are in §2.
+- **Rules:** branch → PR → green CI → merge commit → delete branch. Never push
+  to `main`. See §10.
+- **First message for the next conversation:** "Lee `memory.md` (desde §0),
+  `AGENTS.md` y `docs/`. Estamos en `main` limpio; la próxima tarea es el segundo
+  provider (§3) y el backlog está en §4. No pushees a `main`: branch → PR."
 
 ## 1. What works today
 
@@ -47,9 +64,9 @@ and exercises the shapes.
   using the composer's input; Submit waits for required fields; Decline and
   Cancel both exist; the first text field takes the keyboard.
 
-**Composer**: typeable (`crates/ui/src/input.rs`), Enter sends, Shift+Enter breaks
-the line, block caret, grows to four lines then scrolls. No selection, undo, IME
-or paste yet.
+**Composer**: typeable (`crates/ui/src/input.rs`), Enter sends (or queues while a
+turn runs), Cmd/Ctrl+Enter steers, Shift+Enter breaks the line, block caret,
+grows to four lines then scrolls. No selection, undo, IME or paste yet.
 
 **Pickers**: model, effort and mode draw the daemon's `Options` (neutral
 `ConfigOption`/`ConfigChoice`; `SetOption` back). Menus are compact popups
@@ -64,10 +81,10 @@ Choices survive sessions: the driver re-applies them whenever it attaches,
 and a switch made mid-turn lands at the turn's end (the picker sees it at
 once, the session reads it next turn). Access stays a mock label.
 
-**Settings**: the `settings` table (SQLite schema 3) stores the client's own
-key/value JSON — `favorites.model` is a list of choice ids. The wire carries
-`GetSettings`, `SetSetting` and a `Settings` message with the whole map; the
-shell loads favourites at startup and redraws from the daemon's answer, never
+**Settings**: the `settings` table (SQLite schema 4, added in v3) stores the
+client's own key/value JSON — `favorites.model` is a list of choice ids. The wire
+carries `GetSettings`, `SetSetting` and a `Settings` message with the whole map;
+the shell loads favourites at startup and redraws from the daemon's answer, never
 from a local hope. A memory-only daemon refuses to store with an error.
 
 **Continuity** (`crates/providers/opencode`, spec in `docs/providers/opencode.md`):
@@ -149,8 +166,10 @@ The sessions table also carries the provider's session key (schema v2), which
 is what makes a restart a continuation.
 
 **Sidebar**: real sessions from the database, grouped Today / Yesterday / This
-Month / month name, title from the first prompt, project folder, relative time,
-the open session marked; a row opens its history, `New Task` starts a session.
+Month / month name, title from the first prompt, project folder, and the trailing
+time (`Working Ns` while the open turn runs, otherwise relative). A row opens its
+history; `New Task` starts a session in the current project and reuses its blank
+task.
 
 **Daemon/client lifecycle**: the app spawns the daemon and holds its stdin open;
 the daemon exits on EOF. The connection splits into reader + writer threads on
@@ -227,17 +246,74 @@ one agent.
    provider session.
 5. The daemon picks it with `CIRCULO_PROVIDER`; no core or UI rewrite.
 
-## 4. After that, in plan order
+## 4. Backlog (ordered)
 
-1. **A second provider** (Claude Code or Codex), above.
-2. **Clickable links and math** in markdown. Links need GPUI text hit-testing,
-   which 0.2.2 does not expose: either keep the text layout plus element bounds,
-   or build an inline layout from word-sized elements.
-3. **Attachments blob store**, the piece `docs/implement.md` Phase 1 still
-   leaves open inside persistence.
-4. **Remote/pairing** (`docs/remote.md`): QR with a saved tailcat key + `--allow`;
-   the desktop owns the tunnel. `tailcat` is not installed here. Open question:
-   what the QR payload carries.
+Sizes are rough: S = same session, M = a focused PR, L = a feature slice with
+its own plan.
+
+### Next
+1. **Second provider** (Claude Code or Codex) — L, §3. The owner has not chosen;
+   ask first. No core or UI rewrite: a new `crates/providers/*` behind `Driver`.
+2. **Tool output** — M. `Part::Tool` carries name/detail/state only; ACP
+   `tool_call_update` content is dropped. A real turn shows the command, not
+   what it printed. Add output (part or collapsed tool card) and a fixture.
+3. **Usage / token / cost** — M. ACP sends `usage_update`; the driver ignores it
+   and the wire has nowhere to put it. Add a usage part/message and the footer
+   gauge the reference has.
+4. **Markdown links + math** — M/L. Links need GPUI hit-testing, which 0.2.2
+   does not expose: either text layout + element bounds, or an inline layout of
+   word-sized elements. Math needs a renderer decision.
+
+### Control surface / UI polish
+5. **Access mode** — M. The composer label is the static mock `Full access`;
+   ACP advertises agent modes but no access mode. Decide per provider (a native
+   config option where it exists; otherwise keep it honest or hide it).
+6. **Composer** — M/L. No paste, undo/redo, selection or IME. The caret is a
+   block painted as a `TextRun` background.
+7. **Status banners and shortcuts** — M. Starting/error/reconnecting states;
+   the keyboard-first pass (session navigation, panels, focus).
+8. **Light theme** — S. The values are approximations; capture and verify on a
+   light machine.
+
+### Sessions / projects
+9. **Session actions** — M. Delete, rename, pin/archive; the sidebar has no
+   context menu. Deletion must also clean `refs/circulo/...` for that session.
+10. **RemoveProject UI** — S. The wire request exists; the composer menu does
+    not expose it. Removing a project never touches the folder or sessions.
+11. **Empty state / no-project onboarding** — M. The centered project picker
+    from the reference; `No project` currently lives only in the composer menu.
+12. **Sidebar search and project grouping** — M. Waku supports Updated vs
+    Project grouping; Circulo only has the date groups. Search is a stub.
+
+### Git
+13. **Checkpoint ref cleanup** — S/M once session delete exists; refs accumulate
+    per turn today.
+14. **Diff / file summaries per checkpoint** — M. The right panel will read the
+    refs; `crates/git` does not compute per-turn diffs yet.
+15. **Branch picker / worktrees** — L. The footer branch is read-only; worktrees
+    per session stay optional and must not break checkpoints or projects.
+
+### Persistence / remote / hardening
+16. **Attachments blob store** — M/L, the last Phase 1 persistence piece.
+17. **Remote / pairing** — L, post-v1.0 per `docs/remote.md`: tailcat, QR,
+    token, desktop owns the tunnel. `tailcat` is not installed here.
+18. **Performance + packaging** — L. Long-transcript pass, live CLI smoke tests,
+    `.app`/installers, the E2E checklist, and the version line (`Cargo.toml`
+    says 0.1.0; tags are v0.3.1 and AGENTS says the Rust line continues at
+    v0.4.0 — align at the next release).
+
+### Test gaps
+- `tests/real.rs` is ignored until the account has OpenCode credit: a real
+  two-turn conversation and a real restart resume. Everything else is covered by
+  the scripted agents.
+- The real `opencode` 2.3.2 path for steer/rewind has not been run end to end;
+  the ACP shapes are covered by the scripted agent.
+
+### Done, do not reopen
+- Icons: Iconoir regular line, stroke 1.75, `currentColor`, exact size
+  (`docs/ui.md`). The Kubai two-tone/line experiments were rejected.
+- Projects, queue/steer, abort, Git checkpoints and rewind are merged and
+  documented; the next work builds on them.
 
 ## 5. Architecture map
 
@@ -248,7 +324,7 @@ one agent.
 | `crates/persistence` | SQLite: sessions (+ provider key, project path), turns, parts, settings, projects; schema v4. `trim_turns` removes a suffix in one transaction. Owned by the core; nobody else opens it. |
 | `crates/git` | Whole-worktree snapshots with a temporary index, private `refs/circulo/...` refs, exact restore, and the current branch. Owned by the core. |
 | `crates/daemon` | Loopback WebSocket, token handshake, reader + writer per connection, provider chosen by `CIRCULO_PROVIDER`, database from `CIRCULO_HOME`, one queue worker per session, project/repo status pushes, clear-and-abort on connection close, clean shutdown on stdin EOF. |
-| `crates/client` | Handshake, blocking read loop, a splittable writer half, `prompt`/`steer`/`remove_queued`/`cancel_turn`. No GPUI. |
+| `crates/client` | Handshake, blocking read loop, a splittable writer half, `prompt`/`steer`/`remove_queued`/`cancel_turn`/`rewind` and the project calls. No GPUI. |
 | `crates/providers/driver` | `Driver { name, start_turn(SessionRef, prompt, ask, emit) -> Option<key>, cancel(session), reset(session), options(session), set_option(session, id, value), shutdown() }`, `SessionRef { id, resume, cwd }`, and `Asker { permission, question }`. `DriverError` carries whether the turn was cancelled, so the core can report `Aborted` instead of `Failed`. |
 | `crates/providers/demo` | Canned turn, no auth. |
 | `crates/providers/opencode` | ACP over stdio; one agent process per Circulo session, spawned in the session's project folder; `session/load` resume with self-healing fallback; permission and elicitation mapped to cards; `configOptions` applied live, queued mid-turn; a shared stdin handle sends `session/cancel` when the turn owns the slot. |
@@ -274,6 +350,10 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
 
 ## 7. Decisions log
 
+- **Icons are Iconoir regular line, not Kubai**: the Kubai two-tone looked dense
+  at 11–16px even after scaling/lifting, and the Kubai line still read as a
+  different family. Iconoir's 24-grid line (stroke normalized to 1.75,
+  `currentColor`) fits the graphite chrome. Static SVGs; no hover motion.
 - **Daemon from day 1** (PRD §7): mobile and remote are clients of the same core.
 - **WebSocket, not NDJSON**: same contract, `wss://` later behind TLS.
 - **OpenCode over ACP, not the v2 HTTP API**: `opencode serve` returns 401 without
@@ -383,9 +463,9 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   session yet: a blank task for a project the user abandoned stays in the list.
 - `RemoveProject` exists on the wire; the composer menu does not expose removal
   yet. Removing a project never touches its folder or its sessions.
-- Icons are Kubai Icons (MIT): two-tone where the library has one, line for
-  arrows/chevrons/reasoning/panels. They are static SVGs; GPUI does not run the
-  library's hover motion.
+- Icons are Iconoir (MIT): regular line, 24 grid, stroke normalized to 1.75
+  (stock 1.5 is too thin at 11–16px), `currentColor`, exact size. Static SVGs;
+  GPUI does not run their motion. The Kubai two-tone/line experiments are gone.
 - Links render in the accent colour and are not clickable (no hit-testing in
   GPUI 0.2.2).
 - Light theme values are approximations; this machine is dark.
@@ -399,7 +479,7 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
 rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
 `permissions.md` (cards: reference design, ACP contract, wire, failure modes),
 `projects.md` (canonical folders, composer picker, per-session cwd),
-`git.md` (checkpoint refs, capture, restore, rewind plan),
+`git.md` (checkpoint refs, capture, restore, rewind),
 `providers/opencode.md` (ACP, continuity, project folder, cancellation),
 `remote.md`.
 
@@ -409,5 +489,5 @@ rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
   Never push to `main`.
 - Commit messages `type(scope): summary`; one logical change per commit.
 - Docs travel with the change.
-- The current worktree is `fix/iconoir` (Iconoir regular line icons), not yet
-  merged; `origin/main` is the truth, and the next branch starts from it.
+- The Iconoir branch merged as PR #54; `origin/main` is the truth, and the next
+  branch starts from it.
