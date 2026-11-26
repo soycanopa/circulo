@@ -105,6 +105,7 @@ impl Driver for DemoDriver {
              emit(part);\n\
              ```\n\n\
              > A quote is indented behind a rule.\n\n\
+             See the [GPUI docs](https://gpui.rs) and the [Circulo repo](https://github.com/soycanopa/circulo).\n\n\
              That is the whole markdown subset for now."
         );
 
@@ -271,6 +272,7 @@ mod tests {
         assert!(text.contains("## What the transcript renders"));
         assert!(text.contains("```rust"));
         assert!(text.contains("- `inline code`"));
+        assert!(text.contains("[GPUI docs](https://gpui.rs)"));
     }
 
     #[test]

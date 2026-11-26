@@ -11,7 +11,7 @@ lifecycle without a model call.
 
 - **State:** `main` is clean after the usage slice; fmt, clippy and tests are
   green. No feature branch is open.
-- **Next task:** markdown links and math (§3), then attachments/remote (§4).
+- **Next task:** math rendering (§3), then attachments/remote (§4).
 - **Backlog:** §4, ordered. The big remaining v1.0 pieces are markdown
   links/math, attachments and remote.
 - **Run it:** `cargo run -p circulo` (demo, no auth) or
@@ -21,8 +21,8 @@ lifecycle without a model call.
 - **Rules:** branch → PR → green CI → merge commit → delete branch. Never push
   to `main`. See §10.
 - **First message for the next conversation:** "Lee `memory.md` (desde §0),
-  `AGENTS.md` y `docs/`. Estamos en `main` limpio; la próxima tarea es markdown
-  links + math (§3) y el backlog está en §4. No pushees a `main`: branch → PR."
+  `AGENTS.md` y `docs/`. Estamos en `main` limpio; la próxima tarea es math
+  rendering (§3) y el backlog está en §4. No pushees a `main`: branch → PR."
 
 ## 1. What works today
 
@@ -58,7 +58,7 @@ agent proves the lifecycle.
 - Markdown: paragraphs, headings, bullet/ordered/nested lists, quotes, fenced
   code, rules, **tables** (weighted columns, delimiter alignment), **footnotes**
   (superscript refs, numbered list at the end, dangling refs stay literal), bold,
-  italic, inline code, strikethrough, links (coloured, **not clickable**).
+  italic, inline code, strikethrough, links (coloured, underlined, clickable).
   Parse is cached per segment (`markdown::Cached`).
 - **Tool rows carry the provider's call id (`Part::Tool.id`), so an update finds
   its row even when another tool started in between.**
@@ -70,12 +70,10 @@ agent proves the lifecycle.
 - **Usage is live**: the footer shows the context ratio and cost from ACP, or
   cumulative tokens from Codex. The core sends `Usage` after each turn; it is
   not stored, so a reopened session has no gauge until its next turn.
-- **Usage is a live message, not a part**: `ServerMessage::Usage` carries an
-  optional context ratio, token counts and cost. The core asks the driver after
-  each turn and sends it before `TurnFinished`; it is not stored, so history and
-  a reopened session have no gauge until the next turn. ACP knows context and
-  cost; Codex knows cumulative tokens, and showing a context ratio from its
-  `total`/`last` would lie.
+- **Links are hit-tested, not faked**: GPUI 0.2.2's `InteractiveText` takes
+  byte ranges and reports the clicked index, so the parser keeps `dest_url` and
+  the renderer merges adjacent runs into ranges. `cx.open_url` opens the target
+  in the system browser. No webview, no inline word layout.
 - Each turn shows its own prompt above the answer.
 
 **Cards** (`permission.rs`, `question.rs`, spec in `docs/permissions.md`):
@@ -234,20 +232,22 @@ the app, `CIRCULO_OPENCODE_BIN` points the daemon at that script.
 project-level `permission` config does not change ACP behaviour; the ACP session
 advertises `loadSession: true` (unused so far).
 
-## 3. Last slice: usage; next: markdown links and math
+## 3. Last slice: links; next: math
 
-**Usage landed** with `Usage` on the wire and a footer gauge. ACP
-`usage_update` gives the context `used / size` and a cumulative cost; Codex
-`thread/tokenUsage/updated` gives cumulative tokens. The driver keeps the last
-event and the core forwards one `Usage` message after each turn (before
-`TurnFinished`), so the gauge updates with the turn. It is not stored: history
-has no usage, and a reopened session starts without a gauge until its next
-turn. That is deliberate — usage is a live fact about the agent's session, not
-conversation content.
+**Links landed**: the parser keeps `dest_url` on the span, `styled_parts` merges
+adjacent runs with the same target into byte ranges, and
+`InteractiveText::on_click` opens the target with `cx.open_url`; hover shows the
+pointing hand. This corrects an earlier note in this file: GPUI 0.2.2 **does**
+expose text hit-testing through `InteractiveText`, even though the low-level
+`TextLayout` is not public. Plain text still uses the cheaper `StyledText`.
 
-**Next: markdown links and math** (backlog §4.1). Links need GPUI hit-testing,
-which 0.2.2 does not expose; math needs a renderer decision. After that:
-attachments and remote.
+**Next: math.** `pulldown-cmark` 0.13.6 already parses `$…$` and `$$…$$` behind
+`ENABLE_MATH`; the open decision is the renderer. Verified candidates:
+`ratex-parser` + `ratex-layout` + `ratex-render` (MIT, 0.1.16, a Rust KaTeX
+port that rasterizes to PNG with embedded fonts), or showing the TeX source in
+a chip until a renderer is trusted. This needs a spike for quality, binary
+size, compile time and caching before it ships. After math: attachments and
+remote.
 
 ## 4. Backlog (ordered)
 
@@ -255,9 +255,12 @@ Sizes are rough: S = same session, M = a focused PR, L = a feature slice with
 its own plan.
 
 ### Next
-1. **Markdown links + math** — M/L. Links need GPUI hit-testing, which 0.2.2
-   does not expose: either text layout + element bounds, or an inline layout of
-   word-sized elements. Math needs a renderer decision.
+1. **Math rendering** — L. `pulldown-cmark` parses `$…$`/`$$…$$` with
+   `ENABLE_MATH`; the renderer is the decision. Candidates: RaTeX
+   (`ratex-parser`/`layout`/`render`, MIT, 0.1.x, PNG with embedded KaTeX
+   fonts) or TeX source in a chip until a renderer is trusted. Needs a spike
+   for quality, size and caching.
+2. **Attachments** — M/L, the last Phase 1 persistence piece.
 
 ### Control surface / UI polish
 5. **Access mode** — M. The composer label is the static mock `Full access`;
@@ -467,9 +470,11 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
 - Icons are Iconoir (MIT): regular line, 24 grid, stroke normalized to 1.75
   (stock 1.5 is too thin at 11–16px), `currentColor`, exact size. Static SVGs;
   GPUI does not run their motion. The Kubai two-tone/line experiments are gone.
-- Links render in the accent colour and are not clickable (no hit-testing in
-  GPUI 0.2.2). A tool row with output expands on click; the output is capped at
-  64 KiB and the cap is visible in the text, not silent.
+- A tool row with output expands on click; the output is capped at 64 KiB and
+  the cap is visible in the text, not silent.
+- Links render in the accent colour with an underline and open in the system
+  browser through `InteractiveText` + `cx.open_url`; math is still not rendered
+  (the TeX source shows as code).
 - The usage gauge is live only and updates after a turn, not during it; ACP
   reports context and cost, Codex cumulative tokens. A reopened session starts
   without it.

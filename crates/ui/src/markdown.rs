@@ -17,16 +17,17 @@
 //!
 //! Footnotes parse into superscript references and a numbered list at the end.
 //!
-//! What is deliberately not supported yet: math and raw HTML (dropped). Links
-//! are coloured but not clickable: GPUI 0.2.2 exposes no text hit-testing (no
-//! `index_for_point`) and a mouse event carries window coordinates, not an
-//! element-local point, so opening a URL would need a different inline layout.
+//! What is deliberately not supported yet: math and raw HTML (dropped). A link
+//! keeps its destination, and `InteractiveText` hit-tests the byte ranges GPUI
+//! lays out, so clicking a link opens it in the system browser.
 
+use std::ops::Range;
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, Font, FontFeatures, FontStyle, FontWeight, Hsla, IntoElement, SharedString,
-    StrikethroughStyle, StyledText, TextRun, UnderlineStyle, div, prelude::*, px, relative,
+    AnyElement, Font, FontFeatures, FontStyle, FontWeight, Hsla, InteractiveText, IntoElement,
+    SharedString, StrikethroughStyle, StyledText, TextRun, UnderlineStyle, div, prelude::*, px,
+    relative,
 };
 use pulldown_cmark::{Event, Options, Tag, TagEnd};
 
@@ -68,6 +69,8 @@ pub(crate) struct Inline {
 pub(crate) struct Span {
     pub text: String,
     pub style: Inline,
+    /// The URL a link span points at. `None` for ordinary text.
+    pub link: Option<SharedString>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -148,6 +151,10 @@ pub(crate) fn markdown(blocks: &[Block], theme: &Theme) -> AnyElement {
     let mut column = div().w_full().min_w(px(0.)).flex().flex_col();
     let mut previous = None;
     let mut first = true;
+    // One counter per rendered segment: two identical links in different
+    // paragraphs still get distinct element ids, so their hit-test state
+    // cannot collide.
+    let mut link_ids = 0u64;
 
     for block in blocks {
         let item = matches!(block, Block::Item { .. });
@@ -163,18 +170,17 @@ pub(crate) fn markdown(blocks: &[Block], theme: &Theme) -> AnyElement {
 
         // The margin lives on a wrapper so every block kind can use it without
         // repeating the call.
-        column = column.child(
-            div()
-                .flex_shrink_0()
-                .mt(px(top))
-                .child(block_view(block, theme)),
-        );
+        column = column.child(div().flex_shrink_0().mt(px(top)).child(block_view(
+            block,
+            theme,
+            &mut link_ids,
+        )));
     }
 
     column.into_any_element()
 }
 
-fn block_view(block: &Block, theme: &Theme) -> AnyElement {
+fn block_view(block: &Block, theme: &Theme, links: &mut u64) -> AnyElement {
     match block {
         Block::Paragraph(spans) => text_block(
             spans,
@@ -183,6 +189,7 @@ fn block_view(block: &Block, theme: &Theme) -> AnyElement {
             FontWeight::NORMAL,
             BODY_SIZE,
             BODY_LINE,
+            links,
         ),
         Block::Heading { level, spans } => {
             let (size, line) = match level {
@@ -190,7 +197,15 @@ fn block_view(block: &Block, theme: &Theme) -> AnyElement {
                 2 => (15.5, 22.),
                 _ => (14., 21.),
             };
-            text_block(spans, theme, theme.text, FontWeight::SEMIBOLD, size, line)
+            text_block(
+                spans,
+                theme,
+                theme.text,
+                FontWeight::SEMIBOLD,
+                size,
+                line,
+                links,
+            )
         }
         Block::Item {
             depth,
@@ -221,7 +236,13 @@ fn block_view(block: &Block, theme: &Theme) -> AnyElement {
                         .min_w(px(0.))
                         .text_size(px(BODY_SIZE))
                         .line_height(px(BODY_LINE))
-                        .child(styled(spans, theme, theme.text, FontWeight::NORMAL)),
+                        .child(styled_element(
+                            spans,
+                            theme,
+                            theme.text,
+                            FontWeight::NORMAL,
+                            links,
+                        )),
                 )
                 .into_any_element()
         }
@@ -235,7 +256,13 @@ fn block_view(block: &Block, theme: &Theme) -> AnyElement {
                 div()
                     .text_size(px(BODY_SIZE))
                     .line_height(px(BODY_LINE))
-                    .child(styled(spans, theme, theme.text_muted, FontWeight::NORMAL)),
+                    .child(styled_element(
+                        spans,
+                        theme,
+                        theme.text_muted,
+                        FontWeight::NORMAL,
+                        links,
+                    )),
             )
             .into_any_element(),
         Block::Code(text) => div()
@@ -252,7 +279,7 @@ fn block_view(block: &Block, theme: &Theme) -> AnyElement {
             // Newlines break lines in GPUI text, so the block needs no runs.
             .child(StyledText::new(text))
             .into_any_element(),
-        Block::Table { aligns, head, rows } => table(aligns, head, rows, theme),
+        Block::Table { aligns, head, rows } => table(aligns, head, rows, theme, links),
         Block::Footnote { number, spans } => div()
             .w_full()
             .min_w(px(0.))
@@ -273,7 +300,13 @@ fn block_view(block: &Block, theme: &Theme) -> AnyElement {
                     .text_size(px(12.))
                     .line_height(px(BODY_LINE))
                     .text_color(theme.text_muted)
-                    .child(styled(spans, theme, theme.text_muted, FontWeight::NORMAL)),
+                    .child(styled_element(
+                        spans,
+                        theme,
+                        theme.text_muted,
+                        FontWeight::NORMAL,
+                        links,
+                    )),
             )
             .into_any_element(),
         Block::Rule => div()
@@ -293,6 +326,7 @@ fn table(
     head: &[Vec<Span>],
     rows: &[Vec<Vec<Span>>],
     theme: &Theme,
+    links: &mut u64,
 ) -> AnyElement {
     let columns = head.len().max(rows.iter().map(Vec::len).max().unwrap_or(0));
     if columns == 0 {
@@ -329,10 +363,18 @@ fn table(
             aligns,
             theme,
             FontWeight::SEMIBOLD,
+            links,
         ));
     }
     for row in rows {
-        grid = grid.child(table_row(row, &ratios, aligns, theme, FontWeight::NORMAL));
+        grid = grid.child(table_row(
+            row,
+            &ratios,
+            aligns,
+            theme,
+            FontWeight::NORMAL,
+            links,
+        ));
     }
 
     grid.into_any_element()
@@ -344,6 +386,7 @@ fn table_row(
     aligns: &[Align],
     theme: &Theme,
     weight: FontWeight,
+    links: &mut u64,
 ) -> AnyElement {
     let mut row = div()
         .w_full()
@@ -370,11 +413,12 @@ fn table_row(
                 .text_size(px(12.5))
                 .line_height(px(18.))
                 .text_align(text_align)
-                .child(styled(
+                .child(styled_element(
                     cells.get(index).map(Vec::as_slice).unwrap_or(&[]),
                     theme,
                     theme.text,
                     weight,
+                    links,
                 )),
         );
     }
@@ -389,13 +433,14 @@ fn text_block(
     weight: FontWeight,
     size: f32,
     line: f32,
+    links: &mut u64,
 ) -> AnyElement {
     div()
         .w_full()
         .min_w(px(0.))
         .text_size(px(size))
         .line_height(px(line))
-        .child(styled(spans, theme, color, weight))
+        .child(styled_element(spans, theme, color, weight, links))
         .into_any_element()
 }
 
@@ -446,21 +491,68 @@ fn marker_text(marker: Option<Marker>, depth: usize) -> SharedString {
     }
 }
 
-/// One text element with a run per span. The runs must cover the text exactly;
-/// `StyledText::with_runs` asserts it.
-fn styled(spans: &[Span], theme: &Theme, color: gpui::Rgba, weight: FontWeight) -> StyledText {
+/// Build the run-per-span text and the byte ranges that belong to links.
+/// Adjacent runs of the same link merge, so one phrase is one range.
+fn styled_parts(
+    spans: &[Span],
+    theme: &Theme,
+    color: gpui::Rgba,
+    weight: FontWeight,
+) -> (StyledText, Vec<(Range<usize>, SharedString)>) {
     let mut plain = String::new();
     let mut runs = Vec::with_capacity(spans.len());
+    let mut links: Vec<(Range<usize>, SharedString)> = Vec::new();
 
     for span in spans {
         if span.text.is_empty() {
             continue;
         }
+        let start = plain.len();
         plain.push_str(&span.text);
+        if let Some(target) = &span.link {
+            if let Some((range, last)) = links.last_mut()
+                && range.end == start
+                && last == target
+            {
+                range.end = plain.len();
+            } else {
+                links.push((start..plain.len(), target.clone()));
+            }
+        }
         runs.push(text_run(span, theme, color, weight));
     }
 
-    StyledText::new(plain).with_runs(runs)
+    (StyledText::new(plain).with_runs(runs), links)
+}
+
+/// The same text, clickable when it contains links. `InteractiveText` hit-tests
+/// the byte ranges GPUI already lays out, so a link opens where it is painted;
+/// plain text keeps the smaller `StyledText` element.
+fn styled_element(
+    spans: &[Span],
+    theme: &Theme,
+    color: gpui::Rgba,
+    weight: FontWeight,
+    links: &mut u64,
+) -> AnyElement {
+    let (text, link_ranges) = styled_parts(spans, theme, color, weight);
+    if link_ranges.is_empty() {
+        return text.into_any_element();
+    }
+
+    let id = SharedString::from(format!("md-links-{}", *links));
+    *links += 1;
+
+    let ranges: Vec<Range<usize>> = link_ranges.iter().map(|(range, _)| range.clone()).collect();
+    let targets: Vec<SharedString> = link_ranges.into_iter().map(|(_, target)| target).collect();
+
+    InteractiveText::new(id, text)
+        .on_click(ranges, move |index, _window, cx| {
+            if let Some(url) = targets.get(index) {
+                cx.open_url(url.as_ref());
+            }
+        })
+        .into_any_element()
 }
 
 fn text_run(span: &Span, theme: &Theme, color: gpui::Rgba, weight: FontWeight) -> TextRun {
@@ -524,6 +616,8 @@ struct Builder {
     spans: Vec<Span>,
     /// Formatting that applies to the next span.
     style: Inline,
+    /// The link target that applies to the next span, when inside a link.
+    link: Option<SharedString>,
     /// One entry per open list, innermost last.
     lists: Vec<ListState>,
     /// One entry per open list item, innermost last.
@@ -674,7 +768,10 @@ impl Builder {
             Tag::Emphasis => self.style.italic = true,
             Tag::Strong => self.style.bold = true,
             Tag::Strikethrough => self.style.strike = true,
-            Tag::Link { .. } => self.style.link = true,
+            Tag::Link { dest_url, .. } => {
+                self.style.link = true;
+                self.link = Some(SharedString::from(dest_url.to_string()));
+            }
             _ => {}
         }
     }
@@ -737,7 +834,10 @@ impl Builder {
             TagEnd::Emphasis => self.style.italic = false,
             TagEnd::Strong => self.style.bold = false,
             TagEnd::Strikethrough => self.style.strike = false,
-            TagEnd::Link => self.style.link = false,
+            TagEnd::Link => {
+                self.style.link = false;
+                self.link = None;
+            }
             _ => {}
         }
     }
@@ -759,6 +859,7 @@ impl Builder {
         }
         if let Some(last) = self.spans.last_mut()
             && last.style == style
+            && last.link == self.link
         {
             last.text.push_str(text);
             return;
@@ -766,6 +867,7 @@ impl Builder {
         self.spans.push(Span {
             text: text.to_owned(),
             style,
+            link: self.link.clone(),
         });
     }
 
@@ -783,6 +885,7 @@ impl Builder {
                 footnote.spans.push(Span {
                     text: " ".into(),
                     style: Inline::default(),
+                    link: None,
                 });
             }
             footnote.spans.extend(spans);
@@ -895,6 +998,7 @@ mod tests {
         Span {
             text: text.to_owned(),
             style,
+            link: None,
         }
     }
 
@@ -1290,19 +1394,47 @@ mod tests {
     }
 
     #[test]
-    fn links_are_marked_and_carry_only_their_text() {
+    fn links_keep_their_target() {
         assert_eq!(
             blocks("see [the docs](https://example.com)"),
             vec![Block::Paragraph(vec![
                 plain("see "),
-                inline(
-                    "the docs",
-                    Inline {
+                Span {
+                    text: "the docs".into(),
+                    style: Inline {
                         link: true,
                         ..Inline::default()
-                    }
-                ),
+                    },
+                    link: Some("https://example.com".into()),
+                },
             ])]
         );
+    }
+
+    #[test]
+    fn links_become_clickable_ranges_with_their_targets() {
+        let spans = vec![
+            plain("see "),
+            Span {
+                text: "the docs".into(),
+                style: Inline {
+                    link: true,
+                    ..Inline::default()
+                },
+                link: Some("https://example.com".into()),
+            },
+            plain(" now"),
+        ];
+
+        let (_, links) = styled_parts(
+            &spans,
+            &Theme::dark(),
+            gpui::rgb(0xe2e2e2),
+            FontWeight::NORMAL,
+        );
+
+        assert_eq!(links.len(), 1, "one range for one link");
+        assert_eq!(links[0].0, 4..12, "the range covers only the link text");
+        assert_eq!(links[0].1.as_ref(), "https://example.com");
     }
 }
