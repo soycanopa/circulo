@@ -81,11 +81,13 @@ Type: system font. 13 for titles and composer, 12 for pickers, 11.5 for group la
 
 ### Icons
 
-Kubai Icons (MIT, `crates/ui/assets/icons/LICENSE`) in the **line** style: a 24
-grid with a 2px stroke, drawn with `currentColor`, so dark/light and the accent
-apply at the exact size the layout asks for. The provider's own mark
-(`opencode.svg`) stays. The SVGs are static: GPUI does not run the library's
-motion.
+Iconoir (MIT, `crates/ui/assets/icons/LICENSE`) in the **regular line** style:
+a 24 grid, drawn with `currentColor`, so dark/light and the accent apply at the
+exact size the layout asks for. The stock 1.5 stroke is too thin at 11–16px, so
+the files are normalized to 1.75. The spinner is `refresh-circle`, the models
+tab uses `multiple-pages`, the monitor is `computer`, and the panel toggles are
+`sidebar-collapse` / `layout-right`. The provider's own mark (`opencode.svg`)
+stays. The SVGs are static: GPUI does not run the library's motion.
 
 ## 4. Surfaces and components (replication checklist)
 
