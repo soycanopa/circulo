@@ -39,6 +39,9 @@ const MODELS_TAB: &str = "models";
 /// shell owns both, because both change its state.
 pub(crate) type KeyHandler = Rc<dyn Fn(&KeyDownEvent, &mut Window, &mut App)>;
 pub(crate) type SendHandler = Rc<dyn Fn(&mut Window, &mut App)>;
+/// What the stop button does while a turn is running. The shell owns it, the
+/// same way it owns sending.
+pub(crate) type StopHandler = Rc<dyn Fn(&mut Window, &mut App)>;
 /// Opening or closing an option menu, and picking a value. The shell owns
 /// both, because both change its state.
 pub(crate) type ToggleHandler = Rc<dyn Fn(Option<String>, &mut Window, &mut App)>;
@@ -82,6 +85,7 @@ pub(crate) struct Field<'a> {
     pub focused: bool,
     pub on_key: KeyHandler,
     pub on_send: SendHandler,
+    pub on_stop: StopHandler,
 }
 
 pub(crate) fn composer(
@@ -157,6 +161,7 @@ fn input_box(
     let focused = field.focused;
     let on_key = field.on_key;
     let on_send = field.on_send;
+    let on_stop = field.on_stop;
     let click_focus = focus.clone();
 
     div()
@@ -200,7 +205,7 @@ fn input_box(
                     workspace.agent_mode,
                 ))
                 .child(div().flex_1())
-                .child(send(theme, running, can_send, on_send)),
+                .child(send(theme, running, can_send, on_send, on_stop)),
         )
 }
 
@@ -856,7 +861,35 @@ fn provider_label(provider: &str) -> &str {
     }
 }
 
-fn send(theme: &Theme, running: bool, can_send: bool, on_send: SendHandler) -> impl IntoElement {
+fn send(
+    theme: &Theme,
+    running: bool,
+    can_send: bool,
+    on_send: SendHandler,
+    on_stop: StopHandler,
+) -> impl IntoElement {
+    // A running turn has one useful action: stop it. A blank or idle field
+    // shows the arrow as a disabled hint.
+    let active = running || can_send;
+    let mark: AnyElement = if running {
+        div()
+            .size(px(9.))
+            .rounded(px(2.))
+            .bg(theme.canvas)
+            .into_any_element()
+    } else {
+        icon(
+            "icons/arrow-up.svg",
+            14.,
+            if can_send {
+                theme.canvas
+            } else {
+                theme.text_faint
+            },
+        )
+        .into_any_element()
+    };
+
     let button = div()
         .id("composer-send")
         .flex()
@@ -864,22 +897,15 @@ fn send(theme: &Theme, running: bool, can_send: bool, on_send: SendHandler) -> i
         .justify_center()
         .size(px(28.))
         .rounded_full()
-        .bg(if can_send { theme.text } else { theme.chip })
-        .child(if running {
-            icon("icons/loader-circle.svg", 14., theme.text_faint)
-        } else {
-            icon(
-                "icons/arrow-up.svg",
-                14.,
-                if can_send {
-                    theme.canvas
-                } else {
-                    theme.text_faint
-                },
-            )
-        });
+        .bg(if active { theme.text } else { theme.chip })
+        .child(mark);
 
-    if can_send {
+    if running {
+        button
+            .cursor_pointer()
+            .hover(|style| style.opacity(0.9))
+            .on_click(move |_, window, cx| on_stop(window, cx))
+    } else if can_send {
         button
             .cursor_pointer()
             .hover(|style| style.opacity(0.9))

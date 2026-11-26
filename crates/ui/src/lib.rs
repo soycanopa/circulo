@@ -24,4 +24,4 @@ mod theme;
 mod transcript;
 
 pub use assets::Assets;
-pub use shell::Shell;
+pub use shell::{Shell, Startup};

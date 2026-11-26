@@ -35,12 +35,21 @@ impl Card {
             Card::Question(request) => &request.id,
         }
     }
+
+    /// The turn that asked. A card cannot outlive it.
+    pub fn turn(&self) -> u64 {
+        match self {
+            Card::Permission(request) => request.turn,
+            Card::Question(request) => request.turn,
+        }
+    }
 }
 
 /// One open question, as the agent described it.
 #[derive(Clone)]
 pub struct PendingQuestion {
     pub id: String,
+    pub turn: u64,
     pub message: String,
     pub fields: Vec<QuestionField>,
 }
@@ -49,6 +58,7 @@ pub struct PendingQuestion {
 #[derive(Clone)]
 pub struct PendingPermission {
     pub id: String,
+    pub turn: u64,
     pub title: String,
     pub detail: String,
     pub options: Vec<PermissionOption>,
@@ -117,22 +127,32 @@ impl Transcript {
                     row.push(part);
                 }
             }
-            ServerMessage::PermissionRequested { id, request, .. } => {
+            ServerMessage::PermissionRequested {
+                turn, id, request, ..
+            } => {
                 self.cards.push_back(Card::Permission(PendingPermission {
                     id,
+                    turn,
                     title: request.title,
                     detail: request.detail,
                     options: request.options,
                 }));
             }
-            ServerMessage::QuestionAsked { id, question, .. } => {
+            ServerMessage::QuestionAsked {
+                turn, id, question, ..
+            } => {
                 self.cards.push_back(Card::Question(PendingQuestion {
                     id,
+                    turn,
                     message: question.message,
                     fields: question.fields,
                 }));
             }
             ServerMessage::TurnFinished { turn, reason, .. } => {
+                // A card whose turn is over can no longer be answered: an
+                // abort cancels it in the daemon, and this is what removes it
+                // from the window without waiting for a click.
+                self.cards.retain(|card| card.turn() != turn);
                 // A queued turn may already be running; only the newest turn
                 // decides the status line, so a late finish of an older one
                 // cannot hide that the session is still busy.
@@ -497,6 +517,35 @@ mod tests {
             transcript.turns[0].parts.is_empty(),
             "a part without its turn has nowhere honest to go"
         );
+    }
+
+    #[test]
+    fn an_aborted_turn_takes_its_open_card_with_it() {
+        let mut transcript = Transcript::default();
+        transcript.apply(started(1));
+        transcript.apply(ServerMessage::PermissionRequested {
+            session: "s1".into(),
+            turn: 1,
+            id: "p-1".into(),
+            request: circulo_protocol::PermissionRequest {
+                title: "Run it".into(),
+                detail: "cargo test".into(),
+                options: Vec::new(),
+            },
+        });
+        assert_eq!(transcript.cards.len(), 1);
+
+        transcript.apply(ServerMessage::TurnFinished {
+            session: "s1".into(),
+            turn: 1,
+            reason: FinishReason::Aborted,
+        });
+
+        assert!(
+            transcript.cards.is_empty(),
+            "a card whose turn is over cannot be answered"
+        );
+        assert_eq!(transcript.status.finished, Some(FinishReason::Aborted));
     }
 
     #[test]
