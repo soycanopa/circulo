@@ -8,6 +8,42 @@
 - **The desktop owns the tunnel process.** It starts `tailcat` together with `circulo-daemon` and stops both on quit, so there is one lifecycle to reason about and no listener outliving the app. The supervisor reports whether the tunnel is up, and the setting that enables remote is off until the user turns it on.
 - **Related:** [TRD](trd.md) · [PRD](prd.md) · [Flow](flow.md)
 
+## 0.1 Status (2026-11-26): designed, deliberately not wired
+
+Remote is post-v1.0 and should **not** be pre-wired before the mobile slice.
+There is no mobile client to test a tunnel or a QR flow against, `tailcat` is
+not installed on this machine, and a supervisor/pairing UI built without a
+device would encode guesses.
+
+What already makes it cheap when the time comes:
+
+- The protocol is transport-agnostic: one JSON message per WebSocket text
+  frame, `ws://` or `wss://`.
+- `circulo-client` already takes a URL and a token; nothing in the client
+  assumes loopback.
+- The daemon binds loopback and the token handshake is mandatory, so tailcat (or
+  a tailnet/reverse proxy) can sit in front without touching the protocol.
+- `docs/remote.md` keeps the tunnel at the edge; no provider or UI code knows
+  about it.
+
+Before the first mobile build, decide and build, in this order:
+
+1. **Attachment upload/fetch.** `Prompt.attachments` carries paths on the
+   daemon host; a phone cannot send a file until the daemon accepts bytes
+   (`UploadAttachment` chunks or a blob endpoint) and the client can fetch a
+   preview. This is the real blocker, not the tunnel.
+2. **Pairing payload and stable address.** QR contents, saved tailcat key,
+   `--allow`, token storage, and what a lost phone means.
+3. **Tunnel supervisor.** Start/stop `tailcat` with the daemon, report
+   readiness, and never leave a listener behind.
+4. **Remote URL/token settings.** A deliberate surface, not an env var only.
+5. **A mobile client** (TailcatKit or a web client) and the E2E pass on a
+   device.
+
+Until then, remote remains a deployment concern: a user can already front the
+loopback daemon with `wss://` (reverse proxy or tailnet) and point a client at
+it; no Circulo code changes.
+
 ## 1. What we need
 
 Remote and mobile are post-v1.0, but they shape the transport now. The requirements:

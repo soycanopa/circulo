@@ -2,18 +2,22 @@
 
 Working notes for the next conversation. Read this first, then `AGENTS.md` and `docs/`.
 
-Last updated: 2026-11-26, on `main` after PR #57. The suite is green (fmt,
+Last updated: 2026-11-26, on `main` after PR #62. The suite is green (fmt,
 clippy and tests). The model-call tests in `tests/real.rs` need provider credit;
 Codex's real tests also need the CLI installed. The scripted agents cover the
 lifecycle without a model call.
 
 ## 0. Handoff in one minute
 
-- **State:** `main` is clean after the attachments slice; fmt, clippy and tests
-  are green. No feature branch is open.
-- **Next task:** remote/pairing (§4), then the inline math layout.
-- **Backlog:** §4, ordered. The remaining v1.0 work is remote, the inline math
-  layout and hardening/packaging.
+- **State:** `main` is clean after the attachments slice (`fb3fd5e`); fmt,
+  clippy and tests are green. No feature branch is open.
+- **Next task:** v1.0 hardening — status banners, keyboard shortcuts, light
+  theme capture, packaging and the E2E checklist. **Remote/mobile is
+  post-v1.0 and deliberately not wired**: `docs/remote.md` records the seams
+  and the one real blocker (attachments are daemon-host paths, so a phone needs
+  an upload contract first).
+- **Backlog:** §4, ordered. The remaining v1.0 work is polish, packaging and
+  the E2E pass; the inline math layout is the one deferred renderer slice.
 - **Run it:** `cargo run -p circulo` (demo, no auth) or
   `CIRCULO_PROVIDER=opencode CIRCULO_PROJECT="$PWD" cargo run -p circulo`, or
   `CIRCULO_PROVIDER=codex …` when the Codex CLI is installed. Checks and UI
@@ -21,8 +25,9 @@ lifecycle without a model call.
 - **Rules:** branch → PR → green CI → merge commit → delete branch. Never push
   to `main`. See §10.
 - **First message for the next conversation:** "Lee `memory.md` (desde §0),
-  `AGENTS.md` y `docs/`. Estamos en `main` limpio; la próxima tarea es remote /
-  pairing (§4) y el backlog está en §4. No pushees a `main`: branch → PR."
+  `AGENTS.md` y `docs/`. Estamos en `main` limpio en `fb3fd5e`; la próxima tarea
+  es hardening v1.0 (§3/§4). Remote/mobile es post-v1.0: no cablear el túnel ni
+  el pairing todavía (ver `docs/remote.md`). No pushees a `main`: branch → PR."
 
 ## 1. What works today
 
@@ -256,9 +261,20 @@ advertises `promptCapabilities.image`, otherwise `resource_link`; text files are
 text (capped at 256 KiB) because the protocol has no file input. Spec in
 `docs/attachments.md`.
 
-**Next: remote/pairing** (`docs/remote.md`), then the inline math layout and
-packaging. Display math landed just before; inline `$…$` is still a source chip
-until a text+image inline layout exists.
+**Next: v1.0 hardening, not remote.** The remaining v1.0 work is status
+banners, the keyboard-first pass, a light theme capture, the long-transcript
+performance pass, live CLI smokes, packaging (`.app`/installers) and the E2E
+checklist. The inline math layout is the one deferred renderer slice.
+
+**Remote/mobile decision (2026-11-26): not wired, on purpose.** Remote is
+post-v1.0 and there is no mobile client yet, `tailcat` is not installed, and a
+pairing flow without a real device would be a guess. The architecture already
+keeps it cheap: the protocol is transport-agnostic, the client takes a URL and
+a token, the daemon stays loopback, and TLS/tailcat live at the edge. Do not
+build a tunnel supervisor or a QR flow now. The one thing to design before
+mobile is **attachment upload**: `Prompt.attachments` carries paths on the
+daemon host, so a phone cannot send a file until an upload/blob-fetch contract
+exists. `docs/remote.md` records this and the rest of the mobile prerequisites.
 
 ## 4. Backlog (ordered)
 
@@ -266,7 +282,10 @@ Sizes are rough: S = same session, M = a focused PR, L = a feature slice with
 its own plan.
 
 ### Next
-1. **Inline math layout** — L. Display math is rendered; `$…$` is a source
+1. **v1.0 hardening** — M/L. Status banners, the keyboard-first pass, a light
+   theme capture, the long-transcript performance pass, live CLI smokes,
+   packaging (`.app`/installers) and the E2E checklist (items 7, 8 and 18).
+2. **Inline math layout** — L. Display math is rendered; `$…$` is a source
    chip until a text+image inline layout exists inside a paragraph.
 
 ### Control surface / UI polish
@@ -300,7 +319,9 @@ its own plan.
 
 ### Persistence / remote / hardening
 16. **Remote / pairing** — L, post-v1.0 per `docs/remote.md`: tailcat, QR,
-    token, desktop owns the tunnel. `tailcat` is not installed here.
+    token, desktop owns the tunnel. `tailcat` is not installed here. **Decision
+    2026-11-26: no tunnel/pairing code until the mobile RFC**, because there is
+    no client to test it against; the attachment upload contract comes first.
 18. **Performance + packaging** — L. Long-transcript pass, live CLI smoke tests,
     `.app`/installers, the E2E checklist, and the version line (`Cargo.toml`
     says 0.1.0; tags are v0.3.1 and AGENTS says the Rust line continues at
@@ -455,6 +476,12 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   cap and a 256-entry cache, so removing it later is one module.
 - **Attachments are blobs, not paths on the wire**: the core copies a picked file into `blobs/<blake3>/<name>` and stores `attachments` + `turn_attachments` (schema 5), so a queued prompt owns its bytes and history survives the source moving. The wire carries paths in `Prompt`/`Steer` and `AttachmentSummary` back; a remote client will need an upload step.
 - **Attachments are images or text**: binaries are refused by the core (10 MiB per file, 20 MiB and 8 files per prompt). OpenCode maps images to ACP `image` when advertised, otherwise `resource_link`; Codex maps images to `localImage` and inlines text, capped at 256 KiB.
+- **Remote is a tunnel at the edge, not a rewrite — and not wired yet**: the
+  protocol is transport-agnostic, the client takes a URL and token, the daemon
+  stays loopback, and tailcat/TLS sit outside. Without a mobile client and with
+  `tailcat` absent, a tunnel supervisor and QR pairing would be untested guesses;
+  build them with the mobile slice. Attachments need an upload contract first,
+  because their paths are on the daemon host.
 - **MIT license**, no Waku code, no GPL contamination.
 
 ## 8. Known quirks
@@ -501,6 +528,10 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   (10 MiB per file); binaries are refused. Blobs are never garbage-collected,
   and a chip is a name, not a preview or a click target. Codex inlines text
   files, capped at 256 KiB.
+- Remote is not implemented: no tunnel supervisor, no QR pairing, no remote
+  URL settings UI. The daemon is loopback and the token is mandatory; a
+  tailnet/reverse proxy works at the transport level today. A phone cannot send
+  attachments yet: `Prompt.attachments` carries daemon-host paths.
 - Light theme values are approximations; this machine is dark.
 - `docs/ui.md` owns the tokens and geometry; keep them there.
 - `CIRCULO_PROVIDER=codex` runs the Codex adapter; it needs `codex` on `PATH`
@@ -532,5 +563,6 @@ rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
   Never push to `main`.
 - Commit messages `type(scope): summary`; one logical change per commit.
 - Docs travel with the change.
-- The Codex (#56), tool-output (#57) and usage branches merged; `origin/main`
-  is the truth, and the next branch starts from it.
+- The Codex (#56), tool-output (#57), usage (#59), links (#60), display math
+  (#61) and attachments (#62) branches merged; `origin/main` is `fb3fd5e` and
+  the next branch starts from it.
