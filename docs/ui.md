@@ -159,7 +159,8 @@ Agent text is CommonMark plus the GitHub extensions agents actually write (table
 - [x] Effort editor beside the model menu: hovered rows gain an `Edit` affordance, and clicking it floats the agent's effort choices level with that row — one editor, moved between rows. Picking a value applies the model with it in one decision (two `SetOption`s, the model only when it changed); Escape or a closed menu dismisses it. The editor anchors to the row's measured position and flips upward near the window's bottom edge. `CIRCULO_OPEN_PICKER` and `CIRCULO_OPEN_EDIT` open both without a click for testing.
 - [x] Stop while a turn runs: the send circle becomes a stop square and Escape stops too (menus and cards keep their own Escape). The daemon cancels the turn's cards, the provider aborts, and the transcript closes it as `Stopped` without an error banner.
 - [x] Queue and steer: while a turn runs, Enter queues the composer's text and Cmd/Ctrl+Enter steers; queued prompts sit above the cards and composer, oldest first, with an `×` per row. The daemon owns the queue and pushes the whole list after every change; starting a queued prompt closes its row and opens its turn with the prompt it carries.
-- [ ] Usage gauge, attachments.
+- [x] Usage gauge: after each turn the footer shows the provider's context `used / size` (ACP) or cumulative `tokens` (Codex), plus the cumulative cost when the provider reports one. It is live only: history does not store usage, so a reopened session starts without it.
+- [ ] Attachments.
 - [ ] The centered empty-state project picker; the composer chip already offers `No project`.
 - [ ] Selection, undo, IME composition, and paste: the buffer is deliberately single-carets-at-the-end-of-a-line for now (`crates/ui/src/input.rs`).
 

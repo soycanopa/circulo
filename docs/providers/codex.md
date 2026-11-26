@@ -47,7 +47,7 @@ session's slot is locked for the whole turn.
 
 ## Mapping
 
-| app-server event | Circulo `Part` |
+| app-server event | Circulo |
 |---|---|
 | `item/agentMessage/delta` | `Text { delta }` |
 | `item/reasoning/summaryTextDelta` | `Reasoning { delta }` |
@@ -60,6 +60,7 @@ session's slot is locked for the whole turn.
 | `item/commandExecution/requestApproval` | a permission card; the answer is `{"decision": "accept" \| "acceptForSession" \| "decline" \| "cancel"}` |
 | `item/fileChange/requestApproval` | a permission card with the same decisions |
 | `mcpServer/elicitation/request` (form) | a question card; the answer is `{"action": "accept", "content": {…}}` |
+| `thread/tokenUsage/updated` | after the turn, `Usage { total_tokens, input_tokens, output_tokens, cached_tokens }` to the footer gauge |
 
 `item/started` and `item/completed` both report the item, and both go through
 the same row because the item id travels in `Part::Tool.id`. A `completed`
@@ -169,9 +170,9 @@ exits on stdin EOF, so no agent process outlives the daemon.
 
 - Unit tests cover the mapping, the approval card and the question form.
 - `tests/scripted.rs` runs a Python `codex app-server` stand-in: a turn
-  streams (text, reasoning, a command's output), a permission card round trips,
-  a question round trips, model and effort options apply, two turns share one
-  child, a restart resumes the thread, a lost key starts fresh, cancel sends
+  streams (text, reasoning, a command's output, usage), a permission card round
+  trips, a question round trips, model and effort options apply, two turns share
+  one child, a restart resumes the thread, a lost key starts fresh, cancel sends
   `turn/interrupt`, reset drops the thread, and shutdown releases the child.
 - `cargo test -p circulo-provider-codex --test real -- --ignored` runs the
   same lifecycle against the installed `codex`; it needs a logged-in CLI.
@@ -185,5 +186,9 @@ exits on stdin EOF, so no agent process outlives the daemon.
 - **No `request_permissions` card, no URL elicitation, no
   `tool/requestUserInput`.** See above; each is answered as unsupported.
 - **No tool diffs yet.** `commandExecution` output is captured; a `fileChange`
-  item's `diff` is not. Usage (`thread/tokenUsage/updated`) is not rendered.
-  The events exist; the wire has nowhere to put the diff or the gauge yet.
+  item's `diff` is not. Usage is forwarded as cumulative tokens (`total`), not
+  as a context ratio: Codex reports `total` and `last` per turn and the model's
+  window, but not the tokens currently in context, so a ratio would lie.
+- **Usage is not stored.** The driver keeps the last
+  `thread/tokenUsage/updated` and the core forwards it after the turn; a
+  reopened session has no gauge until its next turn.
