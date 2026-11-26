@@ -9,11 +9,11 @@ lifecycle without a model call.
 
 ## 0. Handoff in one minute
 
-- **State:** `main` is clean after the display-math slice; fmt, clippy and tests
+- **State:** `main` is clean after the attachments slice; fmt, clippy and tests
   are green. No feature branch is open.
-- **Next task:** attachments (§4), then remote, then the inline math layout.
-- **Backlog:** §4, ordered. The big remaining v1.0 pieces are attachments,
-  remote and the inline math layout.
+- **Next task:** remote/pairing (§4), then the inline math layout.
+- **Backlog:** §4, ordered. The remaining v1.0 work is remote, the inline math
+  layout and hardening/packaging.
 - **Run it:** `cargo run -p circulo` (demo, no auth) or
   `CIRCULO_PROVIDER=opencode CIRCULO_PROJECT="$PWD" cargo run -p circulo`, or
   `CIRCULO_PROVIDER=codex …` when the Codex CLI is installed. Checks and UI
@@ -21,8 +21,8 @@ lifecycle without a model call.
 - **Rules:** branch → PR → green CI → merge commit → delete branch. Never push
   to `main`. See §10.
 - **First message for the next conversation:** "Lee `memory.md` (desde §0),
-  `AGENTS.md` y `docs/`. Estamos en `main` limpio; la próxima tarea es
-  attachments (§4) y el backlog está en §4. No pushees a `main`: branch → PR."
+  `AGENTS.md` y `docs/`. Estamos en `main` limpio; la próxima tarea es remote /
+  pairing (§4) y el backlog está en §4. No pushees a `main`: branch → PR."
 
 ## 1. What works today
 
@@ -75,6 +75,11 @@ agent proves the lifecycle.
   source; `$…$` stays a chip because a GPUI text run cannot hold an image. The
   dependency is 0.1.x: kept behind `crates/ui/src/math.rs`, with a 4 KiB source
   cap and a 256-entry cache, so removing it later is one module.
+- **Attachments are blobs**: images and text files picked in the composer are
+  copied into `<db dir>/blobs/<blake3>/<name>` before the prompt is queued;
+  chips show the names in the composer, the queue and the user bubble. The
+  provider gets `SessionRef.attachments` with blob paths; none of it is stored
+  on the wire as bytes.
 - Each turn shows its own prompt above the answer.
 
 **Cards** (`permission.rs`, `question.rs`, spec in `docs/permissions.md`):
@@ -233,27 +238,27 @@ the app, `CIRCULO_OPENCODE_BIN` points the daemon at that script.
 project-level `permission` config does not change ACP behaviour; the ACP session
 advertises `loadSession: true` (unused so far).
 
-## 3. Last slice: math; next: attachments
+## 3. Last slice: attachments; next: remote
 
-**Math landed** with the split the owner approved: display math (`$$…$$`) is
-real, inline math (`$…$`) is a mono chip with its source.
+**Attachments landed**, the last Phase 1 persistence piece. The core copies
+picked files into a content-addressed blob store (`<db dir>/blobs/<blake3
+hex>/<name>`, schema 5: `attachments` + `turn_attachments`), so a queued prompt
+owns its bytes and history survives the source moving. Scope is raster images
+and text: 10 MiB per file, 20 MiB and 8 files per prompt; binaries are refused
+before a turn. The wire sends paths with `Prompt`/`Steer` and carries an
+`AttachmentSummary` on `TurnStarted`, `QueuedPrompt` and `HistoryTurn`. The
+composer has a paperclip and Cmd/Ctrl+Shift+A, removable chips, and a count on
+queued rows; the user bubble and history draw the names.
 
-Display math uses RaTeX (`ratex-parser` + `ratex-layout` + `ratex-render`,
-MIT, 0.1.16, embedded KaTeX fonts). `crates/ui/src/math.rs` parses and lays out
-the TeX, rasterizes a transparent PNG at 2×, converts RGBA→BGRA and caches the
-`Arc<RenderImage>` by source (max 256 entries, source capped at 4 KiB); the
-element is sized in logical points so it stays sharp. The spike rendered
-`x^2 + \frac{1}{2} = \sqrt{y}` correctly in 1.4 ms; the real turn in the demo
-shows the integral block centered. Invalid or oversized TeX falls back to the
-source in a chip. Rendering is synchronous on first sight and cached
-afterwards; a very complex equation can still cost on the parsing frame.
+Provider mapping: OpenCode sends images as ACP `image` blocks when the agent
+advertises `promptCapabilities.image`, otherwise `resource_link`; text files are
+`resource_link` to the blob. Codex sends `localImage` for images and inlines
+text (capped at 256 KiB) because the protocol has no file input. Spec in
+`docs/attachments.md`.
 
-Inline math stays a chip because GPUI paints a paragraph as one `StyledText`
-and a run cannot hold an image. A real inline layout (text + images + wrapping)
-is the next math slice if it earns its keep.
-
-**Next: attachments** (the last Phase 1 persistence piece), then remote.
-After that: the inline math layout.
+**Next: remote/pairing** (`docs/remote.md`), then the inline math layout and
+packaging. Display math landed just before; inline `$…$` is still a source chip
+until a text+image inline layout exists.
 
 ## 4. Backlog (ordered)
 
@@ -261,8 +266,7 @@ Sizes are rough: S = same session, M = a focused PR, L = a feature slice with
 its own plan.
 
 ### Next
-1. **Attachments** — M/L, the last Phase 1 persistence piece.
-2. **Inline math layout** — L. Display math is rendered; `$…$` is a source
+1. **Inline math layout** — L. Display math is rendered; `$…$` is a source
    chip until a text+image inline layout exists inside a paragraph.
 
 ### Control surface / UI polish
@@ -295,8 +299,7 @@ its own plan.
     per session stay optional and must not break checkpoints or projects.
 
 ### Persistence / remote / hardening
-16. **Attachments blob store** — M/L, the last Phase 1 persistence piece.
-17. **Remote / pairing** — L, post-v1.0 per `docs/remote.md`: tailcat, QR,
+16. **Remote / pairing** — L, post-v1.0 per `docs/remote.md`: tailcat, QR,
     token, desktop owns the tunnel. `tailcat` is not installed here.
 18. **Performance + packaging** — L. Long-transcript pass, live CLI smoke tests,
     `.app`/installers, the E2E checklist, and the version line (`Cargo.toml`
@@ -322,15 +325,15 @@ its own plan.
 |---|---|
 | `crates/protocol` | Wire contract, version 3: `Hello`, `ClientRequest` (+`SetOption`, `CancelTurn`, `Steer`, `RemoveQueued`, `Rewind`, `ListProjects`, `AddProject`, `RemoveProject`), `ServerMessage` (+`Options`, `Settings`, `Queue`, `Projects`, `ProjectAdded`, `RepoStatus`, `Usage`), `TurnStarted` with the prompt, `Part`, `PermissionRequest`, `Question`, `ConfigOption`, `QueuedPrompt`, `ProjectSummary`, `SessionSummary`, `HistoryTurn`. One JSON per WebSocket text frame; unknown types skipped. |
 | `crates/core` | Sessions, turn orchestration, one FIFO queue per session drained by a worker, the permission/question broker (entries owned by session + turn), the project list (canonical paths), Git start/end checkpoints around each turn, rewind (restore + trim + driver reset), translation between storage and wire, carrying provider session keys both ways, abort and steer routing. Speaks only the Driver trait. |
-| `crates/persistence` | SQLite: sessions (+ provider key, project path), turns, parts, settings, projects; schema v4. `trim_turns` removes a suffix in one transaction. Owned by the core; nobody else opens it. |
+| `crates/persistence` | SQLite: sessions (+ provider key, project path), turns, parts, settings, projects, attachments; schema v5. Content-addressed blobs under `<db dir>/blobs`. `trim_turns` removes a suffix and its attachment links in one transaction. Owned by the core; nobody else opens it. |
 | `crates/git` | Whole-worktree snapshots with a temporary index, private `refs/circulo/...` refs, exact restore, and the current branch. Owned by the core. |
 | `crates/daemon` | Loopback WebSocket, token handshake, reader + writer per connection, provider chosen by `CIRCULO_PROVIDER` (`demo`, `opencode`, `codex`), database from `CIRCULO_HOME`, one queue worker per session, project/repo status pushes, clear-and-abort on connection close, clean shutdown on stdin EOF. |
 | `crates/client` | Handshake, blocking read loop, a splittable writer half, `prompt`/`steer`/`remove_queued`/`cancel_turn`/`rewind` and the project calls. No GPUI. |
 | `crates/providers/driver` | `Driver { name, start_turn(SessionRef, prompt, ask, emit) -> Option<key>, cancel(session), reset(session), options(session), set_option(session, id, value), shutdown() }`, `SessionRef { id, resume, cwd }`, and `Asker { permission, question }`. `DriverError` carries whether the turn was cancelled, so the core can report `Aborted` instead of `Failed`. |
 | `crates/providers/demo` | Canned turn, no auth. |
-| `crates/providers/opencode` | ACP over stdio; one agent process per Circulo session, spawned in the session's project folder; `session/load` resume with self-healing fallback; permission and elicitation mapped to cards; `configOptions` applied live, queued mid-turn; a shared stdin handle sends `session/cancel` when the turn owns the slot. |
-| `crates/providers/codex` | `codex app-server` over stdio; one child per Circulo session; `thread/start` / `thread/resume` with the thread id as the key; approvals and MCP form elicitation mapped to the same cards; `model/list` for model + effort; `turn/interrupt` on a shared stdin handle; `reset` drops the child. |
-| `crates/ui` | GPUI views and presentation state: shell, sidebar, transcript (link hit-testing, display math, rewind), markdown, composer, cards. |
+| `crates/providers/opencode` | ACP over stdio; one agent process per Circulo session, spawned in the session's project folder; `session/load` resume with self-healing fallback; permission and elicitation mapped to cards; `configOptions` applied live, queued mid-turn; a shared stdin handle sends `session/cancel` when the turn owns the slot; attachments as `image` blocks or `resource_link`. |
+| `crates/providers/codex` | `codex app-server` over stdio; one child per Circulo session; `thread/start` / `thread/resume` with the thread id as the key; approvals and MCP form elicitation mapped to the same cards; `model/list` for model + effort; `turn/interrupt` on a shared stdin handle; `reset` drops the child; attachments as `localImage` or inlined text. |
+| `crates/ui` | GPUI views and presentation state: shell, sidebar, transcript (link hit-testing, display math, attachments, rewind), markdown, composer (paperclip), cards. |
 | `crates/app` | Composition root + supervisor: spawns the daemon, connects, reopens the last session, opens the window; quit closes stdin and waits before killing. |
 
 Dependency direction is one way. The UI never imports a provider or the core.
@@ -450,6 +453,8 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
   source; `$…$` stays a chip because a GPUI text run cannot hold an image. The
   dependency is 0.1.x, kept behind `crates/ui/src/math.rs` with a 4 KiB source
   cap and a 256-entry cache, so removing it later is one module.
+- **Attachments are blobs, not paths on the wire**: the core copies a picked file into `blobs/<blake3>/<name>` and stores `attachments` + `turn_attachments` (schema 5), so a queued prompt owns its bytes and history survives the source moving. The wire carries paths in `Prompt`/`Steer` and `AttachmentSummary` back; a remote client will need an upload step.
+- **Attachments are images or text**: binaries are refused by the core (10 MiB per file, 20 MiB and 8 files per prompt). OpenCode maps images to ACP `image` when advertised, otherwise `resource_link`; Codex maps images to `localImage` and inlines text, capped at 256 KiB.
 - **MIT license**, no Waku code, no GPL contamination.
 
 ## 8. Known quirks
@@ -492,6 +497,10 @@ Waku is **GPL-3.0**, Circulo is **MIT**: study the approach, never copy code.
 - The usage gauge is live only and updates after a turn, not during it; ACP
   reports context and cost, Codex cumulative tokens. A reopened session starts
   without it.
+- Attachments are images and text only, at most 8 files / 20 MiB per prompt
+  (10 MiB per file); binaries are refused. Blobs are never garbage-collected,
+  and a chip is a name, not a preview or a click target. Codex inlines text
+  files, capped at 256 KiB.
 - Light theme values are approximations; this machine is dark.
 - `docs/ui.md` owns the tokens and geometry; keep them there.
 - `CIRCULO_PROVIDER=codex` runs the Codex adapter; it needs `codex` on `PATH`
@@ -514,6 +523,7 @@ rules), `flow.md`, `implement.md` (phases; Phase 1 is done except attachments),
 `git.md` (checkpoint refs, capture, restore, rewind),
 `providers/opencode.md` (ACP, continuity, project folder, cancellation),
 `providers/codex.md` (app server, approvals, elicitation, thread resume),
+`attachments.md` (blob store, wire, provider mapping),
 `remote.md`.
 
 ## 10. Repo flow (do not skip)

@@ -162,7 +162,7 @@ Agent text is CommonMark plus the GitHub extensions agents actually write (table
 - [x] Stop while a turn runs: the send circle becomes a stop square and Escape stops too (menus and cards keep their own Escape). The daemon cancels the turn's cards, the provider aborts, and the transcript closes it as `Stopped` without an error banner.
 - [x] Queue and steer: while a turn runs, Enter queues the composer's text and Cmd/Ctrl+Enter steers; queued prompts sit above the cards and composer, oldest first, with an `×` per row. The daemon owns the queue and pushes the whole list after every change; starting a queued prompt closes its row and opens its turn with the prompt it carries.
 - [x] Usage gauge: after each turn the footer shows the provider's context `used / size` (ACP) or cumulative `tokens` (Codex), plus the cumulative cost when the provider reports one. It is live only: history does not store usage, so a reopened session starts without it.
-- [ ] Attachments.
+- [x] Attachments: a paperclip (and Cmd/Ctrl+Shift+A) opens the native picker; images and text files up to 10 MiB each (20 MiB and 8 files per prompt) are copied into a content-addressed blob store, shown as removable chips above the field, and carried as chips in the user bubble and history. Spec in `docs/attachments.md`.
 - [ ] The centered empty-state project picker; the composer chip already offers `No project`.
 - [ ] Selection, undo, IME composition, and paste: the buffer is deliberately single-carets-at-the-end-of-a-line for now (`crates/ui/src/input.rs`).
 
