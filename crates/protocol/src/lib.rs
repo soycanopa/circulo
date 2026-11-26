@@ -150,6 +150,7 @@ const SERVER_TYPES: &[&str] = &[
     "sessions",
     "projects",
     "project_added",
+    "repo_status",
     "history",
     "options",
     "settings",
@@ -223,6 +224,14 @@ pub enum ServerMessage {
     /// refreshed `Projects` list.
     ProjectAdded {
         path: String,
+    },
+    /// The Git facts the window can show for a session. `repo` is false when
+    /// the session has no project or the folder is not a repository; `branch`
+    /// is absent on a detached head or an empty repository.
+    RepoStatus {
+        session: String,
+        repo: bool,
+        branch: Option<String>,
     },
     /// A stored transcript, so a client can draw a session again. Its parts are
     /// history, not a live turn: nothing is streaming.
@@ -560,6 +569,11 @@ mod tests {
             },
             ServerMessage::ProjectAdded {
                 path: "/tmp/project".into(),
+            },
+            ServerMessage::RepoStatus {
+                session: "s1".into(),
+                repo: true,
+                branch: Some("main".into()),
             },
             ServerMessage::History {
                 session: "s1".into(),

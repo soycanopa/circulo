@@ -878,6 +878,7 @@ dependencies = [
 name = "circulo-core"
 version = "0.1.0"
 dependencies = [
+ "circulo-git",
  "circulo-persistence",
  "circulo-protocol",
  "circulo-provider",
@@ -905,6 +906,10 @@ dependencies = [
 [[package]]
 name = "circulo-git"
 version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.21",
+ "uuid",
+]
 
 [[package]]
 name = "circulo-persistence"

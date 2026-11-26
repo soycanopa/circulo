@@ -239,6 +239,7 @@ fn handle(
                     },
                 );
                 // Asking the agent takes a moment; the read loop stays free.
+                push_repo_status(Arc::clone(&core), outbound.clone(), session.clone());
                 push_options(Arc::clone(&core), outbound.clone(), session);
             }
             Some(ClientRequest::Prompt { session, text }) => match core.enqueue(&session, &text) {
@@ -350,7 +351,8 @@ fn handle(
                                 items: core.queued(&session),
                             },
                         );
-                        push_options(Arc::clone(&core), outbound.clone(), session);
+                        push_options(Arc::clone(&core), outbound.clone(), session.clone());
+                        push_repo_status(Arc::clone(&core), outbound.clone(), session);
                     }
                     (Ok(false), _) => emit(
                         &outbound,
@@ -451,6 +453,22 @@ fn push_options(core: Arc<Core>, outbound: Sender<ServerMessage>, session: Strin
     thread::spawn(move || match core.load_options(&session) {
         Ok(options) => emit(&outbound, ServerMessage::Options { session, options }),
         Err(message) => emit(&outbound, ServerMessage::Error { message }),
+    });
+}
+
+/// Reads the session's Git facts off the read loop: the folder may be on a
+/// network volume, and the branch can change under a turn.
+fn push_repo_status(core: Arc<Core>, outbound: Sender<ServerMessage>, session: String) {
+    thread::spawn(move || {
+        let (repo, branch) = core.repo_status(&session);
+        emit(
+            &outbound,
+            ServerMessage::RepoStatus {
+                session,
+                repo,
+                branch,
+            },
+        );
     });
 }
 

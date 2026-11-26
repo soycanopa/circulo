@@ -37,6 +37,7 @@ async-channel = "2"
 # Puzzle pieces. Dependencies point one way only.
 circulo-client = { path = "crates/client" }
 circulo-core = { path = "crates/core" }
+circulo-git = { path = "crates/git" }
 circulo-persistence = { path = "crates/persistence" }
 circulo-protocol = { path = "crates/protocol" }
 circulo-provider = { path = "crates/providers/driver" }

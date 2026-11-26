@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use circulo_git::CheckpointKind;
 use circulo_persistence::{Store, StoreError};
 use circulo_protocol::{
     ConfigOption, FinishReason, HistoryTurn, PermissionRequest, ProjectSummary, Question,
@@ -164,6 +165,29 @@ impl Core {
             .remove_project(path)
             .map_err(|error| error.to_string())?;
         self.projects().map_err(|error| error.to_string())
+    }
+
+    /// The Git facts for a session: whether its project is a repository and,
+    /// if so, the branch it is on. A projectless session or a plain folder is
+    /// `(false, None)`; the window hides the branch chip then.
+    pub fn repo_status(&self, session: &str) -> (bool, Option<String>) {
+        let project = self
+            .open_sessions()
+            .iter()
+            .find(|open| open.id == session)
+            .and_then(|open| open.project.clone());
+        let Some(project) = project else {
+            return (false, None);
+        };
+
+        let path = std::path::Path::new(&project);
+        let repo = circulo_git::is_repo(path);
+        let branch = if repo {
+            circulo_git::branch(path)
+        } else {
+            None
+        };
+        (repo, branch)
     }
 
     /// Opens a session that already exists in the database so a client can
@@ -536,6 +560,15 @@ impl Core {
             .iter()
             .find(|open| open.id == session)
             .and_then(|open| open.project.clone());
+        let checkpoint_session = Uuid::parse_str(session).ok();
+        let checkpoint = |kind| {
+            if let (Some(path), Some(id)) = (project.as_deref(), checkpoint_session) {
+                // A checkpoint is a safety net, never a reason a turn fails.
+                let _ = circulo_git::capture(std::path::Path::new(path), id, turn, kind);
+            }
+        };
+
+        checkpoint(CheckpointKind::Start);
         let result = self.driver.start_turn(
             SessionRef {
                 id: session,
@@ -546,6 +579,7 @@ impl Core {
             &mut asker,
             &mut parts,
         );
+        checkpoint(CheckpointKind::End);
 
         // Whatever the provider handed back is what the next turn — maybe of
         // the next daemon — resumes with. `None` clears a stale key.
@@ -582,6 +616,13 @@ impl Core {
             session: session.to_owned(),
             turn,
             reason,
+        });
+
+        let (repo, branch) = self.repo_status(session);
+        send(ServerMessage::RepoStatus {
+            session: session.to_owned(),
+            repo,
+            branch,
         });
     }
 
@@ -1052,6 +1093,90 @@ mod tests {
     }
 
     #[test]
+    fn a_repo_project_gets_checkpoints_and_a_branch() {
+        let Some(directory) = git_repo() else {
+            return;
+        };
+        let core = core_with(Arc::new(Echo));
+        let session = core.start_session(Some(directory.to_string_lossy().into_owned()));
+
+        core.run_turn(&session, "go", |_| {});
+
+        let id = Uuid::parse_str(&session).expect("the core mints a UUID");
+        assert!(
+            circulo_git::has_checkpoint(&directory, id, 1, CheckpointKind::Start),
+            "the state the turn started from is captured"
+        );
+        assert!(
+            circulo_git::has_checkpoint(&directory, id, 1, CheckpointKind::End),
+            "the state the turn left is captured"
+        );
+        assert_eq!(
+            core.repo_status(&session),
+            (true, Some("test".to_owned())),
+            "the window can show the real branch"
+        );
+
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_plain_folder_has_no_checkpoints_and_no_branch() {
+        let directory = std::env::temp_dir().join(format!("circulo-core-plain-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).expect("temp");
+        let core = core_with(Arc::new(Echo));
+        let session = core.start_session(Some(directory.to_string_lossy().into_owned()));
+
+        core.run_turn(&session, "go", |_| {});
+
+        let id = Uuid::parse_str(&session).expect("the core mints a UUID");
+        assert!(!circulo_git::has_checkpoint(
+            &directory,
+            id,
+            1,
+            CheckpointKind::Start
+        ));
+        assert_eq!(core.repo_status(&session), (false, None));
+
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A real repository with one commit on a `test` branch, or `None` when
+    /// this machine has no `git`.
+    fn git_repo() -> Option<std::path::PathBuf> {
+        if !std::process::Command::new("git")
+            .arg("--version")
+            .output()
+            .ok()?
+            .status
+            .success()
+        {
+            return None;
+        }
+
+        let directory = std::env::temp_dir().join(format!("circulo-core-git-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).ok()?;
+        let run = |args: &[&str]| {
+            std::process::Command::new("git")
+                .current_dir(&directory)
+                .args(args)
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false)
+        };
+        if !run(&["init", "-q"]) {
+            return None;
+        }
+        run(&["config", "user.name", "Test"]);
+        run(&["config", "user.email", "test@example.com"]);
+        std::fs::write(directory.join("a.txt"), "one").ok()?;
+        run(&["add", "a.txt"]);
+        run(&["commit", "-qm", "init"]);
+        run(&["checkout", "-q", "-b", "test"]);
+        Some(directory)
+    }
+
+    #[test]
     fn the_session_project_is_the_drivers_cwd() {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let core = core_with(Arc::new(SeesCwd {
@@ -1211,14 +1336,23 @@ mod tests {
             messages.get(1),
             Some(ServerMessage::Part { part: Part::Text { delta }, .. }) if delta == "hello"
         ));
+        let finished = messages
+            .iter()
+            .rev()
+            .find(|message| matches!(message, ServerMessage::TurnFinished { .. }))
+            .expect("the turn finished");
         assert!(matches!(
-            messages.last(),
-            Some(ServerMessage::TurnFinished {
+            finished,
+            ServerMessage::TurnFinished {
                 turn: 1,
                 reason: FinishReason::Completed,
                 ..
-            })
+            }
         ));
+        assert!(
+            matches!(messages.last(), Some(ServerMessage::RepoStatus { .. })),
+            "the branch status follows the turn"
+        );
     }
 
     /// A driver that stops for the user before it answers.
@@ -1704,12 +1838,17 @@ mod tests {
                 .iter()
                 .any(|message| matches!(message, ServerMessage::Error { .. }))
         );
+        let finished = messages
+            .iter()
+            .rev()
+            .find(|message| matches!(message, ServerMessage::TurnFinished { .. }))
+            .expect("the turn finished");
         assert!(matches!(
-            messages.last(),
-            Some(ServerMessage::TurnFinished {
+            finished,
+            ServerMessage::TurnFinished {
                 reason: FinishReason::Failed,
                 ..
-            })
+            }
         ));
     }
 }

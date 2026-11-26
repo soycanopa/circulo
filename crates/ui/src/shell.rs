@@ -24,9 +24,9 @@ use serde_json::Value;
 const FAVORITES_KEY: &str = "favorites.model";
 
 use crate::composer::{
-    ChooseHandler, EditHandler, EffortHandler, Field, KeyHandler, Pickers, ProjectActionHandler,
-    ProjectChooseHandler, ProjectPicker, ProjectToggleHandler, RemoveHandler, SendHandler,
-    StarHandler, StopHandler, TabHandler, ToggleHandler, composer, queued,
+    ChooseHandler, EditHandler, EffortHandler, Field, Footer, KeyHandler, Pickers,
+    ProjectActionHandler, ProjectChooseHandler, ProjectPicker, ProjectToggleHandler, RemoveHandler,
+    SendHandler, StarHandler, StopHandler, TabHandler, ToggleHandler, composer, queued,
 };
 use crate::input::TextInput;
 use crate::live::{Card, Transcript};
@@ -102,6 +102,10 @@ pub struct Shell {
     /// a project is chosen, before the session list catches up, so the chip and
     /// `New Task` never fall back to "No project" by accident.
     current_project: Option<String>,
+    /// Whether the open session's project is a Git repository, and the branch
+    /// it is on. Both come from the daemon, never from a guess.
+    repo: bool,
+    branch: Option<String>,
     /// Whether the composer's project menu is open.
     project_open: bool,
     /// A folder picker is open; the next `ProjectAdded` starts a session there.
@@ -161,6 +165,8 @@ impl Shell {
             queued: Vec::new(),
             projects: Vec::new(),
             current_project,
+            repo: false,
+            branch: None,
             project_open: false,
             adding_project: false,
             picker_anchors: Rc::new(Cell::new(BTreeMap::new())),
@@ -287,11 +293,23 @@ impl Shell {
                     });
                 }
             }
+            ServerMessage::RepoStatus {
+                session,
+                repo,
+                branch,
+            } => {
+                if session == self.session {
+                    self.repo = repo;
+                    self.branch = branch;
+                }
+            }
             ServerMessage::SessionStarted { session } => {
                 self.session = session;
                 self.transcript = Transcript::default();
                 self.queued.clear();
                 self.project_open = false;
+                self.repo = false;
+                self.branch = None;
                 self.clear_options();
                 self.request(ClientRequest::ListSessions);
             }
@@ -324,6 +342,8 @@ impl Shell {
                 self.transcript.hydrate(turns);
                 self.queued.clear();
                 self.project_open = false;
+                self.repo = false;
+                self.branch = None;
                 self.clear_options();
             }
             ServerMessage::Settings { settings } => {
@@ -801,7 +821,8 @@ fn live_session(message: &ServerMessage) -> Option<&str> {
         | ServerMessage::TurnFinished { session, .. }
         | ServerMessage::PermissionRequested { session, .. }
         | ServerMessage::QuestionAsked { session, .. }
-        | ServerMessage::Queue { session, .. } => Some(session),
+        | ServerMessage::Queue { session, .. }
+        | ServerMessage::RepoStatus { session, .. } => Some(session),
         _ => None,
     }
 }
@@ -1005,16 +1026,20 @@ impl Render for Shell {
                         on_send,
                         on_stop,
                     },
-                    &project,
-                    ProjectPicker {
-                        projects: &self.projects,
-                        current: self.current_project.as_deref(),
-                        open: self.project_open,
-                        anchors: Rc::clone(&self.picker_anchors),
-                        on_toggle: on_project_toggle,
-                        on_choose: on_project_choose,
-                        on_new: on_project_new,
-                        on_none: on_project_none,
+                    Footer {
+                        project: &project,
+                        repo: self.repo,
+                        branch: self.branch.as_deref(),
+                        picker: ProjectPicker {
+                            projects: &self.projects,
+                            current: self.current_project.as_deref(),
+                            open: self.project_open,
+                            anchors: Rc::clone(&self.picker_anchors),
+                            on_toggle: on_project_toggle,
+                            on_choose: on_project_choose,
+                            on_new: on_project_new,
+                            on_none: on_project_none,
+                        },
                     },
                 ))
             });

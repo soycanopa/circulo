@@ -171,14 +171,22 @@ pub(crate) fn queued(
     )
 }
 
+/// The composer's footer state: where the task lives, the real branch when the
+/// folder is a repository, and the project picker that changes both.
+pub(crate) struct Footer<'a> {
+    pub project: &'a str,
+    pub repo: bool,
+    pub branch: Option<&'a str>,
+    pub picker: ProjectPicker<'a>,
+}
+
 pub(crate) fn composer(
     theme: &Theme,
     workspace: &Workspace,
     transcript: &Transcript,
     pickers: Pickers<'_>,
     field: Field<'_>,
-    project: &str,
-    project_picker: ProjectPicker<'_>,
+    footer: Footer<'_>,
 ) -> Div {
     let running = transcript.status.running;
     let can_send = !field.input.is_blank() && !running;
@@ -221,11 +229,11 @@ pub(crate) fn composer(
         ))
     });
 
-    let project_menu_view = if project_picker.open {
-        let map = project_picker.anchors.take();
+    let project_menu_view = if footer.picker.open {
+        let map = footer.picker.anchors.take();
         let anchor = map.get("project").copied();
-        project_picker.anchors.set(map);
-        anchor.map(|anchor| project_menu(theme, &project_picker, anchor))
+        footer.picker.anchors.set(map);
+        anchor.map(|anchor| project_menu(theme, &footer.picker, anchor))
     } else {
         None
     };
@@ -241,7 +249,7 @@ pub(crate) fn composer(
         .child(input_box(
             theme, workspace, running, &pickers, field, can_send,
         ))
-        .child(footer(theme, workspace, project, &project_picker, running))
+        .child(footer_bar(theme, &footer, running))
 }
 
 fn input_box(
@@ -1016,13 +1024,7 @@ fn send(
     }
 }
 
-fn footer(
-    theme: &Theme,
-    workspace: &Workspace,
-    project: &str,
-    picker: &ProjectPicker<'_>,
-    running: bool,
-) -> impl IntoElement {
+fn footer_bar(theme: &Theme, footer: &Footer<'_>, running: bool) -> impl IntoElement {
     div()
         .flex()
         .items_center()
@@ -1031,17 +1033,18 @@ fn footer(
         .px(px(4.))
         .text_size(px(11.5))
         .text_color(theme.text_faint)
-        .child(project_chip(theme, project, picker))
+        .child(project_chip(theme, footer.project, &footer.picker))
         .child(meta(theme, "icons/monitor.svg", "Local"))
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(5.))
-                .child(icon("icons/git-branch.svg", 12., theme.text_faint))
-                .child(workspace.branch)
-                .child(icon("icons/chevron-down.svg", 10., theme.text_faint)),
-        )
+        .when(footer.repo, |row| {
+            row.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(5.))
+                    .child(icon("icons/git-branch.svg", 12., theme.text_faint))
+                    .child(footer.branch.unwrap_or("detached").to_owned()),
+            )
+        })
         .child(div().flex_1())
         .when(running, |row| {
             row.child(icon("icons/loader-circle.svg", 12., theme.text_faint))

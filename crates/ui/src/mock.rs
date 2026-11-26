@@ -10,8 +10,6 @@ pub(crate) struct Workspace {
     pub access: &'static str,
     pub agent_mode: &'static str,
     pub worked: &'static str,
-    /// The branch label is still a stand-in until Git checkpoints land.
-    pub branch: &'static str,
 }
 
 pub(crate) fn workspace() -> Workspace {
@@ -20,6 +18,5 @@ pub(crate) fn workspace() -> Workspace {
         access: "Full access",
         agent_mode: "Build",
         worked: "Worked",
-        branch: "main",
     }
 }
