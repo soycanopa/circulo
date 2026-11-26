@@ -8,6 +8,7 @@ use std::collections::VecDeque;
 
 use circulo_protocol::{
     FinishReason, HistoryTurn, Part, PermissionOption, QuestionField, ServerMessage, ToolState,
+    Usage,
 };
 
 #[derive(Default)]
@@ -20,6 +21,9 @@ pub struct Transcript {
     /// Cards waiting for an answer, oldest first: a permission and a question
     /// share the slot above the composer, so one queue keeps their order.
     pub cards: VecDeque<Card>,
+    /// What the agent last reported about usage. Live only: history does not
+    /// store it, so a reopened session starts without a gauge.
+    pub usage: Option<Usage>,
 }
 
 #[derive(Clone)]
@@ -179,6 +183,9 @@ impl Transcript {
             ServerMessage::Error { message } => {
                 self.status.error = Some(message);
             }
+            ServerMessage::Usage { usage, .. } => {
+                self.usage = Some(usage);
+            }
             // Welcome and session messages are handled before a transcript
             // exists, or are not transcript content. The session list, the
             // options and a stored transcript arrive before the window is
@@ -216,6 +223,7 @@ impl Transcript {
             .collect();
         self.status = Status::default();
         self.turn_started = None;
+        self.usage = None;
     }
 
     /// How long the running turn has been working. The sidebar shows it in the
@@ -569,6 +577,23 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn usage_replaces_the_gauge_state() {
+        let mut transcript = Transcript::default();
+        transcript.apply(ServerMessage::Usage {
+            session: "s1".into(),
+            usage: Usage {
+                total_tokens: Some(1500),
+                ..Usage::default()
+            },
+        });
+
+        assert_eq!(
+            transcript.usage.and_then(|usage| usage.total_tokens),
+            Some(1500)
+        );
     }
 
     #[test]

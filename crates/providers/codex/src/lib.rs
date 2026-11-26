@@ -31,7 +31,7 @@ use std::sync::{Arc, Mutex};
 
 use circulo_protocol::{
     ConfigChoice, ConfigOption, Part, PermissionOption, PermissionOptionKind, PermissionRequest,
-    Question, QuestionField, QuestionKind, ToolState,
+    Question, QuestionField, QuestionKind, ToolState, Usage,
 };
 use circulo_provider::{Answer, Asker, Decision, Driver, DriverError, SessionRef};
 use serde_json::{Value, json};
@@ -495,6 +495,12 @@ impl Driver for Codex {
         }
         live.clear();
     }
+
+    fn usage(&self, session: &str) -> Option<Usage> {
+        let slot = self.live().get(session).cloned()?;
+        let attached = Self::peek(&slot)?;
+        attached.as_ref().and_then(|live| live.agent.usage.clone())
+    }
 }
 
 /// Out-of-turn calls never prompt, so a request here belongs to no turn that
@@ -597,6 +603,28 @@ fn opened(result: &Value, missing: &str) -> Result<Opened, DriverError> {
     })
 }
 
+/// Codex reports cumulative token counts, not the current context: `total` is
+/// the whole session, `last` is one turn. Showing a context ratio from either
+/// would lie, so the gauge shows the cumulative tokens it really knows.
+fn usage_from(params: &Value) -> Option<Usage> {
+    let total = params.pointer("/tokenUsage/total")?;
+
+    Some(Usage {
+        total_tokens: token(total, "totalTokens"),
+        input_tokens: token(total, "inputTokens"),
+        output_tokens: token(total, "outputTokens"),
+        cached_tokens: token(total, "cachedInputTokens"),
+        ..Usage::default()
+    })
+}
+
+fn token(value: &Value, key: &str) -> Option<u64> {
+    value
+        .get(key)
+        .and_then(Value::as_i64)
+        .and_then(|count| u64::try_from(count).ok())
+}
+
 fn thread_id(result: &Value, missing: &str) -> Result<String, DriverError> {
     result
         .pointer("/thread/id")
@@ -677,6 +705,8 @@ struct Agent {
     model_override: Option<String>,
     /// I/O with this process failed; it serves no further turns.
     dead: bool,
+    /// The latest `thread/tokenUsage/updated` this connection sent.
+    usage: Option<Usage>,
 }
 
 impl Agent {
@@ -709,6 +739,7 @@ impl Agent {
             next_id: 1,
             model_override: None,
             dead: false,
+            usage: None,
         })
     }
 
@@ -860,6 +891,11 @@ impl Agent {
                         .pointer("/error/message")
                         .and_then(Value::as_str)
                         .map(str::to_owned);
+                }
+                "thread/tokenUsage/updated" => {
+                    if let Some(usage) = usage_from(&params) {
+                        self.usage = Some(usage);
+                    }
                 }
                 "turn/completed" => {
                     let completed = params.pointer("/turn/id").and_then(Value::as_str);
@@ -1404,6 +1440,29 @@ mod tests {
         );
         assert!(matches!(&parts[1], Part::Tool { name, detail, .. }
                 if name == "edit" && detail == "src/lib.rs, README.md"));
+    }
+
+    #[test]
+    fn token_usage_becomes_cumulative_tokens() {
+        let usage = usage_from(&json!({
+            "tokenUsage": {
+                "total": {
+                    "totalTokens": 1500,
+                    "inputTokens": 1000,
+                    "cachedInputTokens": 200,
+                    "outputTokens": 500
+                },
+                "last": {"totalTokens": 300},
+                "modelContextWindow": 200000
+            }
+        }))
+        .expect("usage");
+
+        assert_eq!(usage.total_tokens, Some(1500));
+        assert_eq!(usage.input_tokens, Some(1000));
+        assert_eq!(usage.output_tokens, Some(500));
+        assert_eq!(usage.cached_tokens, Some(200));
+        assert_eq!(usage.context_used, None, "Codex reports no current context");
     }
 
     #[test]
