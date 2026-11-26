@@ -100,6 +100,10 @@ pub enum Segment {
         name: String,
         detail: String,
         done: bool,
+        /// What the tool printed, sent with the finished row. The row is
+        /// collapsed by default; expanding it is presentation state only.
+        output: Option<String>,
+        expanded: bool,
     },
     Text {
         text: String,
@@ -222,6 +226,26 @@ impl Transcript {
         }
         self.turn_started.map(|started| started.elapsed())
     }
+
+    /// Opens or closes a tool row that has output. Expansion is presentation
+    /// state, so it disappears with the transcript and is never stored.
+    pub fn toggle_tool(&mut self, id: &str) {
+        for turn in self.turns.iter_mut().rev() {
+            for segment in turn.parts.iter_mut().rev() {
+                if let Segment::Tool {
+                    id: tool_id,
+                    expanded,
+                    output: Some(_),
+                    ..
+                } = segment
+                    && tool_id == id
+                {
+                    *expanded = !*expanded;
+                    return;
+                }
+            }
+        }
+    }
 }
 
 impl Turn {
@@ -243,6 +267,7 @@ impl Turn {
                 name,
                 detail,
                 state,
+                output,
             } => {
                 // A tool reports itself several times: pending, in progress,
                 // then done. The call id finds the row even when another tool
@@ -267,6 +292,7 @@ impl Turn {
                     name: open_name,
                     detail: open_detail,
                     done: open_done,
+                    output: open_output,
                     ..
                 }) = open
                 {
@@ -274,6 +300,9 @@ impl Turn {
                     // knows its target; keep one row and let the detail fill in.
                     if !detail.is_empty() {
                         *open_detail = detail;
+                    }
+                    if output.is_some() {
+                        *open_output = output;
                     }
                     *open_name = name;
                     *open_done = state == ToolState::Done;
@@ -285,6 +314,8 @@ impl Turn {
                     name,
                     detail,
                     done: state == ToolState::Done,
+                    output,
+                    expanded: false,
                 });
             }
         }
@@ -404,18 +435,21 @@ mod tests {
             name: "Read".into(),
             detail: String::new(),
             state: ToolState::Running,
+            output: None,
         }));
         transcript.apply(part(Part::Tool {
             id: "call-1".into(),
             name: "Read".into(),
             detail: "src/lib.rs".into(),
             state: ToolState::Running,
+            output: None,
         }));
         transcript.apply(part(Part::Tool {
             id: "call-1".into(),
             name: "Read".into(),
             detail: "src/lib.rs".into(),
             state: ToolState::Done,
+            output: None,
         }));
 
         let parts = &transcript.turns[0].parts;
@@ -487,7 +521,54 @@ mod tests {
             name: name.into(),
             detail: detail.into(),
             state,
+            output: None,
         }
+    }
+
+    #[test]
+    fn tool_output_lands_on_the_finished_row_and_toggles() {
+        let mut transcript = Transcript::default();
+        transcript.apply(started(1, ""));
+        transcript.apply(part(tool(
+            "call-1",
+            "Bash",
+            "cargo test",
+            ToolState::Running,
+        )));
+        transcript.apply(part(Part::Tool {
+            id: "call-1".into(),
+            name: "Bash".into(),
+            detail: "cargo test".into(),
+            state: ToolState::Done,
+            output: Some("test result: ok".into()),
+        }));
+
+        let parts = &transcript.turns[0].parts;
+        assert_eq!(parts.len(), 1);
+        match &parts[0] {
+            Segment::Tool {
+                output, expanded, ..
+            } => {
+                assert_eq!(output.as_deref(), Some("test result: ok"));
+                assert!(!expanded, "a finished row stays collapsed");
+            }
+            _ => panic!("expected a tool row"),
+        }
+
+        transcript.toggle_tool("call-1");
+        assert!(matches!(
+            &transcript.turns[0].parts[0],
+            Segment::Tool { expanded: true, .. }
+        ));
+
+        transcript.toggle_tool("call-1");
+        assert!(matches!(
+            &transcript.turns[0].parts[0],
+            Segment::Tool {
+                expanded: false,
+                ..
+            }
+        ));
     }
 
     #[test]

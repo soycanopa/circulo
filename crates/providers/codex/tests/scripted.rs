@@ -161,6 +161,12 @@ def run_turn(message):
           "params": {"threadId": tid, "turnId": turn,
                      "item": {"type": "commandExecution", "id": "cmd1",
                               "command": "cargo test", "status": "inProgress"}}})
+    send({"method": "item/commandExecution/outputDelta",
+          "params": {"threadId": tid, "turnId": turn, "itemId": "cmd1",
+                     "delta": "test output"}})
+    send({"method": "item/commandExecution/outputDelta",
+          "params": {"threadId": tid, "turnId": turn, "itemId": "cmd1",
+                     "delta": "\nall good"}})
     text(tid, turn, "m1", "hello ")
     text(tid, turn, "m1", "world")
     send({"method": "item/completed",
@@ -385,7 +391,8 @@ fn a_turn_streams_text_reasoning_and_tools() {
     )));
     assert!(parts.iter().any(|part| matches!(
         part,
-        Part::Tool { name, state: circulo_protocol::ToolState::Done, .. } if name == "command"
+        Part::Tool { name, state: circulo_protocol::ToolState::Done, output: Some(output), .. }
+            if name == "command" && output == "test output\nall good"
     )));
 }
 

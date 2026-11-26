@@ -832,6 +832,19 @@ impl Agent {
                         });
                     }
                 }
+                "item/commandExecution/outputDelta" => {
+                    if let (Some(item_id), Some(delta)) = (
+                        params.get("itemId").and_then(Value::as_str),
+                        params.get("delta").and_then(Value::as_str),
+                    ) {
+                        let tool = tools.entry(item_id.to_owned()).or_insert_with(|| Tool {
+                            name: "command".to_owned(),
+                            detail: String::new(),
+                            output: String::new(),
+                        });
+                        append_output(&mut tool.output, delta);
+                    }
+                }
                 "item/started" => {
                     if let Some(item) = params.get("item") {
                         apply_item(item, false, &mut tools, emit);
@@ -1039,6 +1052,31 @@ fn for_thread(params: &Value, thread: &str) -> bool {
 struct Tool {
     name: String,
     detail: String,
+    /// What the command printed, accumulated from its output deltas.
+    output: String,
+}
+
+/// Tool output can be megabytes; 64 KiB reads a failing test and leaves the
+/// row usable. The rest is marked, not silently dropped.
+const MAX_TOOL_OUTPUT: usize = 64 * 1024;
+const TRUNCATED: &str = "\n… [output truncated]";
+
+fn append_output(output: &mut String, delta: &str) {
+    if output.len() >= MAX_TOOL_OUTPUT {
+        return;
+    }
+    let remaining = MAX_TOOL_OUTPUT - output.len();
+    if delta.len() <= remaining {
+        output.push_str(delta);
+        return;
+    }
+    // Never split a UTF-8 character.
+    let mut end = remaining;
+    while end > 0 && !delta.is_char_boundary(end) {
+        end -= 1;
+    }
+    output.push_str(&delta[..end]);
+    output.push_str(TRUNCATED);
 }
 
 /// Maps one `item/started` or `item/completed` item to a tool row. Text and
@@ -1096,12 +1134,23 @@ fn apply_item(
     let entry = tools.entry(id.clone()).or_insert_with(|| Tool {
         name: name.clone(),
         detail: detail.clone(),
+        output: String::new(),
     });
     if entry.detail.is_empty() && !detail.is_empty() {
         entry.detail = detail;
     }
     if !name.is_empty() {
         entry.name = name;
+    }
+
+    // A completed command may carry the whole output even when no delta did;
+    // the deltas win when both exist.
+    if completed
+        && kind == "commandExecution"
+        && entry.output.is_empty()
+        && let Some(aggregated) = item.get("aggregatedOutput").and_then(Value::as_str)
+    {
+        append_output(&mut entry.output, aggregated);
     }
 
     let status = item.get("status").and_then(Value::as_str);
@@ -1115,12 +1164,19 @@ fn apply_item(
         Some("declined") => format!("{} · declined", entry.detail),
         _ => entry.detail.clone(),
     };
+    // Output travels once, with the finished row.
+    let output = if completed && !entry.output.is_empty() {
+        Some(entry.output.clone())
+    } else {
+        None
+    };
 
     emit(Part::Tool {
         id,
         name: entry.name.clone(),
         detail,
         state,
+        output,
     });
 }
 
@@ -1314,6 +1370,7 @@ mod tests {
                 name: "command".into(),
                 detail: "cargo test --workspace".into(),
                 state: ToolState::Running,
+                output: None,
             }]
         );
     }
@@ -1347,6 +1404,37 @@ mod tests {
         );
         assert!(matches!(&parts[1], Part::Tool { name, detail, .. }
                 if name == "edit" && detail == "src/lib.rs, README.md"));
+    }
+
+    #[test]
+    fn a_completed_command_carries_its_aggregated_output() {
+        let parts = collect(&[(
+            json!({
+                "type": "commandExecution",
+                "id": "item_4",
+                "command": "cargo test",
+                "status": "completed",
+                "aggregatedOutput": "ok\n"
+            }),
+            true,
+        )]);
+
+        assert!(matches!(
+            &parts[0],
+            Part::Tool {
+                output: Some(output),
+                ..
+            } if output == "ok\n"
+        ));
+    }
+
+    #[test]
+    fn output_is_capped_and_marked() {
+        let mut output = String::new();
+        append_output(&mut output, &"a".repeat(MAX_TOOL_OUTPUT + 10));
+
+        assert!(output.ends_with(TRUNCATED));
+        assert!(output.len() <= MAX_TOOL_OUTPUT + TRUNCATED.len());
     }
 
     #[test]

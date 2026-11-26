@@ -981,6 +981,31 @@ fn permission_kind(kind: Option<&str>) -> PermissionOptionKind {
 struct Tool {
     name: String,
     detail: String,
+    /// What the tool printed, accumulated from `content` blocks.
+    output: String,
+}
+
+/// Tool output can be megabytes; 64 KiB reads a failing test and leaves the
+/// row usable. The rest is marked, not silently dropped.
+const MAX_TOOL_OUTPUT: usize = 64 * 1024;
+const TRUNCATED: &str = "\n… [output truncated]";
+
+fn append_output(output: &mut String, delta: &str) {
+    if output.len() >= MAX_TOOL_OUTPUT {
+        return;
+    }
+    let remaining = MAX_TOOL_OUTPUT - output.len();
+    if delta.len() <= remaining {
+        output.push_str(delta);
+        return;
+    }
+    // Never split a UTF-8 character.
+    let mut end = remaining;
+    while end > 0 && !delta.is_char_boundary(end) {
+        end -= 1;
+    }
+    output.push_str(&delta[..end]);
+    output.push_str(TRUNCATED);
 }
 
 /// Maps one ACP `session/update` to zero or more protocol parts. Unknown update
@@ -1023,9 +1048,22 @@ fn apply_update(update: &Value, tools: &mut HashMap<String, Tool>, emit: &mut dy
             let tool = tools.entry(id.clone()).or_insert_with(|| Tool {
                 name: name.clone(),
                 detail: detail.clone(),
+                output: String::new(),
             });
             if tool.detail.is_empty() && !detail.is_empty() {
                 tool.detail = detail;
+            }
+            // ACP reports what the tool printed as `content` blocks on the
+            // update; text blocks are the output. Diffs and terminals are not
+            // text the user asked to read here.
+            if let Some(content) = update.get("content").and_then(Value::as_array) {
+                for entry in content {
+                    if entry.get("type").and_then(Value::as_str) == Some("content")
+                        && let Some(text) = entry.pointer("/content/text").and_then(Value::as_str)
+                    {
+                        append_output(&mut tool.output, text);
+                    }
+                }
             }
 
             let status = update.get("status").and_then(Value::as_str);
@@ -1037,12 +1075,20 @@ fn apply_update(update: &Value, tools: &mut HashMap<String, Tool>, emit: &mut dy
                 Some("failed") => format!("{} · failed", tool.detail),
                 _ => tool.detail.clone(),
             };
+            // Output travels once, with the finished row: a part per chunk
+            // would store the same growing string again and again.
+            let output = if state == ToolState::Done && !tool.output.is_empty() {
+                Some(tool.output.clone())
+            } else {
+                None
+            };
 
             emit(Part::Tool {
                 id,
                 name: tool.name.clone(),
                 detail,
                 state,
+                output,
             });
         }
         _ => {}
@@ -1205,6 +1251,53 @@ mod tests {
             } => assert!(detail.ends_with("· failed")),
             other => panic!("expected a tool row, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn tool_content_becomes_output_on_the_finished_row() {
+        let parts = collect(&[
+            json!({
+                "sessionUpdate": "tool_call",
+                "toolCallId": "call_3",
+                "title": "bash",
+                "status": "pending"
+            }),
+            json!({
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "call_3",
+                "status": "in_progress",
+                "content": [{"type": "content",
+                             "content": {"type": "text", "text": "line 1\n"}}]
+            }),
+            json!({
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "call_3",
+                "status": "in_progress",
+                "content": [{"type": "content",
+                             "content": {"type": "text", "text": "line 2"}}]
+            }),
+            json!({
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "call_3",
+                "status": "completed"
+            }),
+        ]);
+
+        // Intermediate parts leave the output empty; the finished row carries
+        // the whole output once, so storage stays linear.
+        assert!(matches!(&parts[0], Part::Tool { output: None, .. }));
+        assert!(matches!(&parts[1], Part::Tool { output: None, .. }));
+        assert!(matches!(&parts[3], Part::Tool { output: Some(text), .. }
+            if text == "line 1\nline 2"));
+    }
+
+    #[test]
+    fn tool_output_is_capped_and_marked() {
+        let mut output = String::new();
+        append_output(&mut output, &"a".repeat(MAX_TOOL_OUTPUT + 10));
+
+        assert!(output.ends_with(TRUNCATED));
+        assert!(output.len() <= MAX_TOOL_OUTPUT + TRUNCATED.len());
     }
 
     #[test]
