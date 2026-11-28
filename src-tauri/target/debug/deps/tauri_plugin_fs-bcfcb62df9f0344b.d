@@ -1,0 +1,11 @@
+/workspace/src-tauri/target/debug/deps/tauri_plugin_fs-bcfcb62df9f0344b.d: /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/lib.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/commands.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/config.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/desktop.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/error.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/file_path.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/scope.rs
+
+/workspace/src-tauri/target/debug/deps/libtauri_plugin_fs-bcfcb62df9f0344b.rmeta: /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/lib.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/commands.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/config.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/desktop.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/error.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/file_path.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/scope.rs
+
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/lib.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/commands.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/config.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/desktop.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/error.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/file_path.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tauri-plugin-fs-2.7.1/src/scope.rs:

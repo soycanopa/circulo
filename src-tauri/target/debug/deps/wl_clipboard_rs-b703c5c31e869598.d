@@ -1,0 +1,12 @@
+/workspace/src-tauri/target/debug/deps/wl_clipboard_rs-b703c5c31e869598.d: /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/lib.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/common.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/data_control.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/seat_data.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/copy.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/paste.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/utils.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/watch.rs
+
+/workspace/src-tauri/target/debug/deps/libwl_clipboard_rs-b703c5c31e869598.rmeta: /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/lib.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/common.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/data_control.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/seat_data.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/copy.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/paste.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/utils.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/watch.rs
+
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/lib.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/common.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/data_control.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/seat_data.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/copy.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/paste.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/utils.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/wl-clipboard-rs-0.9.5/src/watch.rs:

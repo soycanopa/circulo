@@ -1,0 +1,17 @@
+Círculo
+Copyright (c) 2026 soycanopa
+
+Este producto incorpora código del proyecto 1Code, desarrollado por 21st.dev,
+obtenido desde https://github.com/21st-dev/1code (archivado en marzo de 2026).
+
+Commit upstream importado: 9f1bc76fa4372c18c565b5a4f8daf38ae3595f0e
+
+Licencia del componente heredado: Apache License 2.0
+Texto completo en LICENSE-1CODE.
+
+Los archivos derivados de 1Code han sido modificados sustancialmente para la
+migración a Rust + Tauri v2 y la identidad del producto Círculo. No use los
+nombres ni logotipos de 1Code o 21st.dev como marca de este producto.
+
+Componentes de terceros adicionales conservan sus licencias en los archivos
+correspondientes dentro del árbol de dependencias y del código heredado.

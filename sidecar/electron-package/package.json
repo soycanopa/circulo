@@ -1,0 +1,7 @@
+{
+  "name": "electron",
+  "version": "39.4.0-circulo-mock",
+  "private": true,
+  "main": "index.cjs",
+  "type": "commonjs"
+}

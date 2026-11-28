@@ -1,0 +1,14 @@
+/workspace/src-tauri/target/debug/deps/uuid-454c7f25d57e5a3d.d: /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/lib.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/macros.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/builder.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/error.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/non_nil.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/parser.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/fmt.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/timestamp.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/external.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/external/serde_support.rs
+
+/workspace/src-tauri/target/debug/deps/libuuid-454c7f25d57e5a3d.rmeta: /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/lib.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/macros.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/builder.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/error.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/non_nil.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/parser.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/fmt.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/timestamp.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/external.rs /usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/external/serde_support.rs
+
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/lib.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/macros.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/builder.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/error.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/non_nil.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/parser.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/fmt.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/timestamp.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/external.rs:
+/usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uuid-1.29.3/src/external/serde_support.rs:
