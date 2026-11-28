@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Círculo",
+  "version": "0.1.0",
+  "identifier": "dev.soycanopa.circulo",
+  "build": {
+    "beforeDevCommand": "bun run dev:ui",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "bun run build:ui",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Círculo",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 500,
+        "minHeight": 600,
+        "decorations": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "dangerousDisableAssetCspModification": true
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.png"]
+  },
+  "plugins": {
+    "shell": {
+      "sidecar": true,
+      "open": true,
+      "scope": [
+        { "name": "bun", "sidecar": false, "cmd": "bun", "args": true },
+        { "name": "node", "sidecar": false, "cmd": "node", "args": true }
+      ]
+    }
+  }
+}

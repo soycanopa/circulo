@@ -1,0 +1,25 @@
+name: Tauri CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/**]
+
+jobs:
+  build-ui-and-rust:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: oven-sh/bun@v2
+    - uses: dtolnay/rust-toolchain@1.90.0
+      with:
+        components: rustfmt, clippy
+    - name: Instalar dependencias web
+      run: CIRCULO_TAURI=1 bun install
+    - name: Build UI
+      run: bun run build:ui
+    - name: Clippy
+      run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+    - name: Test Rust
+      run: cargo test --manifest-path src-tauri/Cargo.toml

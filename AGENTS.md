@@ -1,87 +1,82 @@
-# AGENTS.md — Circulo
+# AGENTS.md — Círculo
 
-Rules for any agent (or human) working in this repository.
+Reglas para cualquier agente (o persona) que trabaje en este repositorio.
 
-**Current approach (2026-11-21):**  
-Native desktop app built entirely with **Rust + GPUI** (same technology as Waku).  
-v1.0 goal = feature parity with [egoist/waku](https://github.com/egoist/waku) (ideas and UX only — never copy code, GPL-3.0).  
-Strong modular separation: UI, core, providers, protocol, persistence and Git are independent puzzle pieces (crates).
+**Enfoque actual (2026-03):** cliente de escritorio **Rust + Tauri v2** con UI
+**React/TypeScript** heredada de [1Code](https://github.com/21st-dev/1code) (Apache-2.0).
+No es un fork upstream: no hay PRs a 21st-dev/1code. El producto se llama **Círculo**;
+no uses marcas ni logotipos de 1Code/21st.dev.
 
-## Working agreement
+**Referencia histórica:** la línea anterior (Rust + GPUI) está en `legacy/circulo/`.
 
-- Be direct and technical.
-- Explain the *why* with documentation when you propose something. Primary sources: GPUI / Zed source and docs, official provider docs (OpenCode, Claude Code, Codex, etc.), and the project docs in `docs/`.
-- If a human decision contradicts best practice or the quality bar, raise your hand. Do not comply just to please. Build it solid.
-- If you have a better idea, propose it and explain why.
-- **Do not invent APIs.** If it is not in the official docs of GPUI or the provider, it does not exist. Read the docs before writing code.
-- **Do not assume. Ask.** If product, protocol, or permission is unclear, ask before implementing.
-- **No changes without a plan** (short is fine: issue or commit message). Large work → written plan under `docs/`.
-- **Do not loop.** If an approach fails twice, stop, write what you tried, and ask or change strategy.
-- **Reference projects: ideas yes, code never.** Waku is GPL-3.0-only. Learn its UX, layout (sidebar + transcript + right panel), graphite palette, streaming patterns and checkpoint ideas — but never copy a file, function or type. Circulo must stay free of that license.
+## Acuerdo de trabajo
 
-## Architecture invariants
+- Sé directo y técnico. Documenta en español salvo que el código o el estándar exijan inglés.
+- Explica el *porqué* con documentación al proponer cambios.
+- Si una decisión humana contradice buenas prácticas o la barra de calidad, alza la mano.
+- **No inventes APIs.** Lee docs oficiales de Tauri, del proveedor de agente y `docs/`.
+- **No asumas. Pregunta** cuando el producto, permisos o protocolo no estén claros.
+- **Nada grande sin plan** — issue, commit, o `docs/` para trabajo amplio.
+- **No entres en bucle.** Tras dos intentos fallidos, documenta y cambia de estrategia.
+- **No simplifiques ni elimines features** durante la migración salvo petición explícita.
+- **Código heredado 1Code:** conserva Apache-2.0 en `LICENSE-1CODE` y `NOTICE`; no copies GPL de proyectos de referencia.
 
-Everything is separated like puzzle pieces. Dependency direction is one-way.
+## OpenSpec (heredado de 1Code)
 
-- **UI (GPUI app)** knows only the neutral protocol and presentation state. It never imports providers, never talks to CLIs, and never owns persistent data.
-- **Protocol crate** is the only shared contract (events, parts, envelopes). Changing it requires updating both sides in the same change.
-- **Core / Daemon** owns projects, sessions, provider lifecycle, Git/worktrees, checkpoints, SQLite and filesystem. It talks to providers only through the Driver trait.
-- **Providers** are independent crates. Each implements the Driver trait and speaks only its own native protocol. They never import UI, GPUI or the core.
-- **Persistence and Git** are owned by the core. No other piece touches the database or the worktree directly.
-- New pieces (another provider, a mobile client, a remote tunnel, a new right-panel view) must be addable without modifying existing pieces.
+Si el cambio habla de propuesta, spec, arquitectura o capacidad nueva, consulta
+`openspec/AGENTS.md` y el flujo de tres fases (propuesta → implementación → archivo).
 
-## Git & delivery workflow
+## Arquitectura objetivo
 
-We work with small, reviewable, incremental changes.
+Separación en capas; dependencias en una sola dirección.
 
-### Solo development (current owner)
-- `main` is protected and protection applies to admins, so **every change lands through a pull request**, the owner's included. Do not plan around pushing to `main`.
-- Work on a short-lived branch: `feature/<short-topic>`, `fix/<short-topic>` or `docs/<topic>`.
-- One logical change per commit. Prefer many small commits over one big one.
-- Commit messages: `type(scope): summary`  
-  Examples: `feat(protocol): add part.delta event`, `fix(opencode): tolerate unknown events`, `docs: update TRD architecture`, `test(core): session registry`.
-- Tests travel with the code. Protocol and adapter changes include fixtures or tests in the same commit (or the one immediately before).
-- Push the branch, open a PR and self-review the diff. CI and local checks must be green before merging:
-  `cargo fmt --all --check`, `cargo clippy --workspace --all-targets`, `cargo test --workspace`.
-- Merge with a merge commit so the granular commits survive. Never squash a branch into one commit.
-- Delete the branch after it merges. `main` must stay green.
-- Small incremental releases: tag when a meaningful vertical slice works (e.g. “OpenCode streaming works”, “Git checkpoints land”, “v0.1-alpha”).
-- Use semantic versioning (`v0.x` while pre-1.0, then `v1.0` when Waku parity is reached). The Go application already used `v0.1.0`–`v0.3.1`; the Rust line continues at `v0.4.0` so the tags stay truthful about what each release contained.
-- Release notes summarize user-visible changes.
+| Capa | Responsabilidad | Notas |
+|------|-----------------|-------|
+| `src/renderer/` | UI React, estado Jotai/Zustand, tRPC cliente | Sin lógica de agentes en disco |
+| `src-tauri/` | Shell nativo, permisos, spawn, futuro core Rust | Comandos Tauri tipados |
+| `src/main/` | Backend heredado (migración gradual) | Sidecar Node mientras dure |
+| `sidecar/` | Puente HTTP tRPC | **Temporal** — ver `docs/MIGRACION.md` |
+| `legacy/circulo/` | Solo lectura / referencia | No editar salvo preservación |
 
-### External collaborators
-- All work happens on branches (`feature/<short-topic>`, `fix/<short-topic>`, `docs/<topic>`).
-- Open a PR for review. Keep PRs small and focused.
-- PR title follows the same `type(scope): summary` style.
-- Description explains *what* and *why*, links the relevant issue or doc section, and lists how to test.
-- CI / local checks must pass before merge.
+**Conflictos de reglas:** manda lo definido para **Círculo** en este archivo y en `legacy/circulo/AGENTS.md`.
 
-### Documentation
-- Update the relevant file in `docs/` in the same change as the behavior it describes.
-- Keep `AGENTS.md` itself current when rules change.
+## Flujo Git
 
-## Code standards
+- `main` protegido — **todo cambio entra por PR** (incluido el maintainer).
+- Rama: `feature/<tema>`, `fix/<tema>`, `docs/<tema>`.
+- Commits: `tipo(ámbito): resumen` (español o inglés consistente por PR).
+- Un cambio lógico por commit; preferir commits pequeños; **no squash** al mergear.
+- Tras merge, borrar la rama.
 
-- Clean code. Small functions, explicit errors (`thiserror` or context), no premature abstraction.
-- Comments explain non-obvious *why* and invariants, not what the code already says.
-- Unknown provider events are ignored gracefully (forward compatibility).
-- Never block the UI thread. Heavy work (process spawn, Git, network, parsing) stays off the UI path (use async or background tasks).
-- Prefer native GPUI for performance and native feel.
+### Checks locales (camino Tauri)
 
-## Project map (target)
+```bash
+CIRCULO_TAURI=1 bun install
+bun run build:ui
+cargo fmt --all --check    # en src-tauri
+cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml
+```
 
-- `docs/` — PRD, TRD, UX, UI, Flow, Implementation Plan, this file.
-- `crates/protocol/` — neutral wire contract (messages, parts, framing). Shared by every client and the core.
-- `crates/core/` — sessions, turn orchestration, Git checkpoints, persistence.
-- `crates/daemon/` — the daemon process: loopback listener, handshake, protocol loop.
-- `crates/client/` — the protocol client. The desktop uses it today; mobile and remote use the same crate.
-- `crates/providers/` — `driver` holds the trait; one crate per agent (`demo`, `opencode`, …).
-- `crates/ui/` — GPUI views (sidebar, transcript, composer, right panel).
-- `crates/app/` — composition root: the desktop app.
+## Estándares de código
 
-## Quality bar
+- TypeScript estricto en UI; Rust idiomático en `src-tauri/`.
+- Errores explícitos; sin abstracciones prematuras.
+- No bloquear el hilo de UI; trabajo pesado en Rust async o sidecar.
+- Eventos desconocidos de proveedores: ignorar con gracia (compatibilidad).
 
-- Streaming must feel instant.
-- Long transcripts must stay smooth (GPUI virtualization).
-- No orphaned agent processes after quit.
-- Architecture must stay modular: a new provider or a new UI surface must not require rewriting existing pieces.
+## Mapa del repo
+
+- `docs/MIGRACION.md` — estado módulo a módulo y hoja de ruta semver
+- `docs/` — documentación de producto (mezcla heredada + nueva)
+- `src/renderer/` — interfaz agentes, terminal, sidebar, settings
+- `src/main/lib/trpc/routers/` — API backend (migrar a Rust)
+- `src-tauri/src/commands/` — comandos nativos ya migrados
+- `NOTICE`, `LICENSE` (MIT Círculo), `LICENSE-1CODE` (Apache 1Code)
+
+## Barra de calidad
+
+- Streaming perceptible como en 1Code.
+- Transcripts largos fluidos.
+- Sin procesos de agente huérfanos al cerrar.
+- Nuevos proveedores o vistas deben añadirse sin reescribir el resto.
